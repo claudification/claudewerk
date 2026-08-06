@@ -16,6 +16,16 @@
 
 import type { z } from 'zod'
 
+/** WHERE a tool call came from. Identity says WHO asked; this says through which
+ *  surface -- and that matters for any verb whose answer arrives LATER. A quest
+ *  dispatched by VOICE must speak its findings back to the orb that asked; the
+ *  same verb typed into the overlay must not (the overlay already renders it). */
+export interface ToolOrigin {
+  surface: 'voice'
+  /** Which orb instance asked. null = every orb the user has open. */
+  orbId: string | null
+}
+
 /** What the tool's execute receives besides its args. Carries cancellation +
  *  caller identity. (agent-core's ToolContext also carries journal/spawn sites;
  *  we keep the minimal subset the dispatcher needs.) */
@@ -26,6 +36,8 @@ export interface ToolContext {
     userId?: string
     conversationId?: string
   }
+  /** Absent for the text/overlay driver; stamped by the voice seam. */
+  origin?: ToolOrigin
 }
 
 export interface ToolDef<S extends z.ZodType = z.ZodType> {

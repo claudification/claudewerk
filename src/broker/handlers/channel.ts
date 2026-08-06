@@ -766,10 +766,19 @@ function deliverToOne(
   // (it runs an LLM turn) so the worker's send returns 'delivered' instantly + exits.
   if (toTarget === 'dispatcher') {
     const message = typeof data.message === 'string' ? data.message : ''
-    void deliverDispatcherReport(ctx.conversations, fromConversation, message).catch(err =>
-      ctx.log.debug(`[dispatcher-sink] ${fromConversation.slice(0, 8)} report failed: ${(err as Error).message}`),
-    )
-    ctx.log.debug(`[dispatcher-sink] ${fromConversation.slice(0, 8)} -> dispatcher (link gate bypassed)`)
+    const who = fromConversation.slice(0, 8)
+    // The worker gets `delivered` before this settles, so the OUTCOME only ever
+    // exists in this log line -- and a dropped report (no quest registered: the
+    // registry is in-memory, so a broker restart loses the link) is the user's
+    // answer disappearing. Loud, not debug.
+    void deliverDispatcherReport(ctx.conversations, fromConversation, message)
+      .then(res =>
+        res.ok
+          ? ctx.log.info(`[dispatcher-sink] ${who} report ${res.detail}`)
+          : ctx.log.error(`[dispatcher-sink] ${who} report DROPPED: ${res.detail} (${message.length} chars lost)`),
+      )
+      .catch(err => ctx.log.error(`[dispatcher-sink] ${who} report FAILED`, err))
+    ctx.log.debug(`[dispatcher-sink] ${who} -> dispatcher (link gate bypassed)`)
     return { to: toTarget, ok: true, status: 'delivered' }
   }
 

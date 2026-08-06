@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getOrbInstanceId } from './orb-instance'
 import type { FunctionCall } from './realtime-events'
 import { createToolBridge, deliverVoiceToolResult, setActiveToolBridge } from './tool-bridge'
 
@@ -48,10 +49,13 @@ describe('wire verbs', () => {
   it('sends voice_tool_call and resolves on the correlated result', async () => {
     const { send, bridge } = harness()
     const p = bridge.run(call('projects_overview'))
+    // orbId travels with EVERY call: a verb that answers later (dispatch_quest)
+    // has to know which browser to speak the answer back to.
     expect(send).toHaveBeenCalledWith('voice_tool_call', {
       requestId: 'req1',
       name: 'projects_overview',
       args: {},
+      orbId: getOrbInstanceId(),
     })
     bridge.deliver({ requestId: 'req1', ok: true, result: { projects: 3 } })
     await expect(p).resolves.toEqual({ projects: 3 })

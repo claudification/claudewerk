@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { DispatchDecision } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
-import { deliverDispatcherReport } from './async-impulse'
+import { deliverDispatcherReport, MAX_SPOKEN_REPLY_CHARS } from './async-impulse'
 import { getUserHistory, resetUserHistory } from './history-store'
 import { getBlock, upsertBlock } from './living-history'
 import { claimQuest, clearQuest, questCount, registerQuest, resolveQuest } from './quest-registry'
@@ -97,6 +97,77 @@ describe('deliverDispatcherReport (async impulse)', () => {
     ).rejects.toThrow('loop blew up')
     expect(getBlock(h, 'q9')).toBeUndefined()
     expect(resolveQuest('conv_x')).toBeUndefined()
+  })
+
+  // THE SILENT-REPORT BUG (2026-08-06): a quest dispatched BY VOICE relayed its
+  // answer into a `dispatch_decision` broadcast only. The orb has no path to that
+  // message, so an answer the user ASKED FOR OUT LOUD was never spoken -- it sat
+  // in the dispatcher's history until he happened to open the overlay.
+  test('voice-dispatched quest: the relayed reply is ALSO spoken to the orb that asked', async () => {
+    resetUserHistory('jonas4')
+    upsertBlock(getUserHistory('jonas4'), 'q11', 'pending', 'lazada pillows', 1)
+    registerQuest('conv_voice', {
+      userId: 'jonas4',
+      pendingId: 'q11',
+      intent: 'search lazada for pillows',
+      speakToOrb: { orbId: 'k7p2qz' },
+    })
+
+    const spoken: { body: string; orbId: string | null }[] = []
+    const res = await deliverDispatcherReport(fakeStore, 'conv_voice', 'four pillow orders', {
+      runImpulse: async () => fakeDecision('Found four pillow orders on Lazada'),
+      broadcast: () => {},
+      speak: (_store, body, orbId) => spoken.push({ body, orbId }),
+    })
+
+    expect(res.ok).toBe(true)
+    expect(spoken).toHaveLength(1)
+    expect(spoken[0].body).toContain('Found four pillow orders')
+    expect(spoken[0].orbId).toBe('k7p2qz') // back to the SAME browser that asked
+    expect(res.detail).toContain('spoken to orb')
+  })
+
+  test('panel-dispatched quest: nothing is spoken (the overlay already shows it)', async () => {
+    resetUserHistory('jonas5')
+    upsertBlock(getUserHistory('jonas5'), 'q12', 'pending', 'typed quest', 1)
+    registerQuest('conv_typed', { userId: 'jonas5', pendingId: 'q12', intent: 'typed quest' })
+
+    let spokeCount = 0
+    const res = await deliverDispatcherReport(fakeStore, 'conv_typed', 'done', {
+      runImpulse: async () => fakeDecision('here you go'),
+      broadcast: () => {},
+      speak: () => {
+        spokeCount++
+      },
+    })
+
+    expect(res.ok).toBe(true)
+    expect(spokeCount).toBe(0)
+    expect(res.detail).not.toContain('spoken to orb')
+  })
+
+  test('a long reply is capped before it is spoken, and the cap is REPORTED not silent', async () => {
+    resetUserHistory('jonas6')
+    upsertBlock(getUserHistory('jonas6'), 'q13', 'pending', 'long one', 1)
+    registerQuest('conv_long', {
+      userId: 'jonas6',
+      pendingId: 'q13',
+      intent: 'long one',
+      speakToOrb: { orbId: null },
+    })
+
+    const long = 'x'.repeat(MAX_SPOKEN_REPLY_CHARS + 500)
+    let spokenBody = ''
+    const res = await deliverDispatcherReport(fakeStore, 'conv_long', 'raw', {
+      runImpulse: async () => fakeDecision(long),
+      broadcast: () => {},
+      speak: (_store, body) => {
+        spokenBody = body
+      },
+    })
+
+    expect(spokenBody.length).toBeLessThanOrEqual(MAX_SPOKEN_REPLY_CHARS + 20)
+    expect(res.detail).toContain('truncated')
   })
 
   test('concurrent double-delivery: second call bails, only one impulse runs', async () => {

@@ -36,6 +36,10 @@ interface VoiceCall {
   requestId?: string
   name: string
   args: Record<string, unknown>
+  /** Which orb instance is calling, so a verb that answers LATER
+   *  (dispatch_quest) can speak its findings back to this browser. null = the
+   *  browser did not say (older panel) -> every orb the user has open. */
+  orbId: string | null
 }
 
 type Resolved = { tool: ToolDef; args: unknown } | { error: string }
@@ -50,7 +54,8 @@ function readCall(ctx: HandlerContext, data: MessageData): VoiceCall | null {
   }
   const raw = data.args as unknown
   const usable = typeof raw === 'object' && raw !== null && !Array.isArray(raw)
-  return { requestId, name, args: usable ? (raw as Record<string, unknown>) : {} }
+  const orbId = typeof data.orbId === 'string' && data.orbId ? data.orbId : null
+  return { requestId, name, args: usable ? (raw as Record<string, unknown>) : {}, orbId }
 }
 
 /** Run the three gates. Everything that can REFUSE a call lives here. */
@@ -91,7 +96,12 @@ const voiceToolCall: MessageHandler = async (ctx: HandlerContext, data: MessageD
 
   const started = Date.now()
   try {
-    const result = await resolved.tool.execute(resolved.args, { identity: userId ? { userId } : {} })
+    // ORIGIN travels with the call: a verb whose answer lands minutes later
+    // (dispatch_quest) needs to know it was asked OUT LOUD, and by which orb.
+    const result = await resolved.tool.execute(resolved.args, {
+      identity: userId ? { userId } : {},
+      origin: { surface: 'voice', orbId: call.orbId },
+    })
     answer({ ok: true, result })
     ctx.log.debug(`voice_tool_call ${who} OK in ${Date.now() - started}ms`)
   } catch (e) {

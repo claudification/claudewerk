@@ -127,7 +127,36 @@ export function relayToOrb(
   targetOrbId: string | null = null,
   now: number = Date.now(),
 ): OrbRelayResult {
-  const src = resolveSource(store, callerConversationId)
+  return speakToOrb(store, resolveSource(store, callerConversationId), body, targetOrbId, now)
+}
+
+/** The name the orb reads out when the DISPATCHER is the one with something to
+ *  say (a dispatched quest reporting home), rather than a conversation. */
+export const DISPATCHER_ORB_SOURCE = 'your dispatcher'
+
+/**
+ * Same envelope, but from a NAMED SYSTEM SURFACE instead of a conversation --
+ * the dispatcher relaying a quest's findings has no conversation to be named
+ * after, and "unknown" is not a thing to say out loud.
+ */
+export function relayToOrbAs(
+  store: ConversationStore,
+  sourceName: string,
+  body: string,
+  targetOrbId: string | null = null,
+  now: number = Date.now(),
+): OrbRelayResult {
+  return speakToOrb(store, { id: 'dispatcher', title: sourceName }, body, targetOrbId, now)
+}
+
+/** Build + broadcast. The one place an orb line goes on the wire. */
+function speakToOrb(
+  store: ConversationStore,
+  src: OrbChannelSource,
+  body: string,
+  targetOrbId: string | null,
+  now: number,
+): OrbRelayResult {
   const delivery = buildOrbChannelDelivery(src, body, now, targetOrbId)
   broadcastToSubscribers(store, delivery as unknown as Record<string, unknown>)
   return { ok: true, subscribers: store.getSubscriberCount(), sourceName: delivery.sourceName }

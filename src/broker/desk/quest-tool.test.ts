@@ -75,4 +75,27 @@ describe('dispatch_quest tool', () => {
     expect(pending?.content).toContain('find this week sci-fi releases')
     expect(questCount()).toBeGreaterThan(0)
   })
+
+  // A quest asked for OUT LOUD must carry its origin, or the report-back has no
+  // way home to the orb (the 2026-08-06 silent-pillow-report bug).
+  test('dispatched from the orb: the quest remembers which orb to speak the answer to', async () => {
+    resetUserHistory('jonas')
+    const spawn: QuestSpawn = async () => ({ conversationId: 'conv_voiceworker' })
+    const voiceCtx: ToolContext = { identity: { userId: 'jonas' }, origin: { surface: 'voice', orbId: 'k7p2qz' } }
+    await questTools(fakeRt, spawn).dispatch_quest.execute(
+      { project: 'claude://default/Users/jonas/projects/arr', task: 'any new pillows', complexity: 'simple' },
+      voiceCtx,
+    )
+    expect(resolveQuest('conv_voiceworker')?.speakToOrb).toEqual({ orbId: 'k7p2qz' })
+  })
+
+  test('dispatched from the panel: no orb target (nothing to speak to)', async () => {
+    resetUserHistory('jonas')
+    const spawn: QuestSpawn = async () => ({ conversationId: 'conv_panelworker' })
+    await questTools(fakeRt, spawn).dispatch_quest.execute(
+      { project: 'claude://default/Users/jonas/projects/arr', task: 'typed quest', complexity: 'simple' },
+      ctx,
+    )
+    expect(resolveQuest('conv_panelworker')?.speakToOrb).toBeUndefined()
+  })
 })

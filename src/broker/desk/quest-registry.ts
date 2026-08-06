@@ -21,6 +21,13 @@ export interface QuestLink {
   intent: string
   /** Project label the quest belongs to, if any. */
   project?: string
+  /**
+   * Set when the quest was dispatched BY VOICE -- the report-back must also be
+   * SPOKEN back to the orb, not just broadcast to the dispatch overlay. Without
+   * it an answer the user asked for out loud lands silently in the overlay's
+   * history (the 2026-08-06 pillow-quest bug). `orbId` null = all his orbs.
+   */
+  speakToOrb?: { orbId: string | null }
 }
 
 const quests = new Map<string, QuestLink>()

@@ -17,6 +17,7 @@
  * no way back -- it waits on the function_call_output before it can speak again.
  */
 
+import { getOrbInstanceId } from './orb-instance'
 import type { FunctionCall } from './realtime-events'
 
 /** A verb the browser answers itself. Returning a value is enough; it is JSON
@@ -90,7 +91,10 @@ export function createToolBridge(opts: ToolBridgeOptions): ToolBridge {
       )
       pending.set(requestId, { settle: resolve, timer })
       try {
-        opts.send('voice_tool_call', { requestId, name: call.name, args: call.args })
+        // `orbId` rides along so a verb that answers LATER (dispatch_quest) can
+        // speak its findings back to THIS browser instead of only painting the
+        // dispatch overlay.
+        opts.send('voice_tool_call', { requestId, name: call.name, args: call.args, orbId: getOrbInstanceId() })
       } catch (e) {
         settle(requestId, { error: `could not reach the broker: ${(e as Error).message}` })
       }

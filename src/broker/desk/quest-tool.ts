@@ -93,7 +93,15 @@ export function questTools(rt: DispatchRuntime, spawn?: QuestSpawn): Toolset {
         }
 
         const pendingId = shortId()
-        registerQuest(conversationId, { userId, pendingId, intent: task, project: dp.label })
+        registerQuest(conversationId, {
+          userId,
+          pendingId,
+          intent: task,
+          project: dp.label,
+          // Asked out loud -> the answer must come back out loud. Carried on the
+          // link because the report lands minutes later, long after this call.
+          ...(ctx.origin?.surface === 'voice' ? { speakToOrb: { orbId: ctx.origin.orbId } } : {}),
+        })
         // Park the pending block in the user's living history -- the worker's
         // report-back will mutate <pending> -> <findings> (THAT is the impulse).
         upsertBlock(
