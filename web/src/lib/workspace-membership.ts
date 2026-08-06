@@ -3,17 +3,26 @@
 // project-list/workspace-hooks.ts can depend on it without a cycle.
 import type { ProjectOrder, ProjectOrderNode } from '@/lib/types'
 
-function projectIdsInTree(tree: ProjectOrderNode[]): Set<string> {
-  const ids = new Set<string>()
+// Walks the whole tree, not just two levels: `ProjectOrderGroup.children` is
+// typed `ProjectOrderNode[]`, so a group can nest, and a project buried in a
+// nested group is still in the workspace.
+function projectIdsInTree(tree: ProjectOrderNode[], into = new Set<string>()): Set<string> {
   for (const node of tree) {
-    if (node.type === 'project') ids.add(node.id)
-    else for (const child of node.children) if (child.type === 'project') ids.add(child.id)
+    if (node.type === 'project') into.add(node.id)
+    else projectIdsInTree(node.children, into)
   }
-  return ids
+  return into
 }
 
 export function isProjectInWorkspace(order: ProjectOrder, wsId: string, projectUri: string): boolean {
   return projectIdsInTree(order.workspaceTrees?.[wsId] ?? []).has(projectUri)
+}
+
+/** Every project URI in a workspace, in tree order. A workspace the user has
+ *  never populated returns []. Used by the launch resolver to auto-assume a
+ *  workspace holding exactly one project. */
+export function projectsInWorkspace(order: ProjectOrder, wsId: string): string[] {
+  return [...projectIdsInTree(order.workspaceTrees?.[wsId] ?? [])]
 }
 
 // Sentinel workspace id for the "All" view.
