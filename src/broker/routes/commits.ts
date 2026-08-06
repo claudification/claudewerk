@@ -35,6 +35,10 @@ export function createCommitsRouter(
   conversationStore: ConversationStore,
   store: StoreDriver,
   helpers: RouteHelpers,
+  /** Injected so tests can authorize without mocking the auth module -- a
+   *  `mock.module('../auth-routes')` is process-global under `bun test` and
+   *  broke every other route suite that imports from it. */
+  ingestAuth: (req: Request) => boolean = hasIngestAuth,
 ): Hono {
   const { httpHasPermission } = helpers
   const app = new Hono()
@@ -47,7 +51,7 @@ export function createCommitsRouter(
 
   // ─── Ingest (git post-commit hook) ──────────────────────────────────
   app.post('/api/commits', async c => {
-    if (!hasIngestAuth(c.req.raw)) return c.json({ error: 'Unauthorized' }, 401)
+    if (!ingestAuth(c.req.raw)) return c.json({ error: 'Unauthorized' }, 401)
     let payload: CommitIngestPayload
     try {
       payload = (await c.req.json()) as CommitIngestPayload

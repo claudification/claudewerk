@@ -3,11 +3,12 @@
  * top of the hook's payload, permission filtering on reads, and the
  * hash -> transcript join.
  *
- * `resolveAuth` is mocked so the test can flip a request between "valid
- * ingest secret" and "no secret at all" without booting the auth subsystem.
+ * The ingest-auth predicate is INJECTED rather than module-mocked:
+ * `mock.module('../auth-routes')` is process-global under `bun test` and takes
+ * down every other route suite that imports from it.
  */
 
-import { afterEach, beforeEach, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,16 +16,10 @@ import type { CommitRow } from '../../shared/commit-ledger'
 import { closeCommitLedger, initCommitLedger } from '../commit-ledger/store'
 import type { ConversationStore } from '../conversation-store'
 import type { StoreDriver } from '../store/types'
+import { createCommitsRouter } from './commits'
 import type { RouteHelpers } from './shared'
 
-let validBearer = 'good-secret'
-mock.module('../auth-routes', () => ({
-  resolveAuth: (token: string) => ({ role: token === validBearer ? 'admin' : 'none' }),
-  getAuthenticatedUser: () => null,
-}))
-
-const { createCommitsRouter } = await import('./commits')
-
+const VALID_BEARER = 'good-secret'
 const REPO = 'claude://default/Users/x/proj'
 let dir: string
 let permitted = true
@@ -45,10 +40,11 @@ function makeApp() {
     httpHasPermission: () => permitted,
     httpIsAdmin: () => permitted,
   } as unknown as RouteHelpers
-  return createCommitsRouter(conversationStore, store, helpers)
+  const ingestAuth = (req: Request) => req.headers.get('authorization') === `Bearer ${VALID_BEARER}`
+  return createCommitsRouter(conversationStore, store, helpers, ingestAuth)
 }
 
-function ingest(body: Record<string, unknown>, token = validBearer) {
+function ingest(body: Record<string, unknown>, token = VALID_BEARER) {
   return makeApp().request('/api/commits', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -85,7 +81,6 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'commit-routes-test-'))
   initCommitLedger(dir)
   permitted = true
-  validBearer = 'good-secret'
   transcriptEntries = []
 })
 
