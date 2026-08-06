@@ -9,16 +9,7 @@ import { cn, haptic } from '@/lib/utils'
 
 // react-doctor:only-export-components -- Tab type + tabVisibility are co-located
 // with ConversationTabs and exported for unit tests; splitting hurts cohesion.
-export type Tab =
-  | 'transcript'
-  | 'tty'
-  | 'json_stream'
-  | 'events'
-  | 'agents'
-  | 'tasks'
-  | 'commits'
-  | 'shared'
-  | 'diag'
+export type Tab = 'transcript' | 'tty' | 'json_stream' | 'events' | 'agents' | 'tasks' | 'commits' | 'shared' | 'diag'
 
 interface ConversationTabsProps {
   conversation: Conversation
@@ -91,6 +82,25 @@ export function tabVisibility(p: {
     diag: p.canAdmin && p.showDiag,
     verbose: p.canAdmin,
   }
+}
+
+/** The Commits tab + its count pill. Extracted so the tab strip stays flat --
+ *  every inline badge conditional adds to the parent's cognitive load. */
+function CommitsTab({ count, active, onSelect }: { count: number; active: boolean; onSelect: (t: Tab) => void }) {
+  return (
+    <TabButton
+      active={active}
+      className="flex items-center gap-1"
+      title="Commits this conversation made"
+      onClick={tabClickHandler('commits', onSelect)}
+    >
+      <GitCommitHorizontal className="size-3" />
+      Commits
+      {count > 0 && (
+        <span className="ml-1.5 px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">{count}</span>
+      )}
+    </TabButton>
+  )
 }
 
 export function ConversationTabs({
@@ -196,15 +206,7 @@ export function ConversationTabs({
         </TabButton>
       )}
 
-      <TabButton
-        active={activeTab === 'commits'}
-        className="flex items-center gap-1"
-        title="Commits this conversation made"
-        onClick={tabClickHandler('commits', onSetActiveTab)}
-      >
-        <GitCommitHorizontal className="size-3" />
-        Commits
-      </TabButton>
+      <CommitsTab count={conversation.commitCount ?? 0} active={activeTab === 'commits'} onSelect={onSetActiveTab} />
 
       <TabButton active={activeTab === 'shared'} onClick={tabClickHandler('shared', onSetActiveTab)}>
         Shared

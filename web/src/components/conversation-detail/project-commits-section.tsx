@@ -6,6 +6,7 @@
  */
 
 import { useState } from 'react'
+import { openCommitBrowser } from '@/hooks/use-commit-modals'
 import { haptic } from '@/lib/utils'
 import { CommitRowItem } from '../commits/commit-row'
 import { useCommits } from '../commits/use-commits'
@@ -41,18 +42,30 @@ export function ProjectCommitsSection({ projectUri }: { projectUri: string }) {
               <CommitRowItem key={`${commit.repoUri}:${commit.hash}`} commit={commit} />
             ))}
           </div>
-          {commits.length > PREVIEW && (
+          <div className="flex items-center gap-3 px-1">
+            {commits.length > PREVIEW && (
+              <button
+                type="button"
+                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                onClick={() => {
+                  haptic('tap')
+                  setExpanded(e => !e)
+                }}
+              >
+                {expanded ? 'Show fewer' : `Show all ${commits.length} loaded`}
+              </button>
+            )}
             <button
               type="button"
-              className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1 transition-colors"
+              className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
-                setExpanded(e => !e)
+                openCommitBrowser(projectUri)
               }}
             >
-              {expanded ? 'Show fewer' : `Show all ${commits.length} loaded`}
+              Browse chronologically
             </button>
-          )}
+          </div>
         </>
       )}
     </div>

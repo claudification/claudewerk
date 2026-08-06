@@ -21,6 +21,7 @@ import { openTerminateConfirm } from '@/components/terminate-confirm-trigger'
 import { openTerminateLineageConfirm } from '@/components/terminate-lineage-confirm-trigger'
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
+import { openCommitBrowser } from '@/hooks/use-commit-modals'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
@@ -138,6 +139,20 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       cycleVoiceOrbTone()
     },
     { label: 'Voice orb tone (professional / snarky / homicidal / overkill)', group: 'View', when: orbAvailable },
+  )
+
+  useCommand('open-commit-browser', () => openCommitBrowser(), {
+    label: 'COMMITS (all projects, chronological)',
+    group: 'Navigation',
+  })
+
+  useCommand(
+    'open-project-commits',
+    () => {
+      const uri = useConversationsStore.getState().selectedProjectUri
+      if (uri) openCommitBrowser(uri)
+    },
+    { label: 'COMMITS (this project)', group: 'Navigation' },
   )
 
   useCommand(

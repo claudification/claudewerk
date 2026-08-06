@@ -4,23 +4,14 @@
  * the conversation that produced it.
  */
 
-import { GitCommitHorizontal } from 'lucide-react'
 import { useState } from 'react'
-import { type CommitRow, commitAge, commitTypeColor } from '@/lib/commits'
-import { cn, haptic } from '@/lib/utils'
+import { type CommitRow, commitAge } from '@/lib/commits'
+import { haptic } from '@/lib/utils'
+import { CommitSummaryLine } from './commit-summary-line'
 import { CommitTranscriptLinkRow } from './commit-transcript-link'
-
-const KIND_BADGES: Record<string, string> = {
-  merge: 'bg-violet-500/20 text-violet-300',
-  revert: 'bg-rose-500/20 text-rose-300',
-  amend: 'bg-amber-500/20 text-amber-300',
-  rebase: 'bg-sky-500/20 text-sky-300',
-  initial: 'bg-emerald-500/20 text-emerald-300',
-}
 
 export function CommitRowItem({ commit, showProject }: { commit: CommitRow; showProject?: boolean }) {
   const [open, setOpen] = useState(false)
-  const badge = KIND_BADGES[commit.kind]
 
   return (
     <div className="border border-border hover:border-accent/40 transition-colors">
@@ -32,13 +23,12 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
         }}
         className="w-full text-left px-3 py-2 space-y-1"
       >
-        <div className="flex items-center gap-2">
-          <GitCommitHorizontal className={cn('size-3 shrink-0', commitTypeColor(commit.ccType))} />
-          <span className="font-mono text-[10px] text-muted-foreground/70 shrink-0">{commit.shortHash}</span>
-          <span className="text-xs truncate flex-1">{commit.subject}</span>
-          {badge && <span className={cn('px-1 text-[9px] font-bold uppercase shrink-0', badge)}>{commit.kind}</span>}
-          <span className="text-[10px] text-muted-foreground/70 shrink-0">{commitAge(commit.committedAt)}</span>
-        </div>
+        <CommitSummaryLine
+          commit={commit}
+          trailing={
+            <span className="text-[10px] text-muted-foreground/70 shrink-0">{commitAge(commit.committedAt)}</span>
+          }
+        />
         <div className="flex items-center gap-2 text-[9px] font-mono text-muted-foreground/50 uppercase tracking-wide">
           <span className={commit.origin === 'agent' ? 'text-accent/70' : ''}>{commit.origin}</span>
           <span>{commit.branch}</span>

@@ -99,6 +99,9 @@ export interface Conversation extends ConversationTaskFields {
   // taskCount / pendingTaskCount / activeTasks / pendingTasks / completedTaskCount /
   // completedTasks / archivedTaskCount / archivedTasks / taskSubjects come from
   // ConversationTaskFields (shared with the broker ConversationSummary wire type).
+  /** Commits this conversation landed. Arrives on the summary and is bumped
+   *  live by the `commit_count` frame -- see commit-ledger/broadcast.ts. */
+  commitCount?: number
   runningBgTaskCount: number
   bgTasks: BgTaskSummary[]
   monitors?: MonitorInfo[]
