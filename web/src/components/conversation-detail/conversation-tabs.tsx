@@ -149,48 +149,6 @@ export function ConversationTabs({
         </TabButton>
       )}
 
-      {vis.json && (
-        <TabButton
-          active={activeTab === 'json_stream'}
-          className="flex items-center gap-1"
-          onClick={() => {
-            haptic('tick')
-            onSetActiveTab(activeTab === 'json_stream' ? 'transcript' : 'json_stream')
-          }}
-        >
-          <Braces className="size-3" />
-          JSON
-        </TabButton>
-      )}
-
-      {vis.events && (
-        <TabButton active={activeTab === 'events'} onClick={tabClickHandler('events', onSetActiveTab)}>
-          Events
-        </TabButton>
-      )}
-
-      {vis.agents && (
-        <TabButton active={activeTab === 'agents'} onClick={tabClickHandler('agents', onSetActiveTab)}>
-          Agents
-          {(conversation.activeSubagentCount > 0 || conversation.runningBgTaskCount > 0) && (
-            <span className="ml-1.5 px-1.5 py-0.5 bg-active/20 text-active text-[10px] font-bold">
-              {conversation.activeSubagentCount + conversation.runningBgTaskCount}
-            </span>
-          )}
-        </TabButton>
-      )}
-
-      {vis.tasks && (
-        <TabButton active={activeTab === 'tasks'} onClick={tabClickHandler('tasks', onSetActiveTab)}>
-          Tasks
-          {conversation.pendingTaskCount > 0 && (
-            <span className="ml-1.5 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold">
-              {conversation.pendingTaskCount}
-            </span>
-          )}
-        </TabButton>
-      )}
-
       {vis.kanban && (
         <TabButton
           active={false}
@@ -208,9 +166,51 @@ export function ConversationTabs({
 
       <CommitsTab count={conversation.commitCount ?? 0} active={activeTab === 'commits'} onSelect={onSetActiveTab} />
 
+      {vis.tasks && (
+        <TabButton active={activeTab === 'tasks'} onClick={tabClickHandler('tasks', onSetActiveTab)}>
+          Tasks
+          {conversation.pendingTaskCount > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-[10px] font-bold">
+              {conversation.pendingTaskCount}
+            </span>
+          )}
+        </TabButton>
+      )}
+
+      {vis.agents && (
+        <TabButton active={activeTab === 'agents'} onClick={tabClickHandler('agents', onSetActiveTab)}>
+          Agents
+          {(conversation.activeSubagentCount > 0 || conversation.runningBgTaskCount > 0) && (
+            <span className="ml-1.5 px-1.5 py-0.5 bg-active/20 text-active text-[10px] font-bold">
+              {conversation.activeSubagentCount + conversation.runningBgTaskCount}
+            </span>
+          )}
+        </TabButton>
+      )}
+
       <TabButton active={activeTab === 'shared'} onClick={tabClickHandler('shared', onSetActiveTab)}>
         Shared
       </TabButton>
+
+      {vis.events && (
+        <TabButton active={activeTab === 'events'} onClick={tabClickHandler('events', onSetActiveTab)}>
+          Events
+        </TabButton>
+      )}
+
+      {vis.json && (
+        <TabButton
+          active={activeTab === 'json_stream'}
+          className="flex items-center gap-1"
+          onClick={() => {
+            haptic('tick')
+            onSetActiveTab(activeTab === 'json_stream' ? 'transcript' : 'json_stream')
+          }}
+        >
+          <Braces className="size-3" />
+          JSON
+        </TabButton>
+      )}
 
       {vis.diag && (
         <TabButton active={activeTab === 'diag'} onClick={tabClickHandler('diag', onSetActiveTab)}>

@@ -4,9 +4,15 @@
  * the host-internal JSON or Project tabs, regardless of granted permissions.
  */
 
-import { describe, expect, test } from 'vitest'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { Conversation } from '@/lib/types'
-import { tabVisibility } from './conversation-tabs'
+import { ConversationTabs, tabVisibility } from './conversation-tabs'
+
+vi.mock('@/hooks/use-conversations', () => ({
+  useConversationsStore: Object.assign(() => false, { getState: () => ({ toggleExpandAll: () => {} }) }),
+}))
+vi.mock('@/hooks/use-kanban-modal', () => ({ openKanbanModal: () => {} }))
 
 function conv(over: Partial<Conversation> = {}): Conversation {
   return {
@@ -86,5 +92,63 @@ describe('tabVisibility', () => {
 
   test('diag needs admin AND showDiag', () => {
     expect(tabVisibility({ ...FULL, showDiag: false }).diag).toBe(false)
+  })
+})
+
+// ─── Tab ORDER ────────────────────────────────────────────────────────
+//
+// The strip is ordered work-surfaces-first, debug-surfaces-last. It is easy to
+// disturb by accident (every new tab lands wherever it was pasted), so the
+// order is pinned here rather than left to review.
+
+describe('tab order', () => {
+  afterEach(cleanup)
+
+  test('runs Transcript -> TTY -> Kanban -> Commits -> Tasks -> Agents -> Shared -> Events -> JSON -> Diag', () => {
+    render(
+      <ConversationTabs
+        conversation={conv({ commitCount: 3, pendingTaskCount: 1, taskCount: 1, totalSubagentCount: 1 })}
+        activeTab="transcript"
+        onSetActiveTab={() => {}}
+        hasTerminal
+        hasJsonStream
+        canAdmin
+        canReadTerminal
+        showDiag
+        expandAll={false}
+      />,
+    )
+    const labels = Array.from(document.querySelectorAll('button'))
+      .map(b => (b.textContent ?? '').replace(/\d+/g, '').trim())
+      .filter(t => t.length > 0 && t !== 'verbose')
+    expect(labels).toEqual([
+      'Transcript',
+      'TTY',
+      'Kanban',
+      'Commits',
+      'Tasks',
+      'Agents',
+      'Shared',
+      'Events',
+      'JSON',
+      'Diag',
+    ])
+  })
+
+  test('the Commits pill shows the count', () => {
+    render(
+      <ConversationTabs
+        conversation={conv({ commitCount: 7 })}
+        activeTab="transcript"
+        onSetActiveTab={() => {}}
+        hasTerminal={false}
+        hasJsonStream={false}
+        canAdmin={false}
+        canReadTerminal={false}
+        showDiag={false}
+        expandAll={false}
+      />,
+    )
+    expect(screen.getByText('7')).toBeTruthy()
   })
 })

@@ -65,12 +65,14 @@ export function ingestCommit(conversationStore: ConversationStore, payload: Comm
       // through an unscoped broadcast -- do not collapse them back together.
       broadcastCommitRecorded(conversationStore, row)
       if (enriched.conversationId) {
-        broadcastCommitCount(
-          conversationStore,
-          enriched.conversationId,
-          enriched.repoUri,
-          bumpCommitCount(enriched.conversationId),
-        )
+        const next = bumpCommitCount(enriched.conversationId)
+        // The count lives OUTSIDE the conversation record, so nothing in the
+        // store's own mutation paths knows it changed. Without this, a cached
+        // summary keeps serving the pre-commit number to every `conversations_list`
+        // -- i.e. correct while you stay connected (the frame below patches the
+        // client) and stale the moment you reload.
+        conversationStore.invalidateSummaryFor(enriched.conversationId)
+        broadcastCommitCount(conversationStore, enriched.conversationId, enriched.repoUri, next)
       }
     }
     return {

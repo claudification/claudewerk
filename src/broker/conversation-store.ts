@@ -240,6 +240,12 @@ export interface ConversationStore {
   removeSubscriber: (ws: ServerWebSocket<unknown>) => void
   getSubscriberCount: () => number
   getSubscribers: () => Set<ServerWebSocket<unknown>>
+  /** Drop a conversation's cached summary so the next `conversations_list`
+   *  rebuilds it. For state that lives OUTSIDE the conversation record and so
+   *  never trips the store's own mutation paths -- the commit ledger's count is
+   *  the first: a commit bumps it without touching the conversation, and a
+   *  cached summary would keep serving the pre-commit number on every reload. */
+  invalidateSummaryFor: (conversationId: string) => void
   getShareViewerCount: (shareToken: string) => number
   // Channel subscription methods (v2 pub/sub)
   subscribeChannel: (
@@ -3311,6 +3317,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     removeSubscriber,
     getSubscriberCount,
     getSubscribers,
+    invalidateSummaryFor: invalidateSummary,
     getShareViewerCount,
     broadcastConversationScoped: (message: Record<string, unknown>, project: string) =>
       broadcastConversationScoped(message as unknown as ControlPanelMessage, project),

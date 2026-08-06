@@ -5,8 +5,8 @@
 
 import { type Conversation, isLiveStatusSuperseded, type LiveStatus, type TeamInfo } from '../../shared/protocol'
 import { getUser } from '../auth'
-import { getCommitCount } from '../commit-ledger/counts'
 import { getAuthenticatedUser, resolveAuth } from '../auth-routes'
+import { getCommitCount } from '../commit-ledger/counts'
 import type { ConversationStore } from '../conversation-store'
 import { type Permission, resolvePermissions, type UserGrant } from '../permissions'
 import { shareToGrants, validateShare } from '../shares'

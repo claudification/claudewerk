@@ -42,6 +42,7 @@ function socket(label: string, data: Record<string, unknown> = {}): FakeSocket {
 }
 
 let sockets: FakeSocket[] = []
+let invalidated: string[] = []
 
 function got(label: string, type: string): boolean {
   return sockets.find(s => s.label === label)?.received.some(m => m.type === type) ?? false
@@ -53,6 +54,7 @@ function makeApp() {
       id === 'conv-1'
         ? { id, agentName: 'blazing-pretzel', resolvedProfile: 'work', project: REPO, status: 'active' }
         : undefined,
+    invalidateSummaryFor: (id: string) => invalidated.push(id),
     getSubscribers: () =>
       sockets.map(s => ({
         data: s.data,
@@ -114,6 +116,7 @@ beforeEach(() => {
   permitted = true
   shareScopedTo = null
   transcriptEntries = []
+  invalidated = []
   sockets = [
     // No grants at all = the owner's own admin panel.
     socket('owner-full', { commitMode: 'full' }),
@@ -279,4 +282,19 @@ test('a commit whose conversation is gone still decorates, as gone', async () =>
   )
   // The ledger outlives its conversations -- that is information, not an error.
   expect(feed.conversations.find(c => c.id === 'vanished-conv')?.status).toBe('gone')
+})
+
+test('a commit invalidates the conversation summary so a RELOAD sees the new count', async () => {
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1' })
+  // The count lives outside the conversation record, so nothing in the store's
+  // own mutation paths knows it moved. Without this invalidation the cached
+  // summary keeps serving the pre-commit number on every conversations_list --
+  // right while connected (the commit_count frame patches the client), stale
+  // the moment you reload.
+  expect(invalidated).toEqual(['conv-1'])
+})
+
+test('a human commit invalidates nothing -- it belongs to no conversation', async () => {
+  await ingest(PAYLOAD)
+  expect(invalidated).toEqual([])
 })

@@ -118,9 +118,7 @@ describe('CommitRunHeader', () => {
   })
 
   it('opens an ENDED conversation -- liveness gates the pill, not access', () => {
-    render(
-      <CommitRunHeader {...base} conversation={{ id: 'conv-1', name: 'old-one', status: 'ended', project: A }} />,
-    )
+    render(<CommitRunHeader {...base} conversation={{ id: 'conv-1', name: 'old-one', status: 'ended', project: A }} />)
     fireEvent.click(screen.getByText('old-one'))
     expect(selectConversation).toHaveBeenCalledWith('conv-1', 'commit-browser')
   })
@@ -186,7 +184,10 @@ describe('CommitDetailBody', () => {
   })
 
   it('reports a hash the ledger does not have', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 404 })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 404 })),
+    )
     render(<CommitDetailBody hash="deadbeef" />)
     await waitFor(() => expect(screen.getByText(/No commit matches deadbeef/)).toBeTruthy())
   })
