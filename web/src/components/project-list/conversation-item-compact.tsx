@@ -8,10 +8,10 @@ import { formatCost } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
 import { cn, formatPermissionMode, haptic } from '@/lib/utils'
 import { useIsMobile } from '../input-editor/shell/use-is-mobile'
+import { RunScopeAffordance } from '../scope-cards/run-scope-affordance'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
 import { BranchPill, resolveBranch } from './branch-pill'
-import { ConversationInfoButton } from './conversation-info-dialog'
 import {
   ConversationAttentionBadges,
   ConversationItemShell,
@@ -142,7 +142,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         {isMobile && ctx && (
           <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
         )}
-        <ConversationInfoButton conversation={conversation} visible={isSelected} />
+        <RunScopeAffordance conversation={conversation} visible={isSelected} />
         {conversation.resultText && conversation.capabilities?.includes('ad-hoc') && (
           <ResultTextModal conversation={conversation} />
         )}

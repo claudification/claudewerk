@@ -3,6 +3,7 @@ import { ModelClassPill } from '@/components/ui/model-class-pill'
 import { errorTitle, formatCostInfo, rowTitle } from '@/lib/conversation-row'
 import type { Conversation } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { RunScopeAffordance } from '../scope-cards/run-scope-affordance'
 import { BackendIcon } from './backend-icon'
 import { BranchPill } from './branch-pill'
 import { ConversationAttentionBadges, DismissButton, InterpunctRow } from './conversation-item-helpers'
@@ -81,6 +82,7 @@ export function RailTitleRow({
       <RailGhostBadges conversation={conversation} isGhost={isGhost} />
       <ConversationAttentionBadges conversation={conversation} />
       {ctx && <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>}
+      <RunScopeAffordance conversation={conversation} visible={isSelected} />
       <RailFlags conversation={conversation} />
     </div>
   )

@@ -107,6 +107,21 @@ export function broadcastCommitRecorded(conversationStore: ConversationStore, co
   )
 }
 
+/** The PLACE tier: a project URI and four integers. Same disclosure profile as
+ *  the count frame (numbers, no paths beyond the project the socket already
+ *  reads), but withheld from share guests -- a scoped guest link has no project
+ *  card and no business knowing how much work lives in the place. */
+export function broadcastProjectCommitStats(
+  conversationStore: ConversationStore,
+  project: string,
+  stats: Record<string, unknown>,
+): number {
+  return deliver(conversationStore, { type: 'project_commit_stats', project, stats }, project, null, {
+    excludeShareGuests: true,
+    requireFullMode: false,
+  })
+}
+
 export function broadcastCommitCount(
   conversationStore: ConversationStore,
   conversationId: string,

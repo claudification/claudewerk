@@ -31,6 +31,7 @@ import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './ca
 import { wireCapacityAdmission } from './capacity-wiring'
 import { closeChecklistStore, initChecklistStore } from './checklist-store'
 import { rebuildCommitCounts } from './commit-ledger/counts'
+import { rebuildProjectCommitStats } from './commit-ledger/project-counts'
 import { closeCommitLedger, initCommitLedger } from './commit-ledger/store'
 import { recordInboundForSocket, registerConnection, unregisterConnection } from './connection-registry'
 import {
@@ -380,6 +381,10 @@ async function main() {
   {
     const convs = rebuildCommitCounts()
     if (convs > 0) console.log(`[commit-ledger] loaded commit counts for ${convs} conversation(s)`)
+    // ...and the place-scoped twin: total/agent/human/today per project
+    // (commit-ledger/project-counts.ts), which the PLACE card reads.
+    const projects = rebuildProjectCommitStats()
+    if (projects > 0) console.log(`[commit-ledger] loaded commit stats for ${projects} project(s)`)
   }
 
   // Initialize per-project hosted canvas store (broker-local config DB + durable scene files)

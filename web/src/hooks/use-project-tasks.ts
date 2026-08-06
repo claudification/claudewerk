@@ -42,6 +42,9 @@ interface ProjectCache {
   /** Slugs whose mtime advanced since last hydration -- next read should refetch. */
   staleMeta: Set<string>
   manifestFetched: boolean
+  /** When the manifest last landed -- lets a watch-free reader (the PLACE card's
+   *  counts) decide it is stale without arming a sentinel watch to be told. */
+  manifestFetchedAt: number
   manifestInflight: Promise<void> | null
   hydrationInflight: Map<string, Promise<void>>
   /** Pending hydration queue, flushed once per microtask. */
@@ -125,6 +128,7 @@ function ensureCache(projectUri: string): ProjectCache {
       meta: new Map(),
       staleMeta: new Set(),
       manifestFetched: false,
+      manifestFetchedAt: 0,
       manifestInflight: null,
       hydrationInflight: new Map(),
       hydrationQueue: new Set(),
@@ -209,6 +213,7 @@ async function fetchManifest(cache: ProjectCache): Promise<void> {
       }
       cache.manifest = nextManifest
       cache.manifestFetched = true
+      cache.manifestFetchedAt = Date.now()
       notify(cache)
     } catch {
       // Leave manifestFetched=false; a later trigger (reconnect / project_changed) retries.
@@ -290,12 +295,15 @@ const EMPTY_API: ProjectTasksApi = {
 }
 
 /**
- * Subscribe to a project's task cache. Returns the manifest synchronously
- * (empty until first fetch resolves) and a `hydrate(refs)` to lazily load full
- * meta for the entries the caller is actually rendering. While mounted it tells
- * the broker to keep a sentinel watch armed for live updates.
+ * Read a project's task cache WITHOUT arming anything on the sentinel.
+ *
+ * THE RULE: a mounted BOARD earns a watch; a HOVER does not. Hovering down a
+ * project list with `useProjectTasks` would open a lease-bound sentinel watch
+ * per project and leave them running, so every read-only surface (the PLACE
+ * card's board counts) comes through here instead. Same cache, same fetch, one
+ * effect less -- not a second code path.
  */
-export function useProjectTasks(projectUri: string | null): ProjectTasksApi {
+export function useProjectTaskSnapshot(projectUri: string | null): ProjectTasksApi {
   useEffect(() => {
     installSharedHandler()
   }, [])
@@ -318,14 +326,6 @@ export function useProjectTasks(projectUri: string | null): ProjectTasksApi {
     () => EMPTY_API,
   )
 
-  // Arm the lease-bound sentinel watch while this board is mounted.
-  useEffect(() => {
-    if (!projectUri) return
-    const send = useConversationsStore.getState().sendWsMessage
-    send({ type: 'project_subscribe', project: projectUri })
-    return () => send({ type: 'project_unsubscribe', project: projectUri })
-  }, [projectUri])
-
   // Kick off (or retry) the manifest fetch.
   useEffect(() => {
     if (!projectUri) return
@@ -334,6 +334,34 @@ export function useProjectTasks(projectUri: string | null): ProjectTasksApi {
   }, [projectUri, conversations])
 
   return snapshot
+}
+
+/**
+ * Subscribe to a project's task cache. Returns the manifest synchronously
+ * (empty until first fetch resolves) and a `hydrate(refs)` to lazily load full
+ * meta for the entries the caller is actually rendering. While mounted it tells
+ * the broker to keep a sentinel watch armed for live updates.
+ */
+export function useProjectTasks(projectUri: string | null): ProjectTasksApi {
+  // Arm the lease-bound sentinel watch while this board is mounted.
+  useEffect(() => {
+    if (!projectUri) return
+    const send = useConversationsStore.getState().sendWsMessage
+    send({ type: 'project_subscribe', project: projectUri })
+    return () => send({ type: 'project_unsubscribe', project: projectUri })
+  }, [projectUri])
+
+  return useProjectTaskSnapshot(projectUri)
+}
+
+/** Refetch a project's manifest when the cached copy is older than `maxAgeMs`.
+ *  The watch-free path's staleness story: nobody pushes to a hover, so it asks
+ *  again when what it holds is old enough to be worth a round trip. */
+export function refreshManifestIfStale(projectUri: string, maxAgeMs: number): void {
+  const cache = ensureCache(projectUri)
+  if (cache.manifestInflight) return
+  if (cache.manifestFetched && Date.now() - cache.manifestFetchedAt < maxAgeMs) return
+  fetchManifest(cache)
 }
 
 function buildSnapshot(cache: ProjectCache): ProjectTasksApi {

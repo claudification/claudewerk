@@ -98,6 +98,17 @@ function latestFabric(live: Contribution[]): GitFabric | undefined {
   return best
 }
 
+/** The most recent fabric snapshot for a project, READ ONLY: the reconciled one
+ *  off the chronicle, else the newest git_scan still in the live queue.
+ *
+ *  Deliberately triggers NOTHING -- no scan, no distill. A hover surface asks
+ *  what the last scan said and renders its age; scanning on hover would put a
+ *  15s sentinel round trip (and, through `sotu_view`, a paid distill) behind a
+ *  pointer moving down a list. */
+export function readLatestFabric(slug: string, now: number): GitFabric | undefined {
+  return readChronicle(slug).git ?? latestFabric(readLiveQueue(slug, now))
+}
+
 /** Deduped union of escalation alerts across all branches in a fabric snapshot. */
 export function deriveAlerts(fabric: GitFabric | undefined): GitAlert[] {
   if (!fabric) return []

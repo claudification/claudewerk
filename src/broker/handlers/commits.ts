@@ -13,6 +13,7 @@
 
 import type { CommitSubscribeMode } from '../commit-ledger/broadcast'
 import { getCommitCount } from '../commit-ledger/counts'
+import { getProjectCommitStats } from '../commit-ledger/project-counts'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { DASHBOARD_ROLES, registerHandlers } from '../message-router'
 
@@ -47,11 +48,21 @@ const commitCountRequest: MessageHandler = (ctx: HandlerContext, data: MessageDa
   })
 }
 
+/** Seed a freshly-opened PLACE card. Reads the in-memory project map -- no
+ *  query, no scan -- so a hover costs nothing beyond the round trip. */
+const projectCommitStatsRequest: MessageHandler = (ctx: HandlerContext, data: MessageData) => {
+  const project = typeof data.project === 'string' ? data.project.trim() : ''
+  if (!project) return
+  ctx.requirePermission('chat:read', project)
+  ctx.reply({ type: 'project_commit_stats', project, stats: getProjectCommitStats(project) })
+}
+
 export function registerCommitHandlers(): void {
   registerHandlers(
     {
       commit_subscribe: commitSubscribe,
       commit_count_request: commitCountRequest,
+      project_commit_stats_request: projectCommitStatsRequest,
     },
     DASHBOARD_ROLES,
   )

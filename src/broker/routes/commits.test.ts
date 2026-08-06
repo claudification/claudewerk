@@ -14,6 +14,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CommitRow } from '../../shared/commit-ledger'
 import { resetCommitCounts } from '../commit-ledger/counts'
+import {
+  getProjectCommitStats,
+  rebuildProjectCommitStats,
+  resetProjectCommitStats,
+} from '../commit-ledger/project-counts'
 import { closeCommitLedger, initCommitLedger } from '../commit-ledger/store'
 import type { ConversationStore } from '../conversation-store'
 import type { StoreDriver } from '../store/types'
@@ -113,6 +118,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'commit-routes-test-'))
   initCommitLedger(dir)
   resetCommitCounts()
+  resetProjectCommitStats()
   permitted = true
   shareScopedTo = null
   transcriptEntries = []
@@ -297,4 +303,82 @@ test('a commit invalidates the conversation summary so a RELOAD sees the new cou
 test('a human commit invalidates nothing -- it belongs to no conversation', async () => {
   await ingest(PAYLOAD)
   expect(invalidated).toEqual([])
+})
+
+// ─── PLACE tier: per-project aggregates ───────────────────────────────
+//
+// `commits` changes meaning with scope: on a conversation it is "what did this
+// agent land", on a project it is "what has ever landed here, by anyone". These
+// cover the second one -- including the case the conversation tier cannot see.
+
+test('project stats split agent from human and remember the last commit', async () => {
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1', committedAt: 1_700_000_000_000 })
+  await ingest({ ...PAYLOAD, hash: 'c'.repeat(40), committedAt: 1_700_000_900_000 })
+  const stats = getProjectCommitStats(REPO)
+  expect(stats.total).toBe(2)
+  expect(stats.agent).toBe(1)
+  expect(stats.human).toBe(1)
+  expect(stats.lastCommittedAt).toBe(1_700_000_900_000)
+})
+
+test('a human commit moves the PLACE numbers -- it has no conversation but it has a place', async () => {
+  await ingest(PAYLOAD)
+  expect(getProjectCommitStats(REPO).total).toBe(1)
+  // The conversation tier is silent for it, which is exactly why the project
+  // bump lives outside the conversation branch.
+  expect(got('owner-counts', 'commit_count')).toBe(false)
+  expect(got('owner-counts', 'project_commit_stats')).toBe(true)
+})
+
+test('an in-repo worktree folds into its parent repo, and is counted ONCE', async () => {
+  // `.claude/worktrees/<name>` is stripped by projectIdentityKey at every
+  // comparator, so repo and worktree are the same PLACE -- one bucket, one frame.
+  await ingest(PAYLOAD)
+  expect(getProjectCommitStats(REPO).total).toBe(1)
+  expect(getProjectCommitStats(`${REPO}/.claude/worktrees/feature`).total).toBe(1)
+  const projects = sockets
+    .find(s => s.label === 'owner-counts')
+    ?.received.filter(m => m.type === 'project_commit_stats')
+    .map(m => m.project)
+  expect(projects).toEqual([REPO])
+})
+
+test('a commit made in a DETACHED worktree counts for both places', async () => {
+  const detached = 'claude://default/Users/x/wt-feature'
+  await ingest({ ...PAYLOAD, cwdUri: detached })
+  // The ledger's repo_uri is the main repo; the working URI is a project of its
+  // own in the list, and `repo_uri OR cwd_uri` is what the commit list matches.
+  expect(getProjectCommitStats(REPO).total).toBe(1)
+  expect(getProjectCommitStats(detached).total).toBe(1)
+  const projects = sockets
+    .find(s => s.label === 'owner-counts')
+    ?.received.filter(m => m.type === 'project_commit_stats')
+    .map(m => m.project)
+  expect(projects).toEqual([REPO, detached])
+})
+
+test('project stats are withheld from share guests and from other projects', async () => {
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1' })
+  expect(got('share-guest', 'project_commit_stats')).toBe(false)
+  expect(got('other-project', 'project_commit_stats')).toBe(false)
+})
+
+test('the boot rebuild reproduces exactly what the ingest bumps produced', async () => {
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1', committedAt: 1_700_000_000_000 })
+  await ingest({ ...PAYLOAD, hash: 'c'.repeat(40), committedAt: 1_700_000_900_000 })
+  const live = getProjectCommitStats(REPO)
+  // The map is a cache of a GROUP BY. If the two ever disagree, one of them is
+  // lying -- and a restart would silently swap which one you were reading.
+  resetProjectCommitStats()
+  rebuildProjectCommitStats()
+  expect(getProjectCommitStats(REPO)).toEqual(live)
+})
+
+test('today counts only what landed today, and rolls over at midnight', async () => {
+  const now = Date.now()
+  await ingest({ ...PAYLOAD, committedAt: now })
+  await ingest({ ...PAYLOAD, hash: 'c'.repeat(40), committedAt: now - 3 * 24 * 3_600_000 })
+  expect(getProjectCommitStats(REPO).today).toBe(1)
+  // Read it from tomorrow: nothing has landed "today" until something does.
+  expect(getProjectCommitStats(REPO, now + 24 * 3_600_000).today).toBe(0)
 })

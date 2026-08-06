@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
@@ -256,40 +255,5 @@ export function ConversationInfoDialog({
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-export function ConversationInfoButton({ conversation, visible }: { conversation: Conversation; visible: boolean }) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <>
-      {/* nested inside conversation-row interactive; semantic <button> would be invalid HTML */}
-      {/* react-doctor-disable-next-line react-doctor/prefer-tag-over-role */}
-      <span
-        role="button"
-        tabIndex={0}
-        className={cn(
-          'text-[10px] text-muted-foreground/50 hover:text-accent cursor-pointer transition-all shrink-0',
-          visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-        )}
-        title="Conversation info"
-        onClick={e => {
-          e.stopPropagation()
-          haptic('tap')
-          setOpen(true)
-        }}
-        onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.stopPropagation()
-            haptic('tap')
-            setOpen(true)
-          }
-        }}
-      >
-        {'ⓘ'}
-      </span>
-      <ConversationInfoDialog conversation={conversation} open={open} onOpenChange={setOpen} />
-    </>
   )
 }

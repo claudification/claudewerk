@@ -9,6 +9,7 @@ import { ProjectChecklist } from '../checklist/project-checklist'
 import { ProjectIcon } from '../project-icons'
 import { ProjectSettingsButton } from '../project-settings-button'
 import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
+import { PlaceScopeAffordance } from '../scope-cards/place-scope-affordance'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { ConversationItemRail } from './conversation-item-rail'
@@ -214,6 +215,7 @@ const ProjectConversationGroup = memo(
                 )}
                 {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
                 {ended.length > 0 && <DismissAllEndedButton endedIds={ended.map(s => s.id)} />}
+                <PlaceScopeAffordance project={project} />
                 <ProjectSettingsButton
                   onClick={e => {
                     e.stopPropagation()

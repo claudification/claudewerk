@@ -7,9 +7,10 @@
 
 import type { CommitIngestPayload, CommitRow } from '../../shared/commit-ledger'
 import { resolveAuth } from '../auth-routes'
-import { broadcastCommitCount, broadcastCommitRecorded } from '../commit-ledger/broadcast'
+import { broadcastCommitCount, broadcastCommitRecorded, broadcastProjectCommitStats } from '../commit-ledger/broadcast'
 import { bumpCommitCount } from '../commit-ledger/counts'
 import { CommitPayloadError, normalizeCommit } from '../commit-ledger/normalize'
+import { bumpProjectCommitStats, getProjectCommitStats } from '../commit-ledger/project-counts'
 import { insertCommit, isCommitLedgerReady } from '../commit-ledger/store'
 import type { ConversationStore } from '../conversation-store'
 
@@ -64,6 +65,12 @@ export function ingestCommit(conversationStore: ConversationStore, payload: Comm
       // (see commit-ledger/broadcast.ts). The first version of this shipped
       // through an unscoped broadcast -- do not collapse them back together.
       broadcastCommitRecorded(conversationStore, row)
+      // The PLACE tier. A commit with no conversation still lands in a project,
+      // so this bump is OUTSIDE the conversation branch below -- a human commit
+      // must move the project card too.
+      for (const project of bumpProjectCommitStats(enriched)) {
+        broadcastProjectCommitStats(conversationStore, project, { ...getProjectCommitStats(project) })
+      }
       if (enriched.conversationId) {
         const next = bumpCommitCount(enriched.conversationId)
         // The count lives OUTSIDE the conversation record, so nothing in the

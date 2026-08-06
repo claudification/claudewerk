@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'
-import { ConversationInfoButton, ConversationInfoDialog } from './conversation-info-dialog'
+import { ConversationInfoDialog } from './conversation-info-dialog'
 
 afterEach(() => {
   cleanup()
@@ -83,30 +83,5 @@ describe('ConversationInfoDialog', () => {
   })
 })
 
-describe('ConversationInfoButton', () => {
-  beforeEach(() => {
-    setStoreState({})
-  })
-
-  it('toggles the dialog open when the trigger is clicked', () => {
-    render(<ConversationInfoButton conversation={makeConversation()} visible={true} />)
-    // dialog closed by default
-    expect(screen.queryByText('Conversation Info')).toBeNull()
-    // click the info trigger (role=button)
-    const trigger = screen.getByTitle('Conversation info')
-    fireEvent.click(trigger)
-    expect(screen.getByText('Conversation Info')).toBeDefined()
-  })
-
-  it('stops click propagation so the surrounding row does not navigate', () => {
-    let outerClicked = false
-    render(
-      <div onClick={() => (outerClicked = true)}>
-        <ConversationInfoButton conversation={makeConversation()} visible={true} />
-      </div>,
-    )
-    const trigger = screen.getByTitle('Conversation info')
-    fireEvent.click(trigger)
-    expect(outerClicked).toBe(false)
-  })
-})
+// The ⓘ trigger moved to scope-cards/run-scope-affordance (it now floats the RUN
+// card on hover and opens this dialog on click) -- its tests live there.

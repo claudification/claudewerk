@@ -33,7 +33,7 @@ export function InterpunctRow({ items }: { items: ReactNode[] }) {
  *  falls back to walking the local conversation list (WS conversation updates
  *  don't carry directChildCount, so a live control panel walks -- which is also
  *  the authoritative live source the info dialog's children list uses). */
-function useDirectChildCount(conversation: Conversation): number {
+export function useDirectChildCount(conversation: Conversation): number {
   return useConversationsStore(s => {
     if (typeof conversation.directChildCount === 'number') return conversation.directChildCount
     let n = 0

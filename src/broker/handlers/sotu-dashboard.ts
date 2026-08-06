@@ -13,9 +13,11 @@ import { CONTROL_PANEL_ONLY, registerHandlers } from '../message-router'
 import { buildSotuView, maybeDistillOnRead } from '../sotu'
 import { defaultResolveSotuConfig } from '../sotu/config'
 import { readDistillEvals } from '../sotu/eval'
+import { summarizeIntegration } from '../sotu/integration'
 import { projectSlug } from '../sotu/paths'
 import { isExpired, readQueue } from '../sotu/queue'
 import { readState } from '../sotu/state'
+import { readLatestFabric } from '../sotu/view'
 import { applyWrite, buildConfigView } from './sotu-config'
 
 function sotuView(ctx: HandlerContext, data: MessageData): void {
@@ -29,6 +31,20 @@ function sotuView(ctx: HandlerContext, data: MessageData): void {
   const enabled = defaultResolveSotuConfig(project).enabled
   const view: SotuView = buildSotuView({ slug: projectSlug(project), project, enabled, now: Date.now() })
   ctx.reply({ type: 'sotu_view_result', view })
+}
+
+/** The PLACE card's INTEGRATION section: what the LAST git scan said, plus its
+ *  age. Deliberately does NOT call `maybeDistillOnRead` (which `sotu_view` does)
+ *  -- this is a hover surface, and a hover must never trigger a scan or a paid
+ *  distill. Reads state off disk and derives; nothing else. */
+function projectIntegration(ctx: HandlerContext, data: MessageData): void {
+  const project = typeof data.project === 'string' ? data.project.trim() : ''
+  if (!project) {
+    ctx.reply({ type: 'project_integration_result', error: 'project required' })
+    return
+  }
+  const fabric = readLatestFabric(projectSlug(project), Date.now())
+  ctx.reply({ type: 'project_integration_result', project, integration: summarizeIntegration(fabric) })
 }
 
 function sotuFleet(ctx: HandlerContext, _data: MessageData): void {
@@ -101,6 +117,7 @@ export function registerSotuDashboardHandlers(): void {
       sotu_evals: sotuEvals,
       sotu_config_get: sotuConfigGet,
       sotu_config_set: sotuConfigSet,
+      project_integration_request: projectIntegration,
     },
     CONTROL_PANEL_ONLY,
   )

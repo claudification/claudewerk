@@ -65,6 +65,16 @@ import {
   useConversationsStore,
 } from './use-conversations'
 import { useLiveDialogsStore } from './use-live-dialogs'
+import {
+  applyProjectCommitStats,
+  type ProjectCommitStats,
+  resetProjectCommitStatsCache,
+} from './use-project-commit-stats'
+import {
+  applyProjectIntegration,
+  type ProjectIntegration,
+  resetProjectIntegrationCache,
+} from './use-project-integration'
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
@@ -324,6 +334,11 @@ function handleConversationsList(msg: DashboardMessage) {
     useConversationsStore.getState().setConversations(msg.conversations.map(toConversation))
     applyHashRoute()
   }
+  // A full roster means a fresh (re)connection: the broker may have restarted
+  // and rebuilt its commit maps, so drop the project aggregates and re-seed on
+  // the next hover rather than serving numbers from the previous process.
+  resetProjectCommitStatsCache()
+  resetProjectIntegrationCache()
   // Version mismatch detection removed -- SW lifecycle handles update detection.
   // When sw.js changes, browser installs new SW and sends 'sw-updated' postMessage.
 }
@@ -1798,6 +1813,22 @@ function handleCommitRecorded(msg: DashboardMessage) {
 /** The pill tier: an id and an integer. Patches the conversation in place so
  *  the badge ticks up without refetching anything. Cheap enough that every
  *  panel gets it for every commit, which is the whole point of the split. */
+/** The PLACE card's git-integration snapshot (a read of the last scan -- the
+ *  request never triggers one). */
+function handleProjectIntegration(msg: DashboardMessage) {
+  const { project, integration } = msg as unknown as { project?: string; integration?: ProjectIntegration }
+  if (!project || !integration) return
+  applyProjectIntegration(project, integration)
+}
+
+/** The PLACE tier: a project URI and its aggregate. Pushed on every ingest, so
+ *  the card's numbers can never go stale behind a cache. */
+function handleProjectCommitStats(msg: DashboardMessage) {
+  const { project, stats } = msg as unknown as { project?: string; stats?: ProjectCommitStats }
+  if (!project || !stats) return
+  applyProjectCommitStats(project, stats)
+}
+
 function handleCommitCount(msg: DashboardMessage) {
   const { conversationId, commitCount } = msg as unknown as { conversationId?: string; commitCount?: number }
   if (!conversationId || typeof commitCount !== 'number') return
@@ -1922,5 +1953,7 @@ export const handlers: Record<string, MessageHandler> = {
   sotu_contribution: handleSotuContribution,
   commit_recorded: handleCommitRecorded,
   commit_count: handleCommitCount,
+  project_commit_stats: handleProjectCommitStats,
+  project_integration_result: handleProjectIntegration,
   sotu_updated: handleSotuUpdated,
 }
