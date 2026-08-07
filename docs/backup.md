@@ -290,6 +290,24 @@ docker exec broker broker-cli archive import 2026-06
 docker exec broker broker-cli archive prune 2026-06 --confirm
 ```
 
+## The archive dir must be a mount
+
+`/data/archives` is bind-mounted from the host (`ARCHIVE_DIR`, default
+`./archives`) and that is **load-bearing, not tidiness**. A cold archive is the
+only copy of its month once retention deletes those rows from `store.db`, and
+cold archives are **not** inside the hourly backup tar -- that covers the hot
+databases and the auth files, nothing else.
+
+It shipped without the mount. `/data/archives` was the container's writable
+layer, which `docker compose up -d` throws away, so any redeploy after a delete
+would have destroyed history nothing else held. Caught before the delete step
+was ever enabled, and now `exportMonth` calls `assertDurableArchiveDir()` and
+refuses to write a single row to a directory whose nearest mount point is `/`.
+Override with `CLAUDWERK_ALLOW_EPHEMERAL_ARCHIVES=1` on a throwaway broker.
+
+Back the archive directory up off-box like any other primary data. It is small
+(~2-4 GB/year) and never rewritten once a month closes.
+
 ## Why NDJSON and not CSV
 
 `transcript_entries.content` is arbitrary text carrying newlines, quotes and

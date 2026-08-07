@@ -21,6 +21,11 @@ services:
       - concentrator-data:/data/cache
       # Backup destination (bind-mount so host cron / rsync can access archives)
       - ${BACKUP_DIR:-./backups}:/data/backups
+      # Cold transcript archives. MUST be a mount: they are the only copy of a
+      # month once retention deletes it from the hot database, they are not
+      # inside the backup tar, and the container's writable layer is thrown away
+      # by every `docker compose up -d`.
+      - ${ARCHIVE_DIR:-./archives}:/data/archives
       # Frontend assets (mount over baked-in copy for hot rebuilds: bun run build:web)
       - ./web/dist:/srv/web:ro
       # Recap templates (mount over baked-in copy so .yml edits are live without a

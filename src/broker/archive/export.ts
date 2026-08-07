@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, statSync, writeFileSync } fr
 import { join } from 'node:path'
 import { BUILD_VERSION } from '../../shared/version'
 import { openBrokerDatabase } from '../sqlite-open'
+import { assertDurableArchiveDir } from './durable'
 import { archiveName, metaName, monthRange } from './month'
 import { NdjsonZstdWriter } from './ndjson'
 import { type ArchiveMeta, type ExportOptions, TRANSCRIPT_COLUMNS } from './types'
@@ -77,6 +78,10 @@ export async function exportMonth(opts: ExportOptions): Promise<ArchiveMeta> {
   const range = monthRange(month)
 
   mkdirSync(archiveDir, { recursive: true })
+  // Before a single row is written: an archive on the container's writable
+  // layer is deleted by the next redeploy, and it is the only copy of the month
+  // once retention drops it from the hot database.
+  assertDurableArchiveDir(archiveDir)
   const finalPath = join(archiveDir, archiveName(month))
   const metaPath = join(archiveDir, metaName(month))
 
