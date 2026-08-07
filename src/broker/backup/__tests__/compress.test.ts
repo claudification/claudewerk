@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,6 +11,7 @@ import {
   isAvailable,
   listArchiveMembers,
   pickCompressor,
+  resolvePipeShell,
 } from '../compress'
 
 // Must AWAIT the body before cleaning up -- a non-async wrapper tears the temp
@@ -125,6 +126,50 @@ test('assertArchiveComplete rejects a truncated archive', async () => {
       /truncated|unreadable|missing/i,
     )
   })
+})
+
+// REGRESSION -- the pipeline was handed to `sh`, and `/bin/sh` in the broker
+// image is dash: no `set -o pipefail`, so it exited 2 with "Illegal option -o
+// pipefail" and EVERY backup died at the compress step. The suite stayed green
+// because macOS ships bash as /bin/sh, so this stubs a dash-alike to reproduce
+// the container's shell on any host.
+function dashStub(dir: string): string {
+  const path = join(dir, 'dash-stub')
+  writeFileSync(
+    path,
+    [
+      '#!/bin/sh',
+      'case "$2" in',
+      '  *pipefail*) echo "set: Illegal option -o pipefail" >&2; exit 2 ;;',
+      'esac',
+      'exec /bin/sh "$@"',
+      '',
+    ].join('\n'),
+  )
+  chmodSync(path, 0o755)
+  return path
+}
+
+test('resolvePipeShell skips a shell that lacks pipefail', async () => {
+  await withTmp(async dir => {
+    const stub = dashStub(dir)
+    expect(Bun.spawnSync([stub, '-c', 'set -o pipefail'], { stderr: 'ignore' }).exitCode).toBe(2)
+    expect(resolvePipeShell([stub, 'bash'])).toBe('bash')
+  })
+})
+
+test('resolvePipeShell refuses to run when nothing supports pipefail', async () => {
+  await withTmp(async dir => {
+    // Backing up without pipefail means a truncated archive can exit 0. Refusing
+    // is the correct outcome; falling back quietly is not.
+    expect(() => resolvePipeShell([dashStub(dir)])).toThrow(/pipefail/)
+  })
+})
+
+test('the shell the pipeline actually uses honours pipefail here', () => {
+  const shell = resolvePipeShell()
+  expect(Bun.spawnSync([shell, '-c', 'false | true'], { stderr: 'ignore' }).exitCode).toBe(0)
+  expect(Bun.spawnSync([shell, '-c', 'set -o pipefail; false | true'], { stderr: 'ignore' }).exitCode).not.toBe(0)
 })
 
 test('a failing stage fails the whole pipeline rather than yielding a short archive', async () => {

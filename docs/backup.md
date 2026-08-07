@@ -104,6 +104,21 @@ Exactly 2x smaller and 2x faster. The wall-clock half is the one that matters
 for RAM: the shorter the run, the smaller the window in which the guest page
 cache is full of database pages.
 
+### The pipeline shell is not `sh`
+
+`tar | zstd > archive` is handed to a shell so the kernel owns the pipe, and
+`set -o pipefail` is what turns "tar died halfway" into a non-zero exit instead
+of a quietly short archive. **dash does not have `pipefail`.** `/bin/sh` in
+`debian:bookworm-slim` *is* dash, so `sh -c 'set -o pipefail; ...'` exits 2 with
+`Illegal option -o pipefail` before a single byte moves -- every backup fails at
+the compress step. It stayed invisible in tests because macOS ships bash as
+`/bin/sh`.
+
+`resolvePipeShell()` therefore probes `bash`, `ksh`, `zsh` and uses the first
+that honours the option, and **throws when none does** rather than running
+without it. Refusing to back up is loud and recoverable; a truncated archive
+that exits 0 is neither.
+
 The FTS strip separately switched from a second full-file `VACUUM` (which
 rewrote all 8.8 GB a second time on every run) to `PRAGMA secure_delete` before
 the drop, so the freed pages are zero-filled in place. Measured size-neutral --

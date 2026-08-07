@@ -88,9 +88,45 @@ function shq(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`
 }
 
+/** Shells to try for the archive pipeline, in preference order.
+ *
+ *  NOT `sh`. `/bin/sh` in the broker image is dash, which has no
+ *  `set -o pipefail` -- it exits 2 with "Illegal option -o pipefail" before a
+ *  single byte moves, so every backup died at the compress step while the test
+ *  suite stayed green on macOS, where `/bin/sh` is bash. */
+const PIPE_SHELL_CANDIDATES = ['bash', 'ksh', 'zsh']
+
+/** First candidate whose shell actually honours `set -o pipefail`.
+ *
+ *  Throws when none does, on purpose: without pipefail a tar that dies
+ *  mid-stream leaves a short archive that exits 0, which is precisely the
+ *  failure this module must never report as success. Refusing to back up is a
+ *  loud, recoverable problem; a silently truncated backup is not. */
+export function resolvePipeShell(candidates: string[] = PIPE_SHELL_CANDIDATES): string {
+  for (const shell of candidates) {
+    try {
+      const probe = Bun.spawnSync([shell, '-c', 'set -o pipefail'], { stdout: 'ignore', stderr: 'ignore' })
+      if (probe.exitCode === 0) return shell
+    } catch {
+      // Not on PATH -- try the next one.
+    }
+  }
+  throw new Error(
+    `no shell supporting 'set -o pipefail' found (tried: ${candidates.join(', ')}); ` +
+      'refusing to build an archive whose truncation could not be detected',
+  )
+}
+
+let cachedShell: string | null = null
+
+function pipeShell(): string {
+  if (cachedShell === null) cachedShell = resolvePipeShell()
+  return cachedShell
+}
+
 /** Run a shell pipeline and fail loudly on ANY stage, not just the last.
  *
- *  The pipe is handed to `sh` on purpose. Chaining these processes in-process
+ *  The pipe is handed to a shell on purpose. Chaining these processes in-process
  *  (`Bun.spawn(b, { stdin: a.stdout })`, draining `b.stdout` into a FileSink)
  *  LOOKS equivalent and passes at 200 MB, but silently truncates a 9.3 GB
  *  stream -- the archive lists fine with `tar -t` up to the cut and the database
@@ -101,7 +137,7 @@ function shq(s: string): string {
  *  compressor happily finishes on a short stream) a non-zero exit instead of a
  *  quietly short archive. */
 async function shellPipeline(pipe: string, what: string): Promise<void> {
-  const proc = Bun.spawn(['sh', '-c', `set -o pipefail; ${pipe}`], { stdout: 'ignore', stderr: 'pipe' })
+  const proc = Bun.spawn([pipeShell(), '-c', `set -o pipefail; ${pipe}`], { stdout: 'ignore', stderr: 'pipe' })
   const exit = await proc.exited
   if (exit !== 0) {
     throw new Error(`${what} failed (exit ${exit}): ${await new Response(proc.stderr).text()}`)
@@ -130,7 +166,7 @@ export async function extractArchive(archivePath: string, destDir: string): Prom
 export async function listArchiveMembers(archivePath: string): Promise<string[]> {
   const compressor = compressorForArchive(archivePath)
   const unzip = compressor.decompressArgv.map(shq).join(' ')
-  const proc = Bun.spawn(['sh', '-c', `set -o pipefail; ${unzip} ${shq(archivePath)} | tar -tf -`], {
+  const proc = Bun.spawn([pipeShell(), '-c', `set -o pipefail; ${unzip} ${shq(archivePath)} | tar -tf -`], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
