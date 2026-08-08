@@ -11,16 +11,11 @@
  * component that touches the host FS.
  */
 
-import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
-import type { ForkCcSessionResult } from '../../shared/protocol'
-import { buildForkMessage } from '../build-fork'
 import type { ConversationStore } from '../conversation-store'
+import { runFork } from '../fork-run'
 import { buildForkSeedPrompt, generateForkSummary } from '../fork-summary'
 import type { RouteHelpers } from './shared'
-
-/** Folding a multi-MB transcript is real work; well clear of the 5s used for listing. */
-const FORK_TIMEOUT_MS = 60_000
 
 export function createForkRouter(conversationStore: ConversationStore, helpers: RouteHelpers): Hono {
   const { httpHasPermission } = helpers
@@ -46,45 +41,13 @@ export function createForkRouter(conversationStore: ConversationStore, helpers: 
     if (!httpHasPermission(c.req.raw, 'spawn', conversation.project))
       return c.json({ error: 'Forbidden: spawn permission required for this project' }, 403)
 
-    // Fork on the conversation's OWN sentinel: the transcript lives on that
-    // host, under that host's profile config dir.
-    const alias = conversation.hostSentinelAlias
-    const sentinel = alias ? conversationStore.getSentinelByAlias(alias) : conversationStore.getSentinel()
-    if (!sentinel) {
-      return c.json({ error: alias ? `Sentinel "${alias}" not connected` : 'No sentinel connected' }, 503)
-    }
-
-    const requestId = randomUUID()
-    const forkMsg = buildForkMessage(conversation, requestId, {
+    const result = await runFork(conversationStore, conversation, {
       digestOverTokens: body.digestOverTokens,
       tailTokenBudget: body.tailTokenBudget,
       targetWorktree: body.targetWorktree,
       targetCwd: body.targetCwd,
     })
-    if (!forkMsg) {
-      return c.json({ error: 'This conversation has no Claude Code session to fork yet' }, 409)
-    }
-
-    let result: ForkCcSessionResult
-    try {
-      result = await new Promise<ForkCcSessionResult>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          conversationStore.removeForkListener(requestId)
-          reject(new Error(`Fork timed out (${FORK_TIMEOUT_MS / 1000}s)`))
-        }, FORK_TIMEOUT_MS)
-
-        conversationStore.addForkListener(requestId, msg => {
-          clearTimeout(timeout)
-          resolve(msg as ForkCcSessionResult)
-        })
-
-        sentinel.send(JSON.stringify(forkMsg))
-      })
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 504)
-    }
-
-    if (result.error) return c.json({ error: result.error }, 400)
+    if (!result.ok) return c.json({ error: result.error }, result.status)
     return c.json({ resumeId: result.resumeId, stats: result.stats })
   })
 
