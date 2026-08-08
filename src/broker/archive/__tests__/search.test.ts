@@ -65,9 +65,9 @@ test('a query containing a backslash matches too', async () => {
 test('case-insensitive by default, exact when asked', async () => {
   await withArchives(async ({ archiveDir }) => {
     expect((await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7' })).hits.length).toBe(2)
-    expect(
-      (await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7', caseSensitive: true })).hits.length,
-    ).toBe(0)
+    expect((await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7', caseSensitive: true })).hits.length).toBe(
+      0,
+    )
   })
 })
 
