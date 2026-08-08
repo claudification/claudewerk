@@ -22,6 +22,7 @@ import { listThreads } from '../desk/threads'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
+import { registerArchiveTools } from './mcp-archive-tools'
 import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
 import { listWebControlClients, resolveImplicitClient, sendWebControlRequest } from '../web-control'
@@ -117,6 +118,10 @@ export function createMcpServer(
     { capabilities: { tools: {} } },
   )
 
+  // Cold-archive tools live in their own module -- this file is already far too
+  // long, and their descriptions are long-form on purpose.
+  registerArchiveTools(mcp)
+
   // ─── notify ─────────────────────────────────────────────────────────
   mcp.tool(
     'notify',
@@ -164,7 +169,7 @@ export function createMcpServer(
   // ─── search_transcripts ─────────────────────────────────────────────
   mcp.tool(
     'search_transcripts',
-    'FTS5 full-text search across every conversation transcript stored by the broker. Use to find prior decisions, code snippets, or context from past conversations. Default `output: "conversations"` returns one row per matching conversation; `output: "snippets"` returns the actual matching transcript entries with seq numbers (feed seq into get_transcript_context to expand).',
+    'FTS5 full-text search across the HOT transcript store -- indexed, ranked, stemmed, answers in milliseconds. This is the first resort for finding prior decisions, code snippets or context. Default `output: "conversations"` returns one row per matching conversation; `output: "snippets"` returns the actual matching transcript entries with seq numbers (feed seq into get_transcript_context to expand). NOTE: months older than the hot window (~90 days) are moved out to cold archives and are NOT in this index -- an empty result for old material means "not hot", not "never happened". For those, cost the scan with archive_search_plan and then use search_archives (slow, unindexed).',
     {
       query: z.string(),
       output: z.enum(['conversations', 'snippets']).optional(),

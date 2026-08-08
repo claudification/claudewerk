@@ -1,5 +1,6 @@
 import { createHash, type Hash } from 'node:crypto'
 import { isAvailable } from '../backup/compress'
+import { LineSplitter } from './line-stream'
 
 /** Streaming NDJSON <-> zstd.
  *
@@ -88,37 +89,25 @@ export async function readNdjsonZstd(
   })
 
   const hash = createHash('sha256')
-  // A streaming decoder is mandatory, not a nicety. Chunk boundaries land
-  // mid-character constantly on real transcript text, and a per-chunk
-  // buf.toString('utf-8') turns every straddling multi-byte character into
-  // U+FFFD. The file stays byte-perfect, so the sha256 still matches and the
-  // corruption only shows up when the decoded rows are compared against the
-  // database -- which is exactly the check that guards deletion.
-  const decoder = new TextDecoder('utf-8')
+  // LineSplitter owns the streaming-decode and carry rules; getting either
+  // wrong silently corrupts decoded rows. See its header.
+  const splitter = new LineSplitter()
   let bytes = 0
   let rows = 0
-  let carry = ''
 
   for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
     const buf = Buffer.from(chunk)
     hash.update(buf)
     bytes += buf.length
-
-    // Rows straddle chunk boundaries too, so the tail after the last newline is
-    // carried forward rather than parsed.
-    const text = carry + decoder.decode(buf, { stream: true })
-    const lines = text.split('\n')
-    carry = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line) continue
+    for (const line of splitter.push(buf)) {
       await onRow(JSON.parse(line) as Record<string, unknown>, rows)
       rows++
     }
   }
 
-  carry += decoder.decode()
-  if (carry.trim()) {
-    await onRow(JSON.parse(carry) as Record<string, unknown>, rows)
+  const last = splitter.flush()
+  if (last !== null) {
+    await onRow(JSON.parse(last) as Record<string, unknown>, rows)
     rows++
   }
 

@@ -5,7 +5,7 @@ import { archiveName, metaName, monthOf, monthsBetween } from './month'
 import { ARCHIVE_PATTERN, type ArchiveFileInfo } from './types'
 import { readMeta } from './verify'
 
-function listArchives(archiveDir: string): ArchiveFileInfo[] {
+export function listArchives(archiveDir: string): ArchiveFileInfo[] {
   if (!existsSync(archiveDir)) return []
   const out: ArchiveFileInfo[] = []
   for (const filename of readdirSync(archiveDir)) {

@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import type { Coverage } from '../../archive/list'
 import type { VerifyResult } from '../../archive/types'
 import type { MaintenanceReport } from '../../maintenance/types'
+import { searchOptionsFrom } from '../archive-commands'
 import { renderCoverage, renderVerify } from '../archive-render'
+import { coverageLine, truncationLine } from '../archive-search-render'
 import { maintenanceOptionsFrom } from '../maintenance-commands'
 import { renderReport } from '../maintenance-render'
 import { parseArgs } from '../parse-args'
@@ -141,6 +143,94 @@ test('renderReport surfaces the abort reason and archived months', () => {
   expect(text).toContain('Archived: 2026-03, 2026-04')
   expect(text).toContain('Rows:    100 -> 58')
   expect(text).toContain('Deleted: 42')
+})
+
+test('searchOptionsFrom bounds an unbounded scan by default', () => {
+  const opts = searchOptionsFrom(parseArgs(['archive', 'search', 'needle'], '/tmp/cache'))
+  expect(opts.query).toBe('needle')
+  expect(opts.limit).toBe(50)
+  expect(opts.maxSeconds).toBe(120)
+  expect(opts.regex).toBe(false)
+  expect(opts.caseSensitive).toBe(false)
+  // No month means every archived month is in scope -- the expensive default,
+  // which is why the limit and the clock above are not optional.
+  expect(opts.months).toBeUndefined()
+  expect(opts.conversationId).toBeUndefined()
+})
+
+test('searchOptionsFrom honours the narrowing flags', () => {
+  const argv = ['archive', 'search', 'needle', '2026-04', '--regex', '--case-sensitive']
+  const opts = searchOptionsFrom(
+    parseArgs([...argv, '--limit', '5', '--max-seconds', '3', '--conversation', 'conv_x'], '/tmp/cache'),
+  )
+  expect(opts.months).toEqual(['2026-04'])
+  expect(opts.conversationId).toBe('conv_x')
+  expect(opts.limit).toBe(5)
+  expect(opts.maxSeconds).toBe(3)
+  expect(opts.regex).toBe(true)
+  expect(opts.caseSensitive).toBe(true)
+})
+
+test('the coverage line always states what was scanned', () => {
+  const line = coverageLine({
+    query: 'needle',
+    regex: false,
+    hits: [],
+    scannedMonths: ['2026-04', '2026-03'],
+    skippedMonths: [],
+    rowsScanned: 1234,
+    bytesScanned: 5 * 1024 * 1024,
+    elapsedMs: 2500,
+    truncated: false,
+    truncatedReason: '',
+  })
+  expect(line).toContain('0 hit(s) for "needle"')
+  expect(line).toContain('scanned 2026-04, 2026-03')
+  expect(line).toContain('1,234 rows')
+  expect(line).toContain('2.5s')
+})
+
+test('a truncated search says so and names the months it never opened', () => {
+  const result = {
+    query: 'needle',
+    regex: false,
+    hits: [],
+    scannedMonths: ['2026-04'],
+    skippedMonths: ['2026-03', '2026-02'],
+    rowsScanned: 10,
+    bytesScanned: 10,
+    elapsedMs: 10,
+    truncated: true,
+    truncatedReason: 'time' as const,
+  }
+  expect(truncationLine(result)).toBe('INCOMPLETE: ran out of time budget. NOT searched: 2026-03, 2026-02')
+  expect(truncationLine({ ...result, truncatedReason: 'limit' as const })).toContain('hit the result limit')
+  // A complete answer must not carry a warning line at all.
+  expect(truncationLine({ ...result, truncated: false, truncatedReason: '' as const })).toBe('')
+})
+
+test('archive search takes its query positionally', () => {
+  const args = parseArgs(['archive', 'search', 'the missing decision'], '/tmp/cache')
+  expect(args.subCommand).toBe('search')
+  expect(args.queryArg).toBe('the missing decision')
+  expect(args.monthArg).toBe('')
+})
+
+test('a YYYY-MM positional narrows the month rather than becoming the query', () => {
+  // `archive search foo 2026-04` must search for foo in April, not for "2026-04".
+  const args = parseArgs(['archive', 'search', 'foo', '2026-04', '--regex', '--limit', '5'], '/tmp/cache')
+  expect(args.queryArg).toBe('foo')
+  expect(args.monthArg).toBe('2026-04')
+  expect(args.regexFlag).toBe(true)
+  expect(args.limitArg).toBe('5')
+})
+
+test('a query that looks like a month still lands in the month slot first', () => {
+  // Documented consequence of the ordering above: to search for the literal
+  // text "2026-04" you pass --month explicitly or quote it into --regex.
+  const args = parseArgs(['archive', 'search', '2026-04'], '/tmp/cache')
+  expect(args.monthArg).toBe('2026-04')
+  expect(args.queryArg).toBe('')
 })
 
 test('maintenanceOptionsFrom applies the safety defaults', () => {
