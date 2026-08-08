@@ -331,6 +331,10 @@ export interface ConversationStore {
   addCcSessionsListener: (requestId: string, cb: (result: unknown) => void) => void
   removeCcSessionsListener: (requestId: string) => void
   resolveCcSessions: (requestId: string, result: unknown) => void
+  /** Pending `fork_cc_session` RPCs by requestId. */
+  addForkListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeForkListener: (requestId: string) => void
+  resolveFork: (requestId: string, result: unknown) => boolean
   /** Pending `git_log_request` RPCs by requestId (recap grounding). */
   addGitLogListener: (requestId: string, cb: (result: unknown) => void) => void
   removeGitLogListener: (requestId: string) => void
@@ -3106,6 +3110,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addCcSessionsListener,
     removeCcSessionsListener,
     resolveCcSessions,
+    addForkListener,
+    removeForkListener,
+    resolveFork,
     addGitLogListener,
     removeGitLogListener,
     resolveGitLog,
@@ -3393,6 +3400,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addCcSessionsListener,
     removeCcSessionsListener,
     resolveCcSessions,
+    addForkListener,
+    removeForkListener,
+    resolveFork,
     addGitLogListener,
     removeGitLogListener,
     resolveGitLog,
