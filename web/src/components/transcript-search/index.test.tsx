@@ -1,5 +1,5 @@
 /**
- * Regression test for the setTimeout leak fix at transcript-search.tsx:344.
+ * Regression test for the setTimeout leak fix in the search dialog shell.
  *
  * When the search dialog opens a 50ms setTimeout is scheduled to focus the
  * input. If the component unmounts before the timer fires the timer was
@@ -16,7 +16,7 @@ import { executeCommand } from '@/lib/commands'
 // so the mocks still apply -- and transcript-search's module graph costs
 // seconds to transform on a cold run, which blew the 5s per-test timeout when
 // that cost sat inside the test body. Same shape as settings-page.test.tsx.
-import { TranscriptSearch } from './transcript-search'
+import { TranscriptSearch } from './index'
 
 const STORE_STATE = {
   controlPanelPrefs: {},
