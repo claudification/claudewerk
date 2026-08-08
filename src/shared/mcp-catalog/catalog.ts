@@ -77,6 +77,18 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   },
   { name: 'commit_context', group: 'core', sites: BOTH, summary: 'Commit hash -> conversation + transcript position' },
   { name: 'get_transcript_context', group: 'core', sites: BOTH, summary: 'Transcript window around a seq' },
+  {
+    name: 'archive_search_plan',
+    group: 'core',
+    sites: BOTH,
+    summary: 'Cost a cold-archive scan without running it',
+  },
+  {
+    name: 'search_archives',
+    group: 'core',
+    sites: BOTH,
+    summary: 'SLOW unindexed grep over cold monthly archives',
+  },
 
   // ── project board (both sites) ─────────────────────────────────────
   { name: 'project_list', group: 'project', sites: BOTH, summary: 'List project-board tasks' },
@@ -258,8 +270,24 @@ export interface DeferredBinding {
  * Every gap must be listed here with a reason -- a silent gap is a test failure.
  * Removing an entry without binding the tool re-fails the test (stale defer).
  *
- * Empty as of Phase 5 (plan-web-control-host-bridge.md): the web-control group is
- * now bound at BOTH sites (host via web_control_relay -> broker), so there are no
- * remaining deferred gaps.
+ * The web-control group closed in Phase 5 (plan-web-control-host-bridge.md): it is
+ * bound at BOTH sites (host via web_control_relay -> broker).
  */
-export const DEFERRED_BINDINGS: readonly DeferredBinding[] = []
+export const DEFERRED_BINDINGS: readonly DeferredBinding[] = [
+  // Found 2026-08-08 while catalguing the cold-archive tools: both commit-ledger
+  // tools are catalogued for BOTH sites but only the host binds them, and no
+  // defer entry recorded it -- so this gate was already failing before that work
+  // began. Recorded as the real gap it is rather than quietly narrowing `sites`;
+  // the ledger lives in the broker, so binding them there is straightforward
+  // work, just nobody's yet.
+  {
+    site: 'broker',
+    name: 'search_commits',
+    reason: 'Bound on the host only; broker binding never written (pre-existing gap, found 2026-08-08)',
+  },
+  {
+    site: 'broker',
+    name: 'commit_context',
+    reason: 'Bound on the host only; broker binding never written (pre-existing gap, found 2026-08-08)',
+  },
+]
