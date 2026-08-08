@@ -71,6 +71,7 @@ import type {
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
+import { transcriptSlug } from '../shared/transcript-path'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -442,9 +443,17 @@ function reportDeadPids(ws: WebSocket) {
 
 // ─── CC Transcript Discovery ─────────────────────────────────────────
 
+/** CC slugs the RESOLVED path, so symlinked components must be expanded first. */
+function realpathIfPossible(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return p // cwd does not exist on this host -- slug the path as given
+  }
+}
+
 function listCcSessions(cwd: string, configDir: string): ListCcSessionsResult['ccSessions'] {
-  const mangledCwd = cwd.replace(/\//g, '-')
-  const projectDir = join(configDir, 'projects', mangledCwd)
+  const projectDir = join(configDir, 'projects', transcriptSlug(realpathIfPossible(cwd)))
   if (!existsSync(projectDir)) return []
 
   const entries: ListCcSessionsResult['ccSessions'] = []
