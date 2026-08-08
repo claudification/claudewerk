@@ -1,5 +1,6 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { memo, useState } from 'react'
+import { reservedRowHeight } from '@/components/sidebar/row-height-cache'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectPath } from '@/lib/types'
 import { formatAge, haptic, projectDisplayName } from '@/lib/utils'
@@ -50,8 +51,11 @@ export const InactiveProjectItem = memo(
               haptic('tap')
               selectConversation(latest.id, 'click')
             }}
-            className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer appearance-none bg-transparent text-inherit [content-visibility:auto] [contain-intrinsic-size:auto_2.5rem]"
-            style={displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : undefined}
+            className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer appearance-none bg-transparent text-inherit [content-visibility:auto]"
+            style={{
+              ...(displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : null),
+              containIntrinsicSize: reservedRowHeight(latest.id, 2.5),
+            }}
             title={`${conversations.length} conversation${conversations.length > 1 ? 's' : ''}\n${projectPath(latest.project)}`}
           >
             <div className="flex items-center gap-1.5">

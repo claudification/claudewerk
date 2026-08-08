@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Command, Crosshair, FileText, FolderTree, Menu } from 'lucide-react'
+import { Command, FileText, Menu } from 'lucide-react'
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react'
 import { ActionFab } from '@/components/action-fab'
 import { AudioPlayerHost } from '@/components/audio-player-host'
@@ -24,22 +24,23 @@ import { LinkPreviewPane } from '@/components/link-preview-pane'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
-import { openOrganizeProjects, useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
+import { useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
-import { ProjectList } from '@/components/project-list'
 import { quickTaskBus } from '@/components/quick-task-trigger'
 import { PublicRecapView } from '@/components/recap/public-recap-view'
 import { recapOpenBus } from '@/components/recap/recap-open-trigger'
 import { recapConfigBus } from '@/components/recap-jobs/recap-config-trigger'
 import { recapHistoryBus } from '@/components/recap-jobs/recap-history-trigger'
-import { RecapJobsWidget } from '@/components/recap-jobs/recap-jobs-widget'
 import { RenameModal } from '@/components/rename-modal'
 import { reviveDialogBus } from '@/components/revive-dialog-trigger'
 import { manageChatConnectionsBus } from '@/components/settings/manage-chat-connections-trigger'
 import { manageProjectLinksBus } from '@/components/settings/manage-project-links-trigger'
 import { SharedConversationView } from '@/components/shared-conversation-view'
 import { ShortcutHelp } from '@/components/shortcut-help'
+import { Sidebar } from '@/components/sidebar/sidebar'
+import { useSidebarOpen } from '@/components/sidebar/sidebar-open-state'
+import { SidebarExpandTab } from '@/components/sidebar/sidebar-tools'
 import { spawnDialogBus } from '@/components/spawn-dialog-trigger'
 import { SyncIndicator } from '@/components/sync-indicator'
 import { taskBatchBus } from '@/components/task-batch-trigger'
@@ -48,7 +49,6 @@ import { TerminateLineageConfirmDialog } from '@/components/terminate-lineage-co
 import { ToastContainer } from '@/components/toast'
 import { TranscriptSearch } from '@/components/transcript-search'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { UpdateBanner } from '@/components/update-banner'
 import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
@@ -219,80 +219,6 @@ const BatchModeModal = lazy(() =>
   import('@/components/command-palette/batch-mode').then(m => ({ default: m.BatchModeModal })),
 )
 
-// Conversation-list header tools, shared by the mobile sheet + desktop sidebar
-// headers (organize + locate). The collapse button is desktop-only and stays
-// at each call site.
-function SidebarTools({ canLocate }: { canLocate: boolean }) {
-  return (
-    <>
-      <button
-        type="button"
-        onClick={openOrganizeProjects}
-        className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-        title="Organize projects & groups"
-      >
-        <FolderTree className="size-3.5" />
-      </button>
-      {canLocate && (
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('locate-conversation'))}
-          className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-          title="Scroll to current conversation"
-        >
-          <Crosshair className="size-3.5" />
-        </button>
-      )}
-    </>
-  )
-}
-
-// Desktop-only conversation-list sidebar (collapsed rail <-> full panel).
-// Extracted from Dashboard to keep that shell component's complexity down.
-function DesktopSidebar({
-  collapsed,
-  onToggle,
-  canLocate,
-}: {
-  collapsed: boolean
-  onToggle: () => void
-  canLocate: boolean
-}) {
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="hidden lg:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-5 h-10 rounded-r-md bg-muted/80 hover:bg-muted border border-l-0 border-border text-muted-foreground hover:text-foreground transition-colors"
-        title="Expand sidebar (Ctrl+B)"
-      >
-        <ChevronRight className="size-3" />
-      </button>
-    )
-  }
-  return (
-    <div className="hidden lg:flex w-[350px] shrink-0 border border-border overflow-hidden flex-col">
-      <div className="flex items-center justify-end gap-1 px-1 pt-1 shrink-0">
-        <SidebarTools canLocate={canLocate} />
-        <button
-          type="button"
-          onClick={onToggle}
-          className="p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
-          title="Collapse sidebar (Ctrl+B)"
-        >
-          <ChevronLeft className="size-3.5" />
-        </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-y-auto p-2 pt-0">
-        <PanelBoundary name="Conversation list">
-          <ProjectList />
-        </PanelBoundary>
-      </div>
-      <RecapJobsWidget />
-    </div>
-  )
-}
-
 // Pre-existing critical-complexity app shell (CRAP is unavoidable for an
 // uncovered top-level component this size). This change net-REDUCES it (19->18
 // cyclomatic, via DesktopSidebar/SidebarTools extraction); a full shell split is
@@ -321,10 +247,7 @@ function handleSwitcherSelect(id: string) {
 
 // fallow-ignore-next-line complexity
 function Dashboard() {
-  const [sheetOpen, setSheetOpen] = useState(
-    () => isMobileViewport() && !useConversationsStore.getState().selectedConversationId,
-  )
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true')
+  const sidebar = useSidebarOpen()
   const [showUserAdmin, setShowUserAdmin] = useState(false)
   const [showSentinelManager, setShowSentinelManager] = useState(false)
   const [showGatewayManager, setShowGatewayManager] = useState(false)
@@ -346,18 +269,11 @@ function Dashboard() {
   const showDebugConsole = useConversationsStore(s => s.showDebugConsole)
   const canAdmin = useConversationsStore(s => s.permissions.canAdmin)
 
-  const swipeHandlers = useSwipeToOpen(() => setSheetOpen(true))
-
-  function toggleSidebar() {
-    setSidebarCollapsed(prev => {
-      const next = !prev
-      localStorage.setItem('sidebar-collapsed', String(next))
-      return next
-    })
-  }
+  // Edge-swipe from the left opens the same sidebar the hamburger does.
+  const swipeHandlers = useSwipeToOpen(sidebar.show)
 
   useSyncEffects()
-  useGlobalCommands(toggleSidebar)
+  useGlobalCommands(sidebar.toggle)
 
   // Listen for user admin open event (from command palette)
   useEffect(() => {
@@ -395,56 +311,17 @@ function Dashboard() {
     return () => window.removeEventListener('open-search-index', handleOpen)
   }, [])
 
-  // Close sheet when a conversation is selected (mobile UX)
-  useEffect(() => {
-    if (selectedConversationId) {
-      setSheetOpen(false)
-    }
-  }, [selectedConversationId])
-
-  // When mobile sheet opens, scroll the current conversation into view.
-  // Sheet slide-in animation runs 500ms (see ui/sheet.tsx), so we wait past it
-  // before firing locate -- scrolling mid-animation either no-ops (item appears
-  // "in view" inside the off-screen viewport) or gets visually masked by the
-  // slide. The handler uses block:'center', behavior:'auto' for a definitive land.
-  useEffect(() => {
-    if (!sheetOpen || !selectedConversationId) return
-    const timer = setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('locate-conversation'))
-    }, 540)
-    return () => clearTimeout(timer)
-  }, [sheetOpen, selectedConversationId])
-
   return (
     <div className="h-full flex flex-col p-2 sm:p-4 max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>
       {swUpdate && <UpdateBanner swUpdate={swUpdate} onDismiss={() => setSwUpdate(null)} />}
 
-      {/* Header with mobile menu */}
+      {/* Header. The hamburger is the ONLY mobile-specific piece of sidebar
+          chrome -- it toggles the same state the desktop chevron does. */}
       <div className="flex items-center gap-2 mb-4 shrink-0">
-        <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="lg:hidden shrink-0">
-              <Menu className="size-5" />
-              <span className="sr-only">Toggle conversations</span>
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[320px] sm:w-[380px] p-0">
-            <SheetHeader className="sr-only">
-              <SheetTitle>Conversations</SheetTitle>
-            </SheetHeader>
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-end gap-1 px-2 pt-2 shrink-0">
-                <SidebarTools canLocate={!!selectedConversationId} />
-              </div>
-              <div className="flex-1 overflow-y-auto p-2">
-                <PanelBoundary name="Conversation list">
-                  <ProjectList />
-                </PanelBoundary>
-              </div>
-              <RecapJobsWidget />
-            </div>
-          </SheetContent>
-        </Sheet>
+        <Button variant="outline" size="icon" className="lg:hidden shrink-0" onClick={sidebar.toggle}>
+          <Menu className="size-5" />
+          <span className="sr-only">Toggle conversations</span>
+        </Button>
 
         <div className="flex-1 min-w-0">
           <PanelBoundary name="Header">
@@ -490,9 +367,13 @@ function Dashboard() {
           without ever popping the fullscreen overlay. Self-hides when empty. */}
       <AgentShellHost />
 
-      {/* Main content */}
-      <div className="flex gap-4 flex-1 min-h-0 relative">
-        <DesktopSidebar collapsed={sidebarCollapsed} onToggle={toggleSidebar} canLocate={!!selectedConversationId} />
+      {/* Main content. ONE sidebar for both presentations -- see
+          components/sidebar/sidebar.tsx for why it is never unmounted. */}
+      {/* No `gap` here: the sidebar supplies its own right margin only while
+          expanded, so a collapsed dock leaves no orphan 16px gutter. */}
+      <div className="flex flex-1 min-h-0 relative">
+        <Sidebar state={sidebar} />
+        {!sidebar.open && <SidebarExpandTab onExpand={sidebar.toggle} />}
 
         <div className="flex-1 border border-border overflow-hidden flex flex-col min-w-0">
           {canAdmin && <LoginHintBanner />}

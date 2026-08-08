@@ -1,4 +1,5 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
+import { reservedRowHeight } from '@/components/sidebar/row-height-cache'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
 import { isStatusSuperseded } from '@/lib/status-style'
@@ -353,12 +354,14 @@ export function InlineDescription({ conversation }: { conversation: Conversation
 
 /** Default-view row chrome: bordered card + per-row project/plan stripe.
  *  content-visibility:auto skips render-tree + layout + paint for off-screen
- *  rows (the sidebar's dominant cost); contain-intrinsic-size reserves a height
- *  so the scrollbar stays stable. The element stays in the DOM either way. */
+ *  rows (the sidebar's dominant cost). The reserved height comes from
+ *  `reservedRowHeight` as an inline style rather than a flat class, so a row we
+ *  have measured reserves its REAL height -- a wrong reservation is what makes
+ *  a scroll-into-view land and then get shoved off target. */
 function defaultShellClass(isSelected: boolean, planMode: boolean, ghost: boolean, displayColor: string | undefined) {
   return cn(
     'w-full text-left border transition-colors group cursor-pointer [content-visibility:auto]',
-    'p-2 pl-4 text-[11px] [contain-intrinsic-size:auto_2.25rem]',
+    'p-2 pl-4 text-[11px]',
     isSelected && planMode
       ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
       : isSelected
@@ -390,7 +393,7 @@ function defaultShellStyle(isSelected: boolean, planMode: boolean, displayColor:
 function railShellClass(isSelected: boolean, planMode: boolean, ghost: boolean) {
   return cn(
     'w-full text-left transition-colors group cursor-pointer [content-visibility:auto] rounded',
-    'px-2 py-1.5 text-[11px] [contain-intrinsic-size:auto_2rem]',
+    'px-2 py-1.5 text-[11px]',
     isSelected && planMode
       ? 'bg-blue-500/15 ring-1 ring-blue-500/40'
       : isSelected
@@ -423,6 +426,7 @@ export function ConversationItemShell({
   children: ReactNode
 }) {
   const planMode = !!conversation.planMode
+  const reserved = { containIntrinsicSize: reservedRowHeight(conversation.id, rail ? 2 : 2.25) }
   return (
     // shell wraps nested interactives (dismiss/attach/etc); semantic <button> would nest buttons
     <div
@@ -439,7 +443,7 @@ export function ConversationItemShell({
           ? railShellClass(isSelected, planMode, ghost)
           : defaultShellClass(isSelected, planMode, ghost, displayColor)
       }
-      style={rail ? undefined : defaultShellStyle(isSelected, planMode, displayColor)}
+      style={rail ? reserved : { ...defaultShellStyle(isSelected, planMode, displayColor), ...reserved }}
     >
       <div className="flex items-start">
         <div className="flex-1 min-w-0">{children}</div>

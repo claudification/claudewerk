@@ -18,6 +18,15 @@ export function moveIntoGroup(tree: ProjectOrderNode[], project: string, groupId
   return moved.filter(n => n.id !== project)
 }
 
+/** Rename `groupId` wherever it sits, at any depth. Every other node is untouched. */
+export function renameGroup(tree: ProjectOrderNode[], groupId: string, name: string): ProjectOrderNode[] {
+  return tree.map(node => {
+    if (node.type !== 'group') return node
+    if (node.id === groupId) return { ...node, name }
+    return { ...node, children: renameGroup(node.children, groupId, name) }
+  })
+}
+
 /** Pull `project` out of every group, leaving it at the root exactly once. */
 export function removeFromGroups(tree: ProjectOrderNode[], project: string): ProjectOrderNode[] {
   const stripped = tree.map(node =>

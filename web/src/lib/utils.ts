@@ -2,16 +2,23 @@ import { projectIdentityKey } from '@shared/project-uri'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { BUILD_VERSION } from '../../../src/shared/version'
+import { PHONE_BREAKPOINT } from './breakpoints'
 import { extractProjectLabel, projectPath } from './types'
 
 /** Key used to detect post-reload outcome and surface a feedback toast. */
 export const PRE_RELOAD_KEY = 'rclaude-pre-reload'
 
-/** Tailwind `sm` breakpoint - below this is mobile */
-const MOBILE_BREAKPOINT = 640
-
+/**
+ * "Is this a phone" -- soft keyboard, no hover, thumb-sized targets. Drives input
+ * focus, copy menus, link handling.
+ *
+ * NOT the same question as "does the sidebar overlay the content"; that one is
+ * `isSidebarOverlay()` at `LAYOUT_BREAKPOINT`. Both numbers now live in
+ * `lib/breakpoints.ts`, which explains why they differ -- they used to differ by
+ * accident, and every tablet fell in the gap.
+ */
 export function isMobileViewport() {
-  return window.innerWidth < MOBILE_BREAKPOINT
+  return window.innerWidth < PHONE_BREAKPOINT
 }
 
 const IS_TOUCH = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
