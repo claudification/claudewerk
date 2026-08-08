@@ -22,6 +22,22 @@ function buildSpawnToolInputSchema(): {
         .optional()
         .describe('Target conversation ID from list_conversations. Required for revive and restart actions.'),
       resume_id: z.string().optional().describe('Claude Code session ID to resume (alias for resumeId).'),
+      fork_from: z
+        .string()
+        .optional()
+        .describe(
+          'FORK an existing conversation: pass its conversationId (from list_conversations). The new ' +
+            "conversation inherits that one's context and a provenance block telling it how to read the " +
+            'original. Do not pass mode/resume_id with this -- fork_from sets them.',
+        ),
+      fork_strategy: z
+        .enum(['full', 'condensed', 'summarized'])
+        .optional()
+        .describe(
+          'How much to carry over when fork_from is set. "condensed" (default) digests large tool outputs, ' +
+            'keeps recent turns verbatim, ~80% smaller and free; "full" copies everything; "summarized" ' +
+            'writes a continuation summary and starts fresh from it (costs a model call).',
+        ),
       host: z.string().optional().describe('Target sentinel alias (from list_hosts). Maps to sentinel field.'),
     })
     .partial({ cwd: true })
@@ -134,9 +150,20 @@ async function handleSpawn(
     }
   const mode = params.mode as 'fresh' | 'resume' | undefined
   const resumeId = params.resume_id
-  if (mode === 'resume' && !resumeId) {
+  const forkFrom = params.fork_from
+  if (mode === 'resume' && !resumeId && !forkFrom) {
     return {
       content: [{ type: 'text', text: 'Error: resume_id is required when mode is "resume"' }],
+      isError: true,
+    }
+  }
+  // Caught here as well as broker-side so the agent gets a direct answer rather
+  // than a spawn failure it has to interpret.
+  if (forkFrom && (resumeId || mode === 'resume')) {
+    return {
+      content: [
+        { type: 'text', text: 'Error: fork_from cannot be combined with mode/resume_id -- it sets them itself' },
+      ],
       isError: true,
     }
   }
@@ -145,7 +172,17 @@ async function handleSpawn(
 
   const onProgress = buildProgressHandler(toolCtx)
 
-  const { jobId: _jobId, cwd: _cwd, host: _host, ...spawnRest } = params as SpawnRequest & Record<string, unknown>
+  // fork_from / fork_strategy are the MCP snake_case spelling; strip them here
+  // and pass the schema's camelCase names, or the broker would see both an
+  // unknown field and no fork at all.
+  const {
+    jobId: _jobId,
+    cwd: _cwd,
+    host: _host,
+    fork_from: _forkFrom,
+    fork_strategy: _forkStrategy,
+    ...spawnRest
+  } = params as SpawnRequest & Record<string, unknown>
   const sentinel = (params.host as string) || (params.sentinel as string) || undefined
   const result = (await ctx.callbacks.onSpawnConversation?.({
     ...spawnRest,
@@ -153,6 +190,8 @@ async function handleSpawn(
     sentinel,
     mode,
     resumeId,
+    forkFrom,
+    forkStrategy: params.fork_strategy as 'full' | 'condensed' | 'summarized' | undefined,
     mkdir,
     headless: spawnHeadless,
     onProgress,
@@ -196,7 +235,11 @@ async function handleSpawn(
     debug(`[channel] spawn_conversation failed: ${result?.error}`)
     return { content: [{ type: 'text', text: result?.error || 'Failed to spawn conversation' }], isError: true }
   }
-  const modeDesc = mode === 'resume' ? `resuming ${resumeId}` : 'fresh start'
+  const modeDesc = forkFrom
+    ? `forked from ${forkFrom.slice(0, 8)}, ${params.fork_strategy || 'condensed'}`
+    : mode === 'resume'
+      ? `resuming ${resumeId}`
+      : 'fresh start'
   debug(`[channel] spawn_conversation: ${cwd} (${modeDesc}) conversation=${result.conversation ? 'ready' : 'pending'}`)
 
   if (result.conversation) {

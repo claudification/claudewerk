@@ -10,6 +10,7 @@
  */
 import { isHiddenEvent, kindOf, visibilityOf } from '@shared/system-events'
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptUserEntry } from '@/lib/types'
+import { hasForkProvenance, parseForkProvenance } from '../fork-provenance-parse'
 import {
   extractSkillName,
   hasRenderableMessageContent,
@@ -184,6 +185,26 @@ function handleUser(entry: TranscriptEntry, state: GroupingState): boolean {
         }
       }
       break // only check the most recent user group
+    }
+  }
+
+  // A fork's provenance block. Rendered as a header card instead of dumping the
+  // pseudo-XML plus the fold's machine-written preamble at the top of every
+  // forked conversation. Cheap substring guard before the regex -- this runs on
+  // every user entry.
+  if (hasForkProvenance(textContent)) {
+    const parsed = parseForkProvenance(textContent)
+    if (parsed) {
+      state.current = null
+      state.groups.push({
+        type: 'forked',
+        timestamp: entry.timestamp || '',
+        entries: [],
+        forkParentId: parsed.conversationId,
+        forkParentName: parsed.conversationName,
+        forkPreamble: parsed.rest || undefined,
+      })
+      return true
     }
   }
 

@@ -29,6 +29,42 @@ export interface ListenerRegistry {
   addPatchListener: (patchId: string, cb: (result: unknown) => void) => void
   removePatchListener: (patchId: string) => void
   resolvePatch: (patchId: string, result: unknown) => boolean
+  /** Pending `fork_cc_session` RPCs keyed by requestId. */
+  addForkListener: (requestId: string, cb: (result: unknown) => void) => void
+  removeForkListener: (requestId: string) => void
+  resolveFork: (requestId: string, result: unknown) => boolean
+}
+
+/**
+ * One pending-RPC slot: add / remove / resolve over a single Map.
+ *
+ * The seven triples below predate this and are hand-rolled copies of exactly
+ * this shape. They are left alone deliberately -- they split into void-returning
+ * and boolean-returning variants, which is precisely where a mechanical sweep
+ * introduces a silent behaviour change -- but NEW slots use this instead of
+ * growing the copy-paste.
+ */
+function createPendingSlot(): {
+  add: (id: string, cb: (result: unknown) => void) => void
+  remove: (id: string) => void
+  resolve: (id: string, result: unknown) => boolean
+} {
+  const listeners = new Map<string, (result: unknown) => void>()
+  return {
+    add: (id, cb) => {
+      listeners.set(id, cb)
+    },
+    remove: id => {
+      listeners.delete(id)
+    },
+    resolve: (id, result) => {
+      const cb = listeners.get(id)
+      if (!cb) return false
+      listeners.delete(id)
+      cb(result)
+      return true
+    },
+  }
 }
 
 export function createListenerRegistry(): ListenerRegistry {
@@ -39,8 +75,12 @@ export function createListenerRegistry(): ListenerRegistry {
   const ccSessionsListeners = new Map<string, (result: unknown) => void>()
   const gitLogListeners = new Map<string, (result: unknown) => void>()
   const patchListeners = new Map<string, (result: unknown) => void>()
+  const fork = createPendingSlot()
 
   return {
+    addForkListener: fork.add,
+    removeForkListener: fork.remove,
+    resolveFork: fork.resolve,
     addSpawnListener(requestId, cb) {
       spawnListeners.set(requestId, cb)
     },

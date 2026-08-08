@@ -26,6 +26,7 @@
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { claudeConfigDir } from '../shared/claude-config-dir'
+import { transcriptSlug } from '../shared/transcript-path'
 
 /** The `<configDir>/projects/<slug>` directory for a worker `cwd`. */
 export function transcriptProjectDir(cwd: string): string {
@@ -35,8 +36,7 @@ export function transcriptProjectDir(cwd: string): string {
   } catch {
     // cwd does not exist on this host -- fall back to the path as given.
   }
-  const slug = realCwd.replace(/[/._]/g, '-')
-  return join(claudeConfigDir(), 'projects', slug)
+  return join(claudeConfigDir(), 'projects', transcriptSlug(realCwd))
 }
 
 /** The JSONL transcript path for a `(cwd, ccSessionId)` pair. */

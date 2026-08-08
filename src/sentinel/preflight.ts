@@ -12,6 +12,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { worktreeBranch, worktreePath } from '../shared/worktree-path'
 
 export type PreflightSeverity = 'fail' | 'warn'
 
@@ -78,9 +79,9 @@ export function preflightSpawn(input: PreflightInput): PreflightResult {
 
   // ─── 2. Worktree consistency (HARD) ───────────────────────────────
   if (input.worktree) {
-    const wtPath = join(input.cwd, '.claude', 'worktrees', input.worktree)
+    const wtPath = worktreePath(input.cwd, input.worktree)
     // Naming convention from scripts/worktree-create.sh: `worktree-{name}`
-    const branchName = `worktree-${input.worktree}`
+    const branchName = worktreeBranch(input.worktree)
     const pathExists = existsSync(wtPath)
     const branchRes = runGit(['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], input.cwd)
     const branchExists = branchRes.ok

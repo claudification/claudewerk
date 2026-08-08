@@ -108,6 +108,22 @@ export const spawnRequestSchema = z.object({
   mkdir: z.boolean().optional().describe('Create cwd if it does not exist'),
   mode: spawnModeEnum.optional().describe('"fresh" (default) or "resume" to resume a specific CC session'),
   resumeId: z.string().optional().describe('Claude Code session ID to resume when mode=resume'),
+  forkFrom: z
+    .string()
+    .optional()
+    .describe(
+      'Fork an existing CONVERSATION (our conversationId, not a CC session id). The broker folds ' +
+        "that conversation's transcript first and launches this spawn resuming the fold, so the new " +
+        'conversation inherits its context. Sets mode/resumeId itself -- do not pass those with it.',
+    ),
+  forkStrategy: z
+    .enum(['full', 'condensed', 'summarized'])
+    .optional()
+    .describe(
+      'How much of the forked conversation to carry over. "condensed" (default) digests large tool ' +
+        'outputs and keeps recent turns verbatim (~80% smaller, free); "full" copies everything; ' +
+        '"summarized" writes a continuation summary and starts a FRESH session from it (costs a model call).',
+    ),
   headless: z
     .boolean()
     .optional()

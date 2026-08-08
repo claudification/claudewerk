@@ -16,6 +16,7 @@ import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { CanvasMenuItems } from '../canvas/canvas-menu-items'
+import { openForkDialog } from '../fork-dialog-trigger'
 import { RecapMenuItems } from '../recap-jobs/recap-menu-items'
 import { openManageProjectLinks } from '../settings/manage-project-links-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
@@ -95,6 +96,7 @@ export function ConversationMenuActions({
         onSelect={() => window.open(`/conversation/${conversation.id}`, `conv-${conversation.id}`, 'noopener')}
       />
       <Item label="Rename…" onSelect={() => store().setRenamingConversationId(conversation.id)} />
+      <Item label="Fork…" tone="text-cyan-400" onSelect={() => openForkDialog({ conversationId: conversation.id })} />
       <Item label="Edit description…" onSelect={() => store().setEditingDescriptionConversationId(conversation.id)} />
       {/* Conversation-level "old recap" (per-conversation away_summary) kept for
           now; the project-level period recap submenu follows. */}

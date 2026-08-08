@@ -38,6 +38,8 @@ import type {
   BrokerSentinelMessage,
   CcVersionChanged,
   FetchArtifact,
+  ForkCcSession,
+  ForkCcSessionResult,
   GitFabricRequest,
   GitFabricResult,
   GitLogRequest,
@@ -71,6 +73,8 @@ import type {
 import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
+import { transcriptSlug } from '../shared/transcript-path'
+import { worktreePath } from '../shared/worktree-path'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -91,6 +95,7 @@ import {
 import { writeDaemonMcpConfig } from './daemon-mcp-config'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
 import { expandPath } from './expand-path'
+import { forkCcSession } from './fork-cc-session'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
@@ -442,9 +447,17 @@ function reportDeadPids(ws: WebSocket) {
 
 // ─── CC Transcript Discovery ─────────────────────────────────────────
 
+/** CC slugs the RESOLVED path, so symlinked components must be expanded first. */
+function realpathIfPossible(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return p // cwd does not exist on this host -- slug the path as given
+  }
+}
+
 function listCcSessions(cwd: string, configDir: string): ListCcSessionsResult['ccSessions'] {
-  const mangledCwd = cwd.replace(/\//g, '-')
-  const projectDir = join(configDir, 'projects', mangledCwd)
+  const projectDir = join(configDir, 'projects', transcriptSlug(realpathIfPossible(cwd)))
   if (!existsSync(projectDir)) return []
 
   const entries: ListCcSessionsResult['ccSessions'] = []
@@ -3968,6 +3981,76 @@ function connect(
             ccSessions,
           }
           ws.send(JSON.stringify(sessResponse))
+          break
+        }
+
+        case 'fork_cc_session': {
+          const forkMsg = msg as ForkCcSession
+          const expandedCwd = expandPath(forkMsg.project, spawnRoot)
+          // Unlike the list path above, an unknown profile is NOT silently
+          // downgraded: this WRITES a transcript, and writing it under the wrong
+          // profile's config dir would leave a fork CC can never resume.
+          let forkConfigDir: string
+          try {
+            forkConfigDir = configDirFor(config, forkMsg.profile)
+          } catch (err) {
+            ws.send(
+              JSON.stringify({
+                type: 'fork_cc_session_result',
+                requestId: forkMsg.requestId,
+                error: `Unknown sentinel profile '${forkMsg.profile}': ${err instanceof Error ? err.message : String(err)}`,
+              } satisfies ForkCcSessionResult),
+            )
+            break
+          }
+
+          debug(
+            `Forking CC session ${forkMsg.sourceCcSessionId.slice(0, 8)} for: ${expandedCwd} (configDir=${forkConfigDir})`,
+            verbose,
+          )
+          // Resolve the launch target the same way the spawn will, so the fork
+          // lands in the directory CC will actually look in.
+          let forkTargetCwd: string | undefined
+          if (forkMsg.targetWorktree) {
+            forkTargetCwd = realpathIfPossible(worktreePath(expandedCwd, forkMsg.targetWorktree))
+          } else if (forkMsg.targetCwd) {
+            forkTargetCwd = realpathIfPossible(expandPath(forkMsg.targetCwd, spawnRoot))
+          }
+
+          const outcome = await forkCcSession({
+            cwd: realpathIfPossible(expandedCwd),
+            targetCwd: forkTargetCwd,
+            configDir: forkConfigDir,
+            sourceCcSessionId: forkMsg.sourceCcSessionId,
+            provenanceBlock: forkMsg.provenanceBlock,
+            digestOverTokens: forkMsg.digestOverTokens,
+            tailTokenBudget: forkMsg.tailTokenBudget,
+          })
+
+          if (outcome.ok) {
+            log(
+              `[fork] ${forkMsg.sourceCcSessionId.slice(0, 8)} -> ${outcome.ccSessionId.slice(0, 8)} ` +
+                `tokens=${outcome.stats.beforeTokens}->${outcome.stats.afterTokens} ` +
+                `entries=${outcome.stats.entriesBefore}->${outcome.stats.entriesAfter} ` +
+                `digested=${outcome.stats.digestedResults} cwd=${expandedCwd}`,
+            )
+          } else {
+            log(`[fork] FAILED ${forkMsg.sourceCcSessionId.slice(0, 8)} cwd=${expandedCwd}: ${outcome.error}`)
+          }
+
+          ws.send(
+            JSON.stringify(
+              outcome.ok
+                ? {
+                    // Broker-facing name: opaque resume token, not ccSessionId.
+                    type: 'fork_cc_session_result',
+                    requestId: forkMsg.requestId,
+                    resumeId: outcome.ccSessionId,
+                    stats: outcome.stats,
+                  }
+                : { type: 'fork_cc_session_result', requestId: forkMsg.requestId, error: outcome.error },
+            ),
+          )
           break
         }
 

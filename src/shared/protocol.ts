@@ -3764,6 +3764,33 @@ export interface ListCcSessionsResult {
   error?: string
 }
 
+/**
+ * Sentinel -> Broker: outcome of a fork.
+ *
+ * `resumeId` is the FRESH session the fork wrote, and is exactly what a
+ * subsequent spawn passes as `SpawnRequest.resumeId`. It is deliberately NOT
+ * called ccSessionId: at this seam the broker relays it without interpreting it
+ * (BOUNDARY RULE -- CC identity is the sentinel's and the agent host's concern).
+ *
+ * Stats ride along so the UI can show what the fold actually bought before the
+ * user commits to launching.
+ */
+export interface ForkCcSessionResult {
+  type: 'fork_cc_session_result'
+  requestId: string
+  resumeId?: string
+  stats?: {
+    beforeTokens: number
+    afterTokens: number
+    entriesBefore: number
+    entriesAfter: number
+    digestedResults: number
+    droppedThinking: number
+    collapsedReads: number
+  }
+  error?: string
+}
+
 /** Broker -> Sentinel: gather git commits for a project between two timestamps.
  *  The broker never touches the host FS NOR resolves paths (CWD-IS-INFORMATIONAL):
  *  it forwards the project URI and the SENTINEL resolves the URI to a path, runs
@@ -5401,6 +5428,7 @@ export type SentinelMessage =
   | SpawnFailed
   | ListDirsResult
   | ListCcSessionsResult
+  | ForkCcSessionResult
   | GitLogResult
   | GitFabricResult
   | ProjectReadFileResult
@@ -5656,6 +5684,50 @@ export interface ListCcSessions {
   cwd: string
 }
 
+/**
+ * Broker -> Sentinel: fold one CC session into a NEW resumable session.
+ *
+ * The sentinel owns this because it is the only component with host filesystem
+ * access (CWD-IS-INFORMATIONAL: `cwd` here is an opaque passthrough the SENTINEL
+ * resolves, never something the broker reasons about). It reads the source
+ * JSONL, runs super-compact, and writes `<newCcSessionId>.jsonl` beside it --
+ * the original is never modified, so a fork is always reversible at the source.
+ */
+export interface ForkCcSession {
+  type: 'fork_cc_session'
+  requestId: string
+  /** Project URI. The SENTINEL resolves it to a path (CWD-IS-INFORMATIONAL). */
+  project: string
+  /** The session to fold. Comes out of the opaque agentHostMeta bag. */
+  sourceCcSessionId: string
+  /**
+   * Where the FORK will be launched, when that differs from `project`.
+   *
+   * CC derives its transcript directory from the cwd it is launched in, so a
+   * fork written beside the source is invisible to a `--resume` that runs
+   * somewhere else. The sentinel writes the fork under the TARGET's directory
+   * instead. Both are opaque to the broker; the SENTINEL resolves them.
+   *
+   * `targetWorktree` is a worktree NAME resolved against the project root (the
+   * sentinel owns that convention); `targetCwd` is an explicit path. Worktree
+   * wins if both are set. Neither = fork in place.
+   */
+  targetWorktree?: string
+  targetCwd?: string
+  /** Which sentinel profile's config dir holds the source transcript. */
+  profile?: string
+  /**
+   * Pre-rendered provenance text placed at the top of the fold's preamble, so
+   * the forked agent knows it is a fork and how to reach the parent. Rendered
+   * by the BROKER (conversation identity is ours) and opaque to the sentinel.
+   */
+  provenanceBlock?: string
+  /** Digest cold tool_results over this many tokens. 0 disables (full copy). */
+  digestOverTokens?: number
+  /** Keep this many tokens of the most recent turns verbatim. */
+  tailTokenBudget?: number
+}
+
 export interface RclaudeConfigGet {
   type: 'rclaude_config_get'
   requestId: string
@@ -5709,6 +5781,7 @@ export type BrokerSentinelMessage =
   | SpawnConversation
   | ListDirs
   | ListCcSessions
+  | ForkCcSession
   | GitLogRequest
   | GitFabricRequest
   | ProjectReadFile

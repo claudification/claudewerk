@@ -81,6 +81,28 @@ export function buildFixture(): string {
     .join('\n')}\n`
 }
 
+/**
+ * A session whose cold zone holds a BIG one-shot read -- a file read once and
+ * never touched again. `collapseSupersededReads` deliberately ignores this
+ * shape, and it is the shape that dominates real transcripts, so it is what
+ * `digestLargeToolResults` has to catch.
+ */
+export function buildLargeResultFixture(): string {
+  const huge = 'export function thing() { /* ... */ }\n'.repeat(400)
+  const rows: Array<Record<string, unknown>> = [
+    user('b1', null, 'summarize the module'),
+    assistant('b2', 'b1', [toolUse('tu_big', 'Read', { file_path: '/repo/big.ts' })], 'tool_use'),
+    // CC mirrors every tool output into a sibling `toolUseResult` field outside
+    // message.content. On real sessions that duplicate is ~53% of user-entry
+    // bytes, so the fold has to shrink it too.
+    { ...user('b3', 'b2', [toolResult('tu_big', huge)]), toolUseResult: { type: 'text', file: { content: huge } } },
+    assistant('b4', 'b3', [text('It exports a lot of things.')]),
+    user('b5', 'b4', 'thanks'),
+    assistant('b6', 'b5', [text('No problem.')]),
+  ]
+  return `${rows.map(r => JSON.stringify(r)).join('\n')}\n`
+}
+
 /** Deterministic id generator for stable test assertions. */
 export function makeGenId(): () => string {
   let i = 0

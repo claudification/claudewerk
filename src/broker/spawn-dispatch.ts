@@ -40,6 +40,7 @@ import { dispatchClaudeDaemon } from './backends/claude-daemon'
 import { emitLaunchProgress as emitProgress } from './backends/launch-progress'
 import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
+import { resolveForkFrom } from './resolve-fork-from'
 import { sotuSpawnBrief } from './sotu'
 import { resolveNotifyParentSettleMs } from './spawn-lineage'
 
@@ -260,6 +261,19 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
     }
   }
 
+  // `forkFrom` -- fold a source conversation and launch resuming the fold, so a
+  // caller forks in ONE call instead of a client-side fork-then-spawn two-step.
+  // Runs AFTER the permission gate: folding a multi-MB transcript is real work
+  // and a request that will be denied should never pay for it.
+  const forked = await resolveForkFrom(req, deps.conversationStore)
+  if (!forked.ok) {
+    // A fold timeout (504) has no slot in the spawn result's status union;
+    // report it as 503 -- the spawn genuinely did not happen either way.
+    const status = forked.statusCode === 504 || forked.statusCode === 409 ? 503 : forked.statusCode
+    return { ok: false, error: forked.error, statusCode: status as 400 | 403 | 404 | 500 | 503 }
+  }
+  const forkedReq = forked.req
+
   const spawnDeps: SpawnDeps = {
     conversationStore: deps.conversationStore,
     getProjectSettings: deps.getProjectSettings,
@@ -273,21 +287,24 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
   // --- claude-daemon transport --------------------------------------------
   // The daemon is the claude backend's `claude-daemon` transport (it is not a
   // peer backend). Routed by the transport discriminator, NOT `req.backend`.
+  // Everything below dispatches `forkedReq` -- identical to `req` unless
+  // forkFrom was set, in which case it carries the resolved mode/resumeId
+  // (or the summary seed) the fold produced.
   let result: SpawnDispatchResult
-  if (req.transport === 'claude-daemon') {
-    result = await dispatchClaudeDaemon(req, spawnDeps)
-  } else if (req.backend) {
+  if (forkedReq.transport === 'claude-daemon') {
+    result = await dispatchClaudeDaemon(forkedReq, spawnDeps)
+  } else if (forkedReq.backend) {
     // --- Registry-driven dispatch -----------------------------------------
     // If the requested backend has its own spawn() implementation, delegate.
     // Otherwise fall through to the inline Claude (PTY/headless) path below.
-    const backend = resolveBackendByName(req.backend)
+    const backend = resolveBackendByName(forkedReq.backend)
     if (!backend) {
-      return { ok: false, error: `Unknown backend: ${req.backend}`, statusCode: 400 }
+      return { ok: false, error: `Unknown backend: ${forkedReq.backend}`, statusCode: 400 }
     }
-    result = backend.spawn ? await backend.spawn(req, spawnDeps) : await dispatchClaudeSpawn(req, deps)
+    result = backend.spawn ? await backend.spawn(forkedReq, spawnDeps) : await dispatchClaudeSpawn(forkedReq, deps)
   } else {
     // --- Inline Claude (PTY/headless) path --------------------------------
-    result = await dispatchClaudeSpawn(req, deps)
+    result = await dispatchClaudeSpawn(forkedReq, deps)
   }
 
   // Centralised rendezvous registration: applies to EVERY successful spawn
@@ -299,8 +316,8 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
       deps,
       conversationId: result.conversationId,
       jobId: result.jobId,
-      project: result.project ?? req.cwd,
-      notifyParentSettleMs: resolveNotifyParentSettleMs(req),
+      project: result.project ?? forkedReq.cwd,
+      notifyParentSettleMs: resolveNotifyParentSettleMs(forkedReq),
     })
   }
   return result

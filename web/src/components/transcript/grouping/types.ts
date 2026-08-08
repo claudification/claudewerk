@@ -23,6 +23,9 @@ export interface DisplayGroup {
     | 'spawn_notification'
     | 'shell'
     | 'advisor'
+    /** Header card for a forked conversation, parsed from the `<forked ...>`
+     *  provenance block the broker writes into the first entry of a fork. */
+    | 'forked'
     /** Synthetic tail item that hosts the in-flight turn (streaming thinking +
      *  text + spinner + thinking-pill). Never produced by grouping; appended by
      *  TranscriptView so the live turn is a real measured virtualizer item that
@@ -48,6 +51,11 @@ export interface DisplayGroup {
   queued?: boolean
   skillName?: string
   planMode?: boolean
+  /** 'forked' only: the parent conversation and the fold preamble that followed
+   *  the provenance block (shown behind a toggle). */
+  forkParentId?: string
+  forkParentName?: string
+  forkPreamble?: string
   /** True when this group exists only because the seq-bucket size bound split a
    *  longer same-type run (GROUP_SEQ_SPAN, process-entry.ts). Rendered without
    *  the group header so the split is visually seamless -- the reader sees one

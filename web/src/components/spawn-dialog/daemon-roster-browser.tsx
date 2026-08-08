@@ -9,6 +9,7 @@
  */
 
 import { type DaemonRosterEntry, useDaemonRoster } from '@/hooks/use-daemon-roster'
+import { shortenHomePath } from '@/lib/short-path'
 import { cn, haptic } from '@/lib/utils'
 
 /** Daemon job states with no live process -- not attachable. */
@@ -23,7 +24,7 @@ interface DaemonRosterBrowserProps {
 
 /** Shorten an absolute path for display (home dir -> ~). */
 function shortPath(cwd: string): string {
-  return cwd.replace(/^\/Users\/[^/]+/, '~').replace(/^\/home\/[^/]+/, '~')
+  return shortenHomePath(cwd)
 }
 
 /** Tailwind tint for a daemon job state. */

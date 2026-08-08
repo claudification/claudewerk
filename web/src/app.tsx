@@ -14,6 +14,7 @@ import { ProjectActionPanel } from '@/components/conversation-detail/project-act
 import { DebugConsole } from '@/components/debug-console'
 import { dispatchBus } from '@/components/dispatch-overlay/dispatch-bus'
 import { Dock } from '@/components/dock'
+import { forkDialogBus } from '@/components/fork-dialog-trigger'
 import { Header } from '@/components/header'
 import { JsonInspectorDialog } from '@/components/json-inspector'
 import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profile-commands'
@@ -120,6 +121,10 @@ const SpawnDialog = lazyModule(
 const ReviveDialog = lazyModule(
   named(() => import('@/components/revive-dialog'), 'ReviveDialog'),
   reviveDialogBus.useArmed,
+)
+const ForkDialog = lazyModule(
+  named(() => import('@/components/fork-dialog'), 'ForkDialog'),
+  forkDialogBus.useArmed,
 )
 // The voice orb drags WebRTC + the realtime session with it -- it must never
 // ride the index chunk. Armed only by the summon verb.
@@ -592,6 +597,7 @@ function Dashboard() {
         <SpawnDialog />
       </PanelBoundary>
       <ReviveDialog />
+      <ForkDialog />
       <RecapConfigDialog />
       <PanelBoundary name="Recap viewer" variant="modal">
         <RecapViewer />

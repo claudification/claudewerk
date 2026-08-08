@@ -7,11 +7,17 @@
  * yields the same entries it started from.
  */
 
+/**
+ * `folded` marks a tool_result whose content a strategy has replaced with a
+ * digest. Adapters use it to shrink any FORMAT-SPECIFIC duplicate of that same
+ * output in lockstep (Claude Code stores one in a sibling `toolUseResult`
+ * field), so a fold cannot be silently undone by a copy the model never sees.
+ */
 export type ContentBlock =
   | { kind: 'text'; text: string }
   | { kind: 'thinking'; text: string; signature?: string }
   | { kind: 'tool_use'; id: string; name: string; input: unknown }
-  | { kind: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean }
+  | { kind: 'tool_result'; toolUseId: string; content: unknown; isError?: boolean; folded?: boolean }
 
 export type EntryRole = 'user' | 'assistant'
 

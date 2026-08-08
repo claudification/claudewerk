@@ -288,6 +288,23 @@ const gitLogResult: MessageHandler = (ctx, data) => {
   ctx.conversations.resolveGitLog(data.requestId as string, data)
 }
 
+// Sentinel -> broker: a fork finished (or failed). The payload carries the FRESH
+// ccSessionId the caller must spawn against; the broker forwards it without
+// reading it (BOUNDARY RULE -- it rides in agentHostMeta from here on).
+const forkCcSessionResult: MessageHandler = (ctx, data) => {
+  const requestId = data.requestId as string
+  const matched = ctx.conversations.resolveFork(requestId, data)
+  if (!matched) {
+    // A fork that nobody is waiting for means the requester timed out or
+    // disconnected. The transcript IS written and resumable, so say so rather
+    // than dropping it silently -- it is recoverable, not lost.
+    ctx.log.info(
+      `[fork] unmatched result req=${requestId?.slice(0, 8)} ` +
+        `${data.error ? `error=${data.error}` : `resumeId=${String(data.resumeId).slice(0, 8)} (written, orphaned)`}`,
+    )
+  }
+}
+
 // Sentinel -> broker: the SOTU git-fabric snapshot (Phase 2). Rides the generic
 // requestId-keyed file listener (result == arbitrary JSON), same seam the
 // `fetch_artifact_result` reuses -- no dedicated listener registry needed.
@@ -615,6 +632,7 @@ export function registerSentinelHandlers(): void {
       spawn_failed: spawnFailed,
       list_dirs_result: listDirsResult,
       list_cc_sessions_result: listCcSessionsResult,
+      fork_cc_session_result: forkCcSessionResult,
       git_log_result: gitLogResult,
       git_fabric_result: gitFabricResult,
       fetch_artifact_result: fetchArtifactResult,
