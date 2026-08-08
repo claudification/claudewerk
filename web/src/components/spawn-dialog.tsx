@@ -31,6 +31,7 @@ import type { DaemonRosterEntry } from '@/hooks/use-daemon-roster'
 import { focusLaunchTargetAndClose, useLaunchProgress } from '@/hooks/use-launch-progress'
 import { parseEnvText } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
+import { shortenHomePath } from '@/lib/short-path'
 import { cwdToProjectUri } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { detectWorktree } from '@/lib/worktree-path'
@@ -590,7 +591,7 @@ export function SpawnDialog() {
     progress.copyToClipboard(JSON.stringify(diag, null, 2))
   }
 
-  const shortPath = effectivePath.replace(/^\/Users\/[^/]+/, '~')
+  const shortPath = shortenHomePath(effectivePath)
   const displayError = progress.error || progress.launch.error
 
   // Patch-fan-out idiom shared with project-board's RunTask onChange; both grew

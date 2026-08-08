@@ -11,6 +11,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
+import { modelPickerValue } from '@/lib/model-picker-value'
+import { shortenHomePath } from '@/lib/short-path'
 import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { ForkDialogBody } from './fork-dialog/fork-dialog-body'
@@ -41,9 +43,18 @@ export function ForkDialog() {
       const source = useConversationsStore.getState().conversationsById[options.conversationId]
       setStrategy('compacted')
       setName(source?.title ? `${source.title} (fork)` : '')
-      setModel(source?.launchConfig?.model || source?.model || '')
-      setEffort(source?.launchConfig?.effort || '')
-      setCwd(source ? projectPath(source.project) : '')
+      // A fork should default to whatever the conversation actually ran with.
+      // launchConfig holds spawn-option values; `conversation.model` is the
+      // RUNTIME id CC reported (`claude-opus-4-8[1m]`) and matches no option in
+      // the picker -- feeding that in raw is what left Model rendering blank
+      // next to Effort's "Default". modelPickerValue maps it onto a real option.
+      setModel(modelPickerValue(source?.launchConfig?.model || source?.model))
+      // effortLevel is the RUNTIME value (CC can switch effort mid-session), so
+      // it reflects what the conversation was actually running at.
+      setEffort(source?.launchConfig?.effort || source?.effortLevel || '')
+      // Home-relative for display; the sentinel's expandPath resolves `~/`
+      // (and project URIs, and relative paths) on the way back in.
+      setCwd(source ? shortenHomePath(projectPath(source.project)) : '')
       setWorktree('')
       forkReset()
       setState({ open: true, options })
@@ -78,7 +89,7 @@ export function ForkDialog() {
   )
 
   const title = conversation?.title || conversation?.agentName || conversation?.id.slice(0, 8) || ''
-  const shortPath = (conversation ? projectPath(conversation.project) : '').replace(/^\/Users\/[^/]+/, '~')
+  const shortPath = shortenHomePath(conversation ? projectPath(conversation.project) : '')
 
   return (
     <Dialog open={state.open} onOpenChange={open => !open && handleClose()}>

@@ -14,12 +14,8 @@ import { useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import type { DaemonRosterEntry } from '@/hooks/use-daemon-roster'
 import { attachGhost, useGhostEntry } from '@/hooks/use-ghost-sessions'
+import { shortenHomePath as shortPath } from '@/lib/short-path'
 import { cn, formatAge, haptic } from '@/lib/utils'
-
-/** Shorten an absolute path for display (home dir -> ~). */
-function shortPath(cwd: string): string {
-  return cwd.replace(/^\/Users\/[^/]+/, '~').replace(/^\/home\/[^/]+/, '~')
-}
 
 /** Tailwind tint for a daemon job state (mirrors the roster browser). */
 function stateClass(state: string): string {

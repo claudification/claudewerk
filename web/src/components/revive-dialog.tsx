@@ -17,6 +17,7 @@ import { TogglePill } from '@/components/ui/toggle-pill'
 import { reviveConversation, useConversationsStore } from '@/hooks/use-conversations'
 import { focusLaunchTargetAndClose, useLaunchProgress } from '@/hooks/use-launch-progress'
 import { useKeyLayer } from '@/lib/key-layers'
+import { shortenHomePath } from '@/lib/short-path'
 import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
@@ -279,7 +280,7 @@ export function ReviveDialog() {
     progress.copyToClipboard(log)
   }
 
-  const shortPath = (conversation ? projectPath(conversation.project) : '').replace(/^\/Users\/[^/]+/, '~')
+  const shortPath = shortenHomePath(conversation ? projectPath(conversation.project) : '')
   const displayError = progress.error || progress.launch.error
   const titleLabel = conversation?.title || conversation?.agentName || shortPath
 

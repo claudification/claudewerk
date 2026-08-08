@@ -8,6 +8,7 @@ import {
 } from '@/components/checklist/checklist-bus'
 import { exposeDispatchControl } from '@/components/dispatch-overlay/dispatch-control-bridge'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
+import { openForkDialog } from '@/components/fork-dialog-trigger'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
 import { openOrganizeProjects } from '@/components/organize-projects/organize-state'
 import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks'
@@ -34,7 +35,7 @@ import { resolveLaunchTargetFromStore } from '@/lib/launch-target'
 import { remountApp } from '@/lib/remount'
 import { openShell, projectShellCapable } from '@/lib/shell-commands'
 import { selectConversations } from '@/lib/slim-conversation'
-import { canShell, canTerminal } from '@/lib/types'
+import { canShell } from '@/lib/types'
 import { isMobileViewport } from '@/lib/utils'
 import { getVoiceHistory } from '@/lib/voice-history'
 import { toggleWebControl } from '@/lib/web-control-actions'
@@ -270,23 +271,15 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     { label: 'Toggle terminal tab', key: 't', group: 'Navigation' },
   )
 
+  // `f` used to toggle the fullscreen terminal; that duplicated the `t`
+  // terminal-tab chord closely enough that the key was better spent on Fork.
   useChordCommand(
-    'fullscreen-terminal',
+    'fork-conversation',
     () => {
-      const store = useConversationsStore.getState()
-      if (store.showTerminal) {
-        store.setShowTerminal(false)
-        if (store.selectedConversationId) store.openTab(store.selectedConversationId, 'transcript')
-      } else {
-        const conversation = store.selectedConversationId
-          ? store.conversationsById[store.selectedConversationId]
-          : undefined
-        if (conversation && canTerminal(conversation) && conversation.connectionIds?.[0]) {
-          store.openTerminal(conversation.connectionIds[0])
-        }
-      }
+      const { selectedConversationId } = useConversationsStore.getState()
+      if (selectedConversationId) openForkDialog({ conversationId: selectedConversationId })
     },
-    { label: 'Toggle fullscreen terminal', key: 'f', group: 'Navigation' },
+    { label: 'Fork conversation', key: 'f', group: 'Conversation' },
   )
 
   useChordCommand(
