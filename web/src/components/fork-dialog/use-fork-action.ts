@@ -13,7 +13,7 @@ import { sendSpawnRequest } from '@/hooks/use-spawn'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
-import { type FoldStats, forkCcSession } from './fork-api'
+import { type FoldStats, forkCcSession, forkSummary } from './fork-api'
 import { FORK_STRATEGIES, type ForkStrategy } from './fork-strategy'
 
 export type ForkPhase = 'config' | 'forking' | 'ready' | 'launching'
@@ -41,6 +41,8 @@ export interface ForkLaunchOverrides {
 export interface UseForkAction {
   phase: ForkPhase
   stats: FoldStats | null
+  /** Mode C only: the generated summary, shown for review before launching. */
+  summary: string | null
   error: string | null
   resumeId: string | null
   spawnedConversationId: string | null
@@ -54,6 +56,8 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
   const [stats, setStats] = useState<FoldStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resumeId, setResumeId] = useState<string | null>(null)
+  const [summary, setSummary] = useState<string | null>(null)
+  const [seedPrompt, setSeedPrompt] = useState<string | null>(null)
   const [spawnedConversationId, setSpawned] = useState<string | null>(null)
 
   const reset = useCallback(() => {
@@ -61,6 +65,8 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
     setStats(null)
     setError(null)
     setResumeId(null)
+    setSummary(null)
+    setSeedPrompt(null)
     setSpawned(null)
   }, [])
 
@@ -71,6 +77,24 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
       setPhase('forking')
       setError(null)
       haptic('tap')
+
+      // Mode C folds no transcript: it summarizes and the fork starts FRESH,
+      // seeded with that text. Nothing to resume, so no resumeId.
+      if (strategy === 'summarized') {
+        const res = await forkSummary(conversation.id)
+        if (!res.ok) {
+          setError(res.error)
+          setPhase('config')
+          haptic('error')
+          return
+        }
+        setSummary(res.summary)
+        setSeedPrompt(res.seedPrompt)
+        setStats(null)
+        setPhase('ready')
+        haptic('success')
+        return
+      }
 
       // A cwd equal to the source project is not a retarget -- send nothing, so
       // the sentinel forks in place instead of re-deriving the same directory.
@@ -102,15 +126,20 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
 
   const runLaunch = useCallback(
     async (overrides: ForkLaunchOverrides) => {
-      if (!conversation || !resumeId) return
+      // Either a folded transcript to resume, or a summary to start fresh from.
+      if (!conversation || (!resumeId && !seedPrompt)) return
       setPhase('launching')
       setError(null)
       haptic('tap')
 
       const req: SpawnRequest = {
         cwd: overrides.cwd?.trim() || projectPath(conversation.project),
-        mode: 'resume',
-        resumeId,
+        ...(resumeId
+          ? { mode: 'resume' as const, resumeId }
+          : // Summary mode: a FRESH session whose system prompt carries the
+            // inherited context. appendSystemPrompt rather than `prompt`, so the
+            // context is ambient and the agent is not handed a turn to execute.
+            { appendSystemPrompt: seedPrompt ?? undefined }),
         name: overrides.name?.trim() || undefined,
         model: (overrides.model || undefined) as SpawnRequest['model'],
         effort: (overrides.effort || undefined) as SpawnRequest['effort'],
@@ -129,8 +158,8 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
         haptic('error')
       }
     },
-    [conversation, resumeId],
+    [conversation, resumeId, seedPrompt],
   )
 
-  return { phase, stats, error, resumeId, spawnedConversationId, runFork, runLaunch, reset }
+  return { phase, stats, summary, error, resumeId, spawnedConversationId, runFork, runLaunch, reset }
 }

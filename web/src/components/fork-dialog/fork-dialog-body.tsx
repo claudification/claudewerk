@@ -40,6 +40,7 @@ function Field({
 export function ForkDialogBody({
   phase,
   stats,
+  summary,
   strategy,
   onStrategyChange,
   name,
@@ -54,6 +55,7 @@ export function ForkDialogBody({
 }: {
   phase: ForkPhase
   stats: FoldStats | null
+  summary: string | null
   strategy: ForkStrategy
   onStrategyChange: (v: ForkStrategy) => void
   name: string
@@ -78,6 +80,21 @@ export function ForkDialogBody({
       <StrategyPicker value={strategy} onChange={onStrategyChange} disabled={targetFrozen} />
 
       {stats && <FoldStatsReadout stats={stats} />}
+
+      {/* Mode C is the lossy one, so the summary is shown for review BEFORE it
+          becomes the fork's only context. */}
+      {summary && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-wide pl-0.5">
+            Inherited context
+          </div>
+          <div className="max-h-48 overflow-y-auto rounded border border-border bg-surface-inset px-2.5 py-2">
+            <pre className="text-[10px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono">
+              {summary}
+            </pre>
+          </div>
+        </div>
+      )}
 
       <Field label="Name" value={name} onChange={onNameChange} placeholder="auto" disabled={busy} />
 

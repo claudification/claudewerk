@@ -99,6 +99,7 @@ export function ForkDialog() {
           <ForkDialogBody
             phase={fork.phase}
             stats={fork.stats}
+            summary={fork.summary}
             strategy={strategy}
             onStrategyChange={setStrategy}
             name={name}

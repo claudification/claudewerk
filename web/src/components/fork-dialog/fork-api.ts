@@ -36,6 +36,32 @@ export interface ForkRequest {
 
 export type ForkResponse = { ok: true; resumeId: string; stats?: FoldStats } | { ok: false; error: string }
 
+export type ForkSummaryResponse = { ok: true; summary: string; seedPrompt: string } | { ok: false; error: string }
+
+/** Mode C. No sentinel round-trip -- the broker summarizes from its own store. */
+export async function forkSummary(conversationId: string): Promise<ForkSummaryResponse> {
+  try {
+    const res = await fetch('/api/fork-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId }),
+    })
+    const data = (await res.json().catch(() => null)) as {
+      summary?: string
+      seedPrompt?: string
+      error?: string
+    } | null
+
+    if (!res.ok || !data || data.error) {
+      return { ok: false, error: data?.error || `Summary failed (HTTP ${res.status})` }
+    }
+    if (!data.summary || !data.seedPrompt) return { ok: false, error: 'Summarizer returned nothing' }
+    return { ok: true, summary: data.summary, seedPrompt: data.seedPrompt }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
 export async function forkCcSession(req: ForkRequest): Promise<ForkResponse> {
   try {
     const res = await fetch('/api/fork-cc-session', {

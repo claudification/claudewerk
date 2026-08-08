@@ -16,6 +16,7 @@ import { Hono } from 'hono'
 import type { ForkCcSessionResult } from '../../shared/protocol'
 import { buildForkMessage } from '../build-fork'
 import type { ConversationStore } from '../conversation-store'
+import { buildForkSeedPrompt, generateForkSummary } from '../fork-summary'
 import type { RouteHelpers } from './shared'
 
 /** Folding a multi-MB transcript is real work; well clear of the 5s used for listing. */
@@ -85,6 +86,34 @@ export function createForkRouter(conversationStore: ConversationStore, helpers: 
 
     if (result.error) return c.json({ error: result.error }, 400)
     return c.json({ resumeId: result.resumeId, stats: result.stats })
+  })
+
+  // ─── Fork mode C: written continuation summary ───────────────────────
+  // No sentinel round-trip -- the broker already holds the transcript. The fork
+  // launches as a FRESH session seeded with this text rather than resuming.
+  app.post('/api/fork-summary', async c => {
+    if (!httpHasPermission(c.req.raw, 'spawn', '*'))
+      return c.json({ error: 'Forbidden: spawn permission required' }, 403)
+
+    const body = (await c.req.json().catch(() => null)) as { conversationId?: string } | null
+    if (!body?.conversationId) return c.json({ error: 'conversationId required' }, 400)
+
+    const conversation = conversationStore.getConversation(body.conversationId)
+    if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
+    if (!httpHasPermission(c.req.raw, 'spawn', conversation.project))
+      return c.json({ error: 'Forbidden: spawn permission required for this project' }, 403)
+
+    const entries = conversationStore.getTranscriptEntries(body.conversationId)
+    const outcome = await generateForkSummary({
+      entries,
+      conversationTitle: conversation.title || conversation.agentName || undefined,
+    })
+    if (!outcome.ok) return c.json({ error: outcome.error }, 400)
+
+    return c.json({
+      summary: outcome.summary,
+      seedPrompt: buildForkSeedPrompt(outcome.summary, conversation.title || undefined),
+    })
   })
 
   return app
