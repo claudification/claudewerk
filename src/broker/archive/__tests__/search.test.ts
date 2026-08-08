@@ -65,9 +65,9 @@ test('a query containing a backslash matches too', async () => {
 test('case-insensitive by default, exact when asked', async () => {
   await withArchives(async ({ archiveDir }) => {
     expect((await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7' })).hits.length).toBe(2)
-    expect(
-      (await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7', caseSensitive: true })).hits.length,
-    ).toBe(0)
+    expect((await searchArchives({ archiveDir, query: 'LINE ONE OF ENTRY 7', caseSensitive: true })).hits.length).toBe(
+      0,
+    )
   })
 })
 
@@ -110,6 +110,32 @@ test('months narrows the scan', async () => {
     const result = await searchArchives({ archiveDir, query: 'line one of entry 1', months: ['2026-03'] })
     expect(result.scannedMonths).toEqual(['2026-03'])
     expect(result.hits.every(h => h.month === '2026-03')).toBe(true)
+  })
+})
+
+test('the type filter keeps only the entry types asked for', async () => {
+  await withArchives(async ({ archiveDir }) => {
+    // The fixture alternates: every third row is 'assistant', the rest 'user'.
+    const all = await searchArchives({ archiveDir, query: 'line one of entry', limit: 500 })
+    const assistants = await searchArchives({
+      archiveDir,
+      query: 'line one of entry',
+      types: ['assistant'],
+      limit: 500,
+    })
+    expect(assistants.hits.length).toBeGreaterThan(0)
+    expect(assistants.hits.length).toBeLessThan(all.hits.length)
+    expect(assistants.hits.every(h => h.type === 'assistant')).toBe(true)
+    // Filtering narrows results, not work: the same bytes still get read.
+    expect(assistants.rowsScanned).toBe(all.rowsScanned)
+  })
+})
+
+test('an unknown type filter matches nothing rather than everything', async () => {
+  await withArchives(async ({ archiveDir }) => {
+    const result = await searchArchives({ archiveDir, query: 'line one', types: ['nope'], limit: 500 })
+    expect(result.hits).toEqual([])
+    expect(result.rowsScanned).toBeGreaterThan(0)
   })
 })
 

@@ -51,6 +51,7 @@ export function createArchivesRouter(helpers: RouteHelpers, cacheDir: string): H
     if (!query) return c.json({ error: 'q is required' }, 400)
     const month = c.req.query('month')
     const conversationId = c.req.query('conversation')
+    const types = c.req.query('types')?.split(',').filter(Boolean)
 
     const result = await searchArchives({
       archiveDir: ARCHIVE_DIR,
@@ -61,6 +62,7 @@ export function createArchivesRouter(helpers: RouteHelpers, cacheDir: string): H
       maxSeconds: clampInt(c.req.query('maxSeconds'), 60, 1, 600),
       ...(month && { months: [month] }),
       ...(conversationId && { conversationId }),
+      ...(types?.length && { types }),
     })
     return c.json(result)
   })

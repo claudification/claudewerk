@@ -121,8 +121,9 @@ ARCHIVE COMMANDS (cold transcript storage, one immutable file per UTC month):
                                                               the DB and rolls back on any row-count drift.
   archive search <query> [--month YYYY-MM] [--regex]        SLOW grep over the cold months. No index:
     [--case-sensitive] [--conversation <id>] [--limit 50]     every byte is decompressed and scanned.
-    [--max-seconds 120] [--context 160] [--json]              Newest month first. Exits 2 when the answer
-  archive search --plan [--month YYYY-MM]                     is incomplete. Use --plan to cost it first.
+    [--type user,assistant] [--max-seconds 120]               Newest month first. Exits 2 when the answer
+    [--context 160] [--json]                                  is incomplete. Use --plan to cost it first,
+  archive search --plan [--month YYYY-MM]                     and --type to skip the JSON-blob rows.
 
 MAINTENANCE COMMAND (intended for cron at 05:00 local, AFTER the hourly backup):
   maintain [--hot-days 90] [--dry-run] [--confirm-delete]   Gate on a verified backup, then

@@ -288,7 +288,61 @@ docker exec broker broker-cli archive import 2026-06
 
 # Delete the archived rows from the hot database (dry run without --confirm)
 docker exec broker broker-cli archive prune 2026-06 --confirm
+
+# Cost a cold search before paying for it (reads the metas, decompresses nothing)
+docker exec broker broker-cli archive search --plan
+
+# Grep the cold months. SLOW -- see "Searching cold archives" below
+docker exec broker broker-cli archive search "the phrase" --type user,assistant
+docker exec broker broker-cli archive search "the phrase" 2026-04 --limit 20
 ```
+
+## Searching cold archives
+
+The hot database has an FTS5 index. Cold archives have **nothing** -- they are
+immutable compressed text, and searching one means decompressing every byte and
+testing every line. There is no index to add without giving back the property
+that makes archives worth having: one flat file per month, no companion state to
+keep in sync. So the search is shaped like `grep`, and every surface says so.
+
+**Measured on this box** (2026-08-07, the real 2026-04 archive):
+
+| | |
+|---|---|
+| Throughput | **~326 MB/s** of plaintext, end to end (decompress + split + match) |
+| One real month (~2.5 GB) | **~8 s** |
+| A full year (~25 GB) | **~80 s** |
+| 2026-04 (97.9 MB, 33,352 rows) | **0.3 s** |
+
+`--plan` estimates at a deliberately conservative 220 MB/s, so it reads a little
+over rather than under.
+
+Three surfaces, same engine:
+
+| Surface | Entry point |
+|---|---|
+| CLI | `broker-cli archive search <query>` (exits **2** when the answer is incomplete) |
+| REST | `GET /api/archives/search?q=` and `/api/archives/search/plan` (admin only) |
+| MCP | `search_archives` + `archive_search_plan` |
+
+**Semantics worth knowing before you trust a result:**
+
+- Literal substring by default, case-insensitive. **No stemming, no ranking** --
+  `run` will not find `running`.
+- The needle is escaped the way JSON escaped it on the way in, so a query
+  containing a quote, a backslash or a newline matches. **`--regex` gets no such
+  translation**: it runs against the raw JSON-escaped line, where a newline in
+  the content is the two characters `\` and `n`.
+- Newest month first, so a capped search returns the most recent matches.
+- **Use `--type user,assistant`.** Cold months are mostly `attachment` and
+  `tool_result` rows carrying huge JSON blobs; unfiltered, they drown the result.
+- A hit cap (`--limit`, default 50) and a wall-clock budget (`--max-seconds`,
+  default 120) both stop the scan early. When either fires, the result reports
+  `truncated` plus `skippedMonths`, the CLI prints `INCOMPLETE:` and exits 2, and
+  the MCP tool is instructed to say so. **A cold search that shows hits without
+  showing what it skipped is lying about coverage.**
+- `conversationId` and `--type` filter *results*; they do not reduce the bytes
+  scanned. Only `--month` makes the job smaller.
 
 ## The archive dir must be a mount
 

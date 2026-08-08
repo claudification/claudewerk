@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { planArchiveSearch, searchArchives } from '../archive'
+import type { ArchiveSearchOptions } from '../archive/search'
 
 const ARCHIVE_DIR = existsSync('/data/archives') ? '/data/archives' : ''
 
@@ -40,6 +41,33 @@ const PLAN_DESCRIPTION = [
   'Call this before search_archives so you (and the user) know whether the answer costs 2 seconds or 4 minutes.',
 ].join('\n')
 
+interface SearchToolInput {
+  query: string
+  month?: string
+  conversationId?: string
+  types?: string[]
+  regex?: boolean
+  caseSensitive?: boolean
+  limit?: number
+  maxSeconds?: number
+}
+
+/** Tool input -> engine options. The defaults here are the only thing standing
+ *  between an agent's one-line call and an unbounded scan of every month. */
+function toSearchOptions(input: SearchToolInput): ArchiveSearchOptions {
+  return {
+    archiveDir: ARCHIVE_DIR,
+    query: input.query,
+    regex: input.regex ?? false,
+    caseSensitive: input.caseSensitive ?? false,
+    limit: input.limit ?? 50,
+    maxSeconds: input.maxSeconds ?? 60,
+    ...(input.month && { months: [input.month] }),
+    ...(input.conversationId && { conversationId: input.conversationId }),
+    ...(input.types?.length && { types: input.types }),
+  }
+}
+
 export function registerArchiveTools(mcp: McpServer): void {
   mcp.tool('archive_search_plan', PLAN_DESCRIPTION, { month: z.string().optional() }, async ({ month }) => {
     if (!ARCHIVE_DIR) return text('Cold archives are not configured on this broker.')
@@ -54,24 +82,21 @@ export function registerArchiveTools(mcp: McpServer): void {
       query: z.string(),
       month: z.string().optional().describe('YYYY-MM. Narrows the scan to one month -- use it whenever you can.'),
       conversationId: z.string().optional().describe('Filters results; does NOT reduce the bytes scanned.'),
+      types: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Entry types to keep, e.g. ["user","assistant"]. Cold months are mostly attachment and tool_result ' +
+            'rows carrying huge JSON blobs -- an unfiltered search usually drowns in them. Use this first.',
+        ),
       regex: z.boolean().optional().describe('Treat query as a JS regex, matched against the JSON-escaped line.'),
       caseSensitive: z.boolean().optional(),
       limit: z.number().optional().describe('Default 50. Stops the scan early, which shows up as truncated.'),
       maxSeconds: z.number().optional().describe('Wall-clock budget, default 60. Exceeding it truncates.'),
     },
-    async ({ query, month, conversationId, regex, caseSensitive, limit, maxSeconds }) => {
+    async input => {
       if (!ARCHIVE_DIR) return text('Cold archives are not configured on this broker.')
-      const result = await searchArchives({
-        archiveDir: ARCHIVE_DIR,
-        query,
-        regex: regex ?? false,
-        caseSensitive: caseSensitive ?? false,
-        limit: limit ?? 50,
-        maxSeconds: maxSeconds ?? 60,
-        ...(month && { months: [month] }),
-        ...(conversationId && { conversationId }),
-      })
-      return text(JSON.stringify(result, null, 2))
+      return text(JSON.stringify(await searchArchives(toSearchOptions(input)), null, 2))
     },
   )
 }

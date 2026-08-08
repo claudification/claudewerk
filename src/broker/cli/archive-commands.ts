@@ -106,6 +106,12 @@ export function searchOptionsFrom(args: ParsedArgs): ArchiveSearchOptions {
     contextChars: positiveIntArg(args.contextArg, 160, '--context'),
     ...(months && { months }),
     ...(args.conversationIdArg && { conversationId: args.conversationIdArg }),
+    ...(args.typeArg && {
+      types: args.typeArg
+        .split(',')
+        .map(t => t.trim())
+        .filter(Boolean),
+    }),
   }
 }
 

@@ -1,5 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { expect, test } from 'bun:test'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerArchiveTools } from '../mcp-archive-tools'
 
 function registered(): Record<string, { description?: string }> {

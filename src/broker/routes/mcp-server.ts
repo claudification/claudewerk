@@ -22,10 +22,10 @@ import { listThreads } from '../desk/threads'
 import { getGlobalSettings } from '../global-settings'
 import { getProjectSettings } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
-import { registerArchiveTools } from './mcp-archive-tools'
 import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
 import { listWebControlClients, resolveImplicitClient, sendWebControlRequest } from '../web-control'
+import { registerArchiveTools } from './mcp-archive-tools'
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
 

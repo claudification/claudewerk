@@ -20,6 +20,7 @@
 import { listArchives } from './list'
 import { scanNdjsonZstd } from './scan'
 import { buildMatcher, snippetAround } from './search-match'
+import { makeRowFilter } from './search-row-filter'
 
 const DEFAULT_LIMIT = 50
 const DEFAULT_MAX_SECONDS = 120
@@ -36,6 +37,10 @@ export interface ArchiveSearchOptions {
   /** Restrict to these `YYYY-MM` months. Default: every archived month. */
   months?: string[]
   conversationId?: string
+  /** Entry types to keep, e.g. ['user','assistant']. Cold months are full of
+   *  `attachment` and `tool_result` rows carrying huge JSON blobs, and an
+   *  unfiltered search drowns in them. */
+  types?: string[]
   limit?: number
   maxSeconds?: number
   contextChars?: number
@@ -97,6 +102,7 @@ export async function searchArchives(opts: ArchiveSearchOptions): Promise<Archiv
     caseSensitive = false,
     months,
     conversationId,
+    types,
     limit = DEFAULT_LIMIT,
     maxSeconds = DEFAULT_MAX_SECONDS,
     contextChars = DEFAULT_CONTEXT_CHARS,
@@ -106,6 +112,7 @@ export async function searchArchives(opts: ArchiveSearchOptions): Promise<Archiv
   if (!query) throw new Error('archive search needs a query')
 
   const matcher = buildMatcher(query, { regex, caseSensitive })
+  const keep = makeRowFilter({ matcher, ...(types && { types }), ...(conversationId && { conversationId }) })
   const scope = monthsInScope(archiveDir, months)
   const started = now()
   const deadline = started + maxSeconds * 1000
@@ -147,10 +154,8 @@ export async function searchArchives(opts: ArchiveSearchOptions): Promise<Archiv
           return false
         }
       }
-      if (!matcher.test(line)) return true
-
-      const row = JSON.parse(line) as Record<string, unknown>
-      if (conversationId && row.conversation_id !== conversationId) return true
+      const row = keep(line)
+      if (!row) return true
       hits.push(rowToHit(row, entry.month, snippetAround(String(row.content ?? ''), matcher, contextChars)))
       return hits.length < limit
     })
