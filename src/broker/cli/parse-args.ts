@@ -50,6 +50,12 @@ export interface ParsedArgs {
   forceFlag: boolean
   againstDbFlag: boolean
   skipVacuumFlag: boolean
+  // archive search
+  maxSecondsArg: string
+  contextArg: string
+  regexFlag: boolean
+  caseSensitiveFlag: boolean
+  planFlag: boolean
 }
 
 /** A named-flag handler: applies the flag, returns the last argv index it
@@ -139,6 +145,11 @@ const FLAG_HANDLERS: Record<string, FlagHandler> = {
   '--force': boolFlag('forceFlag'),
   '--against-db': boolFlag('againstDbFlag'),
   '--skip-vacuum': boolFlag('skipVacuumFlag'),
+  '--max-seconds': valueFlag('maxSecondsArg'),
+  '--context': valueFlag('contextArg'),
+  '--regex': boolFlag('regexFlag'),
+  '--case-sensitive': boolFlag('caseSensitiveFlag'),
+  '--plan': boolFlag('planFlag'),
 }
 
 /** A positional (sub)arg router keyed on the already-parsed `command`. Returns
@@ -189,6 +200,13 @@ const POSITIONAL_HANDLERS: Record<string, PositionalHandler> = {
     // `archive export 2026-06` -- accept the month positionally as well as via --month.
     if (!result.monthArg && /^\d{4}-\d{2}$/.test(arg)) {
       result.monthArg = arg
+      return true
+    }
+    // `archive search "some phrase"` -- the query is positional, and is checked
+    // after the month so `archive search foo 2026-04` narrows rather than
+    // searching for "2026-04".
+    if (result.subCommand === 'search' && !result.queryArg) {
+      result.queryArg = arg
       return true
     }
     return false
@@ -256,6 +274,11 @@ export function parseArgs(argv: string[], defaultCacheDir: string): ParsedArgs {
     forceFlag: false,
     againstDbFlag: false,
     skipVacuumFlag: false,
+    maxSecondsArg: '',
+    contextArg: '',
+    regexFlag: false,
+    caseSensitiveFlag: false,
+    planFlag: false,
   }
 
   for (let i = 0; i < argv.length; i++) {

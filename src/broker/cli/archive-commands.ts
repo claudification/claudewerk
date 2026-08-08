@@ -3,10 +3,14 @@ import {
   exportMonth,
   importMonth,
   monthsToArchive,
+  planArchiveSearch,
   pruneArchivedMonth,
+  searchArchives,
   verifyArchive,
 } from '../archive'
+import type { ArchiveSearchOptions } from '../archive/search'
 import { renderCoverage, renderVerify } from './archive-render'
+import { renderSearchPlan, renderSearchResult } from './archive-search-render'
 import type { ParsedArgs } from './parse-args'
 import { DEFAULT_ARCHIVE_DIR } from './shared'
 import { dispatchSubcommand, positiveIntArg, type SubcommandMap } from './subcommand'
@@ -88,6 +92,45 @@ function handleCandidates(args: ParsedArgs): void {
   )
 }
 
+/** Pure, so the defaults that bound an expensive scan can be asserted without
+ *  running one. */
+export function searchOptionsFrom(args: ParsedArgs): ArchiveSearchOptions {
+  const months = args.monthArg ? [args.monthArg] : undefined
+  return {
+    archiveDir: getArchiveDir(args),
+    query: args.queryArg,
+    regex: args.regexFlag,
+    caseSensitive: args.caseSensitiveFlag,
+    limit: positiveIntArg(args.limitArg, 50, '--limit'),
+    maxSeconds: positiveIntArg(args.maxSecondsArg, 120, '--max-seconds'),
+    contextChars: positiveIntArg(args.contextArg, 160, '--context'),
+    ...(months && { months }),
+    ...(args.conversationIdArg && { conversationId: args.conversationIdArg }),
+  }
+}
+
+/** The slow one. `--plan` costs the scan without running it; everything else
+ *  runs a full grep over the months in scope. */
+async function handleSearch(args: ParsedArgs): Promise<void> {
+  if (args.planFlag) {
+    const plan = planArchiveSearch(getArchiveDir(args), args.monthArg ? [args.monthArg] : undefined)
+    if (args.jsonFlag) console.log(JSON.stringify(plan, null, 2))
+    else renderSearchPlan(plan)
+    return
+  }
+
+  if (!args.queryArg) {
+    console.error('ERROR: provide a query, e.g. broker-cli archive search "some phrase"')
+    process.exit(1)
+  }
+
+  const result = await searchArchives(searchOptionsFrom(args))
+  if (args.jsonFlag) console.log(JSON.stringify(result, null, 2))
+  else renderSearchResult(result)
+  // An incomplete answer is not a successful one.
+  process.exit(result.truncated ? 2 : 0)
+}
+
 const SUBCOMMANDS: SubcommandMap = {
   list: handleList,
   export: handleExport,
@@ -95,6 +138,7 @@ const SUBCOMMANDS: SubcommandMap = {
   import: handleImport,
   prune: handlePrune,
   candidates: handleCandidates,
+  search: handleSearch,
 }
 
 export async function handleArchive(args: ParsedArgs): Promise<void> {

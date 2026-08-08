@@ -119,6 +119,10 @@ ARCHIVE COMMANDS (cold transcript storage, one immutable file per UTC month):
   archive prune <YYYY-MM> [--confirm]                       DELETE archived rows from the hot database.
                                                               Dry run unless --confirm. Re-verifies against
                                                               the DB and rolls back on any row-count drift.
+  archive search <query> [--month YYYY-MM] [--regex]        SLOW grep over the cold months. No index:
+    [--case-sensitive] [--conversation <id>] [--limit 50]     every byte is decompressed and scanned.
+    [--max-seconds 120] [--context 160] [--json]              Newest month first. Exits 2 when the answer
+  archive search --plan [--month YYYY-MM]                     is incomplete. Use --plan to cost it first.
 
 MAINTENANCE COMMAND (intended for cron at 05:00 local, AFTER the hourly backup):
   maintain [--hot-days 90] [--dry-run] [--confirm-delete]   Gate on a verified backup, then
