@@ -49,6 +49,9 @@ const ALLOWED_CCSESSION_FILES = new Set([
   // handler MUST NOT branch on it; the script enforces that below.
   'handlers/daemon.ts',
   'build-revive.ts',
+  // build-fork.ts: same contract as build-revive -- pulls ccSessionId out of the
+  // opaque bag purely to HAND it to the sentinel, never to branch on.
+  'build-fork.ts',
   'spawn-dispatch.ts',
   'conversation-store.ts',
 ])

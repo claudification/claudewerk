@@ -8,6 +8,7 @@ import type { Conversation } from '@/lib/types'
 import { extractProjectLabel, projectPath } from '@/lib/types'
 import { cn, contextWindowSize, formatModel, haptic } from '@/lib/utils'
 import { ProjectIcon } from '../project-icons'
+import { ConversationContextMenu } from '../project-list/conversation-context-menu'
 import { openReviveDialog } from '../revive-dialog-trigger'
 import { openSpawnDialog } from '../spawn-dialog-trigger'
 import { ProjectCanvasesSection } from './project-canvases-section'
@@ -97,38 +98,42 @@ function RecentConversationItem({ conversation }: { conversation: Conversation }
   const hasRecap = !!conversation.recap
 
   return (
-    <div className="px-3 py-2 border border-border hover:border-primary transition-colors space-y-1">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-mono text-primary truncate flex-1">{name}</span>
-        <span className="text-[10px] text-muted-foreground/70 shrink-0">{ago}</span>
-        {!hasRecap && <RecapButton conversationId={conversation.id} />}
-        <button
-          type="button"
-          className="text-[10px] font-mono text-accent hover:text-accent/80 transition-colors"
-          onClick={() => {
-            haptic('tap')
-            selectConversation(conversation.id)
-          }}
-        >
-          VIEW
-        </button>
-        {sentinelConnected && (
+    // Right-click parity with the sidebar rows: these had no context menu at
+    // all, so Fork / Rename / recaps were unreachable from the project page.
+    <ConversationContextMenu conversation={conversation}>
+      <div className="px-3 py-2 border border-border hover:border-primary transition-colors space-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-primary truncate flex-1">{name}</span>
+          <span className="text-[10px] text-muted-foreground/70 shrink-0">{ago}</span>
+          {!hasRecap && <RecapButton conversationId={conversation.id} />}
           <button
             type="button"
-            className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300 transition-colors"
+            className="text-[10px] font-mono text-accent hover:text-accent/80 transition-colors"
             onClick={() => {
               haptic('tap')
               selectConversation(conversation.id)
-              openReviveDialog({ conversationId: conversation.id })
             }}
           >
-            REVIVE
+            VIEW
           </button>
-        )}
+          {sentinelConnected && (
+            <button
+              type="button"
+              className="text-[10px] font-mono text-emerald-400 hover:text-emerald-300 transition-colors"
+              onClick={() => {
+                haptic('tap')
+                selectConversation(conversation.id)
+                openReviveDialog({ conversationId: conversation.id })
+              }}
+            >
+              REVIVE
+            </button>
+          )}
+        </div>
+        {recap && <div className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-line">{recap}</div>}
+        <ContextBar conversation={conversation} />
       </div>
-      {recap && <div className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-line">{recap}</div>}
-      <ContextBar conversation={conversation} />
-    </div>
+    </ConversationContextMenu>
   )
 }
 

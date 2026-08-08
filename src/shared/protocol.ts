@@ -5696,8 +5696,9 @@ export interface ListCcSessions {
 export interface ForkCcSession {
   type: 'fork_cc_session'
   requestId: string
-  cwd: string
-  /** The session to fold. Opaque to the broker (travels via agentHostMeta). */
+  /** Project URI. The SENTINEL resolves it to a path (CWD-IS-INFORMATIONAL). */
+  project: string
+  /** The session to fold. Comes out of the opaque agentHostMeta bag. */
   sourceCcSessionId: string
   /** Which sentinel profile's config dir holds the source transcript. */
   profile?: string

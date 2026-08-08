@@ -3985,7 +3985,7 @@ function connect(
 
         case 'fork_cc_session': {
           const forkMsg = msg as ForkCcSession
-          const expandedCwd = expandPath(forkMsg.cwd, spawnRoot)
+          const expandedCwd = expandPath(forkMsg.project, spawnRoot)
           // Unlike the list path above, an unknown profile is NOT silently
           // downgraded: this WRITES a transcript, and writing it under the wrong
           // profile's config dir would leave a fork CC can never resume.
