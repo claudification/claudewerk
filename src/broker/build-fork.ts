@@ -14,6 +14,9 @@
 import type { Conversation, ForkCcSession } from '../shared/protocol'
 
 export interface ForkOverrides {
+  /** Where the fork will be launched, when that differs from the source. */
+  targetWorktree?: string
+  targetCwd?: string
   /** Digest cold tool_results over this many tokens. 0 = faithful full copy. */
   digestOverTokens?: number
   /** Keep this many tokens of the most recent turns verbatim. */
@@ -42,6 +45,8 @@ export function buildForkMessage(
     requestId,
     project: conversation.project,
     sourceCcSessionId,
+    targetWorktree: overrides?.targetWorktree,
+    targetCwd: overrides?.targetCwd,
     profile: overrides?.profile ?? conversation.resolvedProfile,
     digestOverTokens: overrides?.digestOverTokens,
     tailTokenBudget: overrides?.tailTokenBudget,

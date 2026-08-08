@@ -18,6 +18,16 @@ import { FORK_STRATEGIES, type ForkStrategy } from './fork-strategy'
 
 export type ForkPhase = 'config' | 'forking' | 'ready' | 'launching'
 
+/**
+ * Where the fork will run. Chosen BEFORE folding, because CC derives its
+ * transcript directory from its launch cwd -- the fold has to be written where
+ * the launch will look for it.
+ */
+export interface ForkTarget {
+  cwd?: string
+  worktree?: string
+}
+
 export interface ForkLaunchOverrides {
   name?: string
   model?: string
@@ -34,7 +44,7 @@ export interface UseForkAction {
   error: string | null
   resumeId: string | null
   spawnedConversationId: string | null
-  runFork: (strategy: ForkStrategy) => Promise<void>
+  runFork: (strategy: ForkStrategy, target: ForkTarget) => Promise<void>
   runLaunch: (overrides: ForkLaunchOverrides) => Promise<void>
   reset: () => void
 }
@@ -55,19 +65,25 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
   }, [])
 
   const runFork = useCallback(
-    async (strategy: ForkStrategy) => {
+    async (strategy: ForkStrategy, target: ForkTarget) => {
       if (!conversation) return
       const spec = FORK_STRATEGIES[strategy]
       setPhase('forking')
       setError(null)
       haptic('tap')
 
+      // A cwd equal to the source project is not a retarget -- send nothing, so
+      // the sentinel forks in place instead of re-deriving the same directory.
+      const sourceCwd = projectPath(conversation.project)
+      const explicitCwd = target.cwd?.trim()
       const result = await forkCcSession({
         conversationId: conversation.id,
         digestOverTokens: spec.digestOverTokens,
         // MAX_SAFE_INTEGER would not survive JSON round-tripping meaningfully;
         // omit it and let the compactor keep everything (nothing is cold).
         tailTokenBudget: Number.isSafeInteger(spec.tailTokenBudget) ? spec.tailTokenBudget : undefined,
+        targetWorktree: target.worktree?.trim() || undefined,
+        targetCwd: explicitCwd && explicitCwd !== sourceCwd ? explicitCwd : undefined,
       })
 
       if (!result.ok) {

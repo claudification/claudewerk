@@ -74,6 +74,7 @@ import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { transcriptSlug } from '../shared/transcript-path'
+import { worktreePath } from '../shared/worktree-path'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -4007,8 +4008,18 @@ function connect(
             `Forking CC session ${forkMsg.sourceCcSessionId.slice(0, 8)} for: ${expandedCwd} (configDir=${forkConfigDir})`,
             verbose,
           )
+          // Resolve the launch target the same way the spawn will, so the fork
+          // lands in the directory CC will actually look in.
+          let forkTargetCwd: string | undefined
+          if (forkMsg.targetWorktree) {
+            forkTargetCwd = realpathIfPossible(worktreePath(expandedCwd, forkMsg.targetWorktree))
+          } else if (forkMsg.targetCwd) {
+            forkTargetCwd = realpathIfPossible(expandPath(forkMsg.targetCwd, spawnRoot))
+          }
+
           const outcome = await forkCcSession({
             cwd: realpathIfPossible(expandedCwd),
+            targetCwd: forkTargetCwd,
             configDir: forkConfigDir,
             sourceCcSessionId: forkMsg.sourceCcSessionId,
             digestOverTokens: forkMsg.digestOverTokens,

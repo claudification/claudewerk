@@ -86,6 +86,41 @@ describe('forkCcSession', () => {
     expect(r.stats.digestedResults).toBe(0)
   })
 
+  // Regression: CC derives its transcript directory from the cwd it is LAUNCHED
+  // in. A fork destined for a worktree but written beside the source is
+  // invisible to `--resume` -- CC finds nothing and silently starts fresh,
+  // which looks like "fork lost all context" rather than an error.
+  test('retargeting writes the fork under the TARGET directory, not the source', async () => {
+    const targetCwd = '/repo/some_project.v2/.claude/worktrees/feat-x'
+    const r = await forkCcSession({
+      cwd: CWD,
+      targetCwd,
+      configDir,
+      sourceCcSessionId: SOURCE_ID,
+      genSessionId: () => 'forked-into-worktree',
+    })
+    expect(r.ok).toBe(true)
+
+    const targetDir = join(configDir, 'projects', transcriptSlug(targetCwd))
+    expect(existsSync(join(targetDir, 'forked-into-worktree.jsonl'))).toBe(true)
+    // and NOT beside the source
+    expect(existsSync(join(projectDir, 'forked-into-worktree.jsonl'))).toBe(false)
+  })
+
+  test('creates the target directory when the worktree does not exist yet', async () => {
+    // The worktree is created at spawn time, AFTER the fork is written.
+    const targetCwd = '/repo/brand_new.place/wt'
+    const r = await forkCcSession({
+      cwd: CWD,
+      targetCwd,
+      configDir,
+      sourceCcSessionId: SOURCE_ID,
+      genSessionId: () => 'fork-into-new-dir',
+    })
+    expect(r.ok).toBe(true)
+    expect(existsSync(join(configDir, 'projects', transcriptSlug(targetCwd), 'fork-into-new-dir.jsonl'))).toBe(true)
+  })
+
   test('reports the attempted path when the source is missing', async () => {
     const r = await forkCcSession({ cwd: CWD, configDir, sourceCcSessionId: 'nope' })
     expect(r.ok).toBe(false)

@@ -5700,6 +5700,20 @@ export interface ForkCcSession {
   project: string
   /** The session to fold. Comes out of the opaque agentHostMeta bag. */
   sourceCcSessionId: string
+  /**
+   * Where the FORK will be launched, when that differs from `project`.
+   *
+   * CC derives its transcript directory from the cwd it is launched in, so a
+   * fork written beside the source is invisible to a `--resume` that runs
+   * somewhere else. The sentinel writes the fork under the TARGET's directory
+   * instead. Both are opaque to the broker; the SENTINEL resolves them.
+   *
+   * `targetWorktree` is a worktree NAME resolved against the project root (the
+   * sentinel owns that convention); `targetCwd` is an explicit path. Worktree
+   * wins if both are set. Neither = fork in place.
+   */
+  targetWorktree?: string
+  targetCwd?: string
   /** Which sentinel profile's config dir holds the source transcript. */
   profile?: string
   /** Digest cold tool_results over this many tokens. 0 disables (full copy). */

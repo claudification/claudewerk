@@ -21,6 +21,17 @@ export interface ForkRequest {
   conversationId: string
   digestOverTokens?: number
   tailTokenBudget?: number
+  /**
+   * Where the fork will be LAUNCHED, when retargeting (e.g. into a worktree).
+   * Must be sent at FORK time, not launch time: CC derives its transcript
+   * directory from its launch cwd, so the fork has to be written there or
+   * `--resume` looks in the wrong directory and finds nothing.
+   *
+   * The worktree NAME is sent rather than a path -- the sentinel owns the
+   * `.claude/worktrees/<name>` convention and resolves it.
+   */
+  targetWorktree?: string
+  targetCwd?: string
 }
 
 export type ForkResponse = { ok: true; resumeId: string; stats?: FoldStats } | { ok: false; error: string }

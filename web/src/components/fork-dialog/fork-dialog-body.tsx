@@ -66,17 +66,20 @@ export function ForkDialogBody({
   worktree: string
   onWorktreeChange: (v: string) => void
 }) {
-  const locked = phase === 'forking' || phase === 'launching'
+  const busy = phase === 'forking' || phase === 'launching'
+  // Anything that determines WHERE the fork was written is frozen the moment it
+  // exists. Editing the target after folding would launch in a directory the
+  // fork is not in, and CC would silently start fresh. Close and reopen to
+  // change it. Name / model / effort stay editable -- they cost nothing.
+  const targetFrozen = phase !== 'config'
 
   return (
     <div className="overflow-y-auto flex-1 min-h-0 space-y-4 px-1.5 py-1">
-      {/* Strategy is locked once folded -- changing it would invalidate the
-          fork that was already written. Close and reopen to pick another. */}
-      <StrategyPicker value={strategy} onChange={onStrategyChange} disabled={locked || phase === 'ready'} />
+      <StrategyPicker value={strategy} onChange={onStrategyChange} disabled={targetFrozen} />
 
       {stats && <FoldStatsReadout stats={stats} />}
 
-      <Field label="Name" value={name} onChange={onNameChange} placeholder="auto" disabled={locked} />
+      <Field label="Name" value={name} onChange={onNameChange} placeholder="auto" disabled={busy} />
 
       <LaunchConfigFields value={{ model, effort }} onChange={onFieldsChange} show={{ model: true, effort: true }} />
 
@@ -85,14 +88,14 @@ export function ForkDialogBody({
         value={cwd}
         onChange={onCwdChange}
         placeholder="same as source"
-        disabled={locked}
+        disabled={targetFrozen}
       />
       <Field
         label="Worktree"
         value={worktree}
         onChange={onWorktreeChange}
         placeholder="none -- fork in place"
-        disabled={locked}
+        disabled={targetFrozen}
       />
       <div className="text-[9px] text-comment leading-snug">
         Naming a worktree branches the WORK alongside the context: the fork launches in

@@ -64,7 +64,7 @@ export function ForkDialog() {
   }, [fork.spawnedConversationId, handleClose])
 
   const handlePrimary = useCallback(() => {
-    if (fork.phase === 'config') void fork.runFork(strategy)
+    if (fork.phase === 'config') void fork.runFork(strategy, { cwd, worktree })
     else if (fork.phase === 'ready') void fork.runLaunch({ name, model, effort, cwd, worktree })
   }, [fork, strategy, name, model, effort, cwd, worktree])
 

@@ -33,6 +33,9 @@ export function createForkRouter(conversationStore: ConversationStore, helpers: 
       conversationId?: string
       digestOverTokens?: number
       tailTokenBudget?: number
+      /** Opaque passthrough to the sentinel; the broker never resolves either. */
+      targetWorktree?: string
+      targetCwd?: string
     } | null
 
     if (!body?.conversationId) return c.json({ error: 'conversationId required' }, 400)
@@ -54,6 +57,8 @@ export function createForkRouter(conversationStore: ConversationStore, helpers: 
     const forkMsg = buildForkMessage(conversation, requestId, {
       digestOverTokens: body.digestOverTokens,
       tailTokenBudget: body.tailTokenBudget,
+      targetWorktree: body.targetWorktree,
+      targetCwd: body.targetCwd,
     })
     if (!forkMsg) {
       return c.json({ error: 'This conversation has no Claude Code session to fork yet' }, 409)

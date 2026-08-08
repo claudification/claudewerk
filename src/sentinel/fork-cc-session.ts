@@ -14,7 +14,7 @@
  * `scripts/spike-fork-supercompact.ts`.
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { runCompaction } from '../agent-host-common/super-compact'
 import { ClaudeCodeAdapter } from '../agent-host-common/super-compact/claude-code-adapter'
@@ -25,6 +25,12 @@ import { transcriptSlug } from '../shared/transcript-path'
 export interface ForkCcSessionInput {
   /** Resolved, symlink-free host path the source session ran in. */
   cwd: string
+  /**
+   * Where the fork will be LAUNCHED, if not `cwd`. CC derives the transcript
+   * directory from its launch cwd, so a fork destined for a worktree must be
+   * written under the worktree's directory or `--resume` will not find it.
+   */
+  targetCwd?: string
   /** Config dir of the profile that owns the source transcript. */
   configDir: string
   sourceCcSessionId: string
@@ -47,8 +53,14 @@ export type ForkOutcome =
  * path convention, and the fork shows up in the session picker for free.
  */
 export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutcome> {
-  const projectDir = join(input.configDir, 'projects', transcriptSlug(input.cwd))
-  const sourcePath = join(projectDir, `${input.sourceCcSessionId}.jsonl`)
+  const projectsRoot = join(input.configDir, 'projects')
+  const sourceDir = join(projectsRoot, transcriptSlug(input.cwd))
+  const sourcePath = join(sourceDir, `${input.sourceCcSessionId}.jsonl`)
+
+  // Retargeting writes the fork under the directory CC will look in once it is
+  // launched THERE -- not next to the source. The directory may not exist yet
+  // (the worktree is created at spawn time), so it is created here.
+  const targetDir = input.targetCwd ? join(projectsRoot, transcriptSlug(input.targetCwd)) : sourceDir
 
   if (!existsSync(sourcePath)) {
     // The most likely cause by far is a profile mismatch: CC writes the
@@ -59,9 +71,10 @@ export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutc
   }
 
   const newCcSessionId = (input.genSessionId ?? (() => crypto.randomUUID()))()
-  const outPath = join(projectDir, `${newCcSessionId}.jsonl`)
+  const outPath = join(targetDir, `${newCcSessionId}.jsonl`)
 
   try {
+    mkdirSync(targetDir, { recursive: true })
     const result = await runCompaction(new FileReader(sourcePath), new FileWriter(outPath), new ClaudeCodeAdapter(), {
       newSessionId: newCcSessionId,
       parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
