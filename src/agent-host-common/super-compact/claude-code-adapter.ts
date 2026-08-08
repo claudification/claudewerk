@@ -91,6 +91,22 @@ function lineToEntry(obj: Record<string, unknown>): Entry {
   return entry
 }
 
+/**
+ * CC stores a SECOND copy of every tool's output on the user entry, in a
+ * sibling `toolUseResult` field outside `message.content`. On a real 675k-token
+ * session that duplicate is 2.9MB -- 53% of all user-entry bytes -- so leaving
+ * it behind hands the fork a full-size copy of exactly what was just digested
+ * and makes the fold a no-op wherever CC reads that field back.
+ *
+ * When a strategy folds a tool_result, the duplicate goes with it.
+ */
+function foldToolUseResult(obj: Record<string, unknown>, blocks: ContentBlock[]): void {
+  if (obj.toolUseResult === undefined) return
+  const folded = blocks.find(b => b.kind === 'tool_result' && b.folded)
+  if (folded?.kind !== 'tool_result') return
+  obj.toolUseResult = `[folded -- see the digest in message.content; recover by tool_use id ${folded.toolUseId}]`
+}
+
 export class ClaudeCodeAdapter implements TranscriptAdapter {
   parse(raw: string): Transcript {
     const entries: Entry[] = []
@@ -112,6 +128,7 @@ export class ClaudeCodeAdapter implements TranscriptAdapter {
         const message = { ...(obj.message as Record<string, unknown>) }
         message.content = contentShape((obj.message as Record<string, unknown>)?.content, e.blocks)
         obj.message = message
+        foldToolUseResult(obj, e.blocks)
       }
       return JSON.stringify(obj)
     })

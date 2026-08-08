@@ -93,6 +93,64 @@ function findResultBlock(entries: Entry[], toolUseId: string): ContentBlock | nu
   return null
 }
 
+/** Head of the original output kept inline on a digest, in characters. */
+const DIGEST_PREVIEW_CHARS = 240
+
+/** The text a tool_result's content contributes to the context window. */
+function resultText(b: ContentBlock & { kind: 'tool_result' }): string {
+  return typeof b.content === 'string' ? b.content : JSON.stringify(b.content ?? '')
+}
+
+/**
+ * Digest every oversized cold tool_result, superseded or not.
+ *
+ * This is the strategy that actually moves the needle. A token census of real
+ * sessions puts ~90% of a long transcript in tool_result blocks and ~87% in
+ * `Read` output alone, nearly all of it one-shot reads that
+ * `collapseSupersededReads` deliberately will not touch (it only folds a file
+ * read AGAIN later). Without this the whole fold lands around -14%.
+ *
+ * Pair-safe by the same construction as every primitive here: the tool_result
+ * block stays, only its content shrinks -- so the tool cycle can never orphan.
+ * A short head preview survives inline because the first lines of a read or a
+ * command are usually the identifying ones; the rest is recoverable from the
+ * original session via the anchored tool_use id.
+ */
+export function digestLargeToolResults(
+  cold: Entry[],
+  maxTokens: number,
+  estimate: TokenEstimator,
+): { digested: number; anchors: FoldAnchor[] } {
+  // tool_use id -> what produced it, so a digest can name its source.
+  const source = new Map<string, { name: string; file: string | null }>()
+  for (const e of cold) {
+    for (const b of e.blocks ?? []) {
+      if (b.kind === 'tool_use') source.set(b.id, { name: b.name, file: filePathOf(b) })
+    }
+  }
+
+  let digested = 0
+  const anchors: FoldAnchor[] = []
+  for (const e of cold) {
+    for (const b of e.blocks ?? []) {
+      if (b.kind !== 'tool_result') continue
+      const text = resultText(b)
+      if (estimate(text) <= maxTokens) continue
+
+      const src = source.get(b.toolUseId)
+      const label = src?.file ?? src?.name ?? 'tool call'
+      const preview = text.slice(0, DIGEST_PREVIEW_CHARS).trimEnd()
+      b.content =
+        `[folded: ${src?.name ?? 'tool'} output for ${label} -- ${text.length} chars digested; ` +
+        `recover from the original session by tool_use id ${b.toolUseId}]\n${preview}...`
+      b.folded = true
+      digested++
+      anchors.push({ file: label, toolUseId: b.toolUseId })
+    }
+  }
+  return { digested, anchors }
+}
+
 /**
  * Fold superseded file reads: a `Read` whose file is later read or edited again
  * in the cold zone is dead weight, so shrink its tool_result to a digest (the
@@ -116,6 +174,7 @@ export function collapseSupersededReads(cold: Entry[]): { collapsed: number; anc
     const result = findResultBlock(cold, op.id)
     if (result && result.kind === 'tool_result') {
       result.content = `[folded: Read ${op.file} -- superseded by a later edit/read; recover from the original session by tool_use id ${op.id}]`
+      result.folded = true
       collapsed++
       anchors.push({ file: op.file, toolUseId: op.id })
     }

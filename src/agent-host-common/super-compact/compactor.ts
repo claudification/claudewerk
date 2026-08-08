@@ -11,7 +11,14 @@
  */
 
 import { type Entry, isMessageEntry, type Transcript } from './model'
-import { collapseSupersededReads, dropThinking, entryTokens, type FoldAnchor, findTailStart } from './strategies'
+import {
+  collapseSupersededReads,
+  digestLargeToolResults,
+  dropThinking,
+  entryTokens,
+  type FoldAnchor,
+  findTailStart,
+} from './strategies'
 import { estimateTokens, type TokenEstimator } from './tokens'
 
 export interface CompactOptions {
@@ -25,6 +32,12 @@ export interface CompactOptions {
   dropThinking?: boolean
   /** Digest superseded file reads in the cold zone (default true). */
   collapseSupersededReads?: boolean
+  /**
+   * Digest any cold tool_result larger than this many tokens (default 400).
+   * This is the strategy that carries the fold -- ~90% of a long session's
+   * tokens live in tool_results. Set to 0 to disable.
+   */
+  digestToolResultsOverTokens?: number
   estimate?: TokenEstimator
   /** Id generator for synthesized/re-stitched entries (override for deterministic tests). */
   genId?: () => string
@@ -39,11 +52,15 @@ export interface CompactResult {
     entriesAfter: number
     droppedThinking: number
     collapsedReads: number
+    digestedResults: number
     tailEntries: number
   }
 }
 
 const TEMPLATE_FIELDS = ['cwd', 'version', 'gitBranch', 'userType', 'entrypoint', 'permissionMode', 'timestamp']
+
+/** Max fold anchors enumerated in the preamble before it summarizes the rest. */
+const PREAMBLE_ANCHOR_LIMIT = 40
 
 function cloneEntry(e: Entry): Entry {
   return structuredClone(e)
@@ -65,7 +82,12 @@ function renderPreamble(coldCount: number, anchors: FoldAnchor[], parentRef?: Co
   }
   if (anchors.length) {
     lines.push('', 'Folded blocks (recover from the original session by tool_use id):')
-    for (const a of anchors) lines.push(`- ${a.file} (${a.toolUseId})`)
+    // Every digested result contributes an anchor, so a heavy fold can produce
+    // hundreds. Listing them all would re-spend the context the fold just freed.
+    for (const a of anchors.slice(0, PREAMBLE_ANCHOR_LIMIT)) lines.push(`- ${a.file} (${a.toolUseId})`)
+    if (anchors.length > PREAMBLE_ANCHOR_LIMIT) {
+      lines.push(`- ...and ${anchors.length - PREAMBLE_ANCHOR_LIMIT} more, all recoverable from the original session.`)
+    }
   }
   return lines.join('\n')
 }
@@ -116,11 +138,21 @@ export function superCompact(t: Transcript, opts: CompactOptions): CompactResult
   if (opts.dropThinking !== false) for (const e of cold) droppedThinking += dropThinking(e)
 
   let collapsedReads = 0
-  let anchors: FoldAnchor[] = []
+  const anchors: FoldAnchor[] = []
   if (opts.collapseSupersededReads !== false) {
     const r = collapseSupersededReads(cold)
     collapsedReads = r.collapsed
-    anchors = r.anchors
+    anchors.push(...r.anchors)
+  }
+
+  // AFTER the superseded pass: that one has already shrunk its targets, so they
+  // fall under the threshold here and are not digested twice.
+  const digestOver = opts.digestToolResultsOverTokens ?? 400
+  let digestedResults = 0
+  if (digestOver > 0) {
+    const d = digestLargeToolResults(cold, digestOver, estimate)
+    digestedResults = d.digested
+    anchors.push(...d.anchors)
   }
 
   // Drop cold entries left with no blocks (e.g. a pure-thinking assistant turn).
@@ -140,6 +172,7 @@ export function superCompact(t: Transcript, opts: CompactOptions): CompactResult
       entriesAfter: entries.length,
       droppedThinking,
       collapsedReads,
+      digestedResults,
       tailEntries: tail.length,
     },
   }
