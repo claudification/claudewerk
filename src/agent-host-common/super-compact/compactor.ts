@@ -26,6 +26,14 @@ export interface CompactOptions {
   newSessionId: string
   /** Where the original lives, embedded in the preamble for recovery. */
   parentRef?: { sessionId: string; path?: string }
+  /**
+   * Opaque text placed at the very top of the preamble, before anything else.
+   *
+   * The caller owns its content -- this layer deliberately knows nothing about
+   * conversations, hosts or tools. Used to carry fork provenance so the resumed
+   * agent knows what it is reading and how to reach the original.
+   */
+  provenanceBlock?: string
   /** Keep the most recent entries under this token budget verbatim (default 20k). */
   tailTokenBudget?: number
   /** Drop thinking blocks from the cold zone (default true). */
@@ -72,8 +80,17 @@ function pickTemplate(raw: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
-function renderPreamble(coldCount: number, anchors: FoldAnchor[], parentRef?: CompactOptions['parentRef']): string {
-  const lines = ['[super-compacted context]', '']
+function renderPreamble(
+  coldCount: number,
+  anchors: FoldAnchor[],
+  parentRef?: CompactOptions['parentRef'],
+  provenanceBlock?: string,
+): string {
+  // Provenance goes FIRST -- it is the frame for everything below it, and an
+  // agent that skims only the top of a long preamble still gets it.
+  const lines = provenanceBlock
+    ? [provenanceBlock, '', '[super-compacted context]', '']
+    : ['[super-compacted context]', '']
   lines.push(
     `This session is a compacted continuation of a longer transcript; ${coldCount} earlier turns were folded to save context.`,
   )
@@ -98,7 +115,7 @@ function buildPreamble(
   coldCount: number,
   anchors: FoldAnchor[],
 ): Entry {
-  const text = renderPreamble(coldCount, anchors, opts.parentRef)
+  const text = renderPreamble(coldCount, anchors, opts.parentRef, opts.provenanceBlock)
   return {
     id: null,
     parentId: null,

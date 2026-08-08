@@ -11,6 +11,7 @@
  * different profile would look in the wrong directory and find nothing.
  */
 
+import { renderForkProvenance } from '../shared/fork-provenance'
 import type { Conversation, ForkCcSession } from '../shared/protocol'
 
 export interface ForkOverrides {
@@ -40,11 +41,21 @@ export function buildForkMessage(
   // menu item rather than a failed request.
   if (typeof sourceCcSessionId !== 'string' || !sourceCcSessionId) return null
 
+  // `digestOverTokens: 0` means nothing was folded -- that is the FULL copy, and
+  // telling the agent things were elided when they were not would send it
+  // hunting for detail that is already in front of it.
+  const mode = overrides?.digestOverTokens === 0 ? 'full' : 'condensed'
+
   return {
     type: 'fork_cc_session',
     requestId,
     project: conversation.project,
     sourceCcSessionId,
+    provenanceBlock: renderForkProvenance({
+      conversationId: conversation.id,
+      conversationName: conversation.title || conversation.agentName || undefined,
+      mode,
+    }),
     targetWorktree: overrides?.targetWorktree,
     targetCwd: overrides?.targetCwd,
     profile: overrides?.profile ?? conversation.resolvedProfile,

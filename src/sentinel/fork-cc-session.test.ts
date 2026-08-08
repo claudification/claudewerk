@@ -121,6 +121,26 @@ describe('forkCcSession', () => {
     expect(existsSync(join(configDir, 'projects', transcriptSlug(targetCwd), 'fork-into-new-dir.jsonl'))).toBe(true)
   })
 
+  test('carries the provenance block into the fold preamble, at the very top', async () => {
+    const r = await forkCcSession({
+      cwd: CWD,
+      configDir,
+      sourceCcSessionId: SOURCE_ID,
+      provenanceBlock: '<forked from_conversation="conv_parent">from the parent</forked>',
+      tailTokenBudget: 30,
+      genSessionId: () => 'fork-with-provenance',
+    })
+    expect(r.ok).toBe(true)
+
+    const first = JSON.parse(
+      (await Bun.file(join(projectDir, 'fork-with-provenance.jsonl')).text()).split('\n')[0],
+    ) as { message: { content: unknown } }
+    const text = JSON.stringify(first.message.content)
+    expect(text).toContain('conv_parent')
+    // Ahead of the fold's own header, so a skim still catches it.
+    expect(text.indexOf('forked')).toBeLessThan(text.indexOf('super-compacted'))
+  })
+
   test('reports the attempted path when the source is missing', async () => {
     const r = await forkCcSession({ cwd: CWD, configDir, sourceCcSessionId: 'nope' })
     expect(r.ok).toBe(false)

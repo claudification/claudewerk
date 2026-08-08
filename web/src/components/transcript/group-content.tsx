@@ -7,6 +7,7 @@
 
 import type { CSSProperties } from 'react'
 import { cn } from '@/lib/utils'
+import { ForkBanner } from './fork-banner'
 import { CompactedDivider, CompactingBanner, MemoizedGroupView, SkillDivider } from './group-view'
 import type { TranscriptSettings } from './group-view-types'
 import type { DisplayGroup } from './grouping'
@@ -98,6 +99,15 @@ function GroupContent({
 }: GroupContentProps) {
   if (group.type === 'compacted') return <CompactedDivider />
   if (group.type === 'compacting') return <CompactingBanner />
+  if (group.type === 'forked') {
+    return (
+      <ForkBanner
+        conversationId={group.forkParentId ?? ''}
+        conversationName={group.forkParentName}
+        preamble={group.forkPreamble}
+      />
+    )
+  }
   if (group.type === 'skill') {
     const entry = group.entries[0] as {
       message?: { content?: string | Array<{ type: string; text?: string }> }

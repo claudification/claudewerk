@@ -4022,6 +4022,7 @@ function connect(
             targetCwd: forkTargetCwd,
             configDir: forkConfigDir,
             sourceCcSessionId: forkMsg.sourceCcSessionId,
+            provenanceBlock: forkMsg.provenanceBlock,
             digestOverTokens: forkMsg.digestOverTokens,
             tailTokenBudget: forkMsg.tailTokenBudget,
           })

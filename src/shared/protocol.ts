@@ -5716,6 +5716,12 @@ export interface ForkCcSession {
   targetCwd?: string
   /** Which sentinel profile's config dir holds the source transcript. */
   profile?: string
+  /**
+   * Pre-rendered provenance text placed at the top of the fold's preamble, so
+   * the forked agent knows it is a fork and how to reach the parent. Rendered
+   * by the BROKER (conversation identity is ours) and opaque to the sentinel.
+   */
+  provenanceBlock?: string
   /** Digest cold tool_results over this many tokens. 0 disables (full copy). */
   digestOverTokens?: number
   /** Keep this many tokens of the most recent turns verbatim. */

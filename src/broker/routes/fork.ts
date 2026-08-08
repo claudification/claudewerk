@@ -112,7 +112,10 @@ export function createForkRouter(conversationStore: ConversationStore, helpers: 
 
     return c.json({
       summary: outcome.summary,
-      seedPrompt: buildForkSeedPrompt(outcome.summary, conversation.title || undefined),
+      seedPrompt: buildForkSeedPrompt(outcome.summary, {
+        conversationId: conversation.id,
+        title: conversation.title || conversation.agentName || undefined,
+      }),
     })
   })
 

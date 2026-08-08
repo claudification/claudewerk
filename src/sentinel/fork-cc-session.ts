@@ -34,6 +34,8 @@ export interface ForkCcSessionInput {
   /** Config dir of the profile that owns the source transcript. */
   configDir: string
   sourceCcSessionId: string
+  /** Opaque provenance text for the top of the fold's preamble. */
+  provenanceBlock?: string
   /** Digest cold tool_results over this many tokens; 0 copies them verbatim. */
   digestOverTokens?: number
   tailTokenBudget?: number
@@ -78,6 +80,7 @@ export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutc
     const result = await runCompaction(new FileReader(sourcePath), new FileWriter(outPath), new ClaudeCodeAdapter(), {
       newSessionId: newCcSessionId,
       parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
+      provenanceBlock: input.provenanceBlock,
       digestToolResultsOverTokens: input.digestOverTokens,
       tailTokenBudget: input.tailTokenBudget,
     })

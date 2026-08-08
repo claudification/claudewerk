@@ -15,6 +15,7 @@
  * continuation summaries, so a resumed agent reads something familiar.
  */
 
+import { renderForkProvenance } from '../shared/fork-provenance'
 import type { TranscriptEntry } from '../shared/protocol'
 import { chat } from './recap/shared/openrouter-client'
 import { extractUserPromptsAndFinals } from './recap/shared/transcript-extract'
@@ -114,10 +115,20 @@ export async function generateForkSummary(input: ForkSummaryInput): Promise<Fork
  * The seed text the forked session starts from. Framed as inherited context
  * rather than as an instruction, so the agent does not read the summary's
  * "NEXT" section as a command to start executing before the user has spoken.
+ *
+ * The provenance block leads, because this is the lossiest mode: the summary is
+ * ALL the agent gets, so knowing a full record exists -- and how to read it --
+ * matters more here than anywhere else.
  */
-export function buildForkSeedPrompt(summary: string, sourceTitle?: string): string {
-  const from = sourceTitle ? ` of "${sourceTitle}"` : ''
+export function buildForkSeedPrompt(summary: string, source: { conversationId: string; title?: string }): string {
+  const from = source.title ? ` of "${source.title}"` : ''
   return [
+    renderForkProvenance({
+      conversationId: source.conversationId,
+      conversationName: source.title,
+      mode: 'summarized',
+    }),
+    '',
     `This session is a continuation${from}. The conversation history has been replaced`,
     'by the summary below. Treat it as context you already have, not as a new instruction --',
     'wait for the user before acting on it.',

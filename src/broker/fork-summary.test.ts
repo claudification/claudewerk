@@ -92,11 +92,21 @@ describe('generateForkSummary', () => {
 })
 
 describe('buildForkSeedPrompt', () => {
+  const SOURCE = { conversationId: 'conv_parent_1', title: 'Slug hunt' }
+
   test('frames the summary as context, not as an instruction to execute', () => {
-    const seed = buildForkSeedPrompt('GOAL -- ship it', 'Slug hunt')
+    const seed = buildForkSeedPrompt('GOAL -- ship it', SOURCE)
     expect(seed).toContain('Slug hunt')
     expect(seed).toContain('GOAL -- ship it')
     // The guard that stops a forked agent charging ahead before the user speaks.
     expect(seed).toContain('wait for the user')
+  })
+
+  test('leads with provenance so the lossiest mode knows a full record exists', () => {
+    const seed = buildForkSeedPrompt('GOAL -- ship it', SOURCE)
+    expect(seed.startsWith('<forked from_conversation="conv_parent_1"')).toBe(true)
+    // Names the tools that actually reach the parent, with the id filled in.
+    expect(seed).toContain('search_transcripts({ conversationId: "conv_parent_1"')
+    expect(seed).toContain('get_transcript_context({ conversationId: "conv_parent_1"')
   })
 })
