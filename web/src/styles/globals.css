@@ -333,6 +333,16 @@ body {
 		font-size: 0.9em;
 	}
 
+	/* `==highlight==` -> <mark>. The UA default (black on #ff0) is unreadable on
+	   the dark theme, so tint with the accent and underline it instead. */
+	mark {
+		background: color-mix(in oklch, var(--accent) 16%, transparent);
+		color: inherit;
+		border-radius: 3px;
+		padding: 0.02em 0.3em;
+		box-shadow: inset 0 -1.5px 0 color-mix(in oklch, var(--accent) 50%, transparent);
+	}
+
 	pre {
 		background: var(--background);
 		border: 1px solid var(--border);

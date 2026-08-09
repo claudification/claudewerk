@@ -317,6 +317,39 @@ marked.use({
   ],
 })
 
+// Highlight: `==marked text==` -> `<mark>`. Not GFM, but it's the de-facto
+// markdown highlight syntax (Obsidian, pandoc, markdown-it-mark) and models
+// emit it unprompted -- without this it renders as literal `==text==`.
+// Same guard rails as our `del` above:
+// - Double equals only (`===` blocked, so `a === b` and `====` rules survive)
+// - Content must start and end with non-whitespace (kills `a == b` comparisons,
+//   which always have a space after the operator)
+// - Max 200 chars content (no long-distance accidental pairing)
+marked.use({
+  extensions: [
+    {
+      name: 'mark',
+      level: 'inline',
+      start(src: string) {
+        return src.indexOf('==')
+      },
+      tokenizer(src: string) {
+        const match = src.match(/^==(?!=)(\S[\s\S]{0,198}?\S|\S)==(?!=)/)
+        if (!match) return undefined
+        // biome-ignore lint/suspicious/noExplicitAny: marked extension API requires loose token typing
+        const token = { type: 'mark', raw: match[0], text: match[1], tokens: [] as any[] }
+        // biome-ignore lint/suspicious/noExplicitAny: marked internal lexer not exposed in public types
+        ;(this as any).lexer.inlineTokens(match[1], token.tokens)
+        return token
+      },
+      // biome-ignore lint/suspicious/noExplicitAny: marked extension renderer receives generic token
+      renderer(token: any) {
+        return `<mark>${this.parser.parseInline(token.tokens)}</mark>`
+      },
+    },
+  ],
+})
+
 // Conversation reference pill: `<conversation id="...">project:slug</conversation>`
 // (the `:` completer's token). Rendered as a clickable inline chip showing the
 // slug. The stable id rides in a data attribute; Markdown's click delegate calls
