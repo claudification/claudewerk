@@ -66,6 +66,56 @@ describe('resolveForkFrom', () => {
     expect(r.statusCode).toBe(503)
   })
 
+  /**
+   * A store whose sentinel answers the fold immediately, so the resume path can
+   * be asserted without a live sentinel.
+   */
+  function foldingStore(): ConversationStore {
+    let listener: ((msg: unknown) => void) | undefined
+    return store({
+      getSentinelByAlias: () => ({ send: () => listener?.({ resumeId: 'cc-fork-1' }) }),
+      addForkListener: (_id: string, cb: (msg: unknown) => void) => {
+        listener = cb
+      },
+      removeForkListener: () => {},
+    })
+  }
+
+  // The fold is WRITTEN under the source profile's config dir (build-fork.ts).
+  // Leaving profile off the spawn lets the sentinel's picker resolve a
+  // different one, and `--resume` then reads a config dir with no such
+  // transcript -- a fork that silently loses everything it inherited.
+  test('pins the spawn to the source profile so --resume finds the fold', async () => {
+    const r = await resolveForkFrom({ ...BASE, forkFrom: 'conv_parent' } as SpawnRequest, foldingStore())
+    if (!r.ok) throw new Error(r.error)
+    expect(r.req.mode).toBe('resume')
+    expect(r.req.resumeId).toBe('cc-fork-1')
+    expect(r.req.profile).toBe('work')
+  })
+
+  test('refuses a caller profile that contradicts the source profile', async () => {
+    const r = await resolveForkFrom(
+      { ...BASE, forkFrom: 'conv_parent', profile: 'personal' } as SpawnRequest,
+      foldingStore(),
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) throw new Error('expected failure')
+    expect(r.statusCode).toBe(400)
+    expect(r.error).toContain('profile')
+  })
+
+  // A summary fork is a FRESH session -- it reads no folded transcript, so the
+  // source profile has no claim on where it runs.
+  test('leaves the profile alone on the summarized path', async () => {
+    const r = await resolveForkFrom(
+      { ...BASE, forkFrom: 'conv_parent', forkStrategy: 'summarized', profile: 'personal' } as SpawnRequest,
+      store(),
+      { summarize: okSummary },
+    )
+    if (!r.ok) throw new Error(r.error)
+    expect(r.req.profile).toBe('personal')
+  })
+
   const okSummary = (async () => ({ ok: true as const, summary: 'GOAL -- ship it' })) as never
 
   test('summarized needs no sentinel and seeds appendSystemPrompt, not a resume', async () => {

@@ -79,8 +79,12 @@ export function useLaunchProgress({
 
   /** Clear all progress state without starting a new run. Call when re-entering
    *  a host UI (e.g. reopening a dialog) to drop stale error/steps from a
-   *  previous launch. */
-  function reset() {
+   *  previous launch.
+   *
+   *  Stable identity on purpose: hosts put it in effect dependency arrays to
+   *  wire up their open handler, and an unstable one re-runs that effect on
+   *  every render. Touches only setState + refs, so [] is sound. */
+  const reset = useCallback(() => {
     setSteps([])
     setError(null)
     setStartTime(0)
@@ -88,7 +92,7 @@ export function useLaunchProgress({
     setCopied(false)
     connectedRef.current = false
     connectedStepRef.current = false
-  }
+  }, [])
 
   // Track spawned conversation by conversationId
   const spawnedConversation: Conversation | null = useConversationsStore(

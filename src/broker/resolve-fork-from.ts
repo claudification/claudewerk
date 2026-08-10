@@ -8,7 +8,8 @@
  * continuation summary.
  */
 
-import type { SpawnRequest } from '../shared/spawn-schema'
+import type { Conversation } from '../shared/protocol'
+import { DEFAULT_PROFILE_NAME, type SpawnRequest } from '../shared/spawn-schema'
 import type { ConversationStore } from './conversation-store'
 import { runFork } from './fork-run'
 import { buildForkSeedPrompt, generateForkSummary } from './fork-summary'
@@ -27,6 +28,31 @@ const STRATEGY_FOLD: Record<'full' | 'condensed', { digestOverTokens: number; ta
 export interface ResolveForkDeps {
   /** Injectable so the summarized path is testable without a live model call. */
   summarize?: typeof generateForkSummary
+}
+
+/**
+ * Mode C: summarize instead of folding.
+ *
+ * The result is a FRESH session -- nothing to resume, so no profile holds it.
+ * The inherited context rides the system prompt rather than `prompt`, so the
+ * agent boots aware of the source instead of being handed a turn to execute.
+ */
+async function resolveSummarized(
+  rest: SpawnRequest,
+  source: Conversation,
+  conversationStore: ConversationStore,
+  deps: ResolveForkDeps,
+): Promise<ResolveForkResult> {
+  const title = source.title || source.agentName || undefined
+  const summary = await (deps.summarize ?? generateForkSummary)({
+    entries: conversationStore.getTranscriptEntries(source.id),
+    conversationTitle: title,
+  })
+  if (!summary.ok) return { ok: false, statusCode: 400, error: `forkFrom: ${summary.error}` }
+
+  const seed = buildForkSeedPrompt(summary.summary, { conversationId: source.id, title })
+  const appendSystemPrompt = rest.appendSystemPrompt ? `${rest.appendSystemPrompt}\n\n${seed}` : seed
+  return { ok: true, req: { ...rest, appendSystemPrompt } }
 }
 
 export async function resolveForkFrom(
@@ -55,27 +81,19 @@ export async function resolveForkFrom(
   // what to do with them.
   const { forkFrom: _f, forkStrategy: _s, ...rest } = req
 
-  if (strategy === 'summarized') {
-    const entries = conversationStore.getTranscriptEntries(req.forkFrom)
-    const summary = await (deps.summarize ?? generateForkSummary)({
-      entries,
-      conversationTitle: source.title || source.agentName || undefined,
-    })
-    if (!summary.ok) return { ok: false, statusCode: 400, error: `forkFrom: ${summary.error}` }
+  if (strategy === 'summarized') return resolveSummarized(rest, source, conversationStore, deps)
 
-    const seed = buildForkSeedPrompt(summary.summary, {
-      conversationId: source.id,
-      title: source.title || source.agentName || undefined,
-    })
-    // FRESH session -- nothing to resume. The inherited context rides the system
-    // prompt so the agent is not handed a turn to execute on boot.
+  // The fold is written under the SOURCE profile's config dir, so the spawn has
+  // to run there too -- CC derives its transcript directory from the profile it
+  // boots on, and a mismatch makes `--resume` find nothing and start empty.
+  // Omitting the profile is not neutral: the sentinel's picker then consults
+  // `defaultSelection` and may land anywhere.
+  const forkProfile = source.resolvedProfile || DEFAULT_PROFILE_NAME
+  if (rest.profile && rest.profile !== forkProfile) {
     return {
-      ok: true,
-      req: {
-        ...rest,
-        cwd: rest.cwd,
-        appendSystemPrompt: rest.appendSystemPrompt ? `${rest.appendSystemPrompt}\n\n${seed}` : seed,
-      },
+      ok: false,
+      statusCode: 400,
+      error: `forkFrom: profile "${rest.profile}" contradicts the source profile "${forkProfile}" -- a fork can only resume on the profile that holds its transcript`,
     }
   }
 
@@ -90,5 +108,5 @@ export async function resolveForkFrom(
   })
   if (!forked.ok) return { ok: false, statusCode: forked.status, error: `forkFrom: ${forked.error}` }
 
-  return { ok: true, req: { ...rest, mode: 'resume', resumeId: forked.resumeId } }
+  return { ok: true, req: { ...rest, mode: 'resume', resumeId: forked.resumeId, profile: forkProfile } }
 }

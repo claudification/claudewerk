@@ -27,12 +27,16 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve as resolvePath } from 'node:path'
 import type { SelectionMode, SentinelProfileInfo } from '../shared/protocol'
+import { DEFAULT_PROFILE_NAME } from '../shared/spawn-schema'
 
 /** Valid profile-name shape -- mirrors `src/shared/project-uri.ts`. */
 const PROFILE_NAME_RE = /^[a-z0-9-]{1,63}$/
 
-/** The implicit `default` profile name, used when a spawn carries no profile. */
-export const DEFAULT_PROFILE_NAME = 'default'
+/** The implicit `default` profile name, used when a spawn carries no profile.
+ *  Defined in the shared schema so the broker and control panel can pin to the
+ *  same literal without importing sentinel-local code; re-exported here because
+ *  this module has long been its home. */
+export { DEFAULT_PROFILE_NAME }
 
 /** Default pool name used when a profile omits `pool` and as the
  *  sentinel-wide `defaultPool` fallback. */

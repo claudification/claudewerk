@@ -7,14 +7,16 @@
  * deserves to see it before paying for a launch.
  */
 
-import type { SpawnRequest } from '@shared/spawn-schema'
 import { useCallback, useState } from 'react'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
+import { buildForkSpawnRequest, type ForkLaunchOverrides } from './build-fork-spawn'
 import { type FoldStats, forkCcSession, forkSummary } from './fork-api'
 import { FORK_STRATEGIES, type ForkStrategy } from './fork-strategy'
+
+export type { ForkLaunchOverrides } from './build-fork-spawn'
 
 export type ForkPhase = 'config' | 'forking' | 'ready' | 'launching'
 
@@ -26,16 +28,6 @@ export type ForkPhase = 'config' | 'forking' | 'ready' | 'launching'
 export interface ForkTarget {
   cwd?: string
   worktree?: string
-}
-
-export interface ForkLaunchOverrides {
-  name?: string
-  model?: string
-  effort?: string
-  /** Target working directory; defaults to the source conversation's project. */
-  cwd?: string
-  worktree?: string
-  prompt?: string
 }
 
 export interface UseForkAction {
@@ -132,23 +124,7 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
       setError(null)
       haptic('tap')
 
-      const req: SpawnRequest = {
-        cwd: overrides.cwd?.trim() || projectPath(conversation.project),
-        ...(resumeId
-          ? { mode: 'resume' as const, resumeId }
-          : // Summary mode: a FRESH session whose system prompt carries the
-            // inherited context. appendSystemPrompt rather than `prompt`, so the
-            // context is ambient and the agent is not handed a turn to execute.
-            { appendSystemPrompt: seedPrompt ?? undefined }),
-        name: overrides.name?.trim() || undefined,
-        model: (overrides.model || undefined) as SpawnRequest['model'],
-        effort: (overrides.effort || undefined) as SpawnRequest['effort'],
-        worktree: overrides.worktree?.trim() || undefined,
-        prompt: overrides.prompt?.trim() || undefined,
-        jobId: crypto.randomUUID(),
-      }
-
-      const result = await sendSpawnRequest(req)
+      const result = await sendSpawnRequest(buildForkSpawnRequest(conversation, { resumeId, seedPrompt }, overrides))
       if (result.ok) {
         setSpawned(result.conversationId)
         haptic('success')

@@ -21,6 +21,7 @@ import type { ForkStrategy } from './fork-dialog/fork-strategy'
 import { useForkAction } from './fork-dialog/use-fork-action'
 import { type ForkDialogOptions, forkDialogBus } from './fork-dialog-trigger'
 
+// fallow-ignore-next-line unused-export -- mounted via lazyModule in app.tsx
 export function ForkDialog() {
   const [state, setState] = useState<{ open: boolean; options: ForkDialogOptions | null }>({
     open: false,
@@ -107,25 +108,27 @@ export function ForkDialog() {
             <div className="text-[10px] font-mono text-muted-foreground/60 truncate">{shortPath}</div>
           </div>
 
-          <ForkDialogBody
-            phase={fork.phase}
-            stats={fork.stats}
-            summary={fork.summary}
-            strategy={strategy}
-            onStrategyChange={setStrategy}
-            name={name}
-            onNameChange={setName}
-            model={model}
-            effort={effort}
-            onFieldsChange={patch => {
-              if ('model' in patch) setModel(patch.model ?? '')
-              if ('effort' in patch) setEffort(patch.effort ?? '')
-            }}
-            cwd={cwd}
-            onCwdChange={setCwd}
-            worktree={worktree}
-            onWorktreeChange={setWorktree}
-          />
+          <div className="overflow-y-auto flex-1 min-h-0 px-1.5 py-1">
+            <ForkDialogBody
+              phase={fork.phase}
+              stats={fork.stats}
+              summary={fork.summary}
+              strategy={strategy}
+              onStrategyChange={setStrategy}
+              name={name}
+              onNameChange={setName}
+              model={model}
+              effort={effort}
+              onFieldsChange={patch => {
+                if ('model' in patch) setModel(patch.model ?? '')
+                if ('effort' in patch) setEffort(patch.effort ?? '')
+              }}
+              cwd={cwd}
+              onCwdChange={setCwd}
+              worktree={worktree}
+              onWorktreeChange={setWorktree}
+            />
+          </div>
 
           <ForkDialogFooter
             phase={fork.phase}

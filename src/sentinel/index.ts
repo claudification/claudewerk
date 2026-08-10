@@ -3245,10 +3245,12 @@ function connect(
           }
 
           // Resolve the sentinel profile. A literal name short-circuits
-          // (fixed); `balanced` / `random` mode tokens run the picker over
-          // the requested pool (or `config.defaultPool` when absent);
-          // absent / `default` consults config.defaultSelection. Unknown
-          // literal names abort with a structured spawn failure.
+          // (fixed) -- and `default` IS a literal name, always present, so
+          // sending it PINS rather than delegating (the fork paths rely on
+          // this). `balanced` / `random` mode tokens run the picker over the
+          // requested pool (or `config.defaultPool` when absent); an ABSENT
+          // profile consults config.defaultSelection. Unknown literal names
+          // abort with a structured spawn failure. See selection.ts.
           let resolvedSpawnProfile: ResolvedProfile
           let spawnPicker: 'fixed' | 'balanced' | 'random' | 'default' = 'default'
           let spawnPickerCandidates: string[] = []

@@ -13,6 +13,17 @@ import { ALL_CC_SLUGS, DROPDOWN_MODEL_ENTRIES, resolveModelFamily } from './mode
 
 export const DEFAULT_SENTINEL = '__default__'
 
+/**
+ * The implicit profile a conversation runs on when none was chosen.
+ *
+ * It is a LITERAL profile name, not a selection mode: the sentinel synthesises
+ * it when a config omits it, and `pickProfile` short-circuits on it (see
+ * `src/sentinel/selection.ts`). Sending it therefore PINS, which is what the
+ * fork paths need -- omitting it instead consults `defaultSelection` and may
+ * land on a different profile entirely.
+ */
+export const DEFAULT_PROFILE_NAME = 'default'
+
 /** Default settle/debounce window (ms) for the notifyParent report-back. */
 export const DEFAULT_NOTIFY_PARENT_SETTLE_MS = 20_000
 

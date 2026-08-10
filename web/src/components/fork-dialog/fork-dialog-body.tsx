@@ -75,8 +75,10 @@ export function ForkDialogBody({
   // change it. Name / model / effort stay editable -- they cost nothing.
   const targetFrozen = phase !== 'config'
 
+  // No scroll container of its own: the hosting dialog owns scrolling, so this
+  // body can sit inside a tab that already scrolls without nesting two.
   return (
-    <div className="overflow-y-auto flex-1 min-h-0 space-y-4 px-1.5 py-1">
+    <div className="space-y-4">
       <StrategyPicker value={strategy} onChange={onStrategyChange} disabled={targetFrozen} />
 
       {stats && <FoldStatsReadout stats={stats} />}
