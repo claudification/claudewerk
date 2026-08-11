@@ -19,8 +19,8 @@
  * Why: .claude/docs/plan-board-card-identity.md
  */
 
-import { upgradeProjectBoard } from '../src/shared/project-upgrade'
-import { formatUpgradeReport, parseUpgradeArgs, UPGRADE_USAGE } from '../src/shared/project-upgrade-cli'
+import { findProjectBoards, upgradeProjectBoard } from '../src/shared/project-upgrade'
+import { parseUpgradeArgs, runUpgrade, UPGRADE_USAGE } from '../src/shared/project-upgrade-cli'
 
 function emit(lines: string[], sink: (line: string) => void): void {
   for (const line of lines) sink(line)
@@ -37,8 +37,7 @@ function main(): number {
     return 2
   }
 
-  const { root, ...opts } = parsed.args
-  const { out, err, exitCode } = formatUpgradeReport(upgradeProjectBoard(root, opts), opts.dryRun)
+  const { out, err, exitCode } = runUpgrade(parsed.args, upgradeProjectBoard, findProjectBoards)
   emit(out, console.log)
   emit(err, console.error)
   return exitCode

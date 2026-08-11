@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { UpgradeReport } from './project-upgrade'
-import { formatUpgradeReport, parseUpgradeArgs } from './project-upgrade-cli'
+import { formatUpgradeReport, parseUpgradeArgs, runUpgrade } from './project-upgrade-cli'
 
 const CWD = '/tmp/proj'
 
@@ -25,11 +25,16 @@ const legacyCard = (slug: string, status: UpgradeReport['legacy'][number]['statu
 })
 
 describe('parseUpgradeArgs', () => {
-  test('defaults to cwd, views on, backup on', () => {
+  test('defaults to cwd, single board, views on, backup on', () => {
     expect(parseUpgradeArgs([], CWD)).toEqual({
       kind: 'run',
-      args: { root: CWD, dryRun: false, views: true, backup: true },
+      args: { root: CWD, all: false, dryRun: false, views: true, backup: true },
     })
+  })
+
+  test('--all sets the parent dir and switches to sweep mode', () => {
+    const r = parseUpgradeArgs(['--all', '/Users/jonas/projects'], CWD)
+    expect(r.kind === 'run' && r.args).toMatchObject({ root: '/Users/jonas/projects', all: true })
   })
 
   test('--root takes the next argument', () => {
@@ -113,5 +118,79 @@ describe('formatUpgradeReport', () => {
   test('unsupported symlinks are called out as cosmetic', () => {
     const f = formatUpgradeReport(report({ views: { created: 0, pruned: 0, supported: false } }), false)
     expect(f.out.join('\n')).toContain('cosmetic')
+  })
+})
+
+describe('runUpgrade', () => {
+  const args = { root: '/p', all: false, dryRun: false, views: true, backup: true }
+  const ok = (board: string) => report({ board })
+  const noFind = () => {
+    throw new Error('should not look for sibling boards')
+  }
+
+  test('a single board runs exactly once and does not scan for siblings', () => {
+    const seen: string[] = []
+    const r = runUpgrade(
+      args,
+      root => {
+        seen.push(root)
+        return ok(root)
+      },
+      noFind,
+    )
+    expect(seen).toEqual(['/p'])
+    expect(r.exitCode).toBe(0)
+  })
+
+  test('--all runs every board it finds and announces the count', () => {
+    const seen: string[] = []
+    const r = runUpgrade(
+      { ...args, all: true },
+      root => {
+        seen.push(root)
+        return ok(root)
+      },
+      () => ['/p/a', '/p/b', '/p/c'],
+    )
+    expect(seen).toEqual(['/p/a', '/p/b', '/p/c'])
+    expect(r.out[0]).toBe('sweeping 3 board(s) under /p')
+  })
+
+  test('--all reports the WORST exit code, not the last one', () => {
+    const r = runUpgrade(
+      { ...args, all: true },
+      root =>
+        root === '/p/b'
+          ? report({ board: root, legacy: [], failures: [{ slug: 'x', from: 'open', error: 'boom' }] })
+          : ok(root),
+      () => ['/p/a', '/p/b', '/p/c'],
+    )
+    expect(r.exitCode).toBe(1)
+    expect(r.err.join('\n')).toContain('boom')
+  })
+
+  test('--all over an empty parent is a clean no-op', () => {
+    const r = runUpgrade(
+      { ...args, all: true },
+      () => {
+        throw new Error('nothing to run')
+      },
+      () => [],
+    )
+    expect(r.exitCode).toBe(0)
+    expect(r.out[0]).toBe('sweeping 0 board(s) under /p')
+  })
+
+  test('the dry-run flag reaches the runner', () => {
+    let sawDryRun: boolean | undefined
+    runUpgrade(
+      { ...args, dryRun: true },
+      (root, opts) => {
+        sawDryRun = opts.dryRun
+        return ok(root)
+      },
+      noFind,
+    )
+    expect(sawDryRun).toBe(true)
   })
 })

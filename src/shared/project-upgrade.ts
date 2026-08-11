@@ -141,6 +141,26 @@ function pruneEmptyLanes(root: string): string[] {
   return removed
 }
 
+/** Immediate subdirectories of `parent` that actually hold a board. */
+export function findProjectBoards(parent: string): string[] {
+  let entries: string[]
+  try {
+    entries = readdirSync(parent)
+  } catch {
+    return []
+  }
+  return entries
+    .map(name => join(parent, name))
+    .filter(root => {
+      try {
+        return existsSync(boardRoot(root))
+      } catch {
+        return false
+      }
+    })
+    .sort()
+}
+
 /** Run the sweep. Idempotent: on a migrated board it only rebuilds views. */
 export function upgradeProjectBoard(root: string, opts: UpgradeOptions = {}): UpgradeReport {
   const { dryRun = false, views = true, backup = true, nowMs = Date.now() } = opts
