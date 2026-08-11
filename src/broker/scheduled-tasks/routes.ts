@@ -15,20 +15,14 @@
 
 import { type Context, Hono } from 'hono'
 import type { z } from 'zod'
-import {
-  newScheduledTaskId,
-  SCHEDULE_MAX_COUNT,
-  type ScheduledTask,
-  scheduledTaskCreateSchema,
-  scheduledTaskPatchSchema,
-  validatedScheduledTaskSchema,
-} from '../../shared/scheduled-task'
+import { type ScheduledTask, scheduledTaskCreateSchema, scheduledTaskPatchSchema } from '../../shared/scheduled-task'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
 import type { RouteHelpers } from '../routes/shared'
 import type { StoreDriver } from '../store/types'
 import { broadcastScheduledTasks } from './broadcast'
 import type { ScheduledTaskEngine } from './engine'
+import { createSchedule, patchSchedule } from './operations'
 
 export interface ScheduledTaskRouterDeps {
   store: StoreDriver
@@ -113,23 +107,11 @@ export function createScheduledTasksRouter(deps: ScheduledTaskRouterDeps): Hono 
     const body = await readBody(c, scheduledTaskCreateSchema)
     if ('error' in body) return c.json({ error: body.error, issues: body.issues }, 400)
 
-    if (store.scheduledTasks.list().length >= SCHEDULE_MAX_COUNT) {
-      return c.json({ error: `at most ${SCHEDULE_MAX_COUNT} schedules` }, 400)
-    }
+    // The creator is the permission principal, re-checked at every fire.
+    const created = createSchedule(store, body.data, auth.userName)
+    if (!created.ok) return c.json({ error: created.error }, 400)
+    const task = created.task
 
-    const now = Date.now()
-    const task: ScheduledTask = {
-      ...body.data,
-      id: newScheduledTaskId(),
-      // The creator is the permission principal, re-checked at every fire.
-      createdBy: auth.userName,
-      createdAt: now,
-      updatedAt: now,
-      runCount: 0,
-      consecutiveFailures: 0,
-    }
-
-    store.scheduledTasks.upsert(task)
     console.log(
       `[sched] created id=${task.id} name="${task.name}" project=${task.projectUri} ` +
         `cron="${task.cron}" tz=${task.tz} by=${auth.userName} enabled=${task.enabled}`,
@@ -144,20 +126,10 @@ export function createScheduledTasksRouter(deps: ScheduledTaskRouterDeps): Hono 
       const body = await readBody(c, scheduledTaskPatchSchema)
       if ('error' in body) return c.json({ error: body.error, issues: body.issues }, 400)
 
-      const merged = { ...existing, ...body.data, updatedAt: Date.now() }
-      // Re-validate the WHOLE record: a patch that is individually valid can still
-      // produce an impossible schedule (e.g. an endAt now before startAt).
-      const validated = validatedScheduledTaskSchema.safeParse(merged)
-      if (!validated.success) {
-        return c.json({ error: validated.error.issues[0]?.message ?? 'invalid schedule' }, 400)
-      }
+      const patched = patchSchedule(store, existing, body.data)
+      if (!patched.ok) return c.json({ error: patched.error }, 400)
+      const next = patched.task
 
-      // Re-arming a schedule clears the failure count -- the user has presumably
-      // fixed whatever was breaking it, and a stale count would disarm it early.
-      const next =
-        !existing.enabled && validated.data.enabled ? { ...validated.data, consecutiveFailures: 0 } : validated.data
-
-      store.scheduledTasks.upsert(next)
       console.log(
         `[sched] patched id=${next.id} name="${next.name}" enabled=${existing.enabled}->${next.enabled} ` +
           `cron="${existing.cron}"->"${next.cron}" tz=${existing.tz}->${next.tz} by=${userName}`,

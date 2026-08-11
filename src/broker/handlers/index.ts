@@ -29,6 +29,7 @@ import { registerQuestHandlers } from './quest'
 import { registerRclaudeConfigHandlers } from './rclaude-config'
 import { registerRecapHandlers } from './recap'
 import { registerRenameHandlers } from './rename-conversation'
+import { registerScheduledTaskMcpHandlers } from './scheduled-tasks-mcp'
 import { registerSentinelHandlers } from './sentinel'
 import { registerShellHandlers } from './shell'
 import { registerSotuHandlers } from './sotu'
@@ -75,6 +76,7 @@ export function registerAllHandlers(): void {
   registerConversationReassignHandlers()
   registerDaemonHandlers()
   registerSotuHandlers()
+  registerScheduledTaskMcpHandlers()
   registerSotuMcpHandlers()
   registerSotuConfigHandlers()
   registerSotuDashboardHandlers()

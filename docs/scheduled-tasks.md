@@ -200,6 +200,67 @@ WebSocket broadcasts: `scheduled_tasks_updated` (full list, after any change) an
 "Run now" deliberately does **not** stamp the fire marker, so clicking it during
 a scheduled minute cannot suppress -- or double -- the real run.
 
+## The agent surface (MCP)
+
+An agent gets the same CRUD the panel has, through six tools. They are named
+**`schedule_*`, never `task`** -- `TaskCreate` in the same toolbelt makes a todo
+item, while these arm a spawn that fires at 03:00 whether or not anyone is
+watching, and naming them alike is how an agent reaches for the wrong one.
+
+| Tool | Does |
+|---|---|
+| `schedule_list` | Schedules in your project (or one you name, if benevolent) |
+| `schedule_get` | One schedule + its run history, including the fires that launched nothing |
+| `schedule_create` | Arm a new one |
+| `schedule_update` | Change anything, **including `enabled`** -- that is enable/disable |
+| `schedule_delete` | Remove it and its history |
+| `schedule_run_now` | Fire off-schedule (does not stamp the fire marker) |
+
+### The trust gate
+
+A schedule is a spawn with nobody at the keyboard, so the agent surface is
+narrower than the panel's:
+
+| | Requires |
+|---|---|
+| create / update / delete / run_now | **benevolent** trust |
+| read your OWN project | any agent-host caller |
+| read ANOTHER project | **benevolent** trust |
+
+The approval dialog that vets an ordinary spawn cannot help here -- it exists so
+a human can look at it, and the whole point of a schedule is that it fires when
+no human is present. So for an untrusted conversation the answer is no, not
+"ask later". Naming someone else's project on a read is REFUSED rather than
+quietly narrowed: a silent narrowing reads as "that project has no schedules",
+which is a different and wrong answer.
+
+The caller's project always comes from the broker's view of its connection,
+never the wire body.
+
+### Who it runs as
+
+A conversation is not a permission principal, and `ownerMaySpawn` re-checks a
+real user's grants at **every fire**. So an agent-created schedule still has a
+human `createdBy`:
+
+- one registered spawn-capable user -> that user, no argument needed;
+- several -> the create is REFUSED until it passes `owner`, because guessing
+  would pin someone else's permissions to work they never authorised;
+- a named owner who does not exist, is revoked, or lacks `spawn` -> refused.
+
+That last check is the same predicate the engine applies later, run early on
+purpose. Skipping it would produce a schedule that looks armed in the panel and
+then disarms itself after five silent dispatch failures, weeks later.
+
+### Two defaults that are silent when wrong
+
+- **Timezone** defaults to the AGENT HOST's zone, never the broker's -- the
+  container is UTC, so an unzoned schedule fires at the wrong hour. Every tool
+  result prints the zone back.
+- **Directory** defaults to the project ROOT with any `.claude/worktrees/<name>`
+  segment folded away. A schedule pinned to a worktree outlives that worktree
+  and then fires into a directory that no longer exists.
+
 ## Where things live
 
 | Concern | File |
@@ -216,7 +277,11 @@ a scheduled minute cannot suppress -- or double -- the real run.
 | Firing + run rows | `src/broker/scheduled-tasks/fire.ts` |
 | Outage reconciliation | `src/broker/scheduled-tasks/catch-up.ts` |
 | Broker wiring | `src/broker/scheduled-tasks/wiring.ts` |
+| Create/patch (shared by routes AND agents) | `src/broker/scheduled-tasks/operations.ts` |
+| Owner attribution | `src/broker/scheduled-tasks/owner.ts` |
 | Routes | `src/broker/scheduled-tasks/routes.ts` |
+| Agent wire handlers + trust gate | `src/broker/handlers/scheduled-tasks-mcp.ts`, `scheduled-tasks-gate.ts` |
+| Agent tools | `src/agent-host-common/mcp-host/mcp-tools/schedule*.ts` |
 | Storage | `src/broker/store/sqlite/scheduled-tasks.ts` (+ memory twin) |
 | Control panel | `web/src/components/scheduled-tasks/` |
 | Sidebar badge | `web/src/components/project-list/project-badges.tsx` |

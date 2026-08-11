@@ -586,6 +586,17 @@ export function createWsClient(options: WsClientOptions): WsClient {
           }
           // No requestId -> a broadcast; fall through to normal handling below.
         }
+        if (msgType === 'schedule_result') {
+          // The schedule_* MCP tools (list/get/create/update/delete/run_now) all
+          // reply with this one type. Same broker-rpc path as recap_*: forward
+          // only when it carries a requestId we minted -- the scheduled_tasks_updated
+          // broadcast carries none and falls through to normal handling.
+          const m = message as unknown as Record<string, unknown>
+          if (typeof m.requestId === 'string') {
+            onBrokerRpcResponse?.(m)
+            break
+          }
+        }
         if (msgType === 'web_control_relay_response') {
           // Web-control relay reply (Phase 5 host bridge). Same broker-rpc path as
           // recap_*: forward only when it carries a requestId we minted; an

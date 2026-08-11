@@ -12,6 +12,7 @@ import { registerNotifyTools } from './notify'
 import { registerProjectBoardTools } from './project-board'
 import { registerQuestTools } from './quest'
 import { registerRecapTools } from './recap'
+import { registerScheduleTools } from './schedule'
 import { registerSearchTools } from './search'
 import { registerSotuTools } from './sotu'
 import { registerSpawnTools } from './spawn'
@@ -40,6 +41,7 @@ export function registerAllTools(ctx: McpToolContext): Record<string, ToolDef> {
     ...registerQuestTools(ctx),
     ...registerCanvasTools(ctx),
     ...registerNightshiftTools(ctx),
+    ...registerScheduleTools(ctx),
     ...registerDialogTool(ctx),
     ...registerDialogControlTools(ctx),
     ...registerDialogTaxonomyTool(),

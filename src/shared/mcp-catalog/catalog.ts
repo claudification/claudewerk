@@ -42,6 +42,7 @@ export interface CatalogTool {
     | 'sotu'
     | 'web-control'
     | 'nightshift'
+    | 'schedule'
     | 'quest'
     | 'dispatch'
     | 'canvas'
@@ -214,6 +215,21 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   { name: 'canvas_create', group: 'canvas', sites: HOST_ONLY, summary: 'Create a hosted canvas (optional seed scene)' },
   { name: 'canvas_update_scene', group: 'canvas', sites: HOST_ONLY, summary: "Replace a canvas's full scene" },
   { name: 'canvas_rename', group: 'canvas', sites: HOST_ONLY, summary: 'Rename a hosted canvas' },
+
+  // ── schedule (host only; unattended runs on a clock) ───────────────
+  // SCHEDULE / RUN, never "task": `TaskCreate` in the same toolbelt makes a
+  // todo, while these arm a spawn that fires with nobody watching.
+  { name: 'schedule_list', group: 'schedule', sites: HOST_ONLY, summary: "List this project's schedules" },
+  { name: 'schedule_get', group: 'schedule', sites: HOST_ONLY, summary: 'Read one schedule + its run history' },
+  { name: 'schedule_create', group: 'schedule', sites: HOST_ONLY, summary: 'Arm a new schedule (benevolent only)' },
+  {
+    name: 'schedule_update',
+    group: 'schedule',
+    sites: HOST_ONLY,
+    summary: 'Change a schedule, incl. enable/disable (benevolent only)',
+  },
+  { name: 'schedule_delete', group: 'schedule', sites: HOST_ONLY, summary: 'Delete a schedule (benevolent only)' },
+  { name: 'schedule_run_now', group: 'schedule', sites: HOST_ONLY, summary: 'Fire a schedule off-schedule' },
 
   // ── web control (both sites; host bridged in Phase 5) ──────────────
   { name: 'web_list_clients', group: 'web-control', sites: BOTH, summary: 'List opted-in control-panel browsers' },

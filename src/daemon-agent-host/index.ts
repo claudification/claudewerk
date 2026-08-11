@@ -46,7 +46,7 @@ import { checkBunVersion } from '../shared/bun-version'
 
 checkBunVersion()
 
-import { dispatchHostRpcResult } from '../agent-host-common/host-rpc'
+import { drainRpcReplies } from '../agent-host-common/mcp-host/rpc-drain'
 import type { AttachCloseReason, AttachHandle } from '../shared/cc-daemon/attach'
 import { has } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
@@ -434,9 +434,14 @@ async function main(): Promise<void> {
    * replies resolve the shared pending-RPC registry -- then everything else
    * falls through to `handleInbound`. Only active when the host MCP server is up
    * (CLAUDWERK_MCP_ENDPOINT set); otherwise it's a straight pass-through.
+   *
+   * BOTH pending registries are drained (`drainRpcReplies`): the callback-style
+   * one AND the broker-rpc promises the recap_* / sotu_* / web_control_* /
+   * schedule_* tools await. Draining only the first is why those tools used to
+   * time out silently here while working fine under the claude host.
    */
   function dispatchInbound(msg: BrokerMessage): void {
-    if (mcp && dispatchHostRpcResult(msg as Record<string, unknown>, mcp.pending, mcpDiag)) return
+    if (mcp && drainRpcReplies(msg as Record<string, unknown>, mcp.pending, mcpDiag)) return
     handleInbound(msg)
   }
 
