@@ -1,6 +1,7 @@
 import { FolderPlus } from 'lucide-react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useKeyLayer } from '@/lib/key-layers'
+import { openProjectCard } from '../conversation-detail/open-project-card'
 import { CommandResults, CommandRow } from './command-results'
 import { ConversationRow, ProjectRow } from './conversation-results'
 import { FooterHints } from './footer-hints'
@@ -140,7 +141,7 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                         : 'text-foreground hover:bg-surface-inset'
                     }`}
                     onClick={() => {
-                      useConversationsStore.getState().setPendingTaskEdit({ slug: task.slug, status: task.status })
+                      openProjectCard(task.slug, task.status)
                       onClose()
                     }}
                     onMouseEnter={() => palette.setActiveIndex(i)}

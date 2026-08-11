@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { usePendingCard } from '@/hooks/use-kanban-modal'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
+import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { Markdown } from './markdown'
 
 // beautiful-mermaid is lazy-imported and renders post-mount via useEffect; we
@@ -62,7 +62,7 @@ describe('Markdown project-board card links', () => {
   const CARD = '[fix-thing](.rclaude/project/open/fix-thing.md)'
 
   beforeEach(() => {
-    usePendingCard.getState().clear()
+    useConversationsStore.getState().setPendingTaskEdit(null)
     useMarkdownViewer.getState().close()
     useConversationsStore.setState({
       selectedConversationId: 'conv_1',
@@ -79,10 +79,13 @@ describe('Markdown project-board card links', () => {
     expect(plain?.getAttribute('data-file-path')).toBe('docs/ops.md')
   })
 
-  test('clicking a card link parks the card for the board, not the file viewer', () => {
+  test('clicking a card link opens JUST the card -- never the file viewer, never the board', () => {
     const { container } = render(<Markdown>{CARD}</Markdown>)
     fireEvent.click(container.querySelector('a.file-link-card') as HTMLElement)
-    expect(usePendingCard.getState().pending).toEqual({ projectUri: 'claude://host//proj', slug: 'fix-thing' })
+    // pendingTaskEdit drives the standalone card editor mounted beside the
+    // transcript. The Kanban modal is not opened.
+    expect(useConversationsStore.getState().pendingTaskEdit).toEqual({ slug: 'fix-thing', status: 'open' })
+    expect(useModalManagerStore.getState().records.kanban).toBeUndefined()
     expect(useMarkdownViewer.getState().current).toBeNull()
   })
 
@@ -90,6 +93,6 @@ describe('Markdown project-board card links', () => {
     const { container } = render(<Markdown>{'[ops](docs/ops.md)'}</Markdown>)
     fireEvent.click(container.querySelector('a.file-link') as HTMLElement)
     expect(useMarkdownViewer.getState().current).toEqual({ projectUri: 'claude://host//proj', relPath: 'docs/ops.md' })
-    expect(usePendingCard.getState().pending).toBeNull()
+    expect(useConversationsStore.getState().pendingTaskEdit).toBeNull()
   })
 })

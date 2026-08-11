@@ -1,5 +1,6 @@
 import type React from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { openProjectCard } from '../conversation-detail/open-project-card'
 import { selectConversationFromPalette } from './palette-navigate'
 import type { CommandModeState, RegistryCommand } from './use-command-mode'
 import type { ConversationModeState } from './use-conversation-mode'
@@ -164,7 +165,7 @@ function submitSpawnPath(ctx: KeyHandlerContext): void {
 function submitTask(ctx: KeyHandlerContext): void {
   const task = ctx.task.filteredTasks[ctx.activeIndex]
   if (task) {
-    useConversationsStore.getState().setPendingTaskEdit({ slug: task.slug, status: task.status })
+    openProjectCard(task.slug, task.status)
     ctx.onClose()
   }
 }

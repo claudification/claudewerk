@@ -2,7 +2,6 @@ import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { openKanbanCard } from '@/hooks/use-kanban-modal'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { calloutInlineExtension } from '@/lib/callout-marked'
 import { matchLeadingCanvasRef } from '@/lib/canvas-refs'
@@ -11,6 +10,7 @@ import { record } from '@/lib/perf-metrics'
 import { parseProjectCardPath } from '@/lib/project-card-link'
 import { isMobileViewport } from '@/lib/utils'
 import { playAudio } from './audio-player-bus'
+import { openProjectCard } from './conversation-detail/open-project-card'
 import { CopyMenu } from './copy-menu'
 import { openLinkPreview } from './link-preview-bus'
 import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
@@ -722,7 +722,8 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     // Project-relative file link -> open the sentinel-backed markdown viewer,
     // resolved against the selected conversation's project root. A path that IS
     // a board card (`.rclaude/project/<lane>/<slug>.md`) opens the CARD instead:
-    // same bytes, but the view you can edit, move and run.
+    // same bytes, but the view you can edit, move and run -- JUST the card, the
+    // board stays where it was.
     const fileLink = target.closest('.file-link') as HTMLAnchorElement | null
     if (fileLink) {
       e.preventDefault()
@@ -732,7 +733,7 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       const projectUri = conv?.project
       if (!relPath || !projectUri) return
       const card = parseProjectCardPath(relPath)
-      if (card) openKanbanCard(projectUri, card.slug)
+      if (card) openProjectCard(card.slug, card.status)
       else useMarkdownViewer.getState().open(projectUri, relPath)
       return
     }

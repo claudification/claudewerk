@@ -1,64 +1,68 @@
 /**
- * Card deep-links -- "open board card <slug>" asked for from OUTSIDE the board.
+ * Opening a board card by slug, from anywhere, without needing the board.
  *
- * Two feeds, one landing:
- *   - the `open-project-task` CustomEvent (push notification toast, `#task/<id>`
- *     hash route, the ad-hoc task chip in the conversation header)
- *   - the parked request in `usePendingCard` (a `.rclaude/project/<lane>/<slug>.md`
- *     link clicked in rendered markdown, which opens the Kanban modal first)
+ * Callers know a slug and at best a STALE lane (a `.rclaude/project/<lane>/<slug>.md`
+ * link outlives the card's stay in that lane). Reading a card needs its real
+ * lane, which only the manifest knows -- and the manifest arrives over the
+ * sentinel, so a request can easily land before it does.
  *
- * The WAIT is the point. Opening the board is instant, loading it is not: the
- * manifest arrives over the sentinel, so a request that lands before the tasks
- * do would silently do nothing. It is held until the slug resolves, then dropped
- * once the board has loaded without it (deleted card, or another project's).
- *
- * The lane in the link is never used to find the card -- only the slug is, so a
- * card that moved lanes since the link was written still opens.
+ * `useCardResolver` owns that wait: it holds the request until the slug is
+ * resolvable, prefers the manifest's lane over the caller's hint, retries
+ * lane-free if the hint turns out to be stale, and drops the request once the
+ * project has loaded without the card (deleted, or another project's).
  */
 
-import { useEffect, useState } from 'react'
-import { usePendingCard } from './use-kanban-modal'
-import type { ProjectTask, ProjectTaskMeta } from './use-project'
+import { useCallback, useEffect, useState } from 'react'
+import type { ProjectTask, ProjectTaskMeta, TaskStatus } from './use-project'
 
-interface CardDeepLinkOpts {
-  projectUri: string | null
+interface CardResolverOpts {
   tasks: ProjectTaskMeta[]
   loading: boolean
-  readTask: (slug: string, status: ProjectTaskMeta['status']) => Promise<ProjectTask | null>
-  /** Stable callback -- the board's `setEditingTask`. */
+  readTask: (slug: string, status: TaskStatus) => Promise<ProjectTask | null>
+  /** Stable callback -- receives the fully-read card. */
   onOpen: (task: ProjectTask) => void
 }
 
-export function useCardDeepLink({ projectUri, tasks, loading, readTask, onOpen }: CardDeepLinkOpts): void {
-  const [wanted, setWanted] = useState<string | null>(null)
+/** Request a card by slug (+ an optional, possibly stale, lane hint). */
+export type RequestCard = (slug: string, laneHint?: TaskStatus) => void
 
-  useEffect(() => {
-    function handle(e: Event) {
-      const taskId = (e as CustomEvent<{ taskId: string }>).detail?.taskId
-      if (taskId) setWanted(taskId)
-    }
-    window.addEventListener('open-project-task', handle)
-    return () => window.removeEventListener('open-project-task', handle)
-  }, [])
-
-  // Only the board that owns the project claims the parked request.
-  const pending = usePendingCard(s => s.pending)
-  useEffect(() => {
-    if (!pending || !projectUri || pending.projectUri !== projectUri) return
-    setWanted(pending.slug)
-    usePendingCard.getState().clear()
-  }, [pending, projectUri])
+export function useCardResolver({ tasks, loading, readTask, onOpen }: CardResolverOpts): RequestCard {
+  const [wanted, setWanted] = useState<{ slug: string; laneHint?: TaskStatus } | null>(null)
+  const request = useCallback<RequestCard>((slug, laneHint) => setWanted({ slug, laneHint }), [])
 
   useEffect(() => {
     if (!wanted) return
-    const meta = tasks.find(t => t.slug === wanted)
-    if (!meta) {
-      if (!loading && tasks.length > 0) setWanted(null) // board is loaded; no such card
+    // The manifest is authoritative; the hint only covers the window before it lands.
+    const lane = tasks.find(t => t.slug === wanted.slug)?.status ?? wanted.laneHint
+    if (!lane) {
+      if (!loading && tasks.length > 0) setWanted(null) // loaded without it -- gone
       return
     }
     setWanted(null)
-    readTask(meta.slug, meta.status).then(full => {
+    readTask(wanted.slug, lane).then(full => {
       if (full) onOpen(full)
+      // A miss on a HINTED lane means the card moved: re-park lane-free so the
+      // manifest resolves it. The retry has no hint, so it cannot loop.
+      else if (wanted.laneHint) setWanted({ slug: wanted.slug })
     })
   }, [wanted, tasks, loading, readTask, onOpen])
+
+  return request
+}
+
+/**
+ * The `open-project-task` CustomEvent feed (push-notification toast, `#task/<id>`
+ * hash route, the ad-hoc task chip in the conversation header), resolved through
+ * the same wait. Used by the board, which opens the card in its own editor.
+ */
+export function useCardDeepLink(opts: CardResolverOpts): void {
+  const request = useCardResolver(opts)
+  useEffect(() => {
+    function handle(e: Event) {
+      const taskId = (e as CustomEvent<{ taskId: string }>).detail?.taskId
+      if (taskId) request(taskId)
+    }
+    window.addEventListener('open-project-task', handle)
+    return () => window.removeEventListener('open-project-task', handle)
+  }, [request])
 }
