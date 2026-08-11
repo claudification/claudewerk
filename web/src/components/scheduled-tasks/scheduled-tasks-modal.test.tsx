@@ -22,7 +22,7 @@ function html(): string {
 }
 
 beforeEach(() => {
-  useModalManagerStore.setState({ modals: {} })
+  useModalManagerStore.setState({ records: {} })
   useScheduledTasksStore.setState({ tasks: [], loaded: true, runs: {} })
   useScheduledTasksModalStore.setState({ projectFilter: undefined, selectedId: undefined, mode: 'browse' })
 })
