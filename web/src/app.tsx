@@ -89,6 +89,11 @@ const PublicCanvasView = lazy(() =>
 const NightshiftModal = lazy(() =>
   import('@/components/nightshift/nightshift-modal').then(m => ({ default: m.NightshiftModal })),
 )
+// Parkable, global Scheduled Tasks modal (all projects + per-schedule history).
+// LAZY LOAD: nothing about it belongs in the index bundle.
+const ScheduledTasksModal = lazy(() =>
+  import('@/components/scheduled-tasks/scheduled-tasks-modal').then(m => ({ default: m.ScheduledTasksModal })),
+)
 // LAZY LOAD: the commit surfaces are off the hot path -- the chunk only loads
 // when one is actually opened.
 const CommitBrowserModal = lazy(() =>
@@ -406,6 +411,7 @@ function Dashboard() {
       <RenameModal />
       <Suspense fallback={null}>
         <NightshiftModal />
+        <ScheduledTasksModal />
         <CommitBrowserModal />
         <CommitDetailModal />
       </Suspense>

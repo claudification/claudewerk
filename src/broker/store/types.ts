@@ -6,6 +6,7 @@
  */
 
 import type { LiveStatus } from '../../shared/protocol'
+import type { ScheduledRun, ScheduledTask } from '../../shared/scheduled-task'
 
 // ---------------------------------------------------------------------------
 // Session
@@ -764,6 +765,34 @@ export interface StoreConfig {
   filename?: string
 }
 
+// ---------------------------------------------------------------------------
+// Scheduled tasks (cron-triggered spawns + their run history)
+// ---------------------------------------------------------------------------
+
+export interface ScheduledTaskQuery {
+  /** Restrict to one project (exact `projectUri` match). */
+  projectUri?: string
+  /** Only schedules armed to fire -- what the engine tick reads every minute. */
+  enabledOnly?: boolean
+}
+
+export interface ScheduledTaskStore {
+  upsert(task: ScheduledTask): void
+  get(id: string): ScheduledTask | null
+  list(query?: ScheduledTaskQuery): ScheduledTask[]
+  delete(id: string): boolean
+
+  /** Append one firing to the history. */
+  addRun(run: ScheduledRun): void
+  /** Most recent first. */
+  listRuns(scheduleId: string, limit?: number): ScheduledRun[]
+  getRun(runId: string): ScheduledRun | null
+  /** Backfill the outcome once the spawned conversation ends. */
+  finishRun(runId: string, endedAt: number, endStatus: string): boolean
+  /** Trim history: keep at most `keepPerSchedule` per schedule, drop anything older than `cutoffMs`. */
+  pruneRuns(keepPerSchedule: number, cutoffMs: number): number
+}
+
 export interface StoreDriver {
   readonly conversations: ConversationStore
   readonly transcripts: TranscriptStore
@@ -774,6 +803,7 @@ export interface StoreDriver {
   readonly addressBook: AddressBookStore
   readonly scopeLinks: ScopeLinkStore
   readonly tasks: TaskStore
+  readonly scheduledTasks: ScheduledTaskStore
   readonly costs: CostStore
   readonly tokens: TokenStore
 

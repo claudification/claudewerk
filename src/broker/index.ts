@@ -101,6 +101,8 @@ import { chat } from './recap/shared/openrouter-client'
 import { initRecapOrchestrator } from './recap-orchestrator'
 import { startRecapReaper } from './recap-reaper'
 import { createRouter } from './routes'
+import { setScheduledTaskEngine } from './scheduled-tasks/engine-registry'
+import { wireScheduledTasks } from './scheduled-tasks/wiring'
 import { createSentinelRegistry } from './sentinel-registry'
 import { resolveShareUpgrade } from './share-upgrade'
 import {
@@ -1374,6 +1376,12 @@ async function main() {
   // until a project sets `enabled` + a window). Both ride the same watchdog caps.
   startNightshiftOrchestrator(conversationStore)
   startNightshiftScheduler(conversationStore)
+
+  // SCHEDULED TASKS: cron-triggered, project-bound spawns. A minute tick walks
+  // every armed schedule and fires the ones whose wall-clock minute matches IN
+  // THEIR OWN ZONE (this container runs in UTC, so an unzoned cron would lie).
+  // Inert until a schedule exists; on boot it reconciles what an outage missed.
+  setScheduledTaskEngine(wireScheduledTasks(store, conversationStore))
 
   // NIGHTSHIFT GUARDIANS (plan-quest-engine.md §2a / §6c / §6d): the deterministic
   // POKE protocol (prod a dead-but-non-terminal worker, then mechanically stamp

@@ -15,6 +15,7 @@ import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks
 import { openRecapConfigDialog } from '@/components/recap-jobs/recap-config-trigger'
 import { openRecapHistory } from '@/components/recap-jobs/recap-history-trigger'
 import { openRenameModal } from '@/components/rename-modal-trigger'
+import { openScheduledTasksModal } from '@/components/scheduled-tasks/modal-state'
 import { openManageChatConnections } from '@/components/settings/manage-chat-connections-trigger'
 import { openManageProjectLinks } from '@/components/settings/manage-project-links-trigger'
 import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
@@ -154,6 +155,20 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       if (uri) openCommitBrowser(uri)
     },
     { label: 'COMMITS (this project)', group: 'Navigation' },
+  )
+
+  useCommand('open-scheduled-tasks', () => openScheduledTasksModal(), {
+    label: 'SCHEDULED TASKS (all projects)',
+    group: 'Navigation',
+  })
+
+  useCommand(
+    'open-scheduled-tasks-project',
+    () => {
+      const uri = useConversationsStore.getState().selectedProjectUri
+      openScheduledTasksModal(uri ?? undefined)
+    },
+    { label: 'SCHEDULED TASKS (this project)', group: 'Navigation' },
   )
 
   useCommand(

@@ -32,8 +32,10 @@ import type {
   RecapSummary,
   ShellRosterEntry,
 } from '@shared/protocol'
+import type { ScheduledRun, ScheduledTask } from '@shared/scheduled-task'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
+import { handleScheduledTaskRun, handleScheduledTasksUpdated } from '@/components/scheduled-tasks/store'
 import { daemonControlToast } from '@/lib/daemon-control'
 import { resolvePendingSend } from '@/lib/pending-sends'
 import { forgetFull, rememberFull, slimConversation } from '@/lib/slim-conversation'
@@ -986,6 +988,16 @@ function handleSettingsUpdated(msg: DashboardMessage) {
   }
 }
 
+function handleScheduledTasksUpdatedMessage(msg: DashboardMessage) {
+  if (Array.isArray(msg.scheduledTasks)) handleScheduledTasksUpdated(msg.scheduledTasks as ScheduledTask[])
+}
+
+function handleScheduledTaskRunMessage(msg: DashboardMessage) {
+  if (typeof msg.scheduleId === 'string') {
+    handleScheduledTaskRun(msg.scheduleId, (msg.run as ScheduledRun | null) ?? null)
+  }
+}
+
 function handleLaunchProfilesUpdated(msg: DashboardMessage) {
   if (Array.isArray(msg.launchProfiles)) {
     handleLaunchProfilesUpdatedMessage(msg.launchProfiles as LaunchProfile[])
@@ -1888,6 +1900,8 @@ export const handlers: Record<string, MessageHandler> = {
   rate_limit_status: handleRateLimitStatus,
   settings_updated: handleSettingsUpdated,
   launch_profiles_updated: handleLaunchProfilesUpdated,
+  scheduled_tasks_updated: handleScheduledTasksUpdatedMessage,
+  scheduled_task_run: handleScheduledTaskRunMessage,
   project_settings_updated: handleProjectSettingsUpdated,
   project_order_updated: handleProjectOrderUpdated,
   shares_updated: handleSharesUpdated,

@@ -9,6 +9,7 @@ import { createSqliteKVStore } from './kv'
 import { createSqliteMessageStore } from './messages'
 import { migrateMessages } from './migrate-messages'
 import { migrateSessionColumns } from './migrate-session-columns'
+import { createSqliteScheduledTaskStore } from './scheduled-tasks'
 import { createSchema } from './schema'
 import { createSqliteScopeLinkStore } from './scope-links'
 import { createSqliteShareStore } from './shares'
@@ -33,6 +34,7 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
     addressBook: createSqliteAddressBookStore(db),
     scopeLinks: createSqliteScopeLinkStore(db),
     tasks: createSqliteTaskStore(db),
+    scheduledTasks: createSqliteScheduledTaskStore(db),
     costs: createSqliteCostStore(db),
     tokens: createSqliteTokenStore(db),
 

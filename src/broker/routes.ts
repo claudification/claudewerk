@@ -40,12 +40,17 @@ import { createSheafRouter } from './routes/sheaf'
 import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import { createStatuspageWebhookRouter } from './routes/statuspage-webhook'
+import { getScheduledTaskEngine } from './scheduled-tasks/engine-registry'
+import { createScheduledTasksRouter } from './scheduled-tasks/routes'
 import type { SentinelRegistry } from './sentinel-registry'
 import type { StoreDriver } from './store/types'
 import type { TerminationLog } from './termination-log'
 
-// Re-export blob/file helpers for external consumers (conversation-store, handlers, etc.)
-export { appendSharedFile, type SharedFileEntry } from './routes/blob-store'
+// Re-export the blob/file append helper for external consumers (conversation-store).
+// The `SharedFileEntry` type is deliberately NOT re-exported: nothing imported it
+// through here (blob-store owns it, and the panel declares its own shape), so it
+// was dead surface area.
+export { appendSharedFile } from './routes/blob-store'
 
 // ─── MIME types ────────────────────────────────────────────────────────
 
@@ -313,6 +318,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createAdminRouter(conversationStore, helpers, rclaudeSecret))
   app.route('/', createDeskDebugRouter(conversationStore, store, rclaudeSecret))
   app.route('/', createLaunchProfilesRouter(store, conversationStore))
+  app.route('/', createScheduledTasksRouter({ store, conversationStore, helpers, getEngine: getScheduledTaskEngine }))
   if (sentinelRegistry) {
     app.route('/', createSentinelRouter(sentinelRegistry, conversationStore, helpers))
   }

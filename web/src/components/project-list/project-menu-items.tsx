@@ -5,6 +5,7 @@
 
 import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
+import { openScheduledTasksModal } from '@/components/scheduled-tasks/modal-state'
 import { updateProjectSettings, useConversationsStore } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
@@ -49,6 +50,15 @@ export function ProjectMenuItems({ project, onOpenSettings }: { project: string;
         }}
       >
         Nightshift…
+      </ContextMenu.Item>
+      <ContextMenu.Item
+        className={menuItemClass}
+        onSelect={() => {
+          haptic('tap')
+          openScheduledTasksModal(project)
+        }}
+      >
+        Scheduled tasks…
       </ContextMenu.Item>
       <ContextMenu.Item
         className={menuItemClass}

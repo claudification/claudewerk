@@ -16,6 +16,7 @@ import { ConversationItemRail } from './conversation-item-rail'
 import { InlineConfirmButton } from './inline-confirm-button'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
+import { ProjectBadges } from './project-badges'
 import { PinnedProjectContextMenu, ProjectContextMenu } from './project-context-menu'
 import { useHydratedConversations } from './row-hooks'
 
@@ -194,26 +195,13 @@ const ProjectConversationGroup = memo(
                 <span className="text-[10px] text-muted-foreground font-mono">
                   {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
                 </span>
-                {hasPendingLink && (
-                  <span
-                    className="text-[9px] text-teal-400 font-bold animate-pulse"
-                    title="A conversation in this project has a pending link request"
-                  >
-                    LINK
-                  </span>
-                )}
-                {hasPendingPermission && (
-                  <span
-                    className="text-[9px] text-amber-400 font-bold animate-pulse"
-                    title="A conversation in this project has a pending permission request"
-                  >
-                    PERM
-                  </span>
-                )}
-                {hasPendingAttention && !hasPendingPermission && (
-                  <span className="text-[9px] text-amber-400 font-bold animate-pulse">WAITING</span>
-                )}
-                {hasNotification && <span className="text-[9px] text-teal-400 font-bold">NOTIFY</span>}
+                <ProjectBadges
+                  projectUri={project}
+                  hasPendingLink={hasPendingLink}
+                  hasPendingPermission={hasPendingPermission}
+                  hasPendingAttention={hasPendingAttention}
+                  hasNotification={hasNotification}
+                />
                 {ended.length > 0 && <DismissAllEndedButton endedIds={ended.map(s => s.id)} />}
                 <PlaceScopeAffordance project={project} />
                 <ProjectSettingsButton

@@ -348,6 +348,50 @@ export function createSchema(db: Database) {
   db.run('CREATE INDEX IF NOT EXISTS idx_tasks_conversation_active ON tasks(conversation_id) WHERE archived_at IS NULL')
   db.run('CREATE INDEX IF NOT EXISTS idx_tasks_archived_at ON tasks(archived_at) WHERE archived_at IS NOT NULL')
 
+  // SCHEDULED TASKS -- cron-triggered spawns bound to a project, plus their run
+  // history. Indexed columns are exactly what we query on: the engine tick reads
+  // enabled schedules once a minute, the sidebar badge asks per project, and the
+  // modal reads history newest-first. The full record lives in `data` as JSON so
+  // schema growth needs no migration.
+  db.run(`
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+      id TEXT PRIMARY KEY,
+      project_uri TEXT NOT NULL,
+      name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      cron TEXT NOT NULL,
+      tz TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      data TEXT NOT NULL,
+      last_run_at INTEGER,
+      last_fired_minute_key TEXT,
+      run_count INTEGER NOT NULL DEFAULT 0,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+  db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_uri, enabled)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks(enabled) WHERE enabled = 1')
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+      id TEXT PRIMARY KEY,
+      schedule_id TEXT NOT NULL,
+      fired_at INTEGER NOT NULL,
+      minute_key TEXT NOT NULL,
+      trigger TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      conversation_id TEXT,
+      job_id TEXT,
+      error TEXT,
+      ended_at INTEGER,
+      end_status TEXT
+    )
+  `)
+  db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_runs_sched ON scheduled_task_runs(schedule_id, fired_at DESC)')
+  db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_runs_fired ON scheduled_task_runs(fired_at)')
+
   db.run(`
     CREATE TABLE IF NOT EXISTS shares (
       token TEXT PRIMARY KEY,
