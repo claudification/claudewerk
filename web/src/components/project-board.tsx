@@ -47,6 +47,7 @@ import {
   TITLE_SIZE_CLASS,
   useBoardViewConfig,
 } from '@/hooks/use-board-view-config'
+import { useCardDeepLink } from '@/hooks/use-card-deeplink'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
 import { focusLaunchTargetAndClose, useLaunchProgress } from '@/hooks/use-launch-progress'
 import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
@@ -1314,7 +1315,8 @@ function ViewConfigPanel({
 // this 1700-line file is out of scope for the Kanban-modal change.
 // fallow-ignore-next-line complexity
 export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { conversationId: string }) {
-  const { tasks, loading, refresh, createTask, moveTask, deleteTask, readTask, updateTask } = useProject(conversationId)
+  const { projectUri, tasks, loading, refresh, createTask, moveTask, deleteTask, readTask, updateTask } =
+    useProject(conversationId)
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null)
   const [runTask, setRunTask] = useState<ProjectTask | null>(null)
   const [activeDragTask, setActiveDragTask] = useState<ProjectTaskMeta | null>(null)
@@ -1339,22 +1341,9 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     }
   }, [tasks, editingTask])
 
-  // Deep link: listen for open-project-task events (from push notifications / hash routes)
-  useEffect(() => {
-    function handleOpenTask(e: Event) {
-      const taskId = (e as CustomEvent<{ taskId: string }>).detail?.taskId
-      if (!taskId) return
-      // Find the task by slug and open its editor
-      const meta = tasks.find(t => t.slug === taskId)
-      if (meta) {
-        readTask(meta.slug, meta.status).then(full => {
-          if (full) setEditingTask(full)
-        })
-      }
-    }
-    window.addEventListener('open-project-task', handleOpenTask)
-    return () => window.removeEventListener('open-project-task', handleOpenTask)
-  }, [tasks, readTask])
+  // Deep links (push notification, #task/<id>, a `.rclaude/project/...` markdown
+  // link) -- resolved by slug once the manifest has landed. See the hook.
+  useCardDeepLink({ projectUri, tasks, loading, readTask, onOpen: setEditingTask })
 
   const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
   const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority

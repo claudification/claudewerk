@@ -2,11 +2,13 @@ import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { openKanbanCard } from '@/hooks/use-kanban-modal'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { calloutInlineExtension } from '@/lib/callout-marked'
 import { matchLeadingCanvasRef } from '@/lib/canvas-refs'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
+import { parseProjectCardPath } from '@/lib/project-card-link'
 import { isMobileViewport } from '@/lib/utils'
 import { playAudio } from './audio-player-bus'
 import { CopyMenu } from './copy-menu'
@@ -122,9 +124,14 @@ renderer.link = ({ href, text }) => {
   if (kind === 'image') return renderImageChip(href, text)
   if (kind === 'video') return renderVideoChip(href, text)
   if (kind === 'audio') return renderAudioChip(href, text)
-  // Project-relative file link -> open the sentinel-backed markdown viewer.
+  // Project-relative file link -> open the sentinel-backed markdown viewer, or
+  // the Kanban card editor when the path IS a board card.
   if (isProjectRelativeFilePath(href)) {
     const safe = escapeAttr(href)
+    const card = parseProjectCardPath(href)
+    if (card) {
+      return `<a href="#" class="file-link file-link-card" data-file-path="${safe}" title="Open card ${escapeAttr(card.slug)}">${text}</a>`
+    }
     return `<a href="#" class="file-link" data-file-path="${safe}" title="View ${safe}">${text}</a>`
   }
   return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`
@@ -713,7 +720,9 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     }
 
     // Project-relative file link -> open the sentinel-backed markdown viewer,
-    // resolved against the selected conversation's project root.
+    // resolved against the selected conversation's project root. A path that IS
+    // a board card (`.rclaude/project/<lane>/<slug>.md`) opens the CARD instead:
+    // same bytes, but the view you can edit, move and run.
     const fileLink = target.closest('.file-link') as HTMLAnchorElement | null
     if (fileLink) {
       e.preventDefault()
@@ -721,7 +730,10 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       const state = useConversationsStore.getState()
       const conv = state.selectedConversationId ? state.conversationsById[state.selectedConversationId] : null
       const projectUri = conv?.project
-      if (relPath && projectUri) useMarkdownViewer.getState().open(projectUri, relPath)
+      if (!relPath || !projectUri) return
+      const card = parseProjectCardPath(relPath)
+      if (card) openKanbanCard(projectUri, card.slug)
+      else useMarkdownViewer.getState().open(projectUri, relPath)
       return
     }
 

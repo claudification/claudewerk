@@ -1,5 +1,8 @@
-import { cleanup, render, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, test, vi } from 'vitest'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { usePendingCard } from '@/hooks/use-kanban-modal'
+import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { Markdown } from './markdown'
 
 // beautiful-mermaid is lazy-imported and renders post-mount via useEffect; we
@@ -52,5 +55,41 @@ describe('Markdown mermaid streaming flicker guard', () => {
     const second = render(<Markdown>{src}</Markdown>)
     expect(second.container.querySelector('pre.mermaid')).toBeNull()
     expect(second.container.querySelector('.mermaid-container svg[data-stub="mermaid"]')).not.toBeNull()
+  })
+})
+
+describe('Markdown project-board card links', () => {
+  const CARD = '[fix-thing](.rclaude/project/open/fix-thing.md)'
+
+  beforeEach(() => {
+    usePendingCard.getState().clear()
+    useMarkdownViewer.getState().close()
+    useConversationsStore.setState({
+      selectedConversationId: 'conv_1',
+      conversationsById: { conv_1: { id: 'conv_1', project: 'claude://host//proj' } as never },
+    })
+  })
+
+  test('a card path renders as a card link, a plain file path does not', () => {
+    const { container } = render(<Markdown>{`${CARD}\n\n[ops](docs/ops.md)`}</Markdown>)
+    const card = container.querySelector('a.file-link-card')
+    expect(card?.getAttribute('data-file-path')).toBe('.rclaude/project/open/fix-thing.md')
+    expect(card?.getAttribute('title')).toBe('Open card fix-thing')
+    const plain = container.querySelector('a.file-link:not(.file-link-card)')
+    expect(plain?.getAttribute('data-file-path')).toBe('docs/ops.md')
+  })
+
+  test('clicking a card link parks the card for the board, not the file viewer', () => {
+    const { container } = render(<Markdown>{CARD}</Markdown>)
+    fireEvent.click(container.querySelector('a.file-link-card') as HTMLElement)
+    expect(usePendingCard.getState().pending).toEqual({ projectUri: 'claude://host//proj', slug: 'fix-thing' })
+    expect(useMarkdownViewer.getState().current).toBeNull()
+  })
+
+  test('clicking a plain file link still opens the markdown viewer', () => {
+    const { container } = render(<Markdown>{'[ops](docs/ops.md)'}</Markdown>)
+    fireEvent.click(container.querySelector('a.file-link') as HTMLElement)
+    expect(useMarkdownViewer.getState().current).toEqual({ projectUri: 'claude://host//proj', relPath: 'docs/ops.md' })
+    expect(usePendingCard.getState().pending).toBeNull()
   })
 })

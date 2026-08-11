@@ -473,6 +473,26 @@ body {
 		color: var(--accent);
 	}
 
+	/* A `.rclaude/project/<lane>/<slug>.md` link opens the KANBAN CARD, not the
+	   raw file -- so it must not read as a plain file link. Small card glyph,
+	   violet to stay clear of the teal conversation pill and the accent. */
+	a.file-link-card {
+		color: var(--color-violet-300, #c4b5fd);
+		text-decoration-style: dotted;
+		text-decoration-color: color-mix(in oklch, var(--color-violet-300, #c4b5fd) 55%, transparent);
+	}
+
+	a.file-link-card::before {
+		content: "▤";
+		margin-right: 0.3em;
+		font-size: 0.85em;
+		opacity: 0.75;
+	}
+
+	a.file-link-card:hover {
+		color: var(--color-violet-200, #ddd6fe);
+	}
+
 	ul, ol {
 		margin: 0.5em 0;
 		padding-left: 1.5em;

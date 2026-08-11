@@ -114,6 +114,7 @@ export function useProject(conversationId: string | null) {
   )
 
   return {
+    projectUri,
     tasks,
     loading: cache.loading,
     refresh,
