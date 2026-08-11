@@ -104,6 +104,37 @@ File operations validated against session CWD in the **agent host**, not the bro
 isPathWithinCwd(filePath, cwd)  // resolves relative paths, blocks ../ traversal
 ```
 
+## Scheduled Tasks -- unattended spawn authority
+
+A SCHEDULE is a spawn that fires later with nobody at the keyboard, so it is
+gated like one and then some. See [`scheduled-tasks.md`](scheduled-tasks.md).
+
+- **Every route** (`/api/scheduled-tasks*`) requires the `spawn` permission.
+  Creating a schedule IS granting yourself a future spawn.
+- **The owner is re-checked at every fire.** The record stores `createdBy`, and
+  `wireScheduledTasks.ownerMaySpawn` resolves that user's CURRENT grants each
+  time the schedule is due. A revoked or demoted owner disarms the schedule and
+  writes an `error` run -- a schedule must never outlive the permission that
+  authorised it.
+- **Scheduled fires set `bypassApprovalGate`.** This is deliberate and narrow:
+  the interactive spawn-approval dialog exists so a HUMAN can vet a spawn, and at
+  03:00 there is no human to answer it. The vetting moves to create time (the
+  route demands `spawn`) plus the per-fire owner re-check above. Hard rejects are
+  NOT bypassed by this flag -- `bypassPermissions` and sensitive-env overrides
+  still fail, because the scheduler identifies as `trustLevel: 'trusted'`, never
+  `benevolent`.
+- **Concurrency + backoff are safety limits, not just hygiene:** at most 3
+  scheduler spawns in flight, and 5 consecutive dispatch failures disarm the
+  schedule with a push notification, so a broken schedule cannot hammer the
+  fleet unattended.
+
+```ts
+// src/broker/scheduled-tasks/wiring.ts
+const SCHEDULER_CALLER: SpawnCallerContext = {
+  kind: 'http', hasSpawnPermission: true, trustLevel: 'trusted', callerProject: null,
+}
+```
+
 ## Permission Auto-Approve (.claude/rclaude.json)
 
 Per-project allowlist for Write/Edit/Read auto-approval:

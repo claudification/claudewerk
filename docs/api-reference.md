@@ -116,6 +116,22 @@ Dashboard sends `{ type, ...data }`, handler replies `{ type: '{type}_result', o
 `'conversation' | 'recap'` and `targetId` is the kind-specific id. Existing
 hash-form shares (`/#/share/TOKEN`) remain conversation kind by default.
 
+**Scheduled tasks** (cron-triggered project spawns -- see
+[`scheduled-tasks.md`](scheduled-tasks.md)). ALL require the `spawn` permission,
+because a schedule is a spawn that fires later, unattended:
+- `GET /api/scheduled-tasks` - all schedules; `?project=<uri>` filters
+- `POST /api/scheduled-tasks` - create. 400s on an unparseable cron or an unknown
+  IANA timezone, quoting the failing field
+- `PATCH /api/scheduled-tasks/:id` - any subset; the MERGED record is re-validated
+  (a patch that is individually valid can still produce an impossible schedule)
+- `DELETE /api/scheduled-tasks/:id` - removes the schedule and its run history
+- `POST /api/scheduled-tasks/:id/run` - fire now, off-schedule. Does NOT stamp the
+  fire marker, so it can neither suppress nor double the real run
+- `GET /api/scheduled-tasks/:id/runs` - history, newest first; `?limit=`
+
+WS broadcasts: `scheduled_tasks_updated` (full list after any change) and
+`scheduled_task_run` (one firing).
+
 **Deprecated (WS equivalents exist):**
 - `POST /sessions/:id/input` -> `send_input` WS
 - `POST /sessions/:id/revive` -> `revive_session` WS
