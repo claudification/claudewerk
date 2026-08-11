@@ -1,9 +1,11 @@
 /**
  * useProjectTasks - project-keyed task cache with incremental updates.
  *
- * Project files live in `{projectRoot}/.rclaude/project/{status}/*.md`, read +
- * written THROUGH THE SENTINEL (not a live agent host), so the board works with
- * zero running conversations. The cache key is the project URI.
+ * Cards live at `{projectRoot}/.rclaude/project/cards/{id}.md` (lane in their
+ * `status:` frontmatter), read + written THROUGH THE SENTINEL (not a live agent
+ * host), so the board works with zero running conversations. The cache key is
+ * the project URI; entries are keyed by card id, so a lane change no longer
+ * evicts a cached body.
  *
  * Wire shape (dashboard <-> broker <-> sentinel):
  *   - project_board_request { op:'manifest'|'getBatch'|... , project, requestId }

@@ -1,6 +1,6 @@
 /**
  * Quick Task Modal - Ctrl+Shift+N shortcut
- * Creates a project task in .rclaude/project/inbox/
+ * Creates a card at .rclaude/project/cards/<id>.md with `status: inbox`
  */
 
 import { AlertTriangle, FileText } from 'lucide-react'
