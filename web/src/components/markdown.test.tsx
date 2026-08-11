@@ -83,8 +83,9 @@ describe('Markdown project-board card links', () => {
     const { container } = render(<Markdown>{CARD}</Markdown>)
     fireEvent.click(container.querySelector('a.file-link-card') as HTMLElement)
     // pendingTaskEdit drives the standalone card editor mounted beside the
-    // transcript. The Kanban modal is not opened.
-    expect(useConversationsStore.getState().pendingTaskEdit).toEqual({ slug: 'fix-thing', status: 'open' })
+    // transcript. The Kanban modal is not opened. The lane in the link (`open`)
+    // is discarded -- the card is addressed by id, so the link cannot go stale.
+    expect(useConversationsStore.getState().pendingTaskEdit).toEqual({ slug: 'fix-thing' })
     expect(useModalManagerStore.getState().records.kanban).toBeUndefined()
     expect(useMarkdownViewer.getState().current).toBeNull()
   })

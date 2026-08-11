@@ -165,7 +165,7 @@ function submitSpawnPath(ctx: KeyHandlerContext): void {
 function submitTask(ctx: KeyHandlerContext): void {
   const task = ctx.task.filteredTasks[ctx.activeIndex]
   if (task) {
-    openProjectCard(task.slug, task.status)
+    openProjectCard(task.slug)
     ctx.onClose()
   }
 }

@@ -4,14 +4,13 @@
  * The card editor is already mounted next to the transcript (`TaskEditorOverlay`,
  * fed by `pendingTaskEdit`), so opening a card is a store write, not a second
  * surface. Every "show me this card" entry point comes through here: the command
- * palette, and a `.rclaude/project/<lane>/<slug>.md` link in rendered markdown.
+ * palette, and a `.rclaude/project/**` card link in rendered markdown.
  *
- * The lane is a HINT -- see `useCardResolver`, which prefers the manifest's.
+ * The id is the whole address -- a card's lane never affects where it lives.
  */
 
 import { useConversationsStore } from '@/hooks/use-conversations'
-import type { TaskStatus } from '@/hooks/use-project'
 
-export function openProjectCard(slug: string, laneHint?: TaskStatus): void {
-  useConversationsStore.getState().setPendingTaskEdit({ slug, status: laneHint ?? '' })
+export function openProjectCard(id: string): void {
+  useConversationsStore.getState().setPendingTaskEdit({ slug: id })
 }

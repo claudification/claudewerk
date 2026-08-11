@@ -12,8 +12,8 @@ import {
   listProjectManifest,
   listProjectTasks,
   moveProjectFile,
-  moveProjectTask,
   readProjectFile,
+  setProjectTaskStatus,
   updateProjectTask,
   writeProjectFile,
 } from '../shared/project-store'
@@ -43,35 +43,41 @@ export function handleProjectMoveFile(root: string, msg: ProjectMoveFile): Proje
   return { type: 'project_move_file_result', requestId: msg.requestId, ...r }
 }
 
+/** What a board op returns on success -- merged onto the result envelope. */
+type OpPayload = Partial<Omit<ProjectBoardResult, 'type' | 'requestId' | 'op' | 'ok'>>
+type OpHandler = (root: string, msg: ProjectBoardOp, nowMs: number) => OpPayload | { error: string }
+
+/**
+ * One entry per op (STRATEGY MAPS OVER CHAINS). `msg.status` / `msg.fromStatus`
+ * are legacy HINTS from an older broker -- a card is addressed by id alone, so
+ * they are accepted and ignored rather than required.
+ */
+const OPS: Record<ProjectBoardOp['op'], OpHandler> = {
+  list: (root, msg) => ({ tasks: listProjectTasks(root, msg.filterStatus) }),
+  manifest: root => ({ manifest: listProjectManifest(root) }),
+  getBatch: (root, msg) => ({ batch: getProjectTasksBatch(root, msg.refs ?? []) }),
+  get: (root, msg) => (msg.slug ? { task: getProjectTask(root, msg.slug) } : { error: 'slug required' }),
+  create: (root, msg, nowMs) =>
+    msg.input ? { note: createProjectTask(root, msg.input, nowMs) } : { error: 'input required' },
+  update: (root, msg) =>
+    msg.slug ? { task: updateProjectTask(root, msg.slug, msg.patch ?? {}) } : { error: 'slug required' },
+  move: (root, msg, nowMs) => {
+    if (!msg.slug || !msg.toStatus) return { error: 'slug+toStatus required' }
+    const moved = setProjectTaskStatus(root, msg.slug, msg.toStatus, nowMs) !== null
+    // The returned id is unchanged: a lane change can no longer rename a card.
+    return { slug: moved ? msg.slug : null }
+  },
+  delete: (root, msg) => (msg.slug ? { removed: deleteProjectTask(root, msg.slug) } : { error: 'slug required' }),
+}
+
 export function handleProjectBoardOp(root: string, msg: ProjectBoardOp, nowMs: number): ProjectBoardResult {
   const base = { type: 'project_board_result' as const, requestId: msg.requestId, op: msg.op }
+  const handler = OPS[msg.op]
+  if (!handler) return { ...base, ok: false, error: `unknown op: ${msg.op}` }
   try {
-    switch (msg.op) {
-      case 'list':
-        return { ...base, ok: true, tasks: listProjectTasks(root, msg.filterStatus) }
-      case 'manifest':
-        return { ...base, ok: true, manifest: listProjectManifest(root) }
-      case 'getBatch':
-        return { ...base, ok: true, batch: getProjectTasksBatch(root, msg.refs ?? []) }
-      case 'get':
-        if (!msg.status || !msg.slug) return { ...base, ok: false, error: 'status+slug required' }
-        return { ...base, ok: true, task: getProjectTask(root, msg.status, msg.slug) }
-      case 'create':
-        if (!msg.input) return { ...base, ok: false, error: 'input required' }
-        return { ...base, ok: true, note: createProjectTask(root, msg.input, nowMs) }
-      case 'update':
-        if (!msg.status || !msg.slug) return { ...base, ok: false, error: 'status+slug required' }
-        return { ...base, ok: true, task: updateProjectTask(root, msg.status, msg.slug, msg.patch ?? {}) }
-      case 'move':
-        if (!msg.slug || !msg.fromStatus || !msg.toStatus)
-          return { ...base, ok: false, error: 'slug+fromStatus+toStatus required' }
-        return { ...base, ok: true, slug: moveProjectTask(root, msg.slug, msg.fromStatus, msg.toStatus, nowMs) }
-      case 'delete':
-        if (!msg.status || !msg.slug) return { ...base, ok: false, error: 'status+slug required' }
-        return { ...base, ok: true, removed: deleteProjectTask(root, msg.status, msg.slug) }
-      default:
-        return { ...base, ok: false, error: `unknown op: ${msg.op}` }
-    }
+    const result = handler(root, msg, nowMs)
+    if ('error' in result && typeof result.error === 'string') return { ...base, ok: false, error: result.error }
+    return { ...base, ok: true, ...result }
   } catch (err) {
     return { ...base, ok: false, error: (err as Error).message }
   }

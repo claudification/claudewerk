@@ -9,10 +9,10 @@ import {
   listProjectManifest,
   listProjectTasks,
   moveProjectFile,
-  moveProjectTask,
   ProjectPathError,
   readProjectFile,
   resolveInRoot,
+  setProjectTaskStatus,
   updateProjectTask,
   writeProjectFile,
 } from './project-store'
@@ -84,7 +84,7 @@ describe('raw file I/O', () => {
 })
 
 describe('board CRUD', () => {
-  test('create -> list/manifest -> get -> update -> move -> delete', () => {
+  test('create -> list/manifest -> get -> update -> set status -> delete', () => {
     const created = createProjectTask(root, { title: 'Build the thing', body: 'do it', priority: 'high' }, 1000)
     expect(created.status).toBe('inbox')
     expect(created.slug).toBe('build-the-thing')
@@ -95,21 +95,20 @@ describe('board CRUD', () => {
     const list = listProjectTasks(root)
     expect(list.some(t => t.slug === 'build-the-thing')).toBe(true)
 
-    const got = getProjectTask(root, 'inbox', 'build-the-thing')
+    const got = getProjectTask(root, 'build-the-thing')
     expect(got?.title).toBe('Build the thing')
     expect(got?.body).toBe('do it')
 
-    const updated = updateProjectTask(root, 'inbox', 'build-the-thing', { body: 'changed' })
+    const updated = updateProjectTask(root, 'build-the-thing', { body: 'changed' })
     expect(updated?.body).toBe('changed')
     expect(updated?.title).toBe('Build the thing') // preserved
 
-    const newSlug = moveProjectTask(root, 'build-the-thing', 'inbox', 'in-progress', 2000)
-    expect(newSlug).toBe('build-the-thing')
-    expect(getProjectTask(root, 'inbox', 'build-the-thing')).toBeNull()
-    expect(getProjectTask(root, 'in-progress', 'build-the-thing')?.body).toBe('changed')
+    expect(setProjectTaskStatus(root, 'build-the-thing', 'in-progress', 2000)).toBe('inbox')
+    expect(getProjectTask(root, 'build-the-thing')?.status).toBe('in-progress')
+    expect(getProjectTask(root, 'build-the-thing')?.body).toBe('changed')
 
-    expect(deleteProjectTask(root, 'in-progress', 'build-the-thing')).toBe(true)
-    expect(getProjectTask(root, 'in-progress', 'build-the-thing')).toBeNull()
+    expect(deleteProjectTask(root, 'build-the-thing')).toBe(true)
+    expect(getProjectTask(root, 'build-the-thing')).toBeNull()
   })
 
   test('dedup gives a second same-titled task a distinct slug', () => {
@@ -118,11 +117,13 @@ describe('board CRUD', () => {
     expect(second.slug).toBe('dup-2')
   })
 
-  test('move dedups on slug collision in the target column', () => {
+  test('create dedups against an undrained legacy lane card', () => {
     mkdirSync(join(root, '.rclaude/project/done'), { recursive: true })
     writeFileSync(join(root, '.rclaude/project/done/x.md'), '---\ntitle: x\n---\n')
-    createProjectTask(root, { title: 'x', body: '' }, 1000) // inbox/x.md
-    const slug = moveProjectTask(root, 'x', 'inbox', 'done', 2000)
-    expect(slug).toBe('x-2')
+    expect(createProjectTask(root, { title: 'x', body: '' }, 1000).slug).toBe('x-2')
+  })
+
+  test('setProjectTaskStatus on a missing card returns null', () => {
+    expect(setProjectTaskStatus(root, 'ghost', 'done', 1000)).toBeNull()
   })
 })

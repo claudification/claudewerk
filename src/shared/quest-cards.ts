@@ -8,7 +8,7 @@
  * COMPUTED here (§11 -- never asserted by an orchestrator).
  */
 
-import { getProjectTask, listProjectTasks, moveProjectTask, updateProjectTask } from './project-store'
+import { getProjectTask, listProjectTasks, setProjectTaskStatus, updateProjectTask } from './project-store'
 import type { ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import { isTerminalCardStatus, type QuestCardState, type QuestManifest, type QuestStatusReport } from './quest-schema'
 import type { TaskStatus } from './task-statuses'
@@ -23,7 +23,7 @@ export function listQuestCards(root: string, petname: string): ProjectTaskMeta[]
 export function tagQuestCards(root: string, petname: string, refs: ProjectTaskRef[]): string[] {
   const tagged: string[] = []
   for (const ref of refs) {
-    const updated = updateProjectTask(root, ref.status, ref.slug, { quest: petname })
+    const updated = updateProjectTask(root, ref.slug, { quest: petname })
     if (updated) tagged.push(updated.slug)
   }
   return tagged
@@ -69,13 +69,12 @@ export function stampAbortCards(root: string, petname: string, reason: string, n
   const out: AbortedCard[] = []
   for (const card of listQuestCards(root, petname)) {
     if (isTerminalCardStatus(card.status)) continue
-    const from = card.status
-    const existing = getProjectTask(root, from, card.slug)
-    const newSlug = moveProjectTask(root, card.slug, from, 'archived', nowMs)
-    if (!newSlug) continue
+    const existing = getProjectTask(root, card.slug)
+    const from = setProjectTaskStatus(root, card.slug, 'archived', nowMs)
+    if (!from) continue
     const body = `${(existing?.body ?? '').trimEnd()}\n\n> SKIPPED-by-abort (${petname}): ${reason.replace(/\n+/g, ' ').trim()}`
-    updateProjectTask(root, 'archived', newSlug, { body })
-    out.push({ slug: newSlug, from, to: 'archived' })
+    updateProjectTask(root, card.slug, { body })
+    out.push({ slug: card.slug, from, to: 'archived' })
   }
   return out
 }

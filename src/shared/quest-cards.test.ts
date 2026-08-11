@@ -50,7 +50,7 @@ describe('membership (§4a) is orthogonal to lane (§4c)', () => {
     expect(listQuestCards(root, PET)).toHaveLength(0)
     const tagged = tagQuestCards(root, PET, [{ slug: b.slug, status: 'inbox' }])
     expect(tagged).toEqual([b.slug])
-    expect(getProjectTask(root, 'inbox', b.slug)?.quest).toBe(PET)
+    expect(getProjectTask(root, b.slug)?.quest).toBe(PET)
   })
 })
 
@@ -107,11 +107,11 @@ describe('abort card stamping (§13)', () => {
     expect(stamped[0].from).toBe('inbox')
     expect(stamped[0].to).toBe('archived')
 
-    const archived = getProjectTask(root, 'archived', open.slug)
+    const archived = getProjectTask(root, open.slug)
     expect(archived?.body).toContain('SKIPPED-by-abort')
     expect(archived?.body).toContain('quest giver pulled the plug')
     expect(archived?.quest).toBe(PET) // membership preserved through the stamp
     // The already-done card is left in its terminal lane.
-    expect(getProjectTask(root, 'done', done.slug)).not.toBeNull()
+    expect(getProjectTask(root, done.slug)).not.toBeNull()
   })
 })

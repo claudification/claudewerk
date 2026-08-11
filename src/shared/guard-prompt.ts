@@ -16,12 +16,14 @@
  * is spawned by the engine, distrusts by design, and integrates NOTHING itself.
  */
 
+import { cardRelPath } from './project-paths'
+
 export interface GuardPromptCtx {
   /** Project URI for board tools / display. */
   projectUri: string
   /** Absolute path to the project root (main checkout) holding `.rclaude/project`. */
   projectRoot: string
-  /** Card slug currently sitting in in-review. */
+  /** Card id. Its lane is `in-review`; its path is the same as it always was. */
   cardId: string
   /** Quest selector (petname) when the card belongs to a quest. */
   quest?: string
@@ -41,7 +43,7 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     questLine,
     '',
     'THE CARD (source of truth is its YAML frontmatter):',
-    `  ${ctx.projectRoot}/.rclaude/project/in-review/${ctx.cardId}.md`,
+    `  ${ctx.projectRoot}/${cardRelPath(ctx.cardId)}`,
     'Read it FIRST. The gate machine-captured this evidence when the worker moved it to in-review:',
     '  evidence_branch, evidence_base, evidence_commits, evidence_diffstat, evidence_tests, evidence_worker.',
     'Card-authored fields you must independently check: `test_cmd`, `base`, `acceptance_verified`,',

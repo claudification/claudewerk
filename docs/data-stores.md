@@ -1,5 +1,50 @@
 # Data Stores
 
+## Project Board (markdown on disk)
+
+Kanban cards, owned by the SENTINEL (so the board works with no live agent host).
+Code: `src/shared/project-{paths,card-file,card-read,card-write,views,legacy,upgrade}.ts`,
+re-exported through `project-store.ts`.
+
+```
+.rclaude/project/
+  cards/<id>.md                              CANONICAL. never moves.
+  views/<status>/<id>.md -> ../../cards/<id>.md   generated symlinks, disposable
+  quests/<petname>/                          quest manifests (docs/quest-guide.md)
+  priority.md  gate.conf                     board-level config
+```
+
+**A card's `id` is its whole primary key.** Its lane is the `status:` frontmatter
+key, so changing lanes rewrites one line in a file that never moves. That is what
+makes a link written a year ago still open the right card.
+
+| Invariant | Why |
+|---|---|
+| The path is fixed from create to delete | links, transcripts and docs can name a card forever |
+| `id` is deduped once, at create, then immutable | a lane change used to be able to *rename* the card |
+| Only `setProjectTaskStatus()` writes `status:` | one writer, so the lane can't drift |
+| Every write preserves unknown frontmatter | the DONE-gate's `evidence_*`, plus `gate:`, `test_cmd:`, `base:` |
+| `views/` is derived; nothing reads it | `rm -rf views/` is harmless and rebuildable |
+| Legacy `<status>/` lane dirs are read-only | drained by the upgrade, or lazily on the next write |
+
+Shape of the model: notmuch (files never move, state is an index), Maildir (the
+unique filename *is* the identity), systemd/Nix (one store, generated symlink
+views), Jekyll/Hugo (flat dir, frontmatter is the taxonomy).
+
+### Upgrading an old board
+
+Boards that predate this layout keep working -- reads fall back to the lane dirs
+and any write migrates that card in place. To sweep a whole project at once:
+
+```
+bun run board:upgrade --root <project> --dry-run   # report only
+bun run board:upgrade --root <project>             # move, back up, rebuild views
+```
+
+Idempotent. Backs every lane file up to `.rclaude/project/.upgrade-backup-<ts>/`
+first (`--no-backup` to skip), reports same-id-in-two-lanes collisions and keeps
+the card furthest along the pipeline, exits non-zero if any card could not move.
+
 ## Project Registry (SQLite)
 
 Stable integer IDs for projects. The authoritative source of project identity --

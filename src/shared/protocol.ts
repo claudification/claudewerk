@@ -4029,9 +4029,11 @@ export interface ProjectBoardOp {
   requestId: string
   projectRoot: string
   op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete'
-  /** get / update / delete / move(from) */
+  /** LEGACY HINT, ignored. A card is addressed by `slug` alone -- its lane is a
+   *  `status:` frontmatter key, not a location. Still sent so an older sentinel
+   *  that requires it keeps working. */
   status?: ProjectTaskStatus
-  /** get / update / delete / move */
+  /** The card id. get / update / delete / move -- the whole primary key. */
   slug?: string
   /** list filter */
   filterStatus?: ProjectTaskStatus
@@ -4041,8 +4043,9 @@ export interface ProjectBoardOp {
   input?: ProjectTaskInputWire
   /** update */
   patch?: Partial<ProjectTaskInputWire>
-  /** move */
+  /** LEGACY HINT, ignored (see `status`). */
   fromStatus?: ProjectTaskStatus
+  /** move: the target lane. */
   toStatus?: ProjectTaskStatus
 }
 
@@ -4062,7 +4065,8 @@ export interface ProjectBoardResult {
   task?: ProjectTask | null
   /** create */
   note?: ProjectTaskMeta
-  /** move (resulting slug) */
+  /** move: the card's id, unchanged (a lane change can no longer rename it).
+   *  null when there was no such card. */
   slug?: string | null
   /** delete */
   removed?: boolean

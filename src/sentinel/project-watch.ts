@@ -16,14 +16,16 @@
 
 import { join } from 'node:path'
 import { type TreeWatcher, watchTree } from '../shared/fs-watch'
-import { listProjectManifest, listProjectTasks } from '../shared/project-store'
+import { CARDS_DIR, listProjectManifest, listProjectTasks } from '../shared/project-store'
 import type { ProjectTaskManifestEntry } from '../shared/project-task-types'
 import type { ProjectChanged, ProjectDiff } from '../shared/protocol'
 import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
 
-type ManifestKey = string // `${status}/${slug}`
-function mkey(e: { slug: string; status: string }): ManifestKey {
-  return `${e.status}/${e.slug}`
+/** The card id, and nothing else. A lane change used to look like a removal
+ *  plus an addition (the key carried the status); now it is one `modified`. */
+type ManifestKey = string
+function mkey(e: { slug: string }): ManifestKey {
+  return e.slug
 }
 
 function diffManifest(prev: Map<ManifestKey, ProjectTaskManifestEntry>, next: ProjectTaskManifestEntry[]): ProjectDiff {
@@ -35,7 +37,9 @@ function diffManifest(prev: Map<ManifestKey, ProjectTaskManifestEntry>, next: Pr
     seen.add(k)
     const prior = prev.get(k)
     if (!prior) added.push(entry)
-    else if (prior.mtime !== entry.mtime) modified.push(entry)
+    // A lane change bumps mtime, but never trust that alone: `status` is now
+    // file CONTENT, so compare it explicitly or a same-mtime edit goes unseen.
+    else if (prior.mtime !== entry.mtime || prior.status !== entry.status) modified.push(entry)
   }
   const removed: { slug: string; status: string }[] = []
   for (const [k, entry] of prev) {
@@ -44,7 +48,12 @@ function diffManifest(prev: Map<ManifestKey, ProjectTaskManifestEntry>, next: Pr
   return { added, removed, modified }
 }
 
-const PROJECT_TASK_PATTERN = new RegExp(`\\.rclaude/project/(${TASK_STATUS_PATTERN})/.+\\.md$`)
+/**
+ * Canonical cards, plus legacy lane cards on a board that hasn't been upgraded.
+ * `views/` is deliberately EXCLUDED: it is a generated symlink farm mirroring
+ * the cards, so watching it would fire a second event for every single change.
+ */
+const PROJECT_TASK_PATTERN = new RegExp(`\\.rclaude/project/(?:${CARDS_DIR}|${TASK_STATUS_PATTERN})/[^/]+\\.md$`)
 
 interface WatchEntry {
   /** Canonical project URI -- echoed in project_changed for broker broadcast scoping. */
@@ -106,10 +115,10 @@ export function watchProject(projectRoot: string, project: string, leaseMs: numb
     }, leaseMs),
     pollInterval: setInterval(() => emitIfChanged(projectRoot, entry, send), 5000),
   }
-  // Recursive .md watch under the board dir (depth 2), filtered to status-folder
-  // task files. The 300ms debounce replaces chokidar's awaitWriteFinish + the
-  // old manual per-entry debounce; the 5s poll is the floor for fs.watch drops
-  // or a board dir that does not exist yet.
+  // Recursive .md watch under the board dir (depth 2), filtered to `cards/`
+  // plus any undrained legacy lane. The 300ms debounce replaces chokidar's
+  // awaitWriteFinish + the old manual per-entry debounce; the 5s poll is the
+  // floor for fs.watch drops or a board dir that does not exist yet.
   entry.watcher = watchTree({
     dir: projectDir,
     recursive: true,

@@ -68,29 +68,30 @@ export function useProject(conversationId: string | null) {
     [projectUri],
   )
 
+  // A card is addressed by id alone -- its lane is a `status:` frontmatter key,
+  // so none of these need to know (or guess) where the card currently sits.
   const moveTask = useCallback(
-    async (slug: string, from: TaskStatus, to: TaskStatus): Promise<string | false> => {
+    async (id: string, to: TaskStatus): Promise<string | false> => {
       if (!projectUri) return false
-      const resp = await sendBoardOp(projectUri, 'move', { slug, fromStatus: from, toStatus: to })
-      if (resp.ok) return (resp.slug as string) || slug
-      return false
+      const resp = await sendBoardOp(projectUri, 'move', { slug: id, toStatus: to })
+      return resp.ok ? id : false
     },
     [projectUri],
   )
 
   const deleteTask = useCallback(
-    async (slug: string, status: TaskStatus): Promise<boolean> => {
+    async (id: string): Promise<boolean> => {
       if (!projectUri) return false
-      const resp = await sendBoardOp(projectUri, 'delete', { slug, status })
+      const resp = await sendBoardOp(projectUri, 'delete', { slug: id })
       return !!(resp.removed ?? resp.ok)
     },
     [projectUri],
   )
 
   const readTask = useCallback(
-    async (slug: string, status: TaskStatus): Promise<ProjectTask | null> => {
+    async (id: string): Promise<ProjectTask | null> => {
       if (!projectUri) return null
-      const resp = await sendBoardOp(projectUri, 'get', { slug, status })
+      const resp = await sendBoardOp(projectUri, 'get', { slug: id })
       return (resp.task as ProjectTask) ?? null
     },
     [projectUri],
@@ -98,14 +99,12 @@ export function useProject(conversationId: string | null) {
 
   const updateTask = useCallback(
     async (
-      slug: string,
-      status: TaskStatus,
+      id: string,
       patch: { title?: string; body?: string; priority?: string; tags?: string[] },
     ): Promise<ProjectTask | null> => {
       if (!projectUri) return null
       const resp = await sendBoardOp(projectUri, 'update', {
-        slug,
-        status,
+        slug: id,
         patch: { title: patch.title, body: patch.body, priority: asPriority(patch.priority), tags: patch.tags },
       })
       return (resp.task as ProjectTask) ?? null

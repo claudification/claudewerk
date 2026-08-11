@@ -37,7 +37,7 @@ Verified live state confirms success.
 **Outstanding (non-blocking):**
 - Origin branches to delete (merged): `worktree-profile-8-config-screen`, `worktree-profile-9-mcp-audit`, `reference/project-identity-key`.
 - `transcript-perf Phase 3` is BLOCKED on a post-deploy Safari-timeline re-measurement (needs a browser profiling pass). See `.claude/docs/plan-transcript-switch-perf.md`.
-- Deferred bug: ACP safe-tier permission test hangs -- see `.rclaude/project/open/acp-safe-tier-permission-hang.md`.
+- Deferred bug: ACP safe-tier permission test hangs -- see `.rclaude/project/cards/acp-safe-tier-permission-hang.md`.
 
 ---
 

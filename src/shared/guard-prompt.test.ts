@@ -12,7 +12,8 @@ describe('buildGuardPrompt', () => {
     const p = buildGuardPrompt(base)
     expect(p).toContain('THE GUARD')
     expect(p).toContain('do NOT trust')
-    expect(p).toContain('.rclaude/project/in-review/fix-the-thing.md')
+    // The canonical card path -- NOT the lane it happens to be sitting in.
+    expect(p).toContain('.rclaude/project/cards/fix-the-thing.md')
   })
 
   it('references the exact approve + bounce transitions for this card', () => {

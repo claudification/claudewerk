@@ -15,10 +15,10 @@ const meta = (slug: string, status: ProjectTaskMeta['status'] = 'open'): Project
   mtime: 1,
 })
 
-/** A readTask that only answers for the lane the card is REALLY in. */
-function fakeReadTask(real: Record<string, ProjectTaskMeta['status']>) {
-  return vi.fn(async (slug: string, status: ProjectTaskMeta['status']) =>
-    real[slug] === status ? ({ ...meta(slug, status), body: 'body' } as ProjectTask) : null,
+/** A readTask keyed by id alone -- a card's lane is not part of its address. */
+function fakeReadTask(known: Record<string, ProjectTaskMeta['status']>) {
+  return vi.fn(async (id: string) =>
+    known[id] ? ({ ...meta(id, known[id]), body: 'body' } as ProjectTask) : null,
   )
 }
 
@@ -45,7 +45,7 @@ describe('useCardResolver', () => {
   it('opens a card requested before the manifest lands (the load race)', async () => {
     const { opened, Probe, ask } = harness(fakeReadTask({ 'fix-thing': 'in-progress' }))
     const view = render(<Probe tasks={[]} loading={true} />)
-    ask('fix-thing') // no lane hint, nothing loaded -- must WAIT, not drop
+    ask('fix-thing') // nothing loaded yet -- must WAIT, not drop
     expect(opened).toHaveLength(0)
 
     view.rerender(<Probe tasks={[meta('fix-thing', 'in-progress')]} loading={false} />)
@@ -53,37 +53,25 @@ describe('useCardResolver', () => {
     expect(opened[0].slug).toBe('fix-thing')
   })
 
-  it('uses the lane hint while the manifest is still loading', async () => {
-    const readTask = fakeReadTask({ quick: 'open' })
-    const { opened, Probe, ask } = harness(readTask)
-    render(<Probe tasks={[]} loading={true} />)
-    ask('quick', 'open')
-    await waitFor(() => expect(opened).toHaveLength(1))
-    expect(readTask).toHaveBeenCalledWith('quick', 'open')
-  })
-
-  it('recovers when the lane hint is stale (the card moved)', async () => {
-    // The link says `open`; the card is really in `done`.
+  it('opens a card whatever lane it is in -- the lane is never part of the request', async () => {
     const readTask = fakeReadTask({ moved: 'done' })
     const { opened, Probe, ask } = harness(readTask)
-    const view = render(<Probe tasks={[]} loading={true} />)
-    ask('moved', 'open')
-    await waitFor(() => expect(readTask).toHaveBeenCalledWith('moved', 'open'))
-    expect(opened).toHaveLength(0) // stale lane missed...
-
-    view.rerender(<Probe tasks={[meta('moved', 'done')]} loading={false} />)
-    await waitFor(() => expect(opened).toHaveLength(1)) // ...manifest corrects it
-    expect(readTask).toHaveBeenCalledWith('moved', 'done')
+    // The link that got us here may have said `open`; it does not matter.
+    render(<Probe tasks={[meta('moved', 'done')]} loading={false} />)
+    ask('moved')
+    await waitFor(() => expect(opened).toHaveLength(1))
+    expect(readTask).toHaveBeenCalledTimes(1)
+    expect(readTask).toHaveBeenCalledWith('moved')
+    expect(opened[0].status).toBe('done')
   })
 
-  it('prefers the manifest lane over the hint when both are known', async () => {
+  it('reads a card exactly once (no stale-lane retry to pay for)', async () => {
     const readTask = fakeReadTask({ card: 'archived' })
     const { opened, Probe, ask } = harness(readTask)
     render(<Probe tasks={[meta('card', 'archived')]} loading={false} />)
-    ask('card', 'inbox')
+    ask('card')
     await waitFor(() => expect(opened).toHaveLength(1))
     expect(readTask).toHaveBeenCalledTimes(1)
-    expect(readTask).toHaveBeenCalledWith('card', 'archived')
   })
 
   it('drops a request for a card the loaded project does not have', () => {

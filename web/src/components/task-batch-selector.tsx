@@ -336,7 +336,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     hoverSlugRef.current = task.slug
     hoverTimerRef.current = setTimeout(async () => {
       if (hoverSlugRef.current !== task.slug) return
-      const full = await readTask(task.slug, task.status)
+      const full = await readTask(task.slug)
       if (full && hoverSlugRef.current === task.slug) {
         setPreviewTask(full)
         setPreviewRect(el.getBoundingClientRect())
@@ -357,7 +357,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     }
     clearHoverPreview()
     hoverSlugRef.current = task.slug
-    const full = await readTask(task.slug, task.status)
+    const full = await readTask(task.slug)
     if (full && hoverSlugRef.current === task.slug) {
       setPreviewTask(full)
       setPreviewRect(el.getBoundingClientRect())

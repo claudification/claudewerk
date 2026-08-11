@@ -183,12 +183,8 @@ export function TaskEditor({
 }: {
   task: ProjectTask
   conversationId: string
-  onSave: (
-    slug: string,
-    status: TaskStatus,
-    patch: { title?: string; body?: string; priority?: string; tags?: string[] },
-  ) => Promise<unknown>
-  onMove: (slug: string, from: TaskStatus, to: TaskStatus) => Promise<boolean>
+  onSave: (id: string, patch: { title?: string; body?: string; priority?: string; tags?: string[] }) => Promise<unknown>
+  onMove: (id: string, to: TaskStatus) => Promise<boolean>
   onRun: (task: ProjectTask) => void
   /** Promote this card into the project's nightshift queue (absent => hidden). */
   onPromote?: (task: ProjectTask) => void
@@ -223,7 +219,7 @@ export function TaskEditor({
       a: () => {
         if (status === 'archived') return
         setStatus('archived')
-        onMove(task.slug, status, 'archived')
+        onMove(task.slug, 'archived')
         haptic('tap')
       },
       // Modifier keys -- fire even in text inputs
@@ -233,18 +229,16 @@ export function TaskEditor({
       'ctrl+shift+ArrowRight': () => {
         const next = NEXT_STATUS[status]
         if (next) {
-          const old = status
           setStatus(next)
-          onMove(task.slug, old, next)
+          onMove(task.slug, next)
           haptic('tap')
         }
       },
       'ctrl+shift+ArrowLeft': () => {
         const prev = PREV_STATUS[status]
         if (prev) {
-          const old = status
           setStatus(prev)
-          onMove(task.slug, old, prev)
+          onMove(task.slug, prev)
           haptic('tap')
         }
       },
@@ -287,7 +281,7 @@ export function TaskEditor({
 
   async function handleSave() {
     setSaving(true)
-    await onSave(task.slug, status, { title, body, priority, tags })
+    await onSave(task.slug, { title, body, priority, tags })
     setSaving(false)
     haptic('success')
     onClose()
@@ -316,7 +310,7 @@ export function TaskEditor({
               setStatus(newStatus)
               haptic('tap')
               // Immediately move the file on disk and update the board UI
-              onMove(task.slug, oldStatus, newStatus)
+              onMove(task.slug, newStatus)
             }}
             className={cn(
               'text-[10px] font-mono bg-transparent border px-1 py-0.5 outline-none',
@@ -473,7 +467,7 @@ export function TaskEditor({
                   type="button"
                   onClick={() => {
                     setStatus('done')
-                    onMove(task.slug, status, 'done')
+                    onMove(task.slug, 'done')
                     haptic('success')
                   }}
                   className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
@@ -487,7 +481,7 @@ export function TaskEditor({
                     type="button"
                     onClick={() => {
                       setStatus('in-review')
-                      onMove(task.slug, status, 'in-review')
+                      onMove(task.slug, 'in-review')
                       haptic('tap')
                     }}
                     className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-info/15 text-info border border-info/30 hover:bg-info/25 transition-colors"
@@ -498,7 +492,7 @@ export function TaskEditor({
                     type="button"
                     onClick={() => {
                       setStatus('archived')
-                      onMove(task.slug, status, 'archived')
+                      onMove(task.slug, 'archived')
                       haptic('tap')
                     }}
                     className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-primary/12 text-muted-foreground border border-primary/20 hover:bg-primary/20 transition-colors"
@@ -513,7 +507,7 @@ export function TaskEditor({
                   type="button"
                   onClick={() => {
                     setStatus('open')
-                    onMove(task.slug, status, 'open')
+                    onMove(task.slug, 'open')
                     haptic('tap')
                   }}
                   className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition-colors"
@@ -968,9 +962,9 @@ function ProjectCard({
 }: {
   task: ProjectTaskMeta
   view: BoardViewConfig
-  onMove: (slug: string, from: TaskStatus, to: TaskStatus) => void
-  onDelete: (slug: string, status: TaskStatus) => void
-  onArchive: (slug: string, from: TaskStatus) => void
+  onMove: (id: string, to: TaskStatus) => void
+  onDelete: (id: string) => void
+  onArchive: (id: string) => void
   onEdit: (task: ProjectTaskMeta) => void
 }) {
   const [showActions, setShowActions] = useState(false)
@@ -1064,7 +1058,7 @@ function ProjectCard({
               className="p-1 text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
-                onMove(task.slug, task.status, PREV_STATUS[task.status])
+                onMove(task.slug, PREV_STATUS[task.status])
                 setShowActions(false)
               }}
             >
@@ -1078,7 +1072,7 @@ function ProjectCard({
               className="p-1 text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
-                onMove(task.slug, task.status, NEXT_STATUS[task.status])
+                onMove(task.slug, NEXT_STATUS[task.status])
                 setShowActions(false)
               }}
             >
@@ -1092,7 +1086,7 @@ function ProjectCard({
               className="p-1 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
-                onArchive(task.slug, task.status)
+                onArchive(task.slug)
                 setShowActions(false)
               }}
             >
@@ -1105,7 +1099,7 @@ function ProjectCard({
             className="ml-auto p-1 text-red-400/60 hover:text-red-400 transition-colors"
             onClick={() => {
               haptic('error')
-              onDelete(task.slug, task.status)
+              onDelete(task.slug)
               setShowActions(false)
             }}
           >
@@ -1411,7 +1405,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     const sourceData = active.data.current as { slug: string; status: TaskStatus } | undefined
     if (!sourceData || sourceData.status === targetStatus) return
     haptic('tap')
-    moveTask(sourceData.slug, sourceData.status, targetStatus)
+    moveTask(sourceData.slug, targetStatus)
   }
 
   const handleCreate = useCallback(
@@ -1425,24 +1419,44 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
   )
 
   const handleMove = useCallback(
-    async (slug: string, from: TaskStatus, to: TaskStatus) => {
-      await moveTask(slug, from, to)
+    async (id: string, to: TaskStatus) => {
+      await moveTask(id, to)
     },
     [moveTask],
   )
 
   const handleDelete = useCallback(
-    async (slug: string, status: TaskStatus) => {
-      await deleteTask(slug, status)
+    async (id: string) => {
+      await deleteTask(id)
     },
     [deleteTask],
   )
 
   const handleArchive = useCallback(
-    async (slug: string, from: TaskStatus) => {
-      await moveTask(slug, from, 'archived')
+    async (id: string) => {
+      await moveTask(id, 'archived')
     },
     [moveTask],
+  )
+
+  /** One card, wired to the board's handlers. Same everywhere it renders --
+   *  the columns and the archive drawer must not drift apart. */
+  const renderCard = useCallback(
+    (task: ProjectTaskMeta) => (
+      <ProjectCard
+        key={task.slug}
+        task={task}
+        view={view}
+        onMove={handleMove}
+        onDelete={handleDelete}
+        onArchive={handleArchive}
+        onEdit={async meta => {
+          const full = await readTask(meta.slug)
+          if (full) setEditingTask(full)
+        }}
+      />
+    ),
+    [view, handleMove, handleDelete, handleArchive, readTask],
   )
 
   const archivedTasks = filteredTasks.filter(n => n.status === 'archived')
@@ -1602,20 +1616,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
 
                   {/* Cards */}
                   <div className="flex-1 overflow-y-auto space-y-0 pb-4">
-                    {colTasks.map(task => (
-                      <ProjectCard
-                        key={task.slug}
-                        task={task}
-                        view={view}
-                        onMove={handleMove}
-                        onDelete={handleDelete}
-                        onArchive={handleArchive}
-                        onEdit={async meta => {
-                          const full = await readTask(meta.slug, meta.status)
-                          if (full) setEditingTask(full)
-                        }}
-                      />
-                    ))}
+                    {colTasks.map(renderCard)}
 
                     {col.status === 'inbox' && <InlineAdd onAdd={handleCreate} />}
                   </div>
@@ -1656,20 +1657,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
           </button>
           {archiveExpanded && (
             <div className="max-h-[200px] overflow-y-auto border-t border-border/30">
-              {archivedTasks.map(task => (
-                <ProjectCard
-                  key={task.slug}
-                  task={task}
-                  view={view}
-                  onMove={handleMove}
-                  onDelete={handleDelete}
-                  onArchive={handleArchive}
-                  onEdit={async meta => {
-                    const full = await readTask(meta.slug, meta.status)
-                    if (full) setEditingTask(full)
-                  }}
-                />
-              ))}
+              {archivedTasks.map(renderCard)}
             </div>
           )}
         </div>
@@ -1680,15 +1668,14 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         <TaskEditor
           task={editingTask}
           conversationId={conversationId}
-          onSave={async (slug, status, patch) => {
-            await updateTask(slug, status, patch)
+          onSave={async (id, patch) => {
+            await updateTask(id, patch)
           }}
-          onMove={async (slug, from, to) => {
-            const result = await moveTask(slug, from, to)
-            if (result) {
-              // Update the editing task's slug + status so subsequent saves use the correct path
-              setEditingTask(prev => (prev && prev.slug === slug ? { ...prev, slug: result, status: to } : prev))
-            }
+          onMove={async (id, to) => {
+            const result = await moveTask(id, to)
+            // The card's id and path are unchanged -- only its lane moved, so the
+            // open editor just needs its status refreshed.
+            if (result) setEditingTask(prev => (prev && prev.slug === id ? { ...prev, status: to } : prev))
             return !!result
           }}
           onRun={task => {

@@ -1,49 +1,48 @@
 /**
- * Opening a board card by slug, from anywhere, without needing the board.
+ * Opening a board card by id, from anywhere, without needing the board.
  *
- * Callers know a slug and at best a STALE lane (a `.rclaude/project/<lane>/<slug>.md`
- * link outlives the card's stay in that lane). Reading a card needs its real
- * lane, which only the manifest knows -- and the manifest arrives over the
- * sentinel, so a request can easily land before it does.
+ * This used to be considerably more machinery: a card's lane was half its
+ * address, callers only had a possibly-stale lane from an old link, and the
+ * real lane only arrived with the manifest -- so the resolver had to hold the
+ * request, prefer the manifest's lane over the caller's hint, and retry
+ * lane-free when the hint turned out to be stale.
  *
- * `useCardResolver` owns that wait: it holds the request until the slug is
- * resolvable, prefers the manifest's lane over the caller's hint, retries
- * lane-free if the hint turns out to be stale, and drops the request once the
- * project has loaded without the card (deleted, or another project's).
+ * Cards are addressed by id now. All that survives is the one genuine wait:
+ * a request can land before the project's manifest does, and we only give up
+ * once the project has loaded without the card in it (deleted, or another
+ * project's).
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import type { ProjectTask, ProjectTaskMeta, TaskStatus } from './use-project'
+import type { ProjectTask, ProjectTaskMeta } from './use-project'
 
 interface CardResolverOpts {
   tasks: ProjectTaskMeta[]
   loading: boolean
-  readTask: (slug: string, status: TaskStatus) => Promise<ProjectTask | null>
+  readTask: (id: string) => Promise<ProjectTask | null>
   /** Stable callback -- receives the fully-read card. */
   onOpen: (task: ProjectTask) => void
 }
 
-/** Request a card by slug (+ an optional, possibly stale, lane hint). */
-export type RequestCard = (slug: string, laneHint?: TaskStatus) => void
+/** Request a card by id. */
+export type RequestCard = (id: string) => void
 
 export function useCardResolver({ tasks, loading, readTask, onOpen }: CardResolverOpts): RequestCard {
-  const [wanted, setWanted] = useState<{ slug: string; laneHint?: TaskStatus } | null>(null)
-  const request = useCallback<RequestCard>((slug, laneHint) => setWanted({ slug, laneHint }), [])
+  const [wanted, setWanted] = useState<string | null>(null)
+  const request = useCallback<RequestCard>(id => setWanted(id), [])
 
   useEffect(() => {
     if (!wanted) return
-    // The manifest is authoritative; the hint only covers the window before it lands.
-    const lane = tasks.find(t => t.slug === wanted.slug)?.status ?? wanted.laneHint
-    if (!lane) {
-      if (!loading && tasks.length > 0) setWanted(null) // loaded without it -- gone
+    const known = tasks.some(t => t.slug === wanted)
+    if (!known) {
+      // Still loading: hold the request until the manifest lands. Loaded
+      // without it: the card is gone, drop the request rather than spin.
+      if (!loading && tasks.length > 0) setWanted(null)
       return
     }
     setWanted(null)
-    readTask(wanted.slug, lane).then(full => {
+    readTask(wanted).then(full => {
       if (full) onOpen(full)
-      // A miss on a HINTED lane means the card moved: re-park lane-free so the
-      // manifest resolves it. The retry has no hint, so it cannot loop.
-      else if (wanted.laneHint) setWanted({ slug: wanted.slug })
     })
   }, [wanted, tasks, loading, readTask, onOpen])
 

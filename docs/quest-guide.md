@@ -68,11 +68,11 @@ prose + a `## Acceptance` JSON fence). This mirrors the project-board/nightshift
 artifacts (the shared `frontmatter.ts` subset only holds flat `key: value` scalars
 and inline `[a, b]` arrays — no nesting, so structured data goes in the body).
 
-The **board cards** for the quest's tasks live in the normal lanes
-(`.rclaude/project/{inbox,open,in-progress,in-review,done,archived}/`) and stay
-**thin** — they carry only a `quest: <petname>` frontmatter key (§4a) that ties
-them to the manifest. Membership is orthogonal to lane (§4c): a card is a quest
-member because it says `quest: floppy-panda`, regardless of what lane it sits in.
+The **board cards** for the quest's tasks are ordinary cards
+(`.rclaude/project/cards/<id>.md`, lane in their `status:` frontmatter key) and
+stay **thin** — they carry only a `quest: <petname>` key (§4a) that ties them to
+the manifest. Membership is orthogonal to lane (§4c): a card is a quest member
+because it says `quest: floppy-panda`, regardless of what lane it sits in.
 
 ### 2.1 `manifest.md` frontmatter — field by field
 

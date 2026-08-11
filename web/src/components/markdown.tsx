@@ -130,7 +130,7 @@ renderer.link = ({ href, text }) => {
     const safe = escapeAttr(href)
     const card = parseProjectCardPath(href)
     if (card) {
-      return `<a href="#" class="file-link file-link-card" data-file-path="${safe}" title="Open card ${escapeAttr(card.slug)}">${text}</a>`
+      return `<a href="#" class="file-link file-link-card" data-file-path="${safe}" title="Open card ${escapeAttr(card.id)}">${text}</a>`
     }
     return `<a href="#" class="file-link" data-file-path="${safe}" title="View ${safe}">${text}</a>`
   }
@@ -721,9 +721,10 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
 
     // Project-relative file link -> open the sentinel-backed markdown viewer,
     // resolved against the selected conversation's project root. A path that IS
-    // a board card (`.rclaude/project/<lane>/<slug>.md`) opens the CARD instead:
-    // same bytes, but the view you can edit, move and run -- JUST the card, the
-    // board stays where it was.
+    // a board card opens the CARD instead: same bytes, but the view you can
+    // edit, move and run -- JUST the card, the board stays where it was.
+    // Any historical card path works (`cards/`, an old `<lane>/`, a view
+    // symlink) -- the lane in the link is ignored, the id is the address.
     const fileLink = target.closest('.file-link') as HTMLAnchorElement | null
     if (fileLink) {
       e.preventDefault()
@@ -733,7 +734,7 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
       const projectUri = conv?.project
       if (!relPath || !projectUri) return
       const card = parseProjectCardPath(relPath)
-      if (card) openProjectCard(card.slug, card.status)
+      if (card) openProjectCard(card.id)
       else useMarkdownViewer.getState().open(projectUri, relPath)
       return
     }

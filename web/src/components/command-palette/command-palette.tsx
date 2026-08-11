@@ -141,7 +141,7 @@ export function CommandPalette({ onSelect, onClose }: CommandPaletteProps) {
                         : 'text-foreground hover:bg-surface-inset'
                     }`}
                     onClick={() => {
-                      openProjectCard(task.slug, task.status)
+                      openProjectCard(task.slug)
                       onClose()
                     }}
                     onMouseEnter={() => palette.setActiveIndex(i)}

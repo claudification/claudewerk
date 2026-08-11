@@ -6,11 +6,10 @@ interface TaskEditorOverlayProps {
   taskEditorTask: ProjectTask | null
   runTaskFromEditor: ProjectTask | null
   onUpdateTask: (
-    slug: string,
-    status: TaskStatus,
+    id: string,
     patch: { title?: string; body?: string; priority?: string; tags?: string[] },
   ) => Promise<unknown>
-  onMoveTask: (slug: string, from: TaskStatus, to: TaskStatus) => Promise<string | false>
+  onMoveTask: (id: string, to: TaskStatus) => Promise<string | false>
   onRunTask: (task: ProjectTask) => void
   onCloseEditor: () => void
   onCloseRunDialog: () => void
@@ -34,15 +33,14 @@ export function TaskEditorOverlay({
         <TaskEditor
           task={taskEditorTask}
           conversationId={conversationId}
-          onSave={async (slug, status, patch) => {
-            await onUpdateTask(slug, status, patch)
+          onSave={async (id, patch) => {
+            await onUpdateTask(id, patch)
           }}
-          onMove={async (slug, from, to) => {
-            const result = await onMoveTask(slug, from, to)
+          onMove={async (id, to) => {
+            const result = await onMoveTask(id, to)
+            // Only the lane changed -- the card's id and path are untouched.
             if (result)
-              onSetTaskEditorTask(
-                taskEditorTask.slug === slug ? { ...taskEditorTask, slug: result, status: to } : taskEditorTask,
-              )
+              onSetTaskEditorTask(taskEditorTask.slug === id ? { ...taskEditorTask, status: to } : taskEditorTask)
             return !!result
           }}
           onRun={task => {

@@ -473,8 +473,9 @@ interface ConversationsState {
   editingDescriptionConversationId: string | null
   setEditingDescriptionConversationId: (conversationId: string | null) => void
   updateDescription: (conversationId: string, description: string) => void
-  pendingTaskEdit: { slug: string; status: string } | null
-  setPendingTaskEdit: (task: { slug: string; status: string } | null) => void
+  /** A card to open, by id. No lane: a card's id is its whole address. */
+  pendingTaskEdit: { slug: string } | null
+  setPendingTaskEdit: (task: { slug: string } | null) => void
   inputDrafts: Record<string, string>
   setInputDraft: (conversationId: string, text: string) => void
   messageStash: Record<string, StashEntry[]>

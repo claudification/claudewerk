@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES } from '../../../shared/task-statuses'
+import { cardRelPath, hasLegacyCards, listProjectTasks } from '../../../shared/project-store'
+import type { ProjectTaskMeta } from '../../../shared/project-task-types'
+import { DEFAULT_VISIBLE_STATUSES, TASK_STATUSES, type TaskStatus } from '../../../shared/task-statuses'
 import { debug } from '../debug'
 import { handleProjectSetStatus } from './project-set-status'
 import type { McpToolContext, ToolDef } from './types'
@@ -9,14 +9,15 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
   return {
     project_list: {
       description:
-        'List tasks from the project board (.rclaude/project/). Returns tasks grouped by status with their frontmatter (title, priority, tags, refs) and relative file paths. By default shows open + in-progress only. To edit tasks, read/write the markdown files directly. To change status, mv the file between status folders.',
+        'List tasks from the project board (.rclaude/project/). Returns tasks with their frontmatter (title, status, priority, tags, refs) and file paths. By default shows open + in-progress only. ' +
+        'Every card lives at .rclaude/project/cards/<id>.md and NEVER moves -- its lane is the `status:` frontmatter key. To edit a task, read/write that file directly. To change its lane, use project_set_status (do NOT mv the file).',
       inputSchema: {
         type: 'object' as const,
         properties: {
           status: {
             type: 'string',
             enum: [...TASK_STATUSES, 'all'],
-            description: `Filter by status folder. Default: all (${DEFAULT_VISIBLE_STATUSES.join(' + ')})`,
+            description: `Filter by lane. Default: all (${DEFAULT_VISIBLE_STATUSES.join(' + ')})`,
           },
           show_done: {
             type: 'boolean',
@@ -40,7 +41,7 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
 
     project_set_status: {
       description:
-        'Move a project task to a different status column on the board. Use the filename (without .md) as the task ID. Avoids needing Bash mv which triggers permission prompts. ' +
+        'Move a project task to a different status column on the board. Use the card id (its filename without .md) -- the file itself never moves, only its `status:` frontmatter changes. ' +
         'DONE-GATE: moving to in-review or done may be gated by deterministic checks (per-project gate.conf, or `full` for quest cards). ' +
         "When gated, the tool captures git evidence (branch/base/commits/diffstat, and runs the card's `test_cmd`) and REFUSES the move with a precise reason if the tree is dirty, nothing is committed, the diff is empty, or tests fail. " +
         'Under `full`, in-review -> done additionally requires approval by a DIFFERENT conversation than the one that moved the card to in-review (the worker cannot approve itself). You cannot self-report these facts.',
@@ -49,12 +50,12 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
         properties: {
           id: {
             type: 'string',
-            description: 'Task filename without .md extension (e.g. "my-task" or "bug-conduit-session")',
+            description: 'Card id -- its filename without .md (e.g. "my-task" or "bug-conduit-session")',
           },
           status: {
             type: 'string',
             enum: [...TASK_STATUSES],
-            description: 'Target status folder',
+            description: 'Target lane',
           },
         },
         required: ['id', 'status'],
@@ -66,72 +67,57 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
   }
 }
 
+/** Which lanes the caller asked for. */
+function wantedStatuses(params: Record<string, string>): TaskStatus[] {
+  const filter = params.status || 'all'
+  if (filter !== 'all') return [filter as TaskStatus]
+  const statuses = [...DEFAULT_VISIBLE_STATUSES]
+  if (String(params.show_done) === 'true') statuses.push('done')
+  if (String(params.show_archived) === 'true') statuses.push('archived')
+  return statuses
+}
+
+/** `/regex/flags` stays a regex; anything else is a case-insensitive glob. */
+function compileFilter(raw: string | undefined): RegExp | null {
+  if (!raw) return null
+  const asRegex = raw.match(/^\/(.+)\/([gimsuy]*)$/)
+  if (asRegex) return new RegExp(asRegex[1], asRegex[2] || 'i')
+  return new RegExp(raw.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*'), 'i')
+}
+
+function renderCard(task: ProjectTaskMeta): string {
+  const lines = [`title: ${task.title}`, `status: ${task.status}`]
+  if (task.priority) lines.push(`priority: ${task.priority}`)
+  if (task.tags.length) lines.push(`tags: [${task.tags.join(', ')}]`)
+  if (task.refs.length) lines.push(`refs: [${task.refs.join(', ')}]`)
+  if (task.quest) lines.push(`quest: ${task.quest}`)
+  if (task.created) lines.push(`created: ${task.created}`)
+  return `## ${cardRelPath(task.slug)}\n${lines.join('\n')}`
+}
+
 function handleProjectList(ctx: McpToolContext, params: Record<string, string>) {
-  const statusFilter = params.status || 'all'
-  let statuses: string[]
-  if (statusFilter === 'all') {
-    statuses = [...DEFAULT_VISIBLE_STATUSES]
-    if (String(params.show_done) === 'true') statuses.push('done')
-    if (String(params.show_archived) === 'true') statuses.push('archived')
-  } else {
-    statuses = [statusFilter]
-  }
-
-  let filterRe: RegExp | null = null
-  if (params.filter) {
-    const f = params.filter
-    const regexMatch = f.match(/^\/(.+)\/([gimsuy]*)$/)
-    if (regexMatch) {
-      filterRe = new RegExp(regexMatch[1], regexMatch[2] || 'i')
-    } else {
-      const escaped = f.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')
-      filterRe = new RegExp(escaped, 'i')
-    }
-  }
-
+  const statuses = new Set<TaskStatus>(wantedStatuses(params))
+  const filterRe = compileFilter(params.filter)
   const dialogCwd = ctx.getDialogCwd()
-  const projectDir = join(dialogCwd, '.rclaude', 'project')
-  const results: string[] = []
-  for (const status of statuses) {
-    const dir = join(projectDir, status)
-    try {
-      const files = readdirSync(dir)
-        .filter(f => f.endsWith('.md'))
-        .map(f => ({ name: f, mtime: statSync(join(dir, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime)
-      for (const { name: file } of files) {
-        try {
-          const content = readFileSync(join(dir, file), 'utf-8')
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
-          const fm = fmMatch ? fmMatch[1] : ''
 
-          if (filterRe) {
-            const titleMatch = fm.match(/title:\s*["']?(.+?)["']?\s*$/m)
-            const title = titleMatch ? titleMatch[1] : ''
-            const tagsMatch = fm.match(/tags:\s*\[([^\]]*)\]/m)
-            const tags = tagsMatch ? tagsMatch[1] : ''
-            const searchable = `${file} ${title} ${tags}`
-            if (!filterRe.test(searchable)) continue
-          }
+  const results = listProjectTasks(dialogCwd)
+    .filter(t => statuses.has(t.status))
+    .filter(t => !filterRe || filterRe.test(`${t.slug} ${t.title} ${t.tags.join(' ')}`))
+    .map(renderCard)
 
-          const relPath = `.rclaude/project/${status}/${file}`
-          results.push(`## ${relPath}\n${fm}`)
-        } catch {
-          /* skip unreadable */
-        }
-      }
-    } catch {
-      /* dir doesn't exist yet */
-    }
+  let output: string
+  if (results.length > 0) output = results.join('\n\n')
+  else if (params.filter) output = `No tasks matching "${params.filter}". Try a broader pattern.`
+  else output = 'No tasks found. Create one with: Write .rclaude/project/cards/my-task.md (with `status: open`)'
+
+  // A board that still has cards in the old lane directories works, but every
+  // read pays for scanning them -- say so once, where an agent will see it.
+  if (hasLegacyCards(dialogCwd)) {
+    output += '\n\n> This board still has cards in legacy status folders. Run `bun run board:upgrade` to drain them.'
   }
-  const output =
-    results.length > 0
-      ? results.join('\n\n')
-      : params.filter
-        ? `No tasks matching "${params.filter}". Try a broader pattern.`
-        : 'No tasks found. Create one with: Write .rclaude/project/open/my-task.md'
+
   debug(
-    `[channel] project_list: ${results.length} tasks (filter=${statusFilter}${params.filter ? `, pattern=${params.filter}` : ''})`,
+    `[channel] project_list: ${results.length} tasks (filter=${params.status || 'all'}${params.filter ? `, pattern=${params.filter}` : ''})`,
   )
   return { content: [{ type: 'text', text: output }] }
 }
