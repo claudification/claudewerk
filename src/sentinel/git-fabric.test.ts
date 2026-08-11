@@ -153,25 +153,35 @@ describe('deriveAlerts', () => {
 // ─── LIVE smoke on THIS repo (multi-worktree + diverged state) ──────
 
 describe('runGitFabric (live, this repo)', () => {
-  it('scans the current repo and returns a sensible fabric snapshot', () => {
-    const out = runGitFabric(process.cwd(), 123_456)
-    expect(out.error).toBeUndefined()
-    expect(out.fabric).toBeDefined()
-    const fabric = out.fabric!
-    expect(fabric.scannedAt).toBe(123_456)
-    // This repo has local branches; every entry is well-formed.
-    expect(fabric.branches.length).toBeGreaterThan(0)
-    for (const b of fabric.branches) {
-      expect(typeof b.branch).toBe('string')
-      expect(b.branch.length).toBeGreaterThan(0)
-      expect(['integrated', 'ff-clean', 'merge-clean', 'conflicts']).toContain(b.integration)
-      expect(b.aheadOrigin).toBeGreaterThanOrEqual(0)
-      expect(b.behindOrigin).toBeGreaterThanOrEqual(0)
-      expect(Array.isArray(b.alerts)).toBe(true)
-      // conflictFiles only present on a conflicting branch.
-      if (b.integration !== 'conflicts') expect(b.conflictFiles).toBeUndefined()
-    }
-  })
+  // A REAL scan of whatever repo the developer is sitting in: cost scales with
+  // branch + worktree count, and this one carries 70+. It is not slow because
+  // anything is wrong, so it gets a budget that fits the work rather than
+  // bun's 5s default (which failed it on any well-used checkout).
+  const LIVE_SCAN_TIMEOUT_MS = 60_000
+
+  it(
+    'scans the current repo and returns a sensible fabric snapshot',
+    () => {
+      const out = runGitFabric(process.cwd(), 123_456)
+      expect(out.error).toBeUndefined()
+      expect(out.fabric).toBeDefined()
+      const fabric = out.fabric!
+      expect(fabric.scannedAt).toBe(123_456)
+      // This repo has local branches; every entry is well-formed.
+      expect(fabric.branches.length).toBeGreaterThan(0)
+      for (const b of fabric.branches) {
+        expect(typeof b.branch).toBe('string')
+        expect(b.branch.length).toBeGreaterThan(0)
+        expect(['integrated', 'ff-clean', 'merge-clean', 'conflicts']).toContain(b.integration)
+        expect(b.aheadOrigin).toBeGreaterThanOrEqual(0)
+        expect(b.behindOrigin).toBeGreaterThanOrEqual(0)
+        expect(Array.isArray(b.alerts)).toBe(true)
+        // conflictFiles only present on a conflicting branch.
+        if (b.integration !== 'conflicts') expect(b.conflictFiles).toBeUndefined()
+      }
+    },
+    LIVE_SCAN_TIMEOUT_MS,
+  )
 
   it('returns an error for a non-git directory without throwing', () => {
     const out = runGitFabric('/nonexistent-sotu-git-fabric-probe', 1)
