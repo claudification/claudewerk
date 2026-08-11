@@ -1,27 +1,19 @@
 /**
- * The BASIC tab: the four things a schedule cannot be created without.
+ * The BASIC tab: the things a schedule cannot be created without.
  *
  * The prompt gets the most room on the form deliberately -- every other field
  * has a defensible default, and this one is the entire payload. A schedule with
  * a perfect cron and a vague prompt is a schedule that wastes tokens on a timer.
+ *
+ * WHERE it runs (project / directory / host) is its own section in
+ * `where-fields.tsx`: those three travel together and are seeded together.
  */
 
-import type React from 'react'
 import { cn } from '@/lib/utils'
+import { Field, INPUT_CLASS } from './field'
 import type { ScheduleDraft } from './use-schedule-draft'
 import { WhenField } from './when-field'
-
-const INPUT_CLASS =
-  'w-full bg-surface-inset border border-border rounded px-2 py-1.5 text-[11px] font-mono text-foreground placeholder:text-comment/50 focus:outline-none focus:ring-1 focus:ring-primary/50'
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-wide pl-0.5">{label}</div>
-      {children}
-    </div>
-  )
-}
+import { WhereFields } from './where-fields'
 
 export function ScheduleBasicTab({
   draft,
@@ -58,15 +50,7 @@ export function ScheduleBasicTab({
         <WhenField draft={draft} patch={patch} />
       </div>
 
-      <Field label="Working directory">
-        <input
-          aria-label="Working directory"
-          value={draft.cwd}
-          onChange={e => patch({ cwd: e.target.value })}
-          spellCheck={false}
-          className={INPUT_CLASS}
-        />
-      </Field>
+      <WhereFields draft={draft} patch={patch} />
     </>
   )
 }

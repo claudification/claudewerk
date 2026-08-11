@@ -6,6 +6,7 @@
  * keeps the draft hook out of the modal, where a remount would reset it.
  */
 
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { createScheduledTask, patchScheduledTask } from './api'
 import { useScheduledTasksModalStore } from './modal-state'
 import { ScheduleEditor } from './schedule-editor'
@@ -18,9 +19,16 @@ export function EditorPane({ onDone }: { onDone: () => void }) {
   const selectedId = useScheduledTasksModalStore(s => s.selectedId)
   const mode = useScheduledTasksModalStore(s => s.mode)
   const tasks = useScheduledTasksStore(s => s.tasks)
+  // Opened from the ALL-projects view there is no filter, so fall back to
+  // whatever project the panel is already looking at. Without this the form
+  // opens with no project AND no directory, and only complains about the
+  // directory -- pointing the user at the symptom instead of the cause.
+  const selectedProjectUri = useConversationsStore(s => s.selectedProjectUri)
 
   const existing = mode === 'edit' ? tasks.find(t => t.id === selectedId) : undefined
-  const { draft, patch } = useScheduleDraft(existing ? draftFromTask(existing) : blankDraft(projectFilter ?? '', ''))
+  const { draft, patch } = useScheduleDraft(
+    existing ? draftFromTask(existing) : blankDraft(projectFilter ?? selectedProjectUri ?? ''),
+  )
 
   const { save, saving, error } = useSaveSchedule({
     submit: () =>

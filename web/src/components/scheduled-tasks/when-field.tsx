@@ -15,7 +15,8 @@ import { formatWhen, viewerTimeZone } from '@shared/format-when'
 import { useRelativeTime } from '@/hooks/use-relative-time'
 import { cn } from '@/lib/utils'
 import { CronField } from './cron-field'
-import { resolveRunAt, type ScheduleDraft, type ScheduleMode } from './use-schedule-draft'
+import { resolveRunAt } from './draft-time'
+import type { ScheduleDraft, ScheduleMode } from './use-schedule-draft'
 
 const MODES: Array<{ value: ScheduleMode; label: string; hint: string }> = [
   { value: 'repeating', label: 'Repeating', hint: 'Runs on a cron, over and over.' },

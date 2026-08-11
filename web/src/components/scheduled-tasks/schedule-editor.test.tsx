@@ -80,3 +80,27 @@ describe('ScheduleEditor', () => {
     expect(render(draft(), 'cron: minute out of range')).toContain('cron: minute out of range')
   })
 })
+
+/**
+ * The 2026-08-12 report: the editor opened from a project showed an empty
+ * WORKING DIRECTORY and the error "Pick a working directory" -- an invalid form
+ * on arrival, for a project whose path was in the URI all along.
+ */
+describe('ScheduleEditor -- opened from a project', () => {
+  const PROJECT = 'claude://default/Users/jonas/projects/foo'
+
+  it('arrives with the project directory already filled in', () => {
+    const html = render(draft({ ...blankDraft(PROJECT), name: 'nightly', prompt: 'do it' }))
+    expect(html).toContain('/Users/jonas/projects/foo')
+  })
+
+  it('does NOT open already-complaining', () => {
+    const d = { ...blankDraft(PROJECT), name: 'nightly', prompt: 'do it' }
+    expect(draftProblem(d)).toBeNull()
+    expect(render(d)).not.toContain('Pick a working directory')
+  })
+
+  it('shows which host it will run on', () => {
+    expect(render(draft({ ...blankDraft(PROJECT), name: 'n', prompt: 'p' }))).toContain('Run on')
+  })
+})

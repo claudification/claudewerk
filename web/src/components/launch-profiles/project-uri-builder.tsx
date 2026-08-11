@@ -7,13 +7,10 @@
  * composes a canonical claude://{sentinel}/{path} URI.
  */
 
-import { buildProjectUri, parseProjectUri } from '@shared/project-uri'
+import { buildProjectUri, DEFAULT_SENTINEL_NAME, parseProjectUri } from '@shared/project-uri'
 import { ChevronUp, FolderClosed, Loader2 } from 'lucide-react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import { type SentinelStatusInfo, useConversationsStore } from '@/hooks/use-conversations'
-import { cn } from '@/lib/utils'
-
-const DEFAULT_SENTINEL = 'default'
+import { SentinelPicker, useSentinelOptions } from '../sentinel-picker'
 
 interface Props {
   /** Existing URI to seed the sentinel + path from. Empty = fresh. */
@@ -23,8 +20,7 @@ interface Props {
 }
 
 export function ProjectUriBuilder({ initialUri, onApply, onClose }: Props) {
-  const sentinels = useConversationsStore(s => s.sentinels)
-  const options = useMemo(() => buildSentinelOptions(sentinels), [sentinels])
+  const options = useSentinelOptions()
   const seed = useMemo(() => seedFromUri(initialUri), [initialUri])
   const [sentinel, setSentinel] = useState(seed.sentinel)
   const [path, setPath] = useState(seed.path)
@@ -60,47 +56,6 @@ export function ProjectUriBuilder({ initialUri, onApply, onClose }: Props) {
             Use this URI
           </button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-interface SentinelOption {
-  alias: string
-  connected: boolean
-  isDefault: boolean
-}
-
-function SentinelPicker({
-  options,
-  value,
-  onChange,
-}: {
-  options: SentinelOption[]
-  value: string
-  onChange: (alias: string) => void
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[9px] uppercase tracking-wide text-comment">Sentinel / workstation</div>
-      <div className="flex flex-wrap gap-1">
-        {options.map(o => (
-          <button
-            key={o.alias}
-            type="button"
-            onClick={() => onChange(o.alias)}
-            title={o.connected ? 'Connected' : 'Offline'}
-            className={cn(
-              'flex items-center gap-1.5 px-2 py-0.5 font-mono text-[11px] border transition-colors',
-              o.alias === value
-                ? 'border-primary/60 text-primary bg-primary/10'
-                : 'border-primary/15 text-muted-foreground hover:text-foreground',
-            )}
-          >
-            <span className={cn('h-1.5 w-1.5 rounded-full', o.connected ? 'bg-success' : 'bg-muted-foreground/40')} />
-            {o.alias}
-          </button>
-        ))}
       </div>
     </div>
   )
@@ -184,24 +139,12 @@ function DirRow({ icon, label, onClick }: { icon: ReactNode; label: string; onCl
   )
 }
 
-/** Sentinel picker options, default-first. Falls back to a synthetic
- *  `default` entry when no sentinel is connected so the picker is never
- *  empty (the user can still type a path by hand). */
-function buildSentinelOptions(sentinels: SentinelStatusInfo[]): SentinelOption[] {
-  if (sentinels.length === 0) {
-    return [{ alias: DEFAULT_SENTINEL, connected: false, isDefault: true }]
-  }
-  return sentinels
-    .map(s => ({ alias: s.alias, connected: s.connected, isDefault: !!s.isDefault }))
-    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.alias.localeCompare(b.alias))
-}
-
 function seedFromUri(uri: string): { sentinel: string; path: string } {
   try {
     const p = parseProjectUri(uri)
-    return { sentinel: p.authority || DEFAULT_SENTINEL, path: p.path }
+    return { sentinel: p.authority || DEFAULT_SENTINEL_NAME, path: p.path }
   } catch {
-    return { sentinel: DEFAULT_SENTINEL, path: '/' }
+    return { sentinel: DEFAULT_SENTINEL_NAME, path: '/' }
   }
 }
 

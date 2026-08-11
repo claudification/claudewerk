@@ -7,17 +7,34 @@
  * hour off, or never, with no error anywhere.
  */
 
+import type { ScheduledTask } from '@shared/scheduled-task'
 import { describe, expect, it } from 'vitest'
-import {
-  blankDraft,
-  draftProblem,
-  draftToCreate,
-  resolveRunAt,
-  type ScheduleDraft,
-  toLocalInputValue,
-} from './use-schedule-draft'
+import { resolveRunAt, toLocalInputValue } from './draft-time'
+import { blankDraft, draftFromTask, draftProblem, draftToCreate, type ScheduleDraft } from './use-schedule-draft'
 
 const BERLIN = 'Europe/Berlin'
+
+function storedTask(over: Partial<ScheduledTask> = {}): ScheduledTask {
+  return {
+    id: 'sch_1a2b3c4d',
+    name: 'nightly',
+    enabled: true,
+    projectUri: 'claude://default/Users/jonas/projects/foo',
+    cwd: '/Users/jonas/projects/foo',
+    cron: '0 9 * * 1-5',
+    tz: BERLIN,
+    catchUp: 'skip',
+    overlap: 'skip',
+    prompt: 'do the thing',
+    spawn: { adHoc: true, leaveRunning: false, headless: true, transport: 'claude-headless' },
+    createdBy: 'jonas',
+    createdAt: 0,
+    updatedAt: 0,
+    runCount: 0,
+    consecutiveFailures: 0,
+    ...over,
+  }
+}
 
 function draft(over: Partial<ScheduleDraft> = {}): ScheduleDraft {
   return {
@@ -131,5 +148,71 @@ describe('blankDraft', () => {
     const resolved = resolveRunAt(d.runAtLocal, d.tz)
     expect(resolved).not.toBeNull()
     expect(resolved as number).toBeGreaterThan(Date.now())
+  })
+})
+
+/**
+ * The 2026-08-12 bug: opening the editor from a project left WORKING DIRECTORY
+ * blank, so the form opened already-invalid ("Pick a working directory") for a
+ * project whose path was sitting right there in the URI.
+ */
+describe('blankDraft -- seeded from the project URI', () => {
+  it('derives the working directory from the URI path', () => {
+    expect(blankDraft('claude://default/Users/jonas/projects/foo').cwd).toBe('/Users/jonas/projects/foo')
+  })
+
+  it('opens VALID when a project is known -- no error on a fresh form', () => {
+    const d = { ...blankDraft('claude://default/Users/jonas/projects/foo'), name: 'nightly', prompt: 'do it' }
+    expect(draftProblem(d)).toBeNull()
+  })
+
+  it('derives the sentinel from the URI authority -- a project on another host schedules THERE', () => {
+    expect(blankDraft('claude://laptop/Users/jonas/foo').sentinel).toBe('laptop')
+  })
+
+  it('leaves the sentinel undefined for the default host, so the broker picks it', () => {
+    expect(blankDraft('claude://default/Users/jonas/foo').sentinel).toBeUndefined()
+    expect(blankDraft('claude:///Users/jonas/foo').sentinel).toBeUndefined()
+  })
+
+  it('survives a project URI it cannot parse instead of throwing', () => {
+    expect(blankDraft('not a uri').cwd).toBe('')
+    expect(blankDraft('').cwd).toBe('')
+  })
+
+  it('an explicit cwd still wins over the derived one', () => {
+    expect(blankDraft('claude://default/repo', '/repo/subdir').cwd).toBe('/repo/subdir')
+  })
+})
+
+/**
+ * The trap on the other side of the same fix: EDITING must never re-derive. A
+ * schedule deliberately pointed at a subdirectory would silently snap back to
+ * the project root the next time someone opened it.
+ */
+describe('draftFromTask', () => {
+  it('preserves a stored cwd that is NOT the project root', () => {
+    const task = storedTask({ cwd: '/Users/jonas/projects/foo/packages/web' })
+    expect(draftFromTask(task).cwd).toBe('/Users/jonas/projects/foo/packages/web')
+  })
+
+  it('preserves a stored sentinel, and a stored ABSENCE of one', () => {
+    expect(draftFromTask(storedTask({ sentinel: 'laptop' })).sentinel).toBe('laptop')
+    // The project URI says `default`; an unset sentinel must stay unset.
+    expect(draftFromTask(storedTask()).sentinel).toBeUndefined()
+  })
+
+  it('does not let a cross-host project URI override the stored sentinel', () => {
+    const task = storedTask({ projectUri: 'claude://laptop/repo', sentinel: undefined })
+    expect(draftFromTask(task).sentinel).toBeUndefined()
+  })
+})
+
+describe('draftProblem -- the project itself', () => {
+  it('names the MISSING PROJECT rather than blaming the working directory', () => {
+    const d = { ...blankDraft(''), name: 'nightly', prompt: 'do it' }
+    const problem = draftProblem(d)
+    expect(problem).toContain('project')
+    expect(problem).not.toContain('working directory')
   })
 })

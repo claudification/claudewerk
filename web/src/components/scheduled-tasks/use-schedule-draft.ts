@@ -13,8 +13,8 @@
  * Once does not destroy what you already entered in the other one.
  */
 
-import { wallClockToMs } from '@shared/cron-time'
 import { viewerTimeZone } from '@shared/format-when'
+import { DEFAULT_SENTINEL_NAME, tryParseProjectUri } from '@shared/project-uri'
 import {
   DEFAULT_SCHEDULE_SPAWN,
   type ScheduledTask,
@@ -22,6 +22,7 @@ import {
   type ScheduleSpawn,
 } from '@shared/scheduled-task'
 import { useState } from 'react'
+import { defaultRunAtLocal, resolveRunAt, toLocalInputValue } from './draft-time'
 
 export type ScheduleMode = 'repeating' | 'once'
 
@@ -44,47 +45,38 @@ export interface ScheduleDraft {
   enabled: boolean
 }
 
-/** `datetime-local` wants exactly "YYYY-MM-DDTHH:MM" in the TARGET zone. */
-export function toLocalInputValue(ms: number, tz: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: tz,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date(ms))
-  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '00'
-  return `${get('year')}-${get('month')}-${get('day')}T${(Number(get('hour')) % 24).toString().padStart(2, '0')}:${get('minute')}`
-}
-
 /**
- * Resolve the typed wall clock to an instant IN THE CHOSEN ZONE.
+ * Where a NEW schedule runs, read straight off the project URI
+ * (`claude://{sentinel}/{path}`) -- the one place that already knows both.
  *
- * `null` means the text is unparseable OR names a time that does not exist there
- * (the DST spring-forward gap) -- both are refusals, not silent corrections.
+ * Deliberately NOT the project's most recent conversation: conversations
+ * routinely run in `.claude/worktrees/<name>`, and seeding from one would arm a
+ * schedule against a path that disappears when the worktree is cleaned up --
+ * leaving it to fire into nothing months later. The project root is the only
+ * durable answer; a subdirectory is an opt-in the user types.
+ *
+ * The sentinel is left UNDEFINED for the default host, because that is how the
+ * broker is told "you pick" (`spawn-dispatch` falls back to the default
+ * sentinel). It is only pinned when the project lives somewhere else -- absent
+ * that, a schedule on a project hosted by `laptop` would fire on the default
+ * host, in a directory that may not even exist there.
  */
-export function resolveRunAt(runAtLocal: string, tz: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(runAtLocal.trim())
-  if (!m) return null
-  const [, year, month, day, hour, minute] = m
-  return wallClockToMs(
-    { year: Number(year), month: Number(month), day: Number(day), hour: Number(hour), minute: Number(minute) },
-    tz,
-  )
+export function projectDefaults(projectUri: string): { cwd: string; sentinel?: string } {
+  const parsed = projectUri ? tryParseProjectUri(projectUri) : null
+  if (!parsed) return { cwd: '' }
+  const authority = parsed.authority
+  return {
+    cwd: parsed.path,
+    sentinel: authority && authority !== DEFAULT_SENTINEL_NAME ? authority : undefined,
+  }
 }
 
-/** Default one-shot moment: the next whole hour, so the field is never empty. */
-function defaultRunAtLocal(tz: string): string {
-  const nextHour = Math.ceil((Date.now() + 60_000) / 3_600_000) * 3_600_000
-  return toLocalInputValue(nextHour, tz)
-}
-
-/** A new schedule: repeating, ad-hoc, armed, in the viewer's own timezone. */
-export function blankDraft(projectUri: string, cwd: string): ScheduleDraft {
+/** A new schedule: repeating, ad-hoc, armed, in the viewer's own timezone.
+ *  `cwd` defaults to the project root; pass one to override it. */
+export function blankDraft(projectUri: string, cwd?: string): ScheduleDraft {
   // The creating browser's zone, never the server's -- the server is UTC.
   const tz = viewerTimeZone()
+  const defaults = projectDefaults(projectUri)
   return {
     name: '',
     prompt: '',
@@ -93,7 +85,8 @@ export function blankDraft(projectUri: string, cwd: string): ScheduleDraft {
     runAtLocal: defaultRunAtLocal(tz),
     tz,
     projectUri,
-    cwd,
+    cwd: cwd || defaults.cwd,
+    sentinel: defaults.sentinel,
     spawn: { ...DEFAULT_SCHEDULE_SPAWN },
     overlap: 'skip',
     catchUp: 'skip',
@@ -102,6 +95,8 @@ export function blankDraft(projectUri: string, cwd: string): ScheduleDraft {
 }
 
 export function draftFromTask(task: ScheduledTask): ScheduleDraft {
+  // The STORED cwd/sentinel win outright. Re-deriving here would silently snap
+  // a schedule aimed at a subdirectory back to the project root on every edit.
   const blank = blankDraft(task.projectUri, task.cwd)
   return {
     ...blank,
@@ -147,6 +142,9 @@ export function draftToCreate(draft: ScheduleDraft): ScheduledTaskCreate {
 export function draftProblem(draft: ScheduleDraft, nowMs: number = Date.now()): string | null {
   if (!draft.name.trim()) return 'Give the schedule a name'
   if (!draft.prompt.trim()) return 'A schedule needs a prompt -- that is what it runs'
+  // Order matters: with no project there is nothing to derive a directory FROM,
+  // so complaining about the directory would send the user to fix the symptom.
+  if (!draft.projectUri.trim()) return 'Pick a project for this schedule'
   if (!draft.cwd.trim()) return 'Pick a working directory'
 
   if (draft.mode === 'once') {
