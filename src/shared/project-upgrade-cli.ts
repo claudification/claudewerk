@@ -6,17 +6,23 @@
  * operator actually gets told -- are testable.
  */
 
-import type { UpgradeReport } from './project-upgrade'
+import type { UpgradeOptions, UpgradeReport } from './project-upgrade'
 
-export const UPGRADE_USAGE = `usage: bun run board:upgrade [--root <path>] [--dry-run] [--no-views] [--no-backup]
+export const UPGRADE_USAGE = `usage: bun run board:upgrade [--root <path> | --all <dir>] [--dry-run] [--no-views] [--no-backup]
 
   --root <path>  project root holding .rclaude/project (default: cwd)
+  --all <dir>    sweep every immediate subdirectory of <dir> that has a board
   --dry-run, -n  report what would happen, touch nothing
   --no-views     skip rebuilding the views/ symlink farm
-  --no-backup    skip the pre-move copy of every lane file`
+  --no-backup    skip the pre-move copy of every lane file
+
+The sentinel sweeps each board it watches automatically, so this is for boards
+nothing is watching (CLAUDWERK_BOARD_AUTOUPGRADE=0 disables the automatic one).`
 
 export interface UpgradeArgs {
   root: string
+  /** Treat `root` as a PARENT of many project roots, not a project itself. */
+  all: boolean
   dryRun: boolean
   views: boolean
   backup: boolean
@@ -40,13 +46,25 @@ const FLAGS: Record<string, (a: UpgradeArgs) => void> = {
 
 export type ParseResult = { kind: 'run'; args: UpgradeArgs } | { kind: 'help' } | { kind: 'error'; message: string }
 
+/** Flags that take the next argv entry as their value. */
+const VALUE_FLAGS: Record<string, (a: UpgradeArgs, v: string) => void> = {
+  '--root': (a, v) => {
+    a.root = v
+  },
+  '--all': (a, v) => {
+    a.root = v
+    a.all = true
+  },
+}
+
 export function parseUpgradeArgs(argv: string[], cwd: string): ParseResult {
-  const args: UpgradeArgs = { root: cwd, dryRun: false, views: true, backup: true }
+  const args: UpgradeArgs = { root: cwd, all: false, dryRun: false, views: true, backup: true }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     const flag = FLAGS[arg]
+    const valueFlag = VALUE_FLAGS[arg]
     if (flag) flag(args)
-    else if (arg === '--root') args.root = argv[++i] ?? args.root
+    else if (valueFlag) valueFlag(args, argv[++i] ?? args.root)
     else if (arg === '--help' || arg === '-h') return { kind: 'help' }
     else return { kind: 'error', message: `unknown argument: ${arg}` }
   }
@@ -89,6 +107,32 @@ export interface FormattedReport {
   out: string[]
   err: string[]
   exitCode: number
+}
+
+/** Runs one board. Injected so the whole CLI is testable without a filesystem. */
+export type BoardRunner = (root: string, opts: UpgradeOptions) => UpgradeReport
+/** Resolves `--all <dir>` to the project roots under it. Injected likewise. */
+export type BoardFinder = (parent: string) => string[]
+
+/**
+ * The whole run: one board, or every board under `--all`. Worst exit code wins,
+ * so a sweep that fails on one project still reports failure.
+ */
+export function runUpgrade(args: UpgradeArgs, run: BoardRunner, find: BoardFinder): FormattedReport {
+  const { root, all, ...opts } = args
+  const roots = all ? find(root) : [root]
+  const result: FormattedReport = {
+    out: all ? [`sweeping ${roots.length} board(s) under ${root}`, ''] : [],
+    err: [],
+    exitCode: 0,
+  }
+  for (const r of roots) {
+    const one = formatUpgradeReport(run(r, opts), opts.dryRun)
+    result.out.push(...one.out, ...(all ? [''] : []))
+    result.err.push(...one.err)
+    result.exitCode = Math.max(result.exitCode, one.exitCode)
+  }
+  return result
 }
 
 /** Everything the operator sees, plus the exit code, derived from the report. */

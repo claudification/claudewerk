@@ -20,6 +20,7 @@ import { CARDS_DIR, listProjectManifest, listProjectTasks } from '../shared/proj
 import type { ProjectTaskManifestEntry } from '../shared/project-task-types'
 import type { ProjectChanged, ProjectDiff } from '../shared/protocol'
 import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
+import { autoUpgradeBoard } from './board-auto-upgrade'
 
 /** The card id, and nothing else. A lane change used to look like a removal
  *  plus an addition (the key carried the status); now it is one `modified`. */
@@ -102,6 +103,11 @@ export function watchProject(projectRoot: string, project: string, leaseMs: numb
   }
 
   const projectDir = join(projectRoot, '.rclaude', 'project')
+
+  // Drain legacy lane folders before the first manifest is taken, so this watch
+  // never reports the same board twice (once per layout). Runs once per project
+  // per process and is a no-op on an already-migrated board.
+  autoUpgradeBoard(projectRoot, log)
 
   const entry: WatchEntry = {
     project,
