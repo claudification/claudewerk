@@ -12,7 +12,8 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { type ScheduledRun, type ScheduledTask, scheduledTaskSchema } from '../../../shared/scheduled-task'
+import type { ScheduledRun } from '../../../shared/scheduled-run'
+import { type ScheduledTask, scheduledTaskSchema } from '../../../shared/scheduled-task'
 import type { ScheduledTaskQuery, ScheduledTaskStore } from '../types'
 
 type Row = Record<string, string | number | null>
@@ -46,12 +47,12 @@ function rowToRun(row: Row): ScheduledRun {
 export function createSqliteScheduledTaskStore(db: Database): ScheduledTaskStore {
   const stmtUpsert = db.prepare(`
     INSERT INTO scheduled_tasks (
-      id, project_uri, name, enabled, cron, tz, created_by, data,
+      id, project_uri, name, enabled, cron, run_at, tz, created_by, data,
       last_run_at, last_fired_minute_key, run_count, consecutive_failures,
       created_at, updated_at
     )
     VALUES (
-      $id, $projectUri, $name, $enabled, $cron, $tz, $createdBy, $data,
+      $id, $projectUri, $name, $enabled, $cron, $runAt, $tz, $createdBy, $data,
       $lastRunAt, $lastFiredMinuteKey, $runCount, $consecutiveFailures,
       $createdAt, $updatedAt
     )
@@ -60,6 +61,7 @@ export function createSqliteScheduledTaskStore(db: Database): ScheduledTaskStore
       name = $name,
       enabled = $enabled,
       cron = $cron,
+      run_at = $runAt,
       tz = $tz,
       data = $data,
       last_run_at = $lastRunAt,
@@ -99,7 +101,10 @@ export function createSqliteScheduledTaskStore(db: Database): ScheduledTaskStore
         projectUri: task.projectUri,
         name: task.name,
         enabled: task.enabled ? 1 : 0,
-        cron: task.cron,
+        // A one-shot has no cron; the column is NOT NULL from the first deploy,
+        // so it stores '' and `run_at` carries the real answer.
+        cron: task.cron ?? '',
+        runAt: task.runAt ?? null,
         tz: task.tz,
         createdBy: task.createdBy,
         data: JSON.stringify(task),

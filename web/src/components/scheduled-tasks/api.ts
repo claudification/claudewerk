@@ -7,7 +7,8 @@
  * calls -- the editor renders `error` inline next to the field that caused it.
  */
 
-import type { ScheduledRun, ScheduledTask, ScheduledTaskCreate, ScheduledTaskPatch } from '@shared/scheduled-task'
+import type { ScheduledRun } from '@shared/scheduled-run'
+import type { ScheduledTask, ScheduledTaskCreate, ScheduledTaskPatch } from '@shared/scheduled-task'
 
 export interface SaveScheduleResponse {
   ok: boolean

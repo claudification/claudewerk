@@ -7,7 +7,7 @@
  * showing a hopeful time.
  */
 
-import { describeCron } from '@shared/cron-describe'
+import { describeWhen } from '@shared/describe-when'
 import { nextFireAt } from '@shared/schedule-next-fire'
 import type { ScheduledTask } from '@shared/scheduled-task'
 import { cn } from '@/lib/utils'
@@ -22,6 +22,7 @@ function neverReason(task: ScheduledTask): string {
   if (!task.enabled) return 'disabled'
   if (task.maxRuns !== undefined && task.runCount >= task.maxRuns) return `done (${task.runCount}/${task.maxRuns} runs)`
   if (task.endAt !== undefined && Date.now() > task.endAt) return 'expired'
+  if (task.runAt !== undefined) return 'already ran'
   return 'cron does not resolve'
 }
 
@@ -49,7 +50,7 @@ function ScheduleRow({ task, selected, onSelect }: { task: ScheduledTask; select
           </span>
         )}
       </div>
-      <div className="pl-3.5 text-[10px] font-mono text-comment truncate">{describeCron(task.cron, task.tz)}</div>
+      <div className="pl-3.5 text-[10px] font-mono text-comment truncate">{describeWhen(task)}</div>
       <div className="pl-3.5 text-[10px] font-mono text-muted-foreground truncate">
         <NextFireLine ms={next} tz={task.tz} never={neverReason(task)} />
       </div>

@@ -19,8 +19,15 @@ export function nextFireAt(task: ScheduledTask, nowMs: number): number | null {
   if (task.endAt !== undefined && nowMs > task.endAt) return null
   if (task.maxRuns !== undefined && task.runCount >= task.maxRuns) return null
 
-  const cron = parseCron(task.cron)
-  if (!cron.ok) return null
+  // ONE-SHOT: its moment, until it is spent. Still reported when slightly
+  // overdue -- the engine will fire it late, and the UI should say so rather
+  // than claim it will never run.
+  if (task.runAt !== undefined) {
+    return task.lastFiredMinuteKey === `once:${task.runAt}` ? null : task.runAt
+  }
+
+  const cron = task.cron === undefined ? null : parseCron(task.cron)
+  if (!cron?.ok) return null
 
   // A not-yet-started schedule reports its FIRST fire, not "never" -- searching
   // from just before startAt lets that first occurrence qualify.

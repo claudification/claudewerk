@@ -7,9 +7,10 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { newScheduledRunId } from './scheduled-run'
 import {
   DEFAULT_SCHEDULE_SPAWN,
-  newScheduledRunId,
+  isOneShot,
   newScheduledTaskId,
   scheduledTaskCreateSchema,
   scheduledTaskPatchSchema,
@@ -148,5 +149,48 @@ describe('ids and defaults', () => {
     expect(DEFAULT_SCHEDULE_SPAWN.adHoc).toBe(true)
     expect(DEFAULT_SCHEDULE_SPAWN.leaveRunning).toBe(false)
     expect(DEFAULT_SCHEDULE_SPAWN.headless).toBe(true)
+  })
+})
+
+describe('one-shot schedules', () => {
+  const FUTURE = Date.now() + 3_600_000
+  const { cron: _dropCron, ...BASE_NO_CRON } = BASE
+  const ONCE = { ...BASE_NO_CRON, runAt: FUTURE }
+
+  test('accepts a one-shot with a future instant and no cron', () => {
+    expect(scheduledTaskCreateSchema.safeParse(ONCE).success).toBe(true)
+  })
+
+  test('rejects setting BOTH -- a schedule is one kind or the other', () => {
+    expect(errorOf(scheduledTaskCreateSchema, { ...BASE, runAt: FUTURE })).toContain('not both')
+  })
+
+  test('rejects setting NEITHER -- it could never fire', () => {
+    expect(errorOf(scheduledTaskCreateSchema, BASE_NO_CRON)).toContain('either a cron schedule or a one-time')
+  })
+
+  test('rejects a moment that has already passed', () => {
+    expect(errorOf(scheduledTaskCreateSchema, { ...ONCE, runAt: Date.now() - 1000 })).toContain('in the past')
+  })
+
+  test('still demands a timezone -- it is how the instant is DISPLAYED', () => {
+    expect(scheduledTaskCreateSchema.safeParse({ ...ONCE, tz: 'Mars/Olympus' }).success).toBe(false)
+  })
+
+  test('isOneShot distinguishes the two kinds', () => {
+    expect(isOneShot({ runAt: FUTURE })).toBe(true)
+    expect(isOneShot({ runAt: undefined })).toBe(false)
+  })
+
+  test('a STORED one-shot re-validates even though its moment has passed', () => {
+    // The PATCH path re-validates the merged record; if the future check applied
+    // there, "disable this" would be unsaveable once the task had fired.
+    const stored = { ...FULL, cron: undefined, runAt: 1000, lastFiredMinuteKey: 'once:1000' }
+    expect(validatedScheduledTaskSchema.safeParse(stored).success).toBe(true)
+  })
+
+  test('but explicitly RE-scheduling to the past is refused', () => {
+    expect(scheduledTaskPatchSchema.safeParse({ runAt: Date.now() - 1000 }).success).toBe(false)
+    expect(scheduledTaskPatchSchema.safeParse({ runAt: Date.now() + 3_600_000 }).success).toBe(true)
   })
 })

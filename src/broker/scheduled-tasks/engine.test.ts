@@ -416,3 +416,121 @@ describe('missed-fire reconciliation', () => {
     expect(triggers).toContain('catchup')
   })
 })
+
+describe('one-shot end to end', () => {
+  /** A one-shot due at DUE, in the same harness as the recurring tests. */
+  function makeOnce(over: Partial<ScheduledTask> = {}): ScheduledTask {
+    const { cron: _dropped, ...rest } = makeTask(over)
+    return { ...rest, runAt: over.runAt ?? DUE }
+  }
+
+  test('fires once at its moment and never again', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+    expect(h.requests).toHaveLength(1)
+
+    // ...and keeps not firing, at every later tick.
+    for (const offset of [60_000, 3_600_000, 86_400_000]) {
+      h.nowMs = DUE + offset
+      await h.engine.tick()
+    }
+    expect(h.requests).toHaveLength(1)
+  })
+
+  test('disarms itself after firing, so it stops being walked', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+    h.nowMs = DUE + 60_000
+    await h.engine.tick()
+
+    expect(h.store.scheduledTasks.get(task.id)?.enabled).toBe(false)
+  })
+
+  test('the record SURVIVES -- disarmed, not deleted, so history is readable', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+    h.nowMs = DUE + 60_000
+    await h.engine.tick()
+
+    expect(h.store.scheduledTasks.get(task.id)).not.toBeNull()
+    expect(h.store.scheduledTasks.listRuns(task.id).map(r => r.outcome)).toContain('spawned')
+  })
+
+  test('does not fire early', async () => {
+    const h = harness()
+    h.store.scheduledTasks.upsert(makeOnce())
+    h.nowMs = DUE - 60_000
+    await h.engine.tick()
+    expect(h.requests).toHaveLength(0)
+  })
+
+  test('fires late after an outage inside the grace window', async () => {
+    const h = harness()
+    h.store.scheduledTasks.upsert(makeOnce())
+    h.nowMs = DUE + 30 * 60_000 // broker was down over the moment
+    await h.engine.tick()
+    expect(h.requests).toHaveLength(1)
+  })
+
+  test('a stale one-shot records WHY it never ran, then disarms', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    h.nowMs = DUE + 8 * 3_600_000 // well past the 6h grace
+    await h.engine.tick()
+
+    expect(h.requests).toHaveLength(0)
+    const runs = h.store.scheduledTasks.listRuns(task.id)
+    expect(runs[0]?.outcome).toBe('missed')
+    expect(runs[0]?.error).toContain('too stale')
+    expect(h.store.scheduledTasks.get(task.id)?.enabled).toBe(false)
+  })
+
+  test('the stale row is written ONCE, not on every subsequent tick', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    h.nowMs = DUE + 8 * 3_600_000
+    await h.engine.tick()
+    await h.engine.tick()
+    h.nowMs = DUE + 9 * 3_600_000
+    await h.engine.tick()
+
+    expect(h.store.scheduledTasks.listRuns(task.id, 50)).toHaveLength(1)
+  })
+
+  test('Run now still works on a one-shot and does not consume its moment', async () => {
+    const h = harness()
+    const task = makeOnce()
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.runNow(task.id)
+    expect(h.requests).toHaveLength(1)
+
+    // The scheduled moment is still owed, and still arrives.
+    await h.engine.tick()
+    expect(h.requests).toHaveLength(2)
+    const triggers = h.store.scheduledTasks.listRuns(task.id).map(r => r.trigger)
+    expect(triggers.filter(t => t === 'manual')).toHaveLength(1)
+    expect(triggers.filter(t => t === 'cron')).toHaveLength(1)
+  })
+
+  test('a one-shot and a cron schedule coexist in one tick', async () => {
+    const h = harness()
+    h.store.scheduledTasks.upsert(makeTask({ cwd: '/cron' }))
+    h.store.scheduledTasks.upsert(makeOnce({ cwd: '/once' }))
+    await h.engine.tick()
+    expect(h.requests.map(r => r.cwd).sort()).toEqual(['/cron', '/once'])
+  })
+})

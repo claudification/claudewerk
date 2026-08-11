@@ -7,7 +7,7 @@
  * it, or change it.
  */
 
-import { describeCron } from '@shared/cron-describe'
+import { describeWhen } from '@shared/describe-when'
 import { nextFireAt } from '@shared/schedule-next-fire'
 import type { ScheduledTask } from '@shared/scheduled-task'
 import { useState } from 'react'
@@ -78,10 +78,14 @@ export function ScheduleDetail({
           <span className={cn('size-2 rounded-full shrink-0', task.enabled ? 'bg-primary' : 'bg-comment/40')} />
           <span className="text-sm font-mono font-bold text-foreground truncate">{task.name}</span>
         </div>
-        <div className="text-[10px] font-mono text-comment">{describeCron(task.cron, task.tz)}</div>
+        <div className="text-[10px] font-mono text-comment">{describeWhen(task)}</div>
         <div className="text-[10px] font-mono text-muted-foreground">
           Next run:{' '}
-          <NextFireLine ms={nextFireAt(task, Date.now())} tz={task.tz} never={task.enabled ? 'never' : 'disabled'} />
+          <NextFireLine
+            ms={nextFireAt(task, Date.now())}
+            tz={task.tz}
+            never={task.enabled ? (task.runAt !== undefined ? 'already ran' : 'never') : 'disabled'}
+          />
         </div>
         <div className="text-[10px] font-mono text-comment">
           {task.runCount} run{task.runCount === 1 ? '' : 's'}

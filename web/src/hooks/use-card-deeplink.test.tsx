@@ -17,9 +17,7 @@ const meta = (slug: string, status: ProjectTaskMeta['status'] = 'open'): Project
 
 /** A readTask keyed by id alone -- a card's lane is not part of its address. */
 function fakeReadTask(known: Record<string, ProjectTaskMeta['status']>) {
-  return vi.fn(async (id: string) =>
-    known[id] ? ({ ...meta(id, known[id]), body: 'body' } as ProjectTask) : null,
-  )
+  return vi.fn(async (id: string) => (known[id] ? ({ ...meta(id, known[id]), body: 'body' } as ProjectTask) : null))
 }
 
 function harness(readTask: ReturnType<typeof fakeReadTask>) {

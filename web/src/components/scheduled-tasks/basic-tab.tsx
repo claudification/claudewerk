@@ -8,8 +8,8 @@
 
 import type React from 'react'
 import { cn } from '@/lib/utils'
-import { CronField } from './cron-field'
 import type { ScheduleDraft } from './use-schedule-draft'
+import { WhenField } from './when-field'
 
 const INPUT_CLASS =
   'w-full bg-surface-inset border border-border rounded px-2 py-1.5 text-[11px] font-mono text-foreground placeholder:text-comment/50 focus:outline-none focus:ring-1 focus:ring-primary/50'
@@ -53,12 +53,10 @@ export function ScheduleBasicTab({
         />
       </Field>
 
-      <CronField
-        cron={draft.cron}
-        tz={draft.tz}
-        onCronChange={cron => patch({ cron })}
-        onTzChange={tz => patch({ tz })}
-      />
+      <div className="space-y-1">
+        <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-wide pl-0.5">Schedule</div>
+        <WhenField draft={draft} patch={patch} />
+      </div>
 
       <Field label="Working directory">
         <input

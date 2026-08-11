@@ -7,7 +7,8 @@
  * and any behavioural drift between them shows up as a failure.
  */
 
-import type { ScheduledRun, ScheduledTask } from '../../../shared/scheduled-task'
+import type { ScheduledRun } from '../../../shared/scheduled-run'
+import type { ScheduledTask } from '../../../shared/scheduled-task'
 import type { ScheduledTaskQuery, ScheduledTaskStore } from '../types'
 
 export function createMemoryScheduledTaskStore(): ScheduledTaskStore {

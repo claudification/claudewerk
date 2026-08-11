@@ -8,7 +8,7 @@
  */
 
 import { formatWhen, viewerTimeZone } from '@shared/format-when'
-import type { RunOutcome, ScheduledRun } from '@shared/scheduled-task'
+import type { RunOutcome, ScheduledRun } from '@shared/scheduled-run'
 import { useEffect } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { cn } from '@/lib/utils'

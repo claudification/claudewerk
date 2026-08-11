@@ -26,9 +26,39 @@ const MAX_MISSED_ROWS = 20
 /** Global ceiling on scheduler-originated spawns in flight at once. */
 export const MAX_CONCURRENT_SCHEDULED_SPAWNS = 3
 
-export type SkipReason = 'disabled' | 'bad_cron' | 'not_started' | 'expired' | 'max_runs' | 'not_due' | 'already_fired'
+export type SkipReason =
+  | 'disabled'
+  | 'bad_cron'
+  | 'not_started'
+  | 'expired'
+  | 'max_runs'
+  | 'not_due'
+  | 'already_fired'
+  /** A one-shot whose moment passed while the broker was down, too stale to run late. */
+  | 'one_shot_stale'
 
 export type FireDecision = { fire: true; minuteKey: string } | { fire: false; reason: SkipReason }
+
+/** The fire marker for a one-shot: its own instant, so it can only ever match once. */
+export function oneShotKey(runAt: number): string {
+  return `once:${runAt}`
+}
+
+/**
+ * A one-shot fires the first tick at or after its moment.
+ *
+ * Late is usually RIGHT: "run at 15:00" with the broker down 15:00-15:04 should
+ * still run at 15:05 -- that is what a one-time instruction means. But late has
+ * a limit; waking a three-day-old task on Monday morning is a surprise, not a
+ * service. Past the grace it records `missed` and disarms.
+ */
+function decideOneShot(task: ScheduledTask, runAt: number, nowMs: number): FireDecision {
+  if (nowMs < runAt) return { fire: false, reason: 'not_due' }
+  const key = oneShotKey(runAt)
+  if (task.lastFiredMinuteKey === key) return { fire: false, reason: 'already_fired' }
+  if (nowMs - runAt > CATCH_UP_GRACE_MS) return { fire: false, reason: 'one_shot_stale' }
+  return { fire: true, minuteKey: key }
+}
 
 /**
  * Is this schedule due RIGHT NOW?
@@ -39,14 +69,19 @@ export type FireDecision = { fire: true; minuteKey: string } | { fire: false; re
 export function decideFire(task: ScheduledTask, nowMs: number): FireDecision {
   if (!task.enabled) return { fire: false, reason: 'disabled' }
 
-  const cron = parseCron(task.cron)
-  // A schedule whose cron stopped parsing (hand-edited DB, older writer) must go
-  // quiet rather than fire on a guess.
-  if (!cron.ok) return { fire: false, reason: 'bad_cron' }
-
   if (task.startAt !== undefined && nowMs < task.startAt) return { fire: false, reason: 'not_started' }
   if (task.endAt !== undefined && nowMs > task.endAt) return { fire: false, reason: 'expired' }
   if (task.maxRuns !== undefined && task.runCount >= task.maxRuns) return { fire: false, reason: 'max_runs' }
+
+  // ONE-SHOT: an instant, so none of the wall-clock/DST machinery applies.
+  if (task.runAt !== undefined) return decideOneShot(task, task.runAt, nowMs)
+
+  // A schedule with neither cron nor runAt cannot fire; treat it like a broken
+  // cron (quiet, visible in the log) rather than crashing the tick.
+  const cron = task.cron === undefined ? null : parseCron(task.cron)
+  // A schedule whose cron stopped parsing (hand-edited DB, older writer) must go
+  // quiet rather than fire on a guess.
+  if (!cron?.ok) return { fire: false, reason: 'bad_cron' }
 
   const wall = wallClockParts(nowMs, task.tz)
   if (!matchesMinute(cron.fields, wall)) return { fire: false, reason: 'not_due' }
@@ -57,10 +92,18 @@ export function decideFire(task: ScheduledTask, nowMs: number): FireDecision {
   return { fire: true, minuteKey: key }
 }
 
-/** Reasons that mean "this schedule will never fire again" -- worth disarming. */
-const TERMINAL_SKIPS: ReadonlySet<SkipReason> = new Set<SkipReason>(['expired', 'max_runs'])
+/**
+ * Reasons that mean "this schedule will never fire again" -- worth disarming.
+ *
+ * `already_fired` is terminal for a ONE-SHOT (its single moment is spent) but
+ * NOT for a cron, where it only means "not twice in this minute" -- so that case
+ * is decided by `isTerminalFor`, not by membership here.
+ */
+const TERMINAL_SKIPS: ReadonlySet<SkipReason> = new Set<SkipReason>(['expired', 'max_runs', 'one_shot_stale'])
 
-export function isTerminalSkip(reason: SkipReason): boolean {
+/** Terminal in context: knows a spent one-shot from a cron that already ran this minute. */
+export function isTerminalFor(task: ScheduledTask, reason: SkipReason): boolean {
+  if (task.runAt !== undefined && reason === 'already_fired') return true
   return TERMINAL_SKIPS.has(reason)
 }
 
@@ -73,8 +116,12 @@ export function isTerminalSkip(reason: SkipReason): boolean {
  * them. Returns oldest-first.
  */
 export function computeMissedFires(task: ScheduledTask, nowMs: number, cap = MAX_MISSED_ROWS): number[] {
-  const cron = parseCron(task.cron)
-  if (!cron.ok) return []
+  // A one-shot has no recurrence to walk: it either still fires (handled by
+  // `decideFire`, possibly late) or it is stale. Reconciliation writes its
+  // `missed` row from the stale path, not from here.
+  if (task.runAt !== undefined) return []
+  const cron = task.cron === undefined ? null : parseCron(task.cron)
+  if (!cron?.ok) return []
   // With no prior run there is no gap to reason about -- a fresh schedule has not
   // missed anything, it simply has not started.
   const since = task.lastRunAt

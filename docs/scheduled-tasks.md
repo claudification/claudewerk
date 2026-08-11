@@ -1,8 +1,9 @@
 # Scheduled Tasks
 
-Recurring, cron-triggered spawns bound to a project. A schedule fires unattended
-on its own clock, launches a conversation with a prompt you wrote once, and keeps
-a history of every firing -- including the ones that did nothing.
+Scheduled spawns bound to a project -- either **recurring** on a cron or a
+**one-shot** at a single moment. A schedule fires unattended on its own clock,
+launches a conversation with a prompt you wrote once, and keeps a history of
+every firing -- including the ones that did nothing.
 
 ## Vocabulary
 
@@ -17,6 +18,38 @@ The obvious words are all taken in this codebase, so:
 `task` is deliberately avoided in code: the `tasks` SQLite table holds CC todos,
 and `.rclaude/project/` holds board cards. The UI says "Scheduled Tasks" because
 that is what people call them; the code says SCHEDULE and RUN.
+
+## Two kinds: repeating and one-shot
+
+A schedule carries **exactly one** of these. Both, or neither, is rejected at the
+door.
+
+| Kind | Field | Means |
+|---|---|---|
+| **Repeating** | `cron` | A 5-field expression, evaluated as wall-clock in `tz` |
+| **One-shot** | `runAt` | A single **instant** (epoch ms). Fires once, then disarms itself |
+
+A one-time task is genuinely a different thing from a recurrence, not a cron
+with `maxRuns: 1`. Forcing it through cron would make the UI describe "run once
+on 15 Aug" as *"every year on the 15th of August"* -- a lie it would keep telling
+right up until it fired.
+
+`runAt` is an **instant, not a wall clock**, which is what makes one-shots immune
+to everything in the next section: there is no gap to fall into and no repeated
+hour to dedupe. The editor converts the wall clock you type, in the zone you
+pick, into that instant -- and refuses a time that does not exist there.
+
+**Firing late is usually right.** "Run at 15:00" with the broker down 15:00-15:04
+should still run at 15:05; that is what a one-time instruction means. But late
+has a limit: past a **6-hour grace** the schedule records a `missed` run
+explaining how overdue it was, then disarms. Waking a three-day-old task on
+Monday morning is a surprise, not a service.
+
+**After firing it is disarmed, never deleted.** The record and its history stay
+so you can see what ran and open the conversation it spawned.
+
+`maxRuns` is unchanged and still applies to *repeating* schedules -- the two are
+orthogonal: `maxRuns` bounds a recurrence, `runAt` replaces one.
 
 ## Timezones -- read this first
 
@@ -67,10 +100,13 @@ minute hour day-of-month month day-of-week
 - **when BOTH day-of-month and day-of-week are restricted, a day matches if
   EITHER does** -- that is why `0 0 13 * fri` means "the 13th, and every Friday"
 
-Minimum granularity is one minute; the engine ticks at 60s.
+Minimum granularity is one minute; the engine ticks at 60s. A one-shot has no
+cron at all -- see the two kinds above.
 
 `describeCron()` renders the expression back as a sentence ("Every weekday at
 09:00"), shown live under the input so a typo is caught before saving.
+`describeWhen()` wraps it so a one-shot gets the same treatment ("Once, Thu 13
+Aug, 09:00 (Europe/Berlin)") and every surface renders one kind of sentence.
 
 ## What a schedule spawns
 
@@ -124,7 +160,7 @@ Every firing writes a row, including the ones that launched nothing:
 | `spawned` | A conversation was launched |
 | `error` | Dispatch failed (or the owner lost permission) |
 | `skipped_overlap` | Previous run still alive, or the concurrency ceiling was hit |
-| `missed` | Should have fired during an outage; recorded, not run |
+| `missed` | Should have fired during an outage; recorded, not run. Also how a one-shot records that it went stale |
 | `skipped_disabled` | Reserved |
 
 That is deliberate: a schedule that quietly never runs must look different from
@@ -169,6 +205,7 @@ a scheduled minute cannot suppress -- or double -- the real run.
 | Concern | File |
 |---|---|
 | Cron parse + match | `src/shared/cron-parse.ts` |
+| "When does it run?" sentence | `src/shared/describe-when.ts` (both kinds) |
 | Next-fire projection | `src/shared/cron-next.ts`, `src/shared/schedule-next-fire.ts` |
 | Timezone projection | `src/shared/cron-time.ts` |
 | English description | `src/shared/cron-describe.ts` |
@@ -187,6 +224,10 @@ a scheduled minute cannot suppress -- or double -- the real run.
 ## Operating
 
 ```bash
+# which schedules are one-shots, and when they fire
+docker exec broker broker-cli query \
+  "SELECT id, name, cron, run_at, enabled FROM scheduled_tasks"
+
 # every fire, with full context
 docker compose logs -f broker | grep '\[sched\]'
 

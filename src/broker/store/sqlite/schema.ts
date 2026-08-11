@@ -22,6 +22,13 @@ function addPhase5ProfileColumns(db: Database): void {
 /** cache-ttl split: backfill the 5m/1h cache-write columns on token_samples.
  *  Idempotent ALTER ADD COLUMN; pre-existing rows keep 0 (the collapsed total
  *  can't be un-mixed, so we don't guess it -- new samples carry the real split). */
+/** One-shot support: `run_at` holds the firing instant for non-repeating schedules. */
+function addScheduledRunAtColumn(db: Database): void {
+  if (!tableColumns(db, 'scheduled_tasks').has('run_at')) {
+    db.run('ALTER TABLE scheduled_tasks ADD COLUMN run_at INTEGER')
+  }
+}
+
 function addCacheTtlColumns(db: Database): void {
   const cols = tableColumns(db, 'token_samples')
   if (!cols.has('cache_write_5m_tokens'))
@@ -373,6 +380,11 @@ export function createSchema(db: Database) {
   `)
   db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_project ON scheduled_tasks(project_uri, enabled)')
   db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_enabled ON scheduled_tasks(enabled) WHERE enabled = 1')
+  // one-shot schedules (2026-08-12): `run_at` is the exact instant a NON-repeating
+  // schedule fires; such a row carries an empty `cron`. Added idempotently rather
+  // than by recreating the table -- the first deploy shipped `cron TEXT NOT NULL`,
+  // and a live table is never worth dropping for a nullable column.
+  addScheduledRunAtColumn(db)
 
   db.run(`
     CREATE TABLE IF NOT EXISTS scheduled_task_runs (

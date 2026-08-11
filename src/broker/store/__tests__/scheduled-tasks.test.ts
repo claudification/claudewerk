@@ -10,12 +10,8 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  newScheduledRunId,
-  newScheduledTaskId,
-  type ScheduledRun,
-  type ScheduledTask,
-} from '../../../shared/scheduled-task'
+import { newScheduledRunId, type ScheduledRun } from '../../../shared/scheduled-run'
+import { newScheduledTaskId, type ScheduledTask } from '../../../shared/scheduled-task'
 import { createMemoryDriver } from '../memory/driver'
 import { createSqliteDriver } from '../sqlite/driver'
 import type { StoreDriver } from '../types'

@@ -10,8 +10,7 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
-import { openScheduledTasksModal } from './modal-state'
-import { useScheduledTasksModalStore } from './modal-state'
+import { openScheduledTasksModal, useScheduledTasksModalStore } from './modal-state'
 import { ScheduledTasksModal } from './scheduled-tasks-modal'
 import { useScheduledTasksStore } from './store'
 

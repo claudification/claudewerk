@@ -6,7 +6,8 @@
  */
 
 import type { LiveStatus } from '../../shared/protocol'
-import type { ScheduledRun, ScheduledTask } from '../../shared/scheduled-task'
+import type { ScheduledRun } from '../../shared/scheduled-run'
+import type { ScheduledTask } from '../../shared/scheduled-task'
 
 // ---------------------------------------------------------------------------
 // Session

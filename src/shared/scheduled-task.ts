@@ -28,9 +28,6 @@ const SCHEDULED_RUN_ID_PREFIX = 'schrun_'
 
 const SCHEDULE_MAX_PROMPT = 64 * 1024
 export const SCHEDULE_MAX_COUNT = 200
-/** Runs kept per schedule before the reaper trims the tail. */
-export const SCHEDULE_RUN_RETENTION = 200
-export const SCHEDULE_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 
 /**
  * Reusable spawn DEFAULTS, never per-launch identifiers: `cwd` lives on the
@@ -57,11 +54,6 @@ const CATCH_UP_MODES = ['skip', 'once'] as const
 /** What to do when the previous run is still going. */
 const OVERLAP_MODES = ['skip', 'parallel'] as const
 
-const RUN_TRIGGERS = ['cron', 'manual', 'catchup'] as const
-const RUN_OUTCOMES = ['spawned', 'skipped_overlap', 'skipped_disabled', 'error', 'missed'] as const
-export type RunTrigger = (typeof RUN_TRIGGERS)[number]
-export type RunOutcome = (typeof RUN_OUTCOMES)[number]
-
 export const scheduledTaskSchema = z.object({
   id: z.string().startsWith(SCHEDULED_TASK_ID_PREFIX),
   name: z.string().min(1, 'name is required').max(64),
@@ -74,9 +66,21 @@ export const scheduledTaskSchema = z.object({
   cwd: z.string().min(1, 'cwd is required'),
   sentinel: z.string().max(128).optional(),
 
-  // -- WHEN --
-  cron: z.string().min(1, 'cron is required').max(128),
-  /** IANA zone. REQUIRED: the broker container runs in UTC, so an unzoned cron lies. */
+  // -- WHEN -- exactly one of `cron` (repeating) or `runAt` (one-shot).
+  /** Repeating: a 5-field cron expression, evaluated in `tz`. */
+  cron: z.string().max(128).optional(),
+  /**
+   * ONE-SHOT: the exact instant to fire, epoch ms.
+   *
+   * An INSTANT, not a wall clock, deliberately: a one-time run has a single
+   * unambiguous moment, so storing epoch ms sidesteps DST entirely (no gap to
+   * fall into, no repeated hour to dedupe). The editor converts the wall clock
+   * you pick, in the zone you pick, into this instant -- and refuses a time
+   * that does not exist in that zone.
+   */
+  runAt: z.number().int().nonnegative().optional(),
+  /** IANA zone. REQUIRED for both kinds: it is how the time is DISPLAYED, and
+   *  for a cron it is also how the time is EVALUATED (the container is UTC). */
   tz: z.string().min(1, 'tz is required'),
   startAt: z.number().int().nonnegative().optional(),
   endAt: z.number().int().nonnegative().optional(),
@@ -102,10 +106,52 @@ export const scheduledTaskSchema = z.object({
 })
 export type ScheduledTask = z.infer<typeof scheduledTaskSchema>
 
-/** Cross-field rules that a plain object schema cannot express. */
-function refineSchedule(task: Pick<ScheduledTask, 'cron' | 'tz' | 'startAt' | 'endAt'>, ctx: z.RefinementCtx): void {
-  const cron = parseCron(task.cron)
-  if (!cron.ok) ctx.addIssue({ code: 'custom', message: `cron: ${cron.error}`, path: ['cron'] })
+/** A schedule is either repeating or one-shot -- this is how you ask which. */
+export function isOneShot(task: Pick<ScheduledTask, 'runAt'>): boolean {
+  return task.runAt !== undefined
+}
+
+type WhenFields = Pick<ScheduledTask, 'cron' | 'runAt' | 'tz' | 'startAt' | 'endAt'>
+
+/**
+ * Cross-field rules a plain object schema cannot express.
+ *
+ * `nowMs` is injected so "runAt must be in the future" is testable and so the
+ * SERVER's clock decides -- a browser with a skewed clock cannot smuggle a
+ * past one-shot through, and one that is already due would otherwise fire the
+ * instant it is saved.
+ */
+/**
+ * EXACTLY one WHEN. Both would be ambiguous about which wins; neither could
+ * never fire at all.
+ */
+function checkWhenKind(task: WhenFields, ctx: z.RefinementCtx): void {
+  if (task.cron === undefined && task.runAt === undefined) {
+    ctx.addIssue({ code: 'custom', message: 'set either a cron schedule or a one-time run time', path: ['cron'] })
+    return
+  }
+  if (task.cron !== undefined && task.runAt !== undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'a schedule is either repeating (cron) or one-time (runAt), not both',
+      path: ['runAt'],
+    })
+  }
+}
+
+/** Whichever WHEN is set has to be usable: a parseable cron, a future instant. */
+function checkWhenValue(task: WhenFields, ctx: z.RefinementCtx, nowMs: number): void {
+  if (task.cron !== undefined) {
+    const cron = parseCron(task.cron)
+    if (!cron.ok) ctx.addIssue({ code: 'custom', message: `cron: ${cron.error}`, path: ['cron'] })
+  }
+  if (task.runAt !== undefined && task.runAt <= nowMs) {
+    ctx.addIssue({ code: 'custom', message: 'the one-time run time is in the past', path: ['runAt'] })
+  }
+}
+
+/** Zone + window rules, shared by both kinds. */
+function checkZoneAndWindow(task: WhenFields, ctx: z.RefinementCtx): void {
   if (!isValidTimeZone(task.tz)) {
     ctx.addIssue({ code: 'custom', message: `tz: "${task.tz}" is not a known IANA timezone`, path: ['tz'] })
   }
@@ -114,8 +160,36 @@ function refineSchedule(task: Pick<ScheduledTask, 'cron' | 'tz' | 'startAt' | 'e
   }
 }
 
-/** Validate at every entry point. Use the bare object schema only for `.omit()`/`.partial()`. */
-export const validatedScheduledTaskSchema = scheduledTaskSchema.superRefine(refineSchedule)
+/**
+ * Cross-field rules a plain object schema cannot express.
+ *
+ * `nowMs` is injected so "runAt must be in the future" is testable and so the
+ * SERVER's clock decides -- a browser with a skewed clock cannot smuggle a past
+ * one-shot through, and one already due would otherwise fire the moment it saved.
+ */
+function refineSchedule(task: WhenFields, ctx: z.RefinementCtx, nowMs: number = Date.now()): void {
+  checkWhenKind(task, ctx)
+  checkWhenValue(task, ctx, nowMs)
+  checkZoneAndWindow(task, ctx)
+}
+
+/**
+ * The same rules MINUS the future check -- for validating a record that already
+ * exists. A one-shot that has fired (or is mid-flight) has a `runAt` in the
+ * past by definition, and re-saving it must not become impossible.
+ */
+function refineStoredSchedule(task: WhenFields, ctx: z.RefinementCtx): void {
+  refineSchedule(task, ctx, 0)
+}
+
+/**
+ * Validate a WHOLE record that already exists (the PATCH merge, mainly).
+ *
+ * Uses the stored variant on purpose: a one-shot that has already fired has a
+ * `runAt` in the past, and re-validating it with the future check would make
+ * even "disable this" impossible to save.
+ */
+export const validatedScheduledTaskSchema = scheduledTaskSchema.superRefine(refineStoredSchedule)
 
 /** The body accepted by POST /api/scheduled-tasks -- the server owns ids and stamps. */
 export const scheduledTaskCreateSchema = scheduledTaskSchema
@@ -124,7 +198,7 @@ export const scheduledTaskCreateSchema = scheduledTaskSchema
   .superRefine(refineSchedule)
 export type ScheduledTaskCreate = z.infer<typeof scheduledTaskCreateSchema>
 
-/** The body accepted by PATCH -- any subset; cron/tz are re-validated when present. */
+/** The body accepted by PATCH -- any subset; what IS present is re-validated. */
 export const scheduledTaskPatchSchema = scheduledTaskSchema
   .omit({ id: true, createdBy: true, createdAt: true, updatedAt: true })
   .partial()
@@ -133,37 +207,18 @@ export const scheduledTaskPatchSchema = scheduledTaskSchema
       const cron = parseCron(patch.cron)
       if (!cron.ok) ctx.addIssue({ code: 'custom', message: `cron: ${cron.error}`, path: ['cron'] })
     }
+    // Explicitly RE-scheduling a one-shot means picking a future moment. (The
+    // engine never patches through this schema, so a fired runAt is untouched.)
+    if (patch.runAt !== undefined && patch.runAt <= Date.now()) {
+      ctx.addIssue({ code: 'custom', message: 'the one-time run time is in the past', path: ['runAt'] })
+    }
     if (patch.tz !== undefined && !isValidTimeZone(patch.tz)) {
       ctx.addIssue({ code: 'custom', message: `tz: "${patch.tz}" is not a known IANA timezone`, path: ['tz'] })
     }
   })
 export type ScheduledTaskPatch = z.infer<typeof scheduledTaskPatchSchema>
 
-/** One firing of a schedule -- a row of history. */
-export interface ScheduledRun {
-  id: string
-  scheduleId: string
-  firedAt: number
-  minuteKey: string
-  trigger: RunTrigger
-  outcome: RunOutcome
-  conversationId?: string
-  jobId?: string
-  error?: string
-  endedAt?: number
-  endStatus?: string
-}
-
-function shortId(): string {
-  // Web Crypto -- `node:crypto` does not survive the control-panel bundle.
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 12)
-}
-
 export function newScheduledTaskId(): string {
-  return `${SCHEDULED_TASK_ID_PREFIX}${shortId()}`
+  // Web Crypto -- `node:crypto` does not survive the control-panel bundle.
+  return `${SCHEDULED_TASK_ID_PREFIX}${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`
 }
-
-export function newScheduledRunId(): string {
-  return `${SCHEDULED_RUN_ID_PREFIX}${shortId()}`
-}
-

@@ -10,7 +10,8 @@
  */
 
 import type { ServerWebSocket } from 'bun'
-import type { ScheduledRun, ScheduledTask } from '../../shared/scheduled-task'
+import type { ScheduledRun } from '../../shared/scheduled-run'
+import type { ScheduledTask } from '../../shared/scheduled-task'
 
 function sendAll(subscribers: Iterable<ServerWebSocket<unknown>>, payload: unknown): void {
   const json = JSON.stringify(payload)

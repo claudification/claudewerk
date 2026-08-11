@@ -32,7 +32,8 @@ import type {
   RecapSummary,
   ShellRosterEntry,
 } from '@shared/protocol'
-import type { ScheduledRun, ScheduledTask } from '@shared/scheduled-task'
+import type { ScheduledRun } from '@shared/scheduled-run'
+import type { ScheduledTask } from '@shared/scheduled-task'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { handleScheduledTaskRun, handleScheduledTasksUpdated } from '@/components/scheduled-tasks/store'

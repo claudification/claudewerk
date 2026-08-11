@@ -13,7 +13,8 @@
  */
 
 import { minuteKey, wallClockParts } from '../../shared/cron-time'
-import { newScheduledRunId, type ScheduledTask } from '../../shared/scheduled-task'
+import { newScheduledRunId } from '../../shared/scheduled-run'
+import type { ScheduledTask } from '../../shared/scheduled-task'
 import type { StoreDriver } from '../store/types'
 import { computeMissedFires, shouldCatchUp } from './policy'
 

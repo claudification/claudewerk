@@ -16,11 +16,12 @@
  */
 
 import { minuteKey, wallClockParts } from '../../shared/cron-time'
-import { SCHEDULE_RUN_RETENTION, SCHEDULE_RUN_RETENTION_MS, type ScheduledTask } from '../../shared/scheduled-task'
+import { newScheduledRunId, SCHEDULE_RUN_RETENTION, SCHEDULE_RUN_RETENTION_MS } from '../../shared/scheduled-run'
+import type { ScheduledTask } from '../../shared/scheduled-task'
 import type { StoreDriver } from '../store/types'
 import { reconcileMissedFires } from './catch-up'
 import { type FireDeps, fireSchedule } from './fire'
-import { decideFire, isTerminalSkip, MAX_CONCURRENT_SCHEDULED_SPAWNS } from './policy'
+import { decideFire, isTerminalFor, MAX_CONCURRENT_SCHEDULED_SPAWNS, oneShotKey } from './policy'
 
 const TICK_MS = 60_000
 /** History pruning is cheap but pointless to run every minute. */
@@ -103,13 +104,34 @@ export function startScheduledTaskEngine(deps: EngineDeps): ScheduledTaskEngine 
     fireDeps.persist({ ...task, enabled: false, updatedAt: now() })
   }
 
+  /**
+   * A one-shot whose moment passed while we were down, too stale to run late.
+   * It gets a `missed` row before being disarmed: a one-time task that never
+   * ran must leave a trace saying so, or it just looks like it never existed.
+   */
+  function recordStaleOneShot(task: ScheduledTask, nowMs: number): void {
+    const runAt = task.runAt ?? nowMs
+    fireDeps.recordRun({
+      id: newScheduledRunId(),
+      scheduleId: task.id,
+      firedAt: runAt,
+      minuteKey: oneShotKey(runAt),
+      trigger: 'cron',
+      outcome: 'missed',
+      error: `one-time run was due ${Math.round((nowMs - runAt) / 60_000)} min ago -- too stale to run late`,
+    })
+  }
+
   async function considerOne(task: ScheduledTask, nowMs: number): Promise<void> {
     if (firing.has(task.id)) return
     const decision = decideFire(task, nowMs)
     if (!decision.fire) {
-      if (isTerminalSkip(decision.reason)) disarm(task, decision.reason)
+      if (decision.reason === 'one_shot_stale') recordStaleOneShot(task, nowMs)
+      if (isTerminalFor(task, decision.reason)) disarm(task, decision.reason)
       else if (decision.reason === 'bad_cron') {
-        console.warn(`[sched] id=${task.id} name="${task.name}" has an unparseable cron "${task.cron}" -- not firing`)
+        console.warn(
+          `[sched] id=${task.id} name="${task.name}" has no usable schedule (cron="${task.cron ?? ''}") -- not firing`,
+        )
       }
       return
     }

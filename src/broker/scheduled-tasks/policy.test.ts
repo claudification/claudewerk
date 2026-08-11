@@ -13,7 +13,7 @@ import type { ScheduledTask } from '../../shared/scheduled-task'
 import {
   computeMissedFires,
   decideFire,
-  isTerminalSkip,
+  isTerminalFor,
   MAX_CONSECUTIVE_FAILURES,
   nextFailureState,
   shouldCatchUp,
@@ -46,6 +46,12 @@ function task(over: Partial<ScheduledTask> = {}): ScheduledTask {
 }
 
 const keyAt = (ms: number, tz = BERLIN): string => minuteKey(wallClockParts(ms, tz), tz)
+
+/** A ONE-SHOT: an instant instead of a cron. */
+function oneShot(over: Partial<ScheduledTask> = {}): ScheduledTask {
+  const { cron: _dropped, ...rest } = task(over)
+  return { ...rest, runAt: over.runAt ?? DUE }
+}
 
 describe('decideFire', () => {
   test('fires on the matching wall-clock minute', () => {
@@ -119,13 +125,21 @@ describe('decideFire', () => {
   })
 })
 
-describe('isTerminalSkip', () => {
-  test('exhausted and expired are terminal; being early is not', () => {
-    expect(isTerminalSkip('expired')).toBe(true)
-    expect(isTerminalSkip('max_runs')).toBe(true)
-    expect(isTerminalSkip('not_due')).toBe(false)
-    expect(isTerminalSkip('not_started')).toBe(false)
-    expect(isTerminalSkip('already_fired')).toBe(false)
+describe('isTerminalFor', () => {
+  test('exhausted, expired and a stale one-shot are terminal; being early is not', () => {
+    const cron = task()
+    expect(isTerminalFor(cron, 'expired')).toBe(true)
+    expect(isTerminalFor(cron, 'max_runs')).toBe(true)
+    expect(isTerminalFor(cron, 'one_shot_stale')).toBe(true)
+    expect(isTerminalFor(cron, 'not_due')).toBe(false)
+    expect(isTerminalFor(cron, 'not_started')).toBe(false)
+  })
+
+  test('already_fired is terminal for a one-shot but NOT for a cron', () => {
+    // The distinction that matters: a cron fires again next minute, a one-shot
+    // has spent its only moment and should stop being walked.
+    expect(isTerminalFor(task(), 'already_fired')).toBe(false)
+    expect(isTerminalFor(oneShot(), 'already_fired')).toBe(true)
   })
 })
 
@@ -212,5 +226,69 @@ describe('nextFireAt', () => {
     const next = nextFireAt(task({ startAt: future }), DUE)
     expect(next).not.toBeNull()
     expect(next as number).toBeGreaterThanOrEqual(future)
+  })
+})
+
+describe('decideFire -- one-shot', () => {
+  test('does not fire before its moment', () => {
+    expect(decideFire(oneShot(), DUE - 60_000)).toEqual({ fire: false, reason: 'not_due' })
+  })
+
+  test('fires exactly at its moment, keyed to the instant', () => {
+    const decision = decideFire(oneShot(), DUE)
+    expect(decision.fire).toBe(true)
+    if (decision.fire) expect(decision.minuteKey).toBe(`once:${DUE}`)
+  })
+
+  test('fires LATE within the grace -- "run at 15:00" still means run', () => {
+    // Broker was down over the moment; firing 20 minutes late is the point.
+    expect(decideFire(oneShot(), DUE + 20 * 60_000).fire).toBe(true)
+  })
+
+  test('refuses to fire once it is too stale to be a service', () => {
+    expect(decideFire(oneShot(), DUE + 7 * 3_600_000)).toEqual({ fire: false, reason: 'one_shot_stale' })
+  })
+
+  test('never fires twice -- the marker is its own instant', () => {
+    const fired = oneShot({ lastFiredMinuteKey: `once:${DUE}` })
+    expect(decideFire(fired, DUE)).toEqual({ fire: false, reason: 'already_fired' })
+    expect(decideFire(fired, DUE + 60_000)).toEqual({ fire: false, reason: 'already_fired' })
+    expect(decideFire(fired, DUE + 3_600_000)).toEqual({ fire: false, reason: 'already_fired' })
+  })
+
+  test('a disabled one-shot stays quiet', () => {
+    expect(decideFire(oneShot({ enabled: false }), DUE)).toEqual({ fire: false, reason: 'disabled' })
+  })
+
+  test('DST does not apply -- an instant has no wall-clock ambiguity', () => {
+    // 02:30 on the fall-back day exists twice as a wall clock, but a one-shot is
+    // pinned to ONE instant, so there is nothing to dedupe.
+    const inside = Date.parse('2026-10-25T00:30:00Z')
+    expect(decideFire(oneShot({ runAt: inside }), inside).fire).toBe(true)
+  })
+
+  test('a schedule with neither cron nor runAt goes quiet instead of crashing', () => {
+    const { cron: _c, ...bare } = task()
+    expect(decideFire(bare as never, DUE)).toEqual({ fire: false, reason: 'bad_cron' })
+  })
+})
+
+describe('computeMissedFires -- one-shot', () => {
+  test('never produces recurring missed rows (there is no recurrence)', () => {
+    expect(computeMissedFires(oneShot({ lastRunAt: DUE - 86_400_000 }), DUE)).toEqual([])
+  })
+})
+
+describe('nextFireAt -- one-shot', () => {
+  test('reports its moment while pending', () => {
+    expect(nextFireAt(oneShot(), DUE - 60_000)).toBe(DUE)
+  })
+
+  test('still reports it while overdue-but-runnable, rather than claiming never', () => {
+    expect(nextFireAt(oneShot(), DUE + 60_000)).toBe(DUE)
+  })
+
+  test('null once spent', () => {
+    expect(nextFireAt(oneShot({ lastFiredMinuteKey: `once:${DUE}` }), DUE)).toBeNull()
   })
 })

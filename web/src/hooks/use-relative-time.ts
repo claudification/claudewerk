@@ -50,4 +50,3 @@ export function useRelativeTime(targetMs: number | undefined | null): string {
   useTick()
   return targetMs == null ? '' : formatRelative(targetMs)
 }
-
