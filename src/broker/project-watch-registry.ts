@@ -8,7 +8,15 @@
  * is the failsafe if the broker dies. On sentinel (re)connect the broker
  * re-arms every open project, since sentinel watches are in-memory.
  *
- * Subscriptions are keyed by the dashboard socket so a disconnect cleans up.
+ * Subscriptions are keyed by the dashboard socket so a disconnect cleans up --
+ * but they are COUNTED, not just tracked. One tab is one socket, and a tab has
+ * many independent subscribers on the same project (the transcript's task
+ * editor, the Kanban board, the command palette's task mode, the input
+ * autocomplete, ...), each sending its own subscribe/unsubscribe as it mounts
+ * and unmounts. Treating the socket as the refcount let the FIRST unmount
+ * disarm the watch under everyone else, and a board that is still on screen
+ * then silently misses every out-of-band move (`project_set_status`) until
+ * something re-armed from zero.
  */
 
 import type { ServerWebSocket } from 'bun'
@@ -21,7 +29,8 @@ const RENEW_MS = 7 * 60 * 1000
 type Socket = ServerWebSocket<unknown>
 
 interface Sub {
-  sockets: Set<Socket>
+  /** Live subscriptions per socket -- a tab can hold several at once. */
+  refs: Map<Socket, number>
   renew: ReturnType<typeof setInterval> | null
 }
 
@@ -62,42 +71,57 @@ function sendUnwatch(project: string): void {
   }
 }
 
+/** Total live subscriptions across every socket viewing a project. */
+function refCount(s: Sub): number {
+  let n = 0
+  for (const c of s.refs.values()) n += c
+  return n
+}
+
+/** Tear the watch down once the LAST subscriber (not the last socket) is gone. */
+function disarmIfIdle(project: string, s: Sub, reason: string): void {
+  if (refCount(s) > 0) return
+  if (s.renew) clearInterval(s.renew)
+  subs.delete(project)
+  sendUnwatch(project)
+  deps?.log(`[project-watch] disarmed ${project} (${reason})`)
+}
+
 /** A dashboard opened a project board: arm (or renew) the watch. */
 export function subscribeProjectWatch(ws: Socket, project: string): void {
   let s = subs.get(project)
   if (!s) {
-    s = { sockets: new Set(), renew: null }
+    s = { refs: new Map(), renew: null }
     subs.set(project, s)
   }
-  const first = s.sockets.size === 0
-  s.sockets.add(ws)
+  const first = refCount(s) === 0
+  s.refs.set(ws, (s.refs.get(ws) ?? 0) + 1)
   if (first) {
     sendWatch(project)
     s.renew = setInterval(() => sendWatch(project), RENEW_MS)
     deps?.log(`[project-watch] armed ${project} (lease ${LEASE_MS / 1000}s, renew ${RENEW_MS / 1000}s)`)
+  } else {
+    deps?.log(`[project-watch] +1 viewer on ${project} (now ${refCount(s)} across ${s.refs.size} socket(s))`)
   }
 }
 
-/** A dashboard closed a project board: disarm when it was the last viewer. */
+/** A dashboard closed a project board: disarm when it was the last subscriber. */
 export function unsubscribeProjectWatch(ws: Socket, project: string): void {
   const s = subs.get(project)
   if (!s) return
-  if (s.sockets.delete(ws) && s.sockets.size === 0) {
-    if (s.renew) clearInterval(s.renew)
-    subs.delete(project)
-    sendUnwatch(project)
-    deps?.log(`[project-watch] disarmed ${project} (last viewer left)`)
-  }
+  const held = s.refs.get(ws)
+  if (!held) return // stray unsubscribe -- never let the count go negative
+  if (held > 1) s.refs.set(ws, held - 1)
+  else s.refs.delete(ws)
+  deps?.log(`[project-watch] -1 viewer on ${project} (now ${refCount(s)} across ${s.refs.size} socket(s))`)
+  disarmIfIdle(project, s, 'last viewer left')
 }
 
-/** A dashboard socket closed: drop it from every project it was viewing. */
+/** A dashboard socket closed: drop ALL of its subscriptions on every project. */
 export function dropSocketFromWatches(ws: Socket): void {
   for (const [project, s] of Array.from(subs)) {
-    if (s.sockets.delete(ws) && s.sockets.size === 0) {
-      if (s.renew) clearInterval(s.renew)
-      subs.delete(project)
-      sendUnwatch(project)
-    }
+    if (!s.refs.delete(ws)) continue
+    disarmIfIdle(project, s, 'socket closed')
   }
 }
 
