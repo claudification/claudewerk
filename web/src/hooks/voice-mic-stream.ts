@@ -181,20 +181,41 @@ function reuseOrDropWarmStream(wantDevice: string): MediaStream | null {
 }
 
 /**
+ * Rejections that dropping the `exact` pin can plausibly fix. OverconstrainedError
+ * is the spec answer for "no device matches"; NotFoundError is the same story from
+ * browsers that resolve the device list first. NotAllowedError is the WebKit one:
+ * it refuses a specific deviceId the page is not (yet) authorized for, and says
+ * "denied" rather than "overconstrained" -- indistinguishable from a real denial
+ * unless we retry. Anything else (NotReadableError: device busy) survives the
+ * retry unchanged, so retrying only doubles the delay before the same failure.
+ */
+const PIN_RETRYABLE = new Set(['OverconstrainedError', 'NotFoundError', 'NotAllowedError'])
+
+/**
  * getUserMedia with a fallback: a pinned mic that's gone (unplugged / id rotated
- * after a permission reset) makes the `exact` constraint throw
- * OverconstrainedError. Fall back to the OS default this once but keep the saved
- * preference so the same mic re-pins when it's plugged back in.
+ * after a permission reset) or refused makes the `exact` constraint throw. Fall
+ * back to the OS default this once but keep the saved preference so the same mic
+ * re-pins when it's available again.
+ *
+ * The pin is OUR optimisation (`pinResolvedDevice`), not something the user asked
+ * for -- so it must never be the reason a recording cannot start. On 2026-08-12 an
+ * iPad surfaced a dead mic through this path because the retry only covered
+ * OverconstrainedError. The original error is rethrown when the retry also fails,
+ * so the surfaced message describes the real cause and not the fallback attempt.
  */
 async function openMicStream(wantDevice: string): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia(micConstraints(wantDevice))
   } catch (err) {
-    if (wantDevice && (err as Error)?.name === 'OverconstrainedError') {
-      console.warn(`[voice] pinned mic ${wantDevice.slice(0, 8)} unavailable, falling back to default`)
-      return navigator.mediaDevices.getUserMedia(micConstraints(''))
+    const name = (err as Error)?.name ?? 'unknown'
+    if (!wantDevice || !PIN_RETRYABLE.has(name)) throw err
+    console.warn(`[voice] pinned mic ${wantDevice.slice(0, 8)} rejected (${name}), retrying without the pin`)
+    try {
+      return await navigator.mediaDevices.getUserMedia(micConstraints(''))
+    } catch (retryErr) {
+      console.warn(`[voice] unpinned retry also failed (${(retryErr as Error)?.name ?? 'unknown'})`)
+      throw err
     }
-    throw err
   }
 }
 

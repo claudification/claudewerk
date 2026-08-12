@@ -24,6 +24,7 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
+import { describeMicError } from '@/lib/mic-error'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
 // Capture is MediaRecorder-only: a real container (webm/opus, Safari audio/mp4)
@@ -36,7 +37,7 @@ import { addVoiceHistoryEntry } from '@/lib/voice-history'
 // voice-prewarm, which warms the mic and the transport together.
 export { dismissMicExpired, getMicExpired, invalidateWarmStream, subscribeMicExpired } from '@/hooks/voice-mic-stream'
 
-type VoiceState = 'idle' | 'connecting' | 'recording' | 'recording-offline' | 'refining' | 'submitting' | 'error'
+export type VoiceState = 'idle' | 'connecting' | 'recording' | 'recording-offline' | 'refining' | 'submitting' | 'error'
 
 // Max wait, after voice_start is sent, for the broker->Deepgram chain to come
 // up (voice_ready). If it doesn't, the connection is genuinely broken and we
@@ -65,7 +66,7 @@ function wsIsOpen(): boolean {
   return useConversationsStore.getState().ws?.readyState === WebSocket.OPEN
 }
 
-interface UseVoiceRecordingResult {
+export interface UseVoiceRecordingResult {
   state: VoiceState
   /** False until broker->Deepgram chain confirmed (voice_ready). Recording
    *  starts immediately for instant feel; this tells UI when transcriber
@@ -723,7 +724,9 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       setState('recording')
       console.log(`[voice] ${elapsed()} capture started -- recording (backend warming up)`)
     } catch (err) {
-      failVoice(err instanceof Error ? err.message : 'Mic access denied', `recording failed: ${err}`)
+      // describeMicError, never err.message: WebKit's NotAllowedError prose is a
+      // 100-character spec quote that blames the user for a platform refusal.
+      failVoice(describeMicError(err), `recording failed: ${err}`)
     }
     // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [sendWs])

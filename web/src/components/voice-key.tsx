@@ -1,212 +1,61 @@
 /**
- * VoiceKey - Keyboard push-to-talk: hold configured key to record, release to submit.
- * Shows a recording indicator banner with live transcript.
- * Uses shared useVoiceRecording hook (same engine as mobile FAB).
+ * VoiceKey - Keyboard push-to-talk banner: hold the configured key to record,
+ * release to submit. Same engine as the mobile FAB (useVoiceRecording) and,
+ * since 2026-08-12, the same permission gate (useMicPermission).
+ *
+ * The key binding itself lives in usePushToTalk; this file decides what to show.
  */
 
-import { useEffect, useRef, useSyncExternalStore } from 'react'
-import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
+import { useSyncExternalStore } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { useMicPermission } from '@/hooks/use-mic-permission'
+import { usePushToTalk } from '@/hooks/use-push-to-talk'
+import { useVoiceAutoSubmit } from '@/hooks/use-voice-auto-submit'
 import { dismissMicExpired, getMicExpired, subscribeMicExpired, useVoiceRecording } from '@/hooks/use-voice-recording'
-import { prewarmVoice, prewarmVoiceTransport } from '@/hooks/voice-prewarm'
+import { prewarmVoice } from '@/hooks/voice-prewarm'
 import { haptic } from '@/lib/utils'
+import { MicExpiredBanner } from './mic-expired-banner'
 import { formatKeyCode } from './settings/key-capture-format'
+import { VoiceKeyBanner } from './voice-key-banner'
 
 function useMicExpired() {
   return useSyncExternalStore(subscribeMicExpired, getMicExpired)
 }
 
 export function VoiceKey() {
-  const voiceHoldKey = useConversationsStore(s => s.controlPanelPrefs.voiceHoldKey)
+  const holdKey = useConversationsStore(s => s.controlPanelPrefs.voiceHoldKey)
   const keepMicOpen = useConversationsStore(s => s.controlPanelPrefs.keepMicOpen)
   const voice = useVoiceRecording()
-  const activeRef = useRef(false)
+  const permission = useMicPermission()
   const micExpired = useMicExpired()
 
-  useEffect(() => {
-    if (keepMicOpen && voiceHoldKey) prewarmVoice()
-  }, [keepMicOpen, voiceHoldKey])
+  usePushToTalk({ holdKey, keepMicOpen, voice, permission })
+  useVoiceAutoSubmit(voice, { onSent: () => haptic('success') })
 
-  // The token is not a device: warm it whenever push-to-talk is armed, not only
-  // under keepMicOpen, so the first press never waits on the mint.
-  useEffect(() => {
-    if (voiceHoldKey) prewarmVoiceTransport()
-  }, [voiceHoldKey])
+  const keyLabel = holdKey ? formatKeyCode(holdKey) : ''
+  const errorText = voice.errorMsg || permission.error
+  const idle = voice.state === 'idle'
 
-  useEffect(() => {
-    if (!voiceHoldKey) return
+  if (idle && !micExpired && !errorText) return null
 
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.code !== voiceHoldKey) return
-      if (e.repeat || activeRef.current) return
-
-      e.preventDefault()
-      activeRef.current = true
-      haptic('tap')
-      voice.start()
-    }
-
-    function handleKeyUp(e: KeyboardEvent) {
-      if (e.code !== voiceHoldKey) return
-      if (!activeRef.current) return
-
-      e.preventDefault()
-      activeRef.current = false
-      haptic('tick')
-      voice.stop()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
-      if (activeRef.current) voice.cancel()
-    }
-  }, [voiceHoldKey, voice.start, voice.stop, voice.cancel])
-
-  // Auto-submit when voice_done arrives
-  useEffect(() => {
-    if (voice.state !== 'submitting') return
-    const text = voice.refinedText || voice.finalText
-    if (text.trim()) {
-      // Submit to the conversation that was active when recording started, NOT
-      // the live selection -- the user may have switched during the delay.
-      const conversationId = voice.targetConversationId
-      if (conversationId) sendInput(conversationId, text)
-      haptic('success')
-    }
-    const t = setTimeout(() => voice.reset(), 300)
-    return () => clearTimeout(t)
-  }, [voice.state, voice.refinedText, voice.finalText, voice.targetConversationId, voice.reset])
-
-  if (voice.state === 'idle' && !micExpired) return null
-
-  const displayText = voice.finalText || ''
-  const displayInterim = voice.displayInterim
-  // What Copy salvages: whatever transcript exists, even a failed/partial one.
-  const copyable = [displayText, displayInterim].filter(Boolean).join(' ').trim()
-  const keyLabel = voiceHoldKey ? formatKeyCode(voiceHoldKey) : ''
-
-  if (micExpired && voice.state === 'idle') {
-    return <MicExpiredBanner keyLabel={keyLabel} />
+  if (idle && micExpired && !errorText) {
+    return (
+      <MicExpiredBanner keyLabel={keyLabel} onRewarm={() => prewarmVoice()} onDismiss={() => dismissMicExpired()} />
+    )
   }
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-[60] pointer-events-none">
-      <div className="mx-auto max-w-[600px] px-4 pt-2 animate-in slide-in-from-top duration-200">
-        <div className="px-4 py-2.5 rounded-xl backdrop-blur-xl bg-background/90 border border-border/50 shadow-lg pointer-events-auto">
-          {/* Status line */}
-          <div className="flex items-center gap-2 mb-1">
-            {voice.state === 'connecting' && (
-              <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-                Starting mic…
-              </span>
-            )}
-            {voice.state === 'recording' && (
-              <>
-                <span className="relative flex size-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full size-2 bg-red-500" />
-                </span>
-                <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">
-                  Recording - release{' '}
-                  <kbd className="px-1 py-0.5 bg-muted border border-border rounded text-[9px]">{keyLabel}</kbd> to send
-                </span>
-                {!voice.backendReady && (
-                  <span className="text-[10px] text-muted-foreground/50 font-mono uppercase tracking-wider ml-auto">
-                    warming up
-                  </span>
-                )}
-              </>
-            )}
-            {voice.state === 'refining' && (
-              <span className="text-[10px] text-accent font-mono uppercase tracking-wider">Processing…</span>
-            )}
-            {voice.state === 'submitting' && (
-              <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Sent!</span>
-            )}
-            {voice.state === 'error' && (
-              <span className="text-[10px] text-red-400 font-mono uppercase tracking-wider">
-                {voice.errorMsg || 'Error'}
-              </span>
-            )}
-            {/* Controls: always reachable so a wedged banner (error / stuck
-                'Processing…') is recoverable without reloading. Copy salvages the
-                transcript when a submission fails; ✕ (cancel) sends voice_stop +
-                resets the hook to idle. */}
-            <div className="ml-auto flex shrink-0 items-center gap-1">
-              {copyable && (
-                <button
-                  type="button"
-                  aria-label="Copy transcript"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(copyable).then(() => haptic('tick'))
-                  }}
-                  className="px-1.5 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider text-muted-foreground hover:text-accent transition-colors"
-                >
-                  Copy
-                </button>
-              )}
-              <button
-                type="button"
-                aria-label="Dismiss voice recording"
-                onClick={() => voice.cancel()}
-                className="px-1.5 py-0.5 text-[10px] font-bold font-mono text-muted-foreground hover:text-red-400 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          {/* Transcript text - matching FAB style with yellow interim */}
-          {(displayText || displayInterim) && (
-            <div className="text-sm font-mono leading-relaxed max-h-[30vh] overflow-y-auto text-foreground">
-              {displayText && <span>{displayText}</span>}
-              {displayInterim && (
-                <span className="text-accent/50 italic">
-                  {displayText ? ' ' : ''}
-                  {displayInterim}
-                </span>
-              )}
-            </div>
-          )}
-
-          {!displayText && !displayInterim && voice.state === 'recording' && (
-            <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now…</span>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function MicExpiredBanner({ keyLabel }: { keyLabel: string }) {
-  return (
-    <div className="fixed top-0 left-0 right-0 z-[60] pointer-events-none">
-      <div className="mx-auto max-w-[600px] px-4 pt-2 animate-in slide-in-from-top duration-200">
-        <div className="px-4 py-2 rounded-xl backdrop-blur-xl bg-amber-950/80 border border-amber-500/30 shadow-lg flex items-center gap-2 pointer-events-auto">
-          <span className="text-[10px] text-amber-400 font-mono uppercase tracking-wider flex-1">
-            Mic released after 30min idle - next{' '}
-            <kbd className="px-1 py-0.5 bg-muted border border-border rounded text-[9px]">{keyLabel}</kbd> will
-            cold-start
-          </span>
-          <button
-            type="button"
-            onClick={() => prewarmVoice()}
-            className="px-2 py-0.5 text-[10px] font-bold font-mono text-amber-400 bg-amber-500/20 border border-amber-500/40 rounded hover:bg-amber-500/30 transition-colors uppercase"
-          >
-            Re-warm
-          </button>
-          <button
-            type="button"
-            onClick={() => dismissMicExpired()}
-            className="px-2 py-0.5 text-[10px] font-bold font-mono text-muted-foreground hover:text-foreground transition-colors uppercase"
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </div>
+    <VoiceKeyBanner
+      state={voice.state}
+      errorText={errorText}
+      keyLabel={keyLabel}
+      displayText={voice.finalText || ''}
+      displayInterim={voice.displayInterim}
+      backendReady={voice.backendReady}
+      onDismiss={() => {
+        permission.clearError()
+        voice.cancel()
+      }}
+    />
   )
 }
