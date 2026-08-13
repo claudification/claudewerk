@@ -20,7 +20,7 @@
 
 import { z } from 'zod'
 import { addressesMatching } from './desk-addresses'
-import { applyWatch, MAX_PATTERNS_PER_ORB, WATCH_TTL_MS, type WatchMode } from './orb-status-watch'
+import { applyWatch, MAX_PATTERNS_PER_WATCHER, type WatchMode } from './orb-status-watch'
 import type { DispatchRuntime } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
 
@@ -40,7 +40,9 @@ const DESCRIPTION = [
   '',
   'MODES: `add` (the default thing he means), `remove`, `replace` (swap the whole list), `clear` (stop',
   'watching entirely), `list` (what am I watching -- takes no patterns).',
-  `Watches expire on their own after ${Math.round(WATCH_TTL_MS / 3_600_000)} hours and are lost if the broker restarts; say so if he asks how long.`,
+  'Watches last as long as this panel stays open -- they are re-established automatically across a',
+  'reconnect, and dropped when he closes the tab. Nothing is watched while you are not summoned. Say',
+  'that plainly if he asks; do NOT promise to watch something overnight.',
   '',
   'The result tells you `matchesNow` -- the conversations the patterns hit RIGHT NOW. Empty is not an',
   'error (a watch can wait for work that has not started), but if he named a specific one and it matches',
@@ -59,14 +61,17 @@ export function orbWatchTools(rt: DispatchRuntime): Toolset {
           .array(z.string())
           .nullable()
           .describe(
-            `Addresses or globs, e.g. ["remote-claude:*"]. Null or empty for \`list\` and \`clear\`. Max ${MAX_PATTERNS_PER_ORB} held at once.`,
+            `Addresses or globs, e.g. ["remote-claude:*"]. Null or empty for \`list\` and \`clear\`. Max ${MAX_PATTERNS_PER_WATCHER} held at once.`,
           ),
       }),
       execute: (a, ctx) => {
         const { mode, patterns } = a as { mode: WatchMode; patterns: string[] | null }
-        // The orb id comes from the SEAM, never from the model's args.
-        const orbId = ctx.origin?.orbId ?? null
-        const change = applyWatch(orbId, mode, patterns ?? [])
+        // The subscription is keyed on the CONNECTION the call arrived on, from
+        // the seam -- never on anything the model could name. No connection
+        // (a text-driver caller) means there is nothing to deliver to.
+        const ws = ctx.origin?.subscriber
+        if (!ws) return { error: 'watch_conversations only works from a live panel connection' }
+        const change = applyWatch(ws, mode, patterns ?? [])
 
         const out: Record<string, unknown> = {
           watching: change.patterns,
@@ -75,8 +80,7 @@ export function orbWatchTools(rt: DispatchRuntime): Toolset {
         // Only surface the failure modes when they actually happened -- an
         // always-present `rejected: []` invites the model to mention it.
         if (change.rejected.length > 0) out.rejected = change.rejected
-        if (change.clipped) out.clipped = `kept the first ${MAX_PATTERNS_PER_ORB}; ask him which ones to drop`
-        if (change.expiresAt) out.expiresAt = new Date(change.expiresAt).toISOString()
+        if (change.clipped) out.clipped = `kept the first ${MAX_PATTERNS_PER_WATCHER}; ask him which ones to drop`
         if (change.patterns.length === 0) out.note = 'watching nothing -- no status will reach you unasked'
         return out
       },

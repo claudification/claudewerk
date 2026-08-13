@@ -1,69 +1,49 @@
 /**
- * THE ORB'S STATUS SUBSCRIPTIONS -- which conversations a given orb has asked to
- * be told about.
+ * THE ORB'S STATUS SUBSCRIPTIONS -- which conversations a given control-panel
+ * SOCKET has asked to be told about.
  *
- * The orb is a browser surface that comes and goes; the STATUSES arrive at the
- * broker whether or not anyone is summoned. So the subscription lives here, keyed
- * by the orb instance id (the one in the browser's localStorage, stable across
- * summons and reloads), and the relay (orb-status-relay.ts) consults it on every
- * `agent_status`.
+ * KEYED ON THE SOCKET, and that is the whole design. An earlier cut keyed on the
+ * orb's localStorage instance id, which sounds more durable and is actually
+ * worse: nothing ever tells the broker that such a subscription is dead, so it
+ * needed a TTL and an LRU invented purely to bound a map with no natural end.
+ * A socket has an exact end. Keying on it means:
+ *   - cleanup is a fact (`forgetWatcher` on close), not a guess after 8 hours,
+ *   - the authed identity is re-checked on every reconnect, because a fresh
+ *     socket carries fresh `grants` -- a stable orb id carries nothing,
+ *   - a watch can never outlive the thing that would speak it, so the relay
+ *     never computes matches for a panel nobody has open.
  *
- * IN-MEMORY ON PURPOSE. A watch is an attention preference for the session the
- * user is having right now, not a durable setting -- surviving a broker restart
- * would mean the orb starts narrating a project the user forgot they subscribed
- * to three days ago. Restart clears them; the user re-asks in one sentence.
+ * The cost is that a reconnect drops every subscription. That is correct and
+ * intended: THE CLIENT OWNS THE LIST. The panel re-asserts what it wants on
+ * connect (`voice_watch_assert`), exactly as it already re-asserts agent-scope
+ * channel subscriptions. Broker state here is DERIVED, never authoritative --
+ * so there is only ever one copy of the truth to drift.
  *
- * Three bounds keep a runaway subscription from becoming a firehose:
- *   - TTL      a watch goes quiet on its own, so a forgotten one cannot narrate forever
- *   - PATTERNS a cap per orb, so "watch this too" cannot accumulate without limit
- *   - ORBS     an LRU cap, so stale browser ids cannot grow the map unbounded
+ * Ephemeral by construction. A durable "tell me when X breaks even with nothing
+ * connected" is a different feature with a different sink (a push, not a spoken
+ * line) and would duplicate the existing needs_you push path.
  */
 
 import { matchesAnyPattern, normalizeAddressPattern } from '../../shared/conversation-address'
 
-/** How long a watch stays live without being re-stated. Long enough to span a
- *  working session, short enough that yesterday's watch is gone today. */
-export const WATCH_TTL_MS = 8 * 60 * 60_000
+/** Most patterns one socket may hold. Not a correctness bound (the socket close
+ *  is that) -- just a guard against a model that keeps piling watches on. */
+export const MAX_PATTERNS_PER_WATCHER = 12
 
-/** Most patterns one orb may hold. Past this the model is hoarding, not watching. */
-export const MAX_PATTERNS_PER_ORB = 12
-
-/** Most orb instances tracked at once; the least-recently-touched is evicted. */
-const MAX_ORBS = 32
-
-/** The bare address every orb answers to when a message names no instance. */
-const ANY_ORB = '*'
-
-interface WatchRecord {
-  patterns: string[]
-  /** Epoch ms after which this record is dead. Refreshed on every change. */
-  expiresAt: number
-  /** Epoch ms of the last touch -- the LRU key. */
-  touchedAt: number
+/** What the relay needs of a subscriber: something to send to, and the auth
+ *  slice to check before doing so. Structural on purpose -- this module never
+ *  needs to know it is a WebSocket. */
+export interface WatcherSocket {
+  send(data: string): void
+  data?: unknown
 }
 
-const watches = new Map<string, WatchRecord>()
+/** Insertion-ordered so delivery order is stable across a fan-out. */
+const watches = new Map<WatcherSocket, string[]>()
 
-/** Drop every expired record. Called on each read so a dead watch can never be
- *  matched, without needing a timer. */
-function sweep(now: number): void {
-  for (const [orbId, rec] of watches) {
-    if (rec.expiresAt <= now) watches.delete(orbId)
-  }
-}
-
-/** Evict the least-recently-touched orbs down to the cap. */
-function evict(): void {
-  if (watches.size <= MAX_ORBS) return
-  const byAge = [...watches.entries()].sort((a, b) => a[1].touchedAt - b[1].touchedAt)
-  for (const [orbId] of byAge.slice(0, watches.size - MAX_ORBS)) watches.delete(orbId)
-}
-
-/** The patterns an orb currently watches (empty when it watches nothing). */
-export function getWatchPatterns(orbId: string | null, now: number = Date.now()): string[] {
-  sweep(now)
-  const rec = watches.get(orbId ?? ANY_ORB)
-  return rec ? [...rec.patterns] : []
+/** The patterns this socket currently watches (empty when it watches nothing). */
+export function getWatchPatterns(ws: WatcherSocket): string[] {
+  return [...(watches.get(ws) ?? [])]
 }
 
 export interface WatchChange {
@@ -75,8 +55,6 @@ export interface WatchChange {
   /** True when the cap clipped the list -- silently dropping would read as
    *  "subscribed" when it was not. */
   clipped: boolean
-  /** Epoch ms this watch goes quiet on its own. Null when nothing is watched. */
-  expiresAt: number | null
 }
 
 export type WatchMode = 'add' | 'remove' | 'replace' | 'clear' | 'list'
@@ -96,8 +74,8 @@ function normalizeAll(raw: readonly string[]): { ok: string[]; rejected: string[
   return { ok, rejected }
 }
 
-/** Apply a mode to the existing pattern list. Pure -- the caps and the store
- *  writes stay in `applyWatch`. */
+/** Apply a mode to the existing pattern list. Pure -- the cap and the store
+ *  write stay in `applyWatch`. */
 function nextPatterns(mode: WatchMode, existing: string[], incoming: string[]): string[] {
   if (mode === 'clear') return []
   if (mode === 'list') return existing
@@ -106,58 +84,43 @@ function nextPatterns(mode: WatchMode, existing: string[], incoming: string[]): 
   return [...existing, ...incoming.filter(p => !existing.includes(p))]
 }
 
-/**
- * Add / remove / replace / clear / list one orb's watches.
- *
- * `list` is a read that still sweeps and refreshes nothing -- asking what you
- * watch must not extend how long you watch it.
- */
-export function applyWatch(
-  orbId: string | null,
-  mode: WatchMode,
-  rawPatterns: readonly string[] = [],
-  now: number = Date.now(),
-): WatchChange {
-  sweep(now)
-  const key = orbId ?? ANY_ORB
-  const existing = watches.get(key)?.patterns ?? []
-
-  if (mode === 'list') {
-    const rec = watches.get(key)
-    return { patterns: [...existing], rejected: [], clipped: false, expiresAt: rec?.expiresAt ?? null }
-  }
+/** Add / remove / replace / clear / list one socket's watches. */
+export function applyWatch(ws: WatcherSocket, mode: WatchMode, rawPatterns: readonly string[] = []): WatchChange {
+  const existing = watches.get(ws) ?? []
+  if (mode === 'list') return { patterns: [...existing], rejected: [], clipped: false }
 
   const { ok, rejected } = normalizeAll(rawPatterns)
   const merged = nextPatterns(mode, existing, ok)
-  const patterns = merged.slice(0, MAX_PATTERNS_PER_ORB)
+  const patterns = merged.slice(0, MAX_PATTERNS_PER_WATCHER)
   const clipped = merged.length > patterns.length
 
-  if (patterns.length === 0) {
-    watches.delete(key)
-    return { patterns: [], rejected, clipped, expiresAt: null }
-  }
+  if (patterns.length === 0) watches.delete(ws)
+  else watches.set(ws, patterns)
+  return { patterns: [...patterns], rejected, clipped }
+}
 
-  const expiresAt = now + WATCH_TTL_MS
-  watches.set(key, { patterns, expiresAt, touchedAt: now })
-  evict()
-  return { patterns: [...patterns], rejected, clipped, expiresAt }
+/** Every socket that has asked about this address. */
+export function matchingWatchers(address: string): WatcherSocket[] {
+  const out: WatcherSocket[] = []
+  for (const [ws, patterns] of watches) {
+    if (matchesAnyPattern(patterns, address)) out.push(ws)
+  }
+  return out
 }
 
 /**
- * Every orb that has asked about this address.
- *
- * An orb watching under the bare `*` key (a panel too old to send an instance
- * id) is returned as `null`, which the relay turns back into a broadcast to all
- * of the user's panels -- the same null-means-everyone rule the orb channel and
- * `dispatch_quest` already use.
+ * The socket went away. Called from `removeSubscriber`, which is the ONE place
+ * that knows a control panel is gone -- this is the lifecycle signal the old
+ * orb-id keying did not have, and the reason no TTL is needed.
  */
-export function matchingOrbs(address: string, now: number = Date.now()): (string | null)[] {
-  sweep(now)
-  const out: (string | null)[] = []
-  for (const [orbId, rec] of watches) {
-    if (matchesAnyPattern(rec.patterns, address)) out.push(orbId === ANY_ORB ? null : orbId)
-  }
-  return out
+export function forgetWatcher(ws: WatcherSocket): void {
+  watches.delete(ws)
+}
+
+/** True when anybody at all is watching -- lets the status handler skip the
+ *  address computation entirely on a fleet with no orb up. */
+export function hasWatchers(): boolean {
+  return watches.size > 0
 }
 
 /** Test seam: forget every watch. */

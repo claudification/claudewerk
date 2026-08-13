@@ -142,6 +142,35 @@ export function resolvePermissions(
   return { permissions: result, isAdmin: admin }
 }
 
+/** The auth-bearing slice of a control-panel socket's `ws.data`. */
+export interface SubscriberAuth {
+  grants?: UserGrant[]
+  /** Set on a per-conversation share viewer; scopes it to that one conversation. */
+  shareConversationId?: string
+}
+
+/**
+ * May this control-panel socket receive a message about `project` (and, when
+ * the message names one, `conversationId`)?
+ *
+ * The two rules the scoped broadcast has always applied, lifted into one place
+ * so anything ELSE that pushes to a subset of sockets -- the orb's watched-status
+ * relay is the first -- cannot accidentally implement a laxer version. A socket
+ * with no grants at all is an internal/trusted connection and passes, which is
+ * the pre-existing behaviour, not a new hole.
+ */
+export function subscriberMayReceive(
+  auth: SubscriberAuth,
+  project: string,
+  conversationId?: string,
+  resolve: (grants: UserGrant[], project: string) => { permissions: Set<Permission> } = resolvePermissions,
+): boolean {
+  if (auth.grants && !resolve(auth.grants, project).permissions.has('chat:read')) return false
+  // Per-conversation share scope: never leak sibling conversations.
+  if (auth.shareConversationId && conversationId && conversationId !== auth.shareConversationId) return false
+  return true
+}
+
 // ─── Resolved flags (what the client receives) ───────────────────
 
 export interface ResolvedPermissions {

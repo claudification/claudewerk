@@ -55,6 +55,7 @@ import { haptic } from '@/lib/utils'
 import type { OrbChannelMessage, OrbMessageKind } from '@/lib/voice-orb/orb-channel'
 import { isOrbChannelDraining, pushOrbChannelMessage } from '@/lib/voice-orb/orb-channel-bus'
 import { isForThisOrb } from '@/lib/voice-orb/orb-instance'
+import { recordWatchToolResult } from '@/lib/voice-orb/orb-watches'
 import { deliverVoiceToolResult, type ToolResultMessage } from '@/lib/voice-orb/tool-bridge'
 import { clearAuthNeeded, setAuthNeeded } from './auth-needed-store'
 import { addDebugTraceEvent, setDebugTraceResult } from './debug-control-store'
@@ -1767,7 +1768,12 @@ function handleDispatchToolResult(msg: DashboardMessage) {
 /** The voice orb's tool round-trip. Eager (a few lines) so the heavy orb chunk
  *  stays lazy: the bridge slot is null until the orb is summoned. */
 function handleVoiceToolCallResult(msg: DashboardMessage) {
-  deliverVoiceToolResult(msg as unknown as ToolResultMessage)
+  const result = msg as unknown as ToolResultMessage
+  // A watch is socket-scoped server-side, so the CLIENT has to remember it to
+  // replay after a reconnect. This is the only point where it learns the list
+  // changed -- the model's call went straight to the broker.
+  recordWatchToolResult(result)
+  deliverVoiceToolResult(result)
 }
 
 /** The wire shape of a `voice_orb_deliver`. */

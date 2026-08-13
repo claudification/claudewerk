@@ -21,6 +21,7 @@
  */
 
 import type { InterConversationDelivery } from '../../shared/protocol'
+import { applyWatch } from '../desk/orb-status-watch'
 import { buildDispatchRuntime } from '../desk/runtime'
 import type { ToolDef } from '../desk/tool-def'
 import { ACTIVE_VOICE_TOOLS, buildVoiceToolset } from '../desk/voice-tools'
@@ -100,7 +101,10 @@ const voiceToolCall: MessageHandler = async (ctx: HandlerContext, data: MessageD
     // (dispatch_quest) needs to know it was asked OUT LOUD, and by which orb.
     const result = await resolved.tool.execute(resolved.args, {
       identity: userId ? { userId } : {},
-      origin: { surface: 'voice', orbId: call.orbId },
+      // `subscriber` is THIS socket: a status subscription lives and dies with
+      // the connection, so the verb that sets one must key on the connection,
+      // never on anything the model could name.
+      origin: { surface: 'voice', orbId: call.orbId, subscriber: ctx.ws },
     })
     answer({ ok: true, result })
     ctx.log.debug(`voice_tool_call ${who} OK in ${Date.now() - started}ms`)
@@ -178,7 +182,37 @@ const voiceOrbSay: MessageHandler = (ctx: HandlerContext, data: MessageData) => 
   ctx.log.debug(`[orb-say] ${r.from} -> ${r.convId.slice(0, 8)} "${r.message.slice(0, 50)}"`)
 }
 
+/**
+ * RE-ASSERT the socket's status subscriptions.
+ *
+ * Status watches are socket-scoped, so a reconnect drops them -- deliberately
+ * (see orb-status-watch.ts). The CLIENT owns the list and replays it here on
+ * connect, exactly as it already replays `channel_subscribe` for held agent
+ * scopes. Not a tool call: the model did not ask for this, the panel is
+ * restating what the model asked for earlier.
+ *
+ * Always a REPLACE, never an add. Replaying a list must converge on that list
+ * whether the broker remembered nothing (the normal case) or somehow still held
+ * a stale set -- an additive replay would accumulate across flaky reconnects.
+ */
+const voiceWatchAssert: MessageHandler = (ctx: HandlerContext, data: MessageData) => {
+  try {
+    ctx.requirePermission('spawn')
+  } catch (e) {
+    ctx.reply({ type: 'voice_watch_assert_result', ok: false, error: (e as Error).message })
+    return
+  }
+  const raw = Array.isArray(data.patterns) ? data.patterns : []
+  const patterns = raw.filter((p): p is string => typeof p === 'string')
+  const change = applyWatch(ctx.ws, 'replace', patterns)
+  ctx.reply({ type: 'voice_watch_assert_result', ok: true, watching: change.patterns })
+  ctx.log.debug(`[orb-watch] re-asserted ${change.patterns.length} pattern(s): ${change.patterns.join(', ') || 'none'}`)
+}
+
 export function registerVoiceOrbHandlers(): void {
   // Control panel only -- a share (guest) viewer must never drive the fleet by voice.
-  registerHandlers({ voice_tool_call: voiceToolCall, voice_orb_say: voiceOrbSay }, CONTROL_PANEL_ONLY)
+  registerHandlers(
+    { voice_tool_call: voiceToolCall, voice_orb_say: voiceOrbSay, voice_watch_assert: voiceWatchAssert },
+    CONTROL_PANEL_ONLY,
+  )
 }

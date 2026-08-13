@@ -52,11 +52,10 @@ function handleNeedsYouSignal(conv: Conversation, conversationId: string, status
 }
 
 /**
- * Tell any orb that SUBSCRIBED to this conversation that it moved. No-op unless
- * someone called `watch_conversations` for a pattern this address matches, so
- * the cost on an unwatched fleet is one map lookup. The broadcast handed in is
- * the PROJECT-SCOPED one -- a watched status must not reach a panel that is not
- * allowed to see the conversation.
+ * Tell any panel that SUBSCRIBED to this conversation that it moved. No-op
+ * unless a live socket asked for a pattern this address matches, so the cost on
+ * an unwatched fleet is one `size` check. Delivery is per-socket and
+ * permission-checked inside the relay.
  */
 function relayToWatchingOrbs(
   ctx: Ctx,
@@ -65,17 +64,15 @@ function relayToWatchingOrbs(
   status: LiveStatus,
   prevState: string,
 ): void {
-  const project = conv.project
-  if (!project) return
+  if (!conv.project) return
   const relayed = relayStatusToWatchers(conversationId, conv, status, prevState, {
     siblings: p => Array.from(ctx.conversations.getAllConversations()).filter(s => isSameProject(s.project, p)),
     projectLabel: p => ctx.getProjectSettings(p)?.label ?? null,
-    broadcast: m => ctx.broadcastScoped(m, project),
   })
   if (relayed) {
     ctx.log.info(
-      `[status] relayed to ${relayed.matched} watching orb(s) address=${relayed.address} ` +
-        `state=${prevState}->${status.state}`,
+      `[status] relayed to ${relayed.matched} watching panel(s) (${relayed.refused} refused) ` +
+        `address=${relayed.address} state=${prevState}->${status.state}`,
     )
   }
 }
