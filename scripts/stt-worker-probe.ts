@@ -29,6 +29,9 @@ function arg(name: string, fallback: string): string {
 }
 
 const brokerHost = arg('host', 'concentrator.frst.dev')
+/** A bare loopback host is plain HTTP -- the broker only has TLS in front of it
+ *  via Caddy. Getting this wrong reads as ConnectionRefused, not as a scheme bug. */
+const brokerUrl = /^(localhost|127\.|\[::1\])/.test(brokerHost) ? `http://${brokerHost}` : `https://${brokerHost}`
 const sttBase = arg('stt', 'wss://stt.frst.dev')
 const model = arg('model', 'nova-3')
 const file = arg('file', 'scripts/fixtures/stt-probe.raw')
@@ -47,7 +50,7 @@ const bytes = new Uint8Array(await Bun.file(file).arrayBuffer())
 // This used to be a call to Deepgram across the Pacific (838-2718ms). If it is
 // not now in the low tens of milliseconds, something has regressed badly.
 const mintStart = Date.now()
-const mintRes = await fetch(`https://${brokerHost}/api/voice/stt-token`, {
+const mintRes = await fetch(`${brokerUrl}/api/voice/stt-token`, {
   method: 'POST',
   headers: secret ? { Authorization: `Bearer ${secret}` } : {},
 })
@@ -66,7 +69,10 @@ const { accessToken, expiresIn } = (await mintRes.json()) as { accessToken: stri
 console.log(`[probe] leg 1 broker mint      ${mintMs}ms (ttl ${expiresIn}s, ${accessToken.length} chars)`)
 
 // ─── Leg 2: the Worker + the model ──────────────────────────────────
-const params = new URLSearchParams({ t: accessToken, model, sample_rate: '16000' })
+// Declare the encoding: this probe streams RAW PCM, and a model told to sniff a
+// container instead returns silence rather than an error. The browser sends a
+// MediaRecorder container and omits this.
+const params = new URLSearchParams({ t: accessToken, model, encoding: 'linear16', sample_rate: '16000' })
 const dial = Date.now()
 const ws = new WebSocket(`${sttBase}/listen?${params}`)
 

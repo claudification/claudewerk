@@ -108,8 +108,15 @@ export function upstreamInputs(spec: ModelSpec, overrides: URLSearchParams): Rec
   const tuned = Object.fromEntries(
     spec.tunable.map(key => [key, overrides.get(key)]).filter(([, value]) => value) as Array<[string, string]>,
   )
-  // The browser captures at whatever rate its hardware gives; PCM models must be
-  // told which, or the decoder reads the samples at the wrong speed.
-  const rate = spec.capture === 'pcm16' ? overrides.get('sample_rate') : null
-  return { ...spec.params, ...tuned, ...(rate ? { sample_rate: rate } : {}) }
+  // RAW PCM HAS NO CONTAINER TO SNIFF, so it must be declared or the model reads
+  // the bytes as a broken container and returns NOTHING -- no error, no
+  // transcript, just silence. flux is PCM always (its own params say so). nova-3
+  // auto-detects a container UNLESS the caller says it is sending PCM, which is
+  // how one Worker serves both a MediaRecorder browser and a PCM one.
+  const pcm = spec.capture === 'pcm16' || overrides.get('encoding') === 'linear16'
+  if (!pcm) return { ...spec.params, ...tuned }
+  // The browser captures at whatever rate its hardware gives; the model must be
+  // told which, or it decodes the samples at the wrong speed.
+  const sampleRate = overrides.get('sample_rate') ?? '16000'
+  return { ...spec.params, ...tuned, encoding: 'linear16', sample_rate: sampleRate }
 }
