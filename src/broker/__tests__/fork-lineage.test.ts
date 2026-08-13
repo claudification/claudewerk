@@ -71,7 +71,12 @@ describe('computeSpawnLineage -- fork parentage', () => {
   })
 
   it('still uses the caller for an ORDINARY spawn', () => {
-    const lineage = computeSpawnLineage(storeOf({ id: CALLER, rootConversationId: 'caller-root' }), CALLER, CHILD, 'boot')
+    const lineage = computeSpawnLineage(
+      storeOf({ id: CALLER, rootConversationId: 'caller-root' }),
+      CALLER,
+      CHILD,
+      'boot',
+    )
 
     expect(lineage?.parentConversationId).toBe(CALLER)
     expect(lineage?.rootConversationId).toBe('caller-root')
@@ -82,7 +87,9 @@ describe('computeSpawnLineage -- fork parentage', () => {
   })
 
   it('carries notifyParentSettleMs through the options bag', () => {
-    const lineage = computeSpawnLineage(storeOf({ id: CALLER }), CALLER, CHILD, 'boot', { notifyParentSettleMs: 20_000 })
+    const lineage = computeSpawnLineage(storeOf({ id: CALLER }), CALLER, CHILD, 'boot', {
+      notifyParentSettleMs: 20_000,
+    })
 
     expect(lineage?.notifyParentSettleMs).toBe(20_000)
   })

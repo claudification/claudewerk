@@ -5,6 +5,7 @@ import { ensureCanonical } from '@/lib/legacy-to-canonical'
 import type { TranscriptContentBlock } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { JsonInspector } from '../json-inspector'
+import { shortToolLabel } from './remote-tool-style'
 import { Collapsible, getToolStyle } from './shared'
 import type { ToolCaseInput } from './tool-case-types'
 import { dispatchToolCase, renderErrorFallback, renderPersistedOutput } from './tool-dispatch'
@@ -88,9 +89,7 @@ export function ToolLine({
   }
 
   const { Icon } = style
-  const displayName = name.startsWith('mcp__')
-    ? name.split('__').slice(2).join('/') || name.split('__')[1] || name
-    : name
+  const displayName = shortToolLabel(name)
 
   return (
     <div
