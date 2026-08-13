@@ -70,7 +70,7 @@ same module can back a sentinel RPC or MCP tool later without moving.
 ### Catching a bad card at write time
 
 The doctor finds rot after the fact, which means somebody has to remember to run
-it. `scripts/hooks/validate-card.ts` runs the same card checks on the PostToolUse
+it. `rclaude --rclaude-validate-card` runs the same card checks on the PostToolUse
 edge and hands the findings straight back to the agent that just wrote the file,
 while it still has the context to fix them. Wire it up per-machine in
 `.claude/settings.json` (never committed):
@@ -78,10 +78,22 @@ while it still has the context to fix them. Wire it up per-machine in
 ```json
 "PostToolUse": [{
   "matcher": "Write|Edit|MultiEdit",
-  "hooks": [{ "type": "command",
-              "command": "bun run \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-card.ts" }]
+  "hooks": [{ "type": "command", "command": "rclaude --rclaude-validate-card" }]
 }]
 ```
+
+**A hook may only assume the AGENT HOST is installed** -- no source checkout, no
+repo, no `bun run path/to/script`. That is why the validator is a flag on the
+`rclaude` binary rather than a script: a claudewerk machine has the agent host
+and (optionally) the sentinel, and nothing else. `scripts/hooks/validate-card.ts`
+is the same module behind a second entry point, for THIS repo only, where the
+source is newer than whatever frozen bundle is installed.
+
+Wire it at the USER level (`~/.claude/settings.json`) to cover every project on
+the machine, or per-project to scope it. The validator itself is project-agnostic
+either way -- it derives the board root from the written file's path, so a
+session in one project that writes a card into another project's board still
+gets checked.
 
 Exit 2 is what feeds stderr back to the model. Nothing is blocked -- the write
 already happened, this is feedback. It reports a bad/missing `status:`, a card
@@ -91,8 +103,9 @@ agent mid-task does not need to hear about a body it is about to write, and a
 hook that cries wolf gets switched off within a day. It **fails open** on any
 unexpected condition -- a validator that breaks a session is worse than none.
 
-Logic in `src/shared/project-card-hook.ts` (pure, tested without a hook or a
-board); the script is only the shell that talks to the process.
+Logic in `src/shared/project-card-hook.ts` (pure, filesystem injected) and
+`project-card-hook-run.ts` (the run: payload in, warnings + exit code out). Both
+entry points are three lines each, so they cannot drift.
 
 ### Upgrading an old board
 

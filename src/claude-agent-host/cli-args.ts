@@ -175,6 +175,12 @@ OPTIONS:
                          (validated against the broker registry). Sub-agent
                          (agent-*.jsonl) transcripts and sessions already live on
                          the broker are skipped by default.
+  --rclaude-validate-card
+                         PostToolUse hook: read a hook payload on stdin and, if
+                         the tool call wrote a project-board card, warn about a
+                         bad/missing status:, a card written outside cards/, or
+                         links to card ids the board does not have. Exit 2 hands
+                         the warnings back to the agent. Fails open, never blocks.
   --rclaude-help         Show this help message
 
 ENVIRONMENT:
@@ -327,6 +333,15 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
       return process.exit(0)
     },
     '--rclaude-import-history': importHistoryAction,
+    // PostToolUse hook entry point. Lives on the agent host because that is the
+    // ONE thing a claudewerk machine is guaranteed to have -- a hook may never
+    // assume a source checkout exists.
+    '--rclaude-validate-card': async () => {
+      const { readHookStdin, runCardWriteHook } = await import('../shared/project-card-hook-run')
+      const { exitCode, stderr } = runCardWriteHook(readHookStdin())
+      for (const line of stderr) console.error(line)
+      return process.exit(exitCode)
+    },
     '--broker': i => {
       brokerUrl = args[i + 1] || DEFAULT_BROKER_URL
       return i + 1
