@@ -90,9 +90,10 @@ import { createTrafficTracker } from './conversation-store/traffic'
 import type { ControlPanelMessage } from './conversation-store/types'
 import { createViewerRegistry } from './conversation-store/viewer-registry'
 import { emitDeskEvent } from './desk/event-registry'
+import { forgetWatcher } from './desk/orb-status-watch'
 import { NotificationDebouncer } from './notification-debounce'
 import type { UserGrant } from './permissions'
-import { resolvePermissionFlags, resolvePermissions } from './permissions'
+import { resolvePermissionFlags, resolvePermissions, type SubscriberAuth, subscriberMayReceive } from './permissions'
 import { cancelRecap, generateRecapOnEnd, scheduleRecap } from './recap/away-summary'
 import type { SentinelRegistry } from './sentinel-registry'
 import { listShares } from './shares'
@@ -866,16 +867,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const msgConversationId = typeof msgAny.conversationId === 'string' ? (msgAny.conversationId as string) : undefined
     for (const ws of controlPanelSubscribers) {
       try {
-        const wsData = ws.data as { grants?: UserGrant[]; shareConversationId?: string }
-        const grants = wsData.grants
-        if (grants) {
-          const { permissions } = permMemo ? permMemo.resolve(ws, grants, project) : resolvePermissions(grants, project)
-          if (!permissions.has('chat:read')) continue
-        }
-        // Per-conversation share scope: never leak sibling conversations.
-        if (wsData.shareConversationId && msgConversationId && msgConversationId !== wsData.shareConversationId) {
-          continue
-        }
+        const wsData = ws.data as SubscriberAuth
+        // The memo (when present) only caches the resolve; the RULE itself lives
+        // in subscriberMayReceive so the orb's status relay applies the same one.
+        const resolve = permMemo ? (g: UserGrant[], p: string) => permMemo.resolve(ws, g, p) : undefined
+        if (!subscriberMayReceive(wsData, project, msgConversationId, resolve)) continue
         ws.send(json)
         recordTraffic('out', json.length)
       } catch (err) {
@@ -2512,6 +2508,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     controlPanelSubscribers.delete(ws)
     // Unregister from channel registry (removes v2, unsubscribes all channels, deletes registry entry)
     channelRegistry.unregisterSubscriber(ws)
+    // Orb status watches are SOCKET-scoped: this close is their end of life. The
+    // panel re-asserts what it still wants on reconnect (voice_watch_assert).
+    forgetWatcher(ws)
 
     // If a share viewer disconnected, notify admins about updated viewer counts
     if (wasShareViewer) {

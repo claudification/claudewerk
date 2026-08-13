@@ -95,6 +95,9 @@ const WATCHING = [
   'across the fleet. Set one whenever he says to keep an eye on something, tell him',
   'when one finishes, or watch a project. Confirm what you are now watching, once.',
   'Nothing matched? Say so -- he probably misremembered the name.',
+  'A watch lasts while you are up and survives a reconnect, but it ends when he closes',
+  'the panel. NEVER promise to watch something overnight or while he is away -- if he',
+  'asks for that, say plainly that you only watch while you are summoned.',
 ].join('\n')
 
 const REACTING = [

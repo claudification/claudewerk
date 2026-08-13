@@ -24,6 +24,10 @@ export interface ToolOrigin {
   surface: 'voice'
   /** Which orb instance asked. null = every orb the user has open. */
   orbId: string | null
+  /** The CONNECTION the call arrived on, for anything whose lifetime is the
+   *  socket rather than the browser -- status subscriptions are the case.
+   *  Opaque here: the desk only ever uses it as an identity + a sink. */
+  subscriber?: { send(data: string): void; data?: unknown }
 }
 
 /** What the tool's execute receives besides its args. Carries cancellation +

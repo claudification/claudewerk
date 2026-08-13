@@ -72,6 +72,31 @@ syntax.
 - Spoken spacing folds: `"Remote Claude"` → `remote-claude:*`.
 - Matching is case-insensitive on both sides.
 
+## Subscription lifetime (the orb's status watches)
+
+Patterns are held **per WebSocket**, and the client owns the list.
+
+| | |
+|---|---|
+| **Broker holds** | `socket → patterns`, cleared in `removeSubscriber`. Derived state. |
+| **Client holds** | the list, in `localStorage` (`rclaude.orbWatches`). The truth. |
+| **Reconnect** | broker forgets; client replays via `voice_watch_assert` (a **replace**, so it converges). |
+| **Orb dismissed** | released. Nothing else consumes a watched status. |
+| **Tab closed** | gone. |
+
+Keying on the socket rather than a stable orb id is deliberate. A socket close is
+an *exact* end-of-life signal; a localStorage id gives none, so an id-keyed
+registry needs a TTL and an LRU invented purely to bound a map that never ends.
+It also means the authed identity is re-checked on every reconnect — a watch is
+not an authorization, and `subscriberMayReceive` is applied again at delivery.
+
+**There are deliberately no durable subscriptions.** A watch that must survive
+with nothing connected cannot be delivered as a spoken line; it needs a push,
+which is a different sink with its own debounce and targeting — and rclaude
+already has that path (`set_status`'s `notify`, and the derived-gated
+`needs_you` push). Adding durable watches here would build a second, competing
+alerting system.
+
 ## Where it is enforced
 
 | File | Owns |
@@ -80,6 +105,8 @@ syntax.
 | `src/broker/conversation-address.ts` | Resolving a live conversation to its address (collision rule) |
 | `src/broker/desk/desk-addresses.ts` | Addressing the whole fleet in one pass, for desk rows + match previews |
 | `src/broker/handlers/channel-id.ts` | Resolving an inbound `to` (aliases, ambiguity, cross-project fallback) |
+| `src/broker/desk/orb-status-watch.ts` | Socket-scoped subscriptions (no TTL — the close is the lifetime) |
+| `web/src/lib/voice-orb/orb-watches.ts` | The client-owned list + the reconnect replay |
 
 `src/broker/address-book.ts` re-exports `slugify` from the shared module — it is
 a re-export, not a second definition. Adding a third is a routing bug: an

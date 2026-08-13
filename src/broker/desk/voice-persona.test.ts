@@ -57,6 +57,14 @@ describe('the contract drives the instructions', () => {
     expect(withIt).toContain('`read_transcript`')
   })
 
+  it('is honest that a watch is EPHEMERAL, and forbids over-promising', () => {
+    const withIt = flat(buildVoiceInstructions(ALL))
+    expect(withIt).toContain('survives a reconnect')
+    expect(withIt).toContain('ends when he closes')
+    // The failure this exists to kill: cheerfully agreeing to watch overnight.
+    expect(withIt).toContain('NEVER promise to watch something overnight')
+  })
+
   it('licenses SILENCE, so a watch does not become a narrator', () => {
     const withIt = flat(buildVoiceInstructions(ALL))
     expect(withIt).toContain('STAYING QUIET IS A REAL ANSWER')

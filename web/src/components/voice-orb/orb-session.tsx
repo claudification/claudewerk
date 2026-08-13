@@ -23,6 +23,7 @@ import { useAudioLevel } from './use-audio-level'
 import { useOrbChannel } from './use-orb-channel'
 import { useOrbDialog } from './use-orb-dialog'
 import { useOrbNarration } from './use-orb-narration'
+import { useOrbWatches } from './use-orb-watches'
 import { VoiceOrb } from './voice-orb'
 
 /** What the session tells the summon latch about itself. */
@@ -71,6 +72,8 @@ export function OrbSession({
   useOrbNarration(orb.live, orb.state, orb.announce)
   useOrbChannel(orb.live, orb.state, orb.announce)
   useOrbDialog(orb.live, orb.state, orb.announce)
+  // Status subscriptions die with the socket, so restate them on every connect.
+  useOrbWatches(orb.live)
 
   // The latch's rules read the SESSION's state -- hand it up whenever it moves.
   useEffect(() => {
