@@ -1,164 +1,168 @@
 #!/usr/bin/env bun
 /**
- * stt-lag-probe - measure real-time lag of a streaming STT vendor, browser out of
- * the loop. See scripts/lib/stt-lag-meter.ts for the method and what LAG means.
+ * stt-lag-probe - measure how far behind REAL TIME a streaming STT vendor runs,
+ * with the browser out of the loop entirely. See scripts/lib/stt-lag-meter.ts for
+ * the method and what LAG means; scripts/lib/stt-providers.ts for the vendors.
  *
- *   bun scripts/stt-lag-probe.ts --provider deepgram --file /tmp/dgtest.raw
- *   bun scripts/stt-lag-probe.ts --provider xai      --file /tmp/dgtest.raw
+ *   bun scripts/stt-lag-probe.ts --provider cf-nova3 --file speech.raw
+ *   bun scripts/stt-lag-probe.ts --all --file speech.raw     # the comparison table
+ *   bun run probe:stt                                        # --all, default file
  *
- * Both providers are fed the IDENTICAL 16kHz mono PCM file at identical pace, so
- * the numbers are directly comparable. Deepgram can also be handed a container
- * (--container webm|mp4 --duration <sec>) to prove the browser's encoding is not
- * the variable; xAI accepts raw PCM only.
+ * Every provider is fed the IDENTICAL file at the IDENTICAL real-time pace, so
+ * the numbers compare directly and the ONLY variable is the vendor + the wire.
+ *
+ * Two headline numbers per run:
+ *   OPEN -- what a push-to-talk press pays before any word can come back.
+ *   LAG  -- flat means the decoder keeps up; GROWING means it is below real time,
+ *           which is the "10 seconds behind after a couple of words" symptom.
+ *
+ * Generate a probe file with:
+ *   say -v Daniel -o /tmp/s.aiff "..." && ffmpeg -i /tmp/s.aiff -ar 16000 -ac 1 -f s16le speech.raw
  */
 
-import { formatSample, type LagSample, paceRealtime, verdict } from './lib/stt-lag-meter'
+import { formatSample, type LagSample, paceRealtime } from './lib/stt-lag-meter'
+import { PROVIDERS, type Provider } from './lib/stt-providers'
 
 const args = process.argv.slice(2)
 function arg(name: string, fallback?: string): string {
   const i = args.indexOf(`--${name}`)
-  if (i >= 0 && args[i + 1]) return args[i + 1]!
+  if (i >= 0 && args[i + 1]) return args[i + 1] as string
   if (fallback !== undefined) return fallback
   throw new Error(`missing --${name}`)
 }
+const flag = (name: string) => args.includes(`--${name}`)
 
-const provider = arg('provider', 'deepgram')
-const file = arg('file')
-const container = arg('container', '') // '' = raw linear16 PCM
+const DEFAULT_FIXTURE = 'scripts/fixtures/stt-probe.raw'
+const file = arg('file', DEFAULT_FIXTURE)
 const chunkMs = Number(arg('chunk-ms', '100'))
-const durationSec = Number(arg('duration', '0'))
+const quiet = flag('quiet') || flag('all')
+
+// The fixture is generated, not committed -- 858KB of binary that rebuilds in
+// two seconds. Only auto-generate the default one; a --file the caller named is
+// theirs to provide, and silently manufacturing a different file under that name
+// would be worse than failing.
+if (file === DEFAULT_FIXTURE && !(await Bun.file(file).exists())) {
+  console.log('[probe] fixture missing, generating...')
+  const gen = Bun.spawnSync(['bash', 'scripts/fixtures/make-stt-probe.sh'], { stdout: 'inherit', stderr: 'inherit' })
+  if (gen.exitCode !== 0) throw new Error('could not generate the probe fixture')
+}
 
 const bytes = new Uint8Array(await Bun.file(file).arrayBuffer())
-const bytesPerSec = container ? bytes.length / (durationSec || 1) : 32000
-if (container && !durationSec) throw new Error('pass --duration <seconds> with --container')
+/** 16kHz mono linear16 = 32000 B/s. Every provider is fed exactly this. */
+const BYTES_PER_SEC = 32000
 
-const samples: LagSample[] = []
-let t0 = 0
-const now = () => Date.now() - t0
-
-/** Each provider opens its socket and reports transcript events through `onEvent`.
- *  It calls `onReady` at the point audio may start flowing -- socket open for
- *  Deepgram, the transcript.created event for xAI. */
-interface ProviderSetup {
-  ws: WebSocket
+interface Outcome {
+  name: string
+  openMs: number
+  first: number
+  last: number
+  max: number
+  growing: boolean
+  samples: number
 }
 
-/** Per-message-type handlers, keyed on the vendor's `type` field. */
-type MessageHandlers = Record<string, (msg: Record<string, unknown> & { type: string }) => void>
-
-/** Route every socket message through a handler map -- unknown types are ignored,
- *  which keeps a vendor adding an event type from breaking the probe. */
-function routeMessages(ws: WebSocket, handlers: MessageHandlers) {
-  ws.onmessage = ev => {
-    const msg = JSON.parse(String(ev.data))
-    handlers[msg.type]?.(msg)
+function summarise(name: string, openMs: number, samples: LagSample[]): Outcome {
+  const lags = samples.map(s => s.wall - s.audioEnd)
+  const q = Math.ceil(lags.length / 4) || 1
+  const avg = (a: number[]) => (a.length ? Math.round(a.reduce((sum, x) => sum + x, 0) / a.length) : 0)
+  const first = avg(lags.slice(0, q))
+  const last = avg(lags.slice(-q))
+  return {
+    name,
+    openMs,
+    first,
+    last,
+    max: lags.length ? Math.max(...lags) : 0,
+    growing: last - first > 1500,
+    samples: samples.length,
   }
 }
 
-/** Both vendors report the decoded audio position as start+duration in seconds. */
-function toSample(msg: Record<string, unknown>, text: string, isFinal: boolean): LagSample {
-  const start = (msg.start as number) ?? 0
-  const duration = (msg.duration as number) ?? 0
-  return { wall: now(), audioEnd: Math.round((start + duration) * 1000), isFinal, text }
+/** One provider, start to finish. Never rejects -- a dead vendor is a row, not a crash. */
+function runProvider(name: string, provider: Provider): Promise<Outcome> {
+  return new Promise<Outcome>(resolve => {
+    const samples: LagSample[] = []
+    const dial = Date.now()
+    let audioT0 = 0
+    let openMs = 0
+    let streaming = false
+    let settled = false
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      resolve(summarise(name, openMs, samples))
+    }
+
+    const ctx = {
+      now: () => (audioT0 ? Date.now() - audioT0 : 0),
+      onSample: (s: LagSample) => {
+        samples.push(s)
+        if (!quiet) console.log(formatSample(s))
+      },
+      onReady: () => void startStreaming(),
+      log: (line: string) => {
+        if (!quiet) console.log(line)
+      },
+    }
+
+    let ws: WebSocket
+    try {
+      ws = provider.open(ctx)
+    } catch (err) {
+      console.error(`[${name}] could not open: ${err instanceof Error ? err.message : err}`)
+      return finish()
+    }
+
+    async function startStreaming() {
+      if (streaming) return
+      streaming = true
+      audioT0 = Date.now()
+      await paceRealtime({ bytes, bytesPerSec: BYTES_PER_SEC, chunkMs, send: c => ws.send(c) })
+      provider.finalize(ws)
+    }
+
+    ws.onopen = () => {
+      openMs = Date.now() - dial
+      console.log(`[${name}] ${provider.label}`)
+      console.log(`[${name}] socket OPEN in ${openMs}ms`)
+      if (provider.readyOnOpen) void startStreaming()
+    }
+    ws.onerror = () => console.error(`[${name}] socket error`)
+    ws.onclose = e => {
+      if (!quiet) console.log(`[${name}] closed code=${e.code} ${e.reason}`)
+      finish()
+    }
+    // Backstop: some vendors never close on their own.
+    setTimeout(finish, (bytes.length / BYTES_PER_SEC) * 1000 + 25_000)
+  })
 }
 
-function openDeepgram(onEvent: (s: LagSample) => void, onReady: () => void): ProviderSetup {
-  const key = process.env.DEEPGRAM_API_KEY
-  if (!key) throw new Error('DEEPGRAM_API_KEY not set')
-  const params = new URLSearchParams({
-    model: arg('model', 'nova-3'),
-    smart_format: 'true',
-    interim_results: 'true',
-    utterance_end_ms: '1000',
-    endpointing: '300',
-    punctuate: 'true',
-    language: 'en',
-  })
-  if (!container) {
-    params.set('encoding', 'linear16')
-    params.set('sample_rate', '16000')
-    params.set('channels', '1')
+const names = flag('all') ? Object.keys(PROVIDERS) : [arg('provider', 'cf-nova3')]
+const outcomes: Outcome[] = []
+
+console.log(`[probe] file=${file} bytes=${bytes.length} (${(bytes.length / BYTES_PER_SEC).toFixed(1)}s of audio)\n`)
+
+// Sequential on purpose: concurrent runs would share the uplink and contaminate
+// exactly the measurement this exists to make.
+for (const name of names) {
+  const provider = PROVIDERS[name]
+  if (!provider) throw new Error(`unknown provider ${name} (have: ${Object.keys(PROVIDERS).join(', ')})`)
+  const outcome = await runProvider(name, provider)
+  outcomes.push(outcome)
+  console.log(
+    `[${name}] OPEN=${outcome.openMs}ms  LAG first=${outcome.first}ms last=${outcome.last}ms ` +
+      `max=${outcome.max}ms  ${outcome.growing ? 'GROWING -- below real time' : 'FLAT'}\n`,
+  )
+}
+
+if (outcomes.length > 1) {
+  console.log('provider      OPEN     LAG first    LAG last     LAG max   verdict')
+  console.log('-----------------------------------------------------------------------')
+  for (const o of outcomes) {
+    const cell = (n: number) => `${n}ms`.padStart(9)
+    const row = `${o.name.padEnd(12)}${cell(o.openMs)}${cell(o.first)}${cell(o.last)}${cell(o.max)}`
+    console.log(`${row}   ${o.samples === 0 ? 'NO SAMPLES' : o.growing ? 'GROWING' : 'FLAT'}`)
   }
-  const url = `wss://api.deepgram.com/v1/listen?${params}`
-  console.log(`[probe] ${url}`)
-  // Deepgram accepts the raw key as a WS SUBPROTOCOL, so no header is needed.
-  const ws = new WebSocket(url, ['token', key])
-  routeMessages(ws, {
-    Results: msg => {
-      const channel = msg.channel as { alternatives?: Array<{ transcript?: string }> } | undefined
-      onEvent(toSample(msg, channel?.alternatives?.[0]?.transcript ?? '', !!msg.is_final))
-    },
-    Metadata: () => console.log(`t=${now()}ms  --- Metadata (stream closed)`),
-  })
-  ws.onopen = onReady
-  return { ws }
 }
-
-function openXai(onEvent: (s: LagSample) => void, onReady: () => void): ProviderSetup {
-  const key = process.env.XAI_API_KEY
-  if (!key) throw new Error('XAI_API_KEY not set')
-  if (container) throw new Error('xAI STT accepts raw PCM only -- drop --container')
-  const params = new URLSearchParams({
-    encoding: 'pcm',
-    sample_rate: '16000',
-    channels: '1',
-    interim_results: 'true',
-    language: 'en',
-  })
-  const url = `wss://api.x.ai/v1/stt?${params}`
-  console.log(`[probe] ${url}`)
-  // NOTE: header auth -- a BROWSER cannot set this on a WebSocket. Fine here in
-  // Bun, but it is the reason a browser-direct xAI path needs a proxy.
-  const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${key}` } } as never)
-  routeMessages(ws, {
-    'transcript.created': () => {
-      console.log(`t=${now()}ms  --- transcript.created (server ready)`)
-      onReady()
-    },
-    'transcript.partial': msg => onEvent(toSample(msg, (msg.text as string) ?? '', !!msg.is_final)),
-    'transcript.done': () => console.log(`t=${now()}ms  --- transcript.done`),
-    error: msg => console.error('[probe] xai error:', msg),
-  })
-  return { ws }
-}
-
-const PROVIDERS: Record<string, typeof openDeepgram> = { deepgram: openDeepgram, xai: openXai }
-const open = PROVIDERS[provider]
-if (!open) throw new Error(`unknown provider ${provider} (have: ${Object.keys(PROVIDERS).join(', ')})`)
-
-console.log(`[probe] provider=${provider} file=${file} bytes=${bytes.length} rate=${Math.round(bytesPerSec)}B/s`)
-
-let started = false
-async function startStreaming(ws: WebSocket) {
-  if (started) return
-  started = true
-  t0 = Date.now()
-  const took = await paceRealtime({ bytes, bytesPerSec, chunkMs, send: c => ws.send(c) })
-  console.log(`[probe] all audio sent at t=${took}ms`)
-  ws.send(JSON.stringify(provider === 'xai' ? { type: 'audio.done' } : { type: 'Finalize' }))
-  if (provider !== 'xai') ws.send(JSON.stringify({ type: 'CloseStream' }))
-}
-
-const setup = open(
-  s => {
-    samples.push(s)
-    console.log(formatSample(s))
-  },
-  () => startStreaming(setup.ws),
-)
-
-setup.ws.onerror = e => console.error('[probe] socket error', e)
-setup.ws.onclose = e => {
-  console.log(`[probe] closed code=${e.code} ${e.reason}`)
-  console.log(`[probe] ${verdict(samples)}`)
-  process.exit(0)
-}
-
-// Backstop: some providers never emit a terminal event.
-setTimeout(
-  () => {
-    console.log(`[probe] ${verdict(samples)}`)
-    process.exit(0)
-  },
-  (durationSec || bytes.length / 32000) * 1000 + 20000,
-)
+process.exit(0)
