@@ -15,7 +15,6 @@ import { useWakeLock } from '@/hooks/use-wake-lock'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
 import { startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
 import type { DeepgramDirectSession, DirectFailure } from '@/hooks/voice-deepgram-protocol'
-import { getDeepgramToken } from '@/hooks/voice-deepgram-token'
 import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,
@@ -24,6 +23,7 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
+import { getSttToken } from '@/hooks/voice-stt-token'
 import { describeMicError } from '@/lib/mic-error'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
@@ -585,6 +585,12 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     directSessionRef.current = startDeepgramDirect({
       stream,
       token,
+      // nova-3, NOT flux, and the reason is the capture layer: flux on Workers AI
+      // is RAW PCM ONLY -- fed a MediaRecorder container it accepts every byte and
+      // returns NO transcript, silently. MediaRecorder is what we capture with
+      // today, so nova-3 (which auto-detects containers) is the only correct
+      // pairing. flux measured better (LAG 91->74ms vs 138->308ms) and is cheaper,
+      // and switching to it means shipping the AudioWorklet PCM engine first.
       model: 'nova-3',
       callbacks: {
         onOpen: flushed => {
@@ -597,15 +603,22 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
         },
         onTranscript: u => {
           if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
-          accumulatedTextRef.current = u.accumulated
+          // `accumulated` is what is FINISHED and `transcript` is the segment in
+          // flight -- so the live view is the two concatenated, and nothing here
+          // ever appends to a running string. That is what lets a cumulative
+          // (flux) and a delta (nova-3) model share this code without one of
+          // them duplicating every word.
+          const live = `${u.accumulated}${u.transcript}`
+          accumulatedTextRef.current = live
           if (u.isFinal) {
-            setFinalText(u.accumulated)
+            setFinalText(live)
             setInterim('')
           } else {
+            setFinalText(u.accumulated)
             setInterim(u.transcript)
           }
         },
-        onError: (msg, kind) => failVoice(DIRECT_FAILURE_TEXT[kind], `deepgram direct (${kind}): ${msg}`),
+        onError: (msg, kind) => failVoice(DIRECT_FAILURE_TEXT[kind], `stt worker (${kind}): ${msg}`),
       },
     })
     // Honest: the mic IS recording from this point, buffered until the socket is
@@ -663,11 +676,13 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     if (!attachWsListener(seq)) return
 
     // Mint IN PARALLEL with the mic acquire. It is usually already cached (see
-    // prewarmDeepgramToken), and even cold it now overlaps getUserMedia instead
-    // of running after it. The rejection is handled inside startDeepgramDirect;
-    // the throwaway catch here only stops an unhandled rejection if the mic
-    // fails first and we never hand the promise over.
-    const tokenPromise = directModeRef.current ? getDeepgramToken() : null
+    // prewarmSttToken), and even cold it now overlaps getUserMedia instead of
+    // running after it -- and since the broker signs it locally rather than
+    // asking a vendor across the Pacific, cold is now milliseconds, not seconds.
+    // The rejection is handled inside the session; the throwaway catch here only
+    // stops an unhandled rejection if the mic fails first and we never hand the
+    // promise over.
+    const tokenPromise = directModeRef.current ? getSttToken() : null
     tokenPromise?.catch(() => {})
 
     try {

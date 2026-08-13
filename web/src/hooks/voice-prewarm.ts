@@ -3,26 +3,18 @@
  * for none of it.
  *
  * Two independent costs sit in front of the first transcribed word: opening the
- * mic device (getUserMedia, ~2-3s cold on macOS) and minting the Deepgram token
- * (browser -> broker -> Deepgram grant). They are warmed separately because they
- * are not alike: the mic is a physical device that blips Bluetooth and must be
- * released on idle, while a token is a string with a TTL and costs nothing to
- * hold. Only the token warms unconditionally.
+ * mic device (getUserMedia, ~2-3s cold on macOS) and minting the STT token. They
+ * are warmed separately because they are not alike: the mic is a physical device
+ * that blips Bluetooth and must be released on idle, while a token is a string
+ * with a TTL and costs nothing to hold. Only the token warms unconditionally.
  */
 
-import { useConversationsStore } from '@/hooks/use-conversations'
-import { prewarmDeepgramToken } from '@/hooks/voice-deepgram-token'
 import { prewarmMicStream } from '@/hooks/voice-mic-stream'
+import { prewarmSttToken } from '@/hooks/voice-stt-token'
 
-function directPathEnabled(): boolean {
-  // Optional-chained on purpose: this runs from mount effects, and a prewarm is
-  // a pure optimisation -- it must never be the thing that throws in render.
-  return useConversationsStore.getState().controlPanelPrefs?.voiceDirectToDeepgram === true
-}
-
-/** Pre-mint the Deepgram token when the direct path is on. No device access. */
+/** Pre-mint the STT token. No device access, so it is always safe to call. */
 export function prewarmVoiceTransport(): void {
-  if (directPathEnabled()) prewarmDeepgramToken()
+  prewarmSttToken()
 }
 
 /** Warm the mic device AND the transport. Call where a mic warm is already wanted. */

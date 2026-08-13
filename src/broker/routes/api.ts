@@ -8,9 +8,9 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import { matchProjectUri, tryParseProjectUri } from '../../shared/project-uri'
 import type { FetchArtifact, FetchArtifactResult } from '../../shared/protocol'
+import { STT_TOKEN_TTL_MS, signSttToken } from '../../shared/stt-token'
 import { getAuthenticatedUser } from '../auth-routes'
 import type { ConversationStore } from '../conversation-store'
-import { mintDeepgramToken } from '../deepgram-mint'
 import { buildDispatchRuntime } from '../desk/runtime'
 import { asVoiceName, clampVoiceSpeed, mintVoiceToken } from '../desk/voice-mint'
 import { asVoiceTone } from '../desk/voice-tones'
@@ -30,6 +30,7 @@ import {
 import { addSubscription, getSubscriptionCount, isPushConfigured, removeSubscription, sendPushToAll } from '../push'
 import { chat } from '../recap/shared/openrouter-client'
 import type { StoreDriver } from '../store/types'
+import { getSttSigningSecret } from '../stt-secret'
 import { appendSharedFile, dismissSharedFile, mediaTypeToExt, readSharedFiles, storeBlobStreaming } from './blob-store'
 import { fetchLinkPreview, isSafePreviewUrl } from './link-preview'
 import type { RouteHelpers } from './shared'
@@ -220,24 +221,20 @@ export function createApiRouter(
     }
   })
 
-  // ─── Deepgram token mint (browser-DIRECT dictation) ─────────────────
-  // A short-lived Deepgram access token so the browser opens its live STT
-  // WebSocket DIRECTLY to Deepgram -- broker out of the audio path. The real
-  // DEEPGRAM_API_KEY never leaves the server (see deepgram-mint.ts).
-  app.post('/api/voice/deepgram-token', async c => {
+  // ─── STT token mint (browser -> stt-proxy Worker dictation) ─────────
+  // A short-lived HMAC the browser presents to the Cloudflare Worker, which
+  // verifies it and opens the Workers AI speech socket on its behalf.
+  //
+  // THIS REPLACED A NETWORK CALL. The old mint asked Deepgram's /v1/auth/grant
+  // for a token and measured 838-2718ms in production, because that request
+  // crosses the Pacific -- and it sat directly in front of the user's key press.
+  // Signing locally is an HMAC over ~60 bytes: no egress, no vendor, no wait.
+  app.post('/api/voice/stt-token', async c => {
     if (!httpHasPermission(c.req.raw, 'voice', '*'))
       return c.json({ error: 'Forbidden: voice permission required' }, 403)
-    const apiKey = process.env.DEEPGRAM_API_KEY
-    if (!apiKey) return c.json({ error: 'voice not configured', code: 'voice_unconfigured' }, 503)
-    const t0 = Date.now()
-    try {
-      const token = await mintDeepgramToken({ apiKey })
-      console.log(`[voice] deepgram token minted in ${Date.now() - t0}ms (ttl ${token.expiresIn}s)`)
-      return c.json(token)
-    } catch (e) {
-      console.error(`[voice] deepgram token mint FAILED after ${Date.now() - t0}ms: ${(e as Error).message}`)
-      return c.json({ error: `deepgram token mint failed: ${(e as Error).message}` }, 502)
-    }
+    const user = getAuthenticatedUser(c.req.raw) ?? 'unknown'
+    const token = await signSttToken({ user, exp: Date.now() + STT_TOKEN_TTL_MS }, getSttSigningSecret(store.kv))
+    return c.json({ accessToken: token, expiresIn: Math.floor(STT_TOKEN_TTL_MS / 1000) })
   })
 
   // ─── Transcript context window (sliding) ───────────────────────────

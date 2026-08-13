@@ -35,10 +35,14 @@ function b64url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function fromB64url(text: string): Uint8Array {
+/** Backed by a real ArrayBuffer, not ArrayBufferLike: WebCrypto's BufferSource
+ *  will not accept the SharedArrayBuffer-compatible type `Uint8Array.from` infers. */
+function fromB64url(text: string): Uint8Array<ArrayBuffer> {
   const padded = text.replace(/-/g, '+').replace(/_/g, '/')
   const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))
-  return Uint8Array.from(binary, c => c.charCodeAt(0))
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length))
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {

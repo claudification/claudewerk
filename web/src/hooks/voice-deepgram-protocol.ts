@@ -1,21 +1,38 @@
 /**
- * voice-deepgram-protocol - the wire contract for the browser's DIRECT connection
- * to Deepgram live STT: the socket URL, the shape of the messages we read, and the
- * callback surface a session exposes. Split from voice-deepgram-direct so the
- * session module is only the state machine that drives them.
+ * voice-stt-protocol - the wire contract between the browser and the stt-proxy
+ * Worker: the socket URL, the frames it sends back, and the callback surface a
+ * session exposes.
+ *
+ * WHY A WORKER AND NOT THE VENDOR DIRECTLY. Dictation used to open a socket
+ * straight to api.deepgram.com, which is a single US datacenter -- 270ms RTT
+ * from Thailand, and measurably 8.5-11.8 SECONDS behind real time on two of
+ * three runs. The same models on Cloudflare Workers AI held flat. Workers AI
+ * authenticates with an Authorization HEADER, which a browser cannot set on a
+ * WebSocket, so our own Worker terminates the browser socket at the nearest
+ * Cloudflare colo and speaks to the model on our behalf.
+ *
+ * THE MODEL IS INVISIBLE FROM HERE. The Worker normalises flux's turn-based
+ * events and nova-3's Deepgram-v1 segments into the SAME frame, so this file
+ * never learns which one answered. See workers/stt-proxy/src/normalize.ts.
  */
 
-const DG_LIVE_URL = 'wss://api.deepgram.com/v1/listen'
+/** Same-origin by default so a deploy cannot leave this pointing at a stale host. */
+const STT_HOST = import.meta.env.VITE_STT_HOST ?? 'stt.frst.dev'
 
 export interface TranscriptUpdate {
-  /** This message's transcript text (interim or final). */
+  /**
+   * The FULL text of the segment/turn in flight -- never a fragment to append.
+   * `committed` is everything finished before it, so a renderer shows
+   * `committed + transcript` and appends nothing itself. That one rule is what
+   * makes flux's cumulative transcript and nova-3's deltas interchangeable.
+   */
   transcript: string
-  /** Deepgram marks this segment final. */
+  /** This segment/turn is complete. NOT a signal to submit. */
   isFinal: boolean
-  /** Deepgram's end-of-utterance marker (endpoint or utterance_end). */
-  speechFinal: boolean
-  /** Full committed transcript so far (all is_final segments joined). */
+  /** Everything already finalised. Render `accumulated + transcript`. */
   accumulated: string
+  /** flux only: live confidence the speaker has finished. For tuning/UI. */
+  endOfTurnConfidence?: number
 }
 
 /** Which leg failed, so the caller can pick honest user-facing wording. */
@@ -35,7 +52,7 @@ export interface DeepgramDirectCallbacks {
 }
 
 export interface DeepgramDirectSession {
-  /** Flush Deepgram, resolve with the FULL final transcript, then close. */
+  /** Flush upstream, resolve with the FULL final transcript, then close. */
   stop(): Promise<string>
   /** Hard teardown with no final (cancel). */
   abort(): void
@@ -45,38 +62,38 @@ export interface DeepgramDirectOptions {
   stream: MediaStream
   /** Token, or a promise for one. Recording begins before it resolves. */
   token: string | Promise<string>
+  /** 'flux' (default) or 'nova-3'. The Worker owns what each one means. */
   model: string
+  /** Capture sample rate, so a PCM model decodes at the right speed. */
+  sampleRate?: number
+  /** End-of-turn tuning, forwarded verbatim; the Worker allowlists them. */
+  tuning?: Record<string, string>
   callbacks: DeepgramDirectCallbacks
 }
 
-/** A Deepgram "Results" message (only the fields we read). */
-export interface DeepgramResults {
-  type: string
-  is_final?: boolean
-  speech_final?: boolean
-  /** Audio-timeline position of this result, in seconds -- the lag meter's ruler. */
-  start?: number
-  duration?: number
-  channel?: { alternatives?: Array<{ transcript?: string }> }
+/** A frame from the Worker. One shape for every model. */
+export interface SttFrame {
+  type: 'transcript' | 'done' | 'error'
+  text?: string
+  committed?: string
+  final?: boolean
+  audioEndMs?: number
+  endOfTurnConfidence?: number
+  error?: string
+  reason?: string
 }
 
 /**
- * Endpointing + finalization are DEEPGRAM's job via utterance_end_ms +
- * endpointing -- NOT ours. That is the entire point of going direct: the broker
- * relay and its custom VAD / force-Finalize (which kept falling behind real time
- * and shredding transcripts) are out of the loop.
+ * Endpointing and turn detection are the MODEL's job, configured server-side.
+ * That is the entire point of this path: the broker relay and its hand-rolled
+ * VAD / force-Finalize (which kept falling behind real time and shredding
+ * transcripts) are out of the loop.
  */
-export function liveUrl(model: string): string {
-  const params = new URLSearchParams({
-    model,
-    smart_format: 'true',
-    interim_results: 'true',
-    // Word-gap end-of-speech -- fires regardless of the noise floor, which is
-    // exactly what the broker-relay path could not do on a raw mic.
-    utterance_end_ms: '1000',
-    endpointing: '300',
-    punctuate: 'true',
-    language: 'en',
-  })
-  return `${DG_LIVE_URL}?${params}`
+export function liveUrl(model: string, token: string, opts: { sampleRate?: number; tuning?: Record<string, string> }) {
+  const params = new URLSearchParams({ t: token, model })
+  if (opts.sampleRate) params.set('sample_rate', String(opts.sampleRate))
+  for (const [key, value] of Object.entries(opts.tuning ?? {})) {
+    if (value) params.set(key, value)
+  }
+  return `wss://${STT_HOST}/listen?${params}`
 }

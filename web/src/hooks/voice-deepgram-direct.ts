@@ -1,50 +1,39 @@
 /**
- * voice-deepgram-direct - the session that streams mic audio STRAIGHT to
- * Deepgram's live STT WebSocket. NO broker in the audio path.
+ * voice-stt-session - stream mic audio to the stt-proxy Worker and surface the
+ * normalised transcript. The broker is not in the audio path.
  *
- * CAPTURE STARTS BEFORE THE SOCKET DOES. The mic is recorded from the instant the
- * stream is in hand; the token mint and the WS dial happen underneath while audio
- * accumulates in the uplink buffer, and the whole buffer is flushed in order the
- * moment the socket opens (see voice-deepgram-uplink). This module therefore
- * accepts a token PROMISE -- waiting on the mint costs no speech.
+ * CAPTURE STARTS BEFORE THE SOCKET DOES. The mic is recorded from the instant
+ * the stream is in hand; the token mint and the WS dial happen underneath while
+ * audio accumulates in the uplink buffer, and the whole buffer is flushed in
+ * order the moment the socket opens (see voice-deepgram-uplink). This module
+ * therefore accepts a token PROMISE -- waiting on the mint costs no speech.
  *
- * Auth: a browser cannot set an Authorization header on a WebSocket, so the
- * short-lived access token (minted broker-side at POST /api/voice/deepgram-token,
- * the real key never leaving the server) rides the WS SUBPROTOCOL as
- * ['bearer', <token>] -- the exact mechanism the official @deepgram/sdk uses for
- * access tokens (verified in its source; a raw API key would be ['token', <key>]).
- *
- * The wire contract it drives lives in voice-deepgram-protocol.
+ * THE MODEL IS INVISIBLE HERE. The Worker sends one frame shape whichever model
+ * answered, and it does its own end-of-audio handshake in whatever dialect that
+ * model speaks (flux, for instance, rejects v1's `Finalize` outright). All this
+ * file says is `{"type":"stop"}` -- the key came up.
  */
 
-import type { DeepgramDirectOptions, DeepgramDirectSession, DeepgramResults } from '@/hooks/voice-deepgram-protocol'
+import type { DeepgramDirectOptions, DeepgramDirectSession, SttFrame } from '@/hooks/voice-deepgram-protocol'
 import { liveUrl } from '@/hooks/voice-deepgram-protocol'
 import { startUplink, type Uplink } from '@/hooks/voice-deepgram-uplink'
 import { VoiceLagMeter } from '@/hooks/voice-lag-meter'
 
-// Deepgram drops an idle socket after ~10s; a KeepAlive holds it through gaps.
-const KEEPALIVE_MS = 8000
-// If Deepgram never acknowledges the stop handshake, resolve anyway rather than hang.
-const STOP_BACKSTOP_MS = 3000
-// Absolute cap from release. The handshake backstop above only starts once the
-// handshake is actually sent, which cannot happen before the socket is open.
-const STOP_HARD_CAP_MS = 8000
+/** If the Worker never answers the stop, resolve anyway rather than hang. */
+const STOP_BACKSTOP_MS = 4000
+/** Absolute cap from release; the backstop above cannot start before the socket is up. */
+const STOP_HARD_CAP_MS = 9000
 
-/** Begin capturing and open the live connection. Returns immediately; the mic is
- *  recording from this call, and audio flushes as soon as the socket opens. */
 export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirectSession {
   const t0 = performance.now()
   let accumulated = ''
   let ws: WebSocket | null = null
-  let keepAlive: ReturnType<typeof setInterval> | null = null
   let finalResolve: ((text: string) => void) | null = null
   let hardCap: ReturnType<typeof setTimeout> | null = null
   let torn = false
-  // The recorder has delivered its final chunk, so Deepgram can be flushed. Set
-  // by stop(); consumed on open when the user released before the socket was up.
+  /** The recorder delivered its last chunk, so the Worker can be told to stop. */
   let audioDone = false
 
-  // Which half of the pipe is slow -- see voice-lag-meter.ts for what it measures.
   const lag = new VoiceLagMeter()
   lag.audioStarted()
   const uplink: Uplink = startUplink(opts.stream, {
@@ -56,10 +45,6 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     if (torn) return
     torn = true
     lag.report()
-    if (keepAlive) {
-      clearInterval(keepAlive)
-      keepAlive = null
-    }
     if (hardCap) {
       clearTimeout(hardCap)
       hardCap = null
@@ -67,26 +52,10 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     uplink.dispose()
   }
 
-  function settleFinal() {
+  function settleFinal(text?: string) {
     if (!finalResolve) return
-    finalResolve(accumulated)
+    finalResolve(text ?? accumulated)
     finalResolve = null
-  }
-
-  function sendJson(msg: Record<string, string>) {
-    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
-  }
-
-  /** Tell Deepgram the audio is complete: flush the decoder, then close. */
-  function sendStopHandshake() {
-    sendJson({ type: 'Finalize' })
-    sendJson({ type: 'CloseStream' })
-    setTimeout(() => {
-      if (!finalResolve) return
-      settleFinal()
-      teardown()
-      closeSocket()
-    }, STOP_BACKSTOP_MS)
   }
 
   function closeSocket() {
@@ -95,54 +64,66 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     } catch {}
   }
 
+  /** Tell the Worker the audio is complete. It owns the vendor dialect. */
+  function sendStop() {
+    if (ws?.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'stop' }))
+    setTimeout(() => {
+      if (!finalResolve) return
+      settleFinal()
+      teardown()
+      closeSocket()
+    }, STOP_BACKSTOP_MS)
+  }
+
   function onSocketOpen() {
     const flushed = uplink.attach(ws as WebSocket)
     console.log(
-      `[voice] deepgram socket open +${(performance.now() - t0).toFixed(0)}ms ` +
+      `[voice] stt socket open +${(performance.now() - t0).toFixed(0)}ms ` +
         `(flushed ${flushed.chunks} pre-open chunks / ${flushed.bytes}B)`,
     )
     opts.callbacks.onOpen?.(flushed)
-    keepAlive = setInterval(() => sendJson({ type: 'KeepAlive' }), KEEPALIVE_MS)
     // Released while we were still dialing -- the buffered utterance went out
     // above, so flush it through now.
-    if (audioDone) sendStopHandshake()
+    if (audioDone) sendStop()
   }
 
-  // CRAP inflated by a zero-coverage estimate on the live-socket branches --
-  // Deepgram message routing, exercised live.
-  // fallow-ignore-next-line complexity
-  function onSocketMessage(ev: MessageEvent) {
-    let msg: DeepgramResults
-    try {
-      msg = JSON.parse(ev.data as string)
-    } catch {
-      return
-    }
-    if (msg.type === 'Results') {
-      const transcript = msg.channel?.alternatives?.[0]?.transcript ?? ''
-      // Interims are what the user watches, so they are what "laggy" means.
-      if (!msg.is_final) lag.interim(msg.start ?? 0, msg.duration ?? 0, transcript)
-      if (msg.is_final) accumulated = [accumulated, transcript].filter(Boolean).join(' ').trim()
-      if (transcript || msg.is_final) {
-        opts.callbacks.onTranscript({
-          transcript,
-          isFinal: !!msg.is_final,
-          speechFinal: !!msg.speech_final,
-          accumulated,
-        })
-      }
-    } else if (msg.type === 'Metadata') {
-      // Deepgram's end-of-stream marker after Finalize/CloseStream.
-      settleFinal()
-    }
+  const FRAMES: Record<string, (msg: SttFrame) => void> = {
+    transcript: msg => {
+      const text = msg.text ?? ''
+      accumulated = msg.committed ?? accumulated
+      if (!msg.final) lag.interim(0, (msg.audioEndMs ?? 0) / 1000, text)
+      opts.callbacks.onTranscript({
+        transcript: text,
+        isFinal: !!msg.final,
+        accumulated,
+        endOfTurnConfidence: msg.endOfTurnConfidence,
+      })
+    },
+    // The Worker's authoritative end-of-session: it carries the WHOLE dictation,
+    // paragraphs and all, so it wins over anything accumulated frame by frame.
+    done: msg => {
+      accumulated = msg.text ?? accumulated
+      settleFinal(accumulated)
+      teardown()
+    },
+    error: msg => opts.callbacks.onError(msg.error ?? 'speech backend error', 'socket'),
   }
 
   function connect(token: string) {
     if (torn) return
-    ws = new WebSocket(liveUrl(opts.model), ['bearer', token])
+    ws = new WebSocket(liveUrl(opts.model, token, { sampleRate: opts.sampleRate, tuning: opts.tuning }))
     ws.onopen = onSocketOpen
-    ws.onmessage = onSocketMessage
-    ws.onerror = () => opts.callbacks.onError('deepgram socket error', 'socket')
+    ws.onmessage = ev => {
+      let msg: SttFrame
+      try {
+        msg = JSON.parse(ev.data as string)
+      } catch {
+        return
+      }
+      FRAMES[msg.type]?.(msg)
+    }
+    ws.onerror = () => opts.callbacks.onError('speech socket error', 'socket')
     ws.onclose = () => {
       teardown()
       settleFinal()
@@ -155,9 +136,9 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   })
 
   async function stop(): Promise<string> {
-    // Wait for the recorder's FINAL chunk before flushing Deepgram. Sending
-    // Finalize/CloseStream first drops it on the floor -- that is the tail of
-    // every utterance, and on Safari (~1s fragments) an entire second of speech.
+    // Wait for the recorder's FINAL chunk before telling the Worker to stop.
+    // Stopping first drops it on the floor -- that is the tail of every
+    // utterance, and on Safari (~1s fragments) an entire second of speech.
     await uplink.stopRecorder()
     audioDone = true
     return new Promise<string>(resolve => {
@@ -168,8 +149,7 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
         teardown()
         closeSocket()
       }, STOP_HARD_CAP_MS)
-      // Socket not up yet: onSocketOpen sends the handshake instead.
-      if (ws?.readyState === WebSocket.OPEN) sendStopHandshake()
+      sendStop()
     })
   }
 

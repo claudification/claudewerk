@@ -9,10 +9,16 @@
  *     during the mint + dial was never captured. Capture must begin at the call,
  *     with the token still an unresolved promise.
  *
- *  2. TRUNCATED TAIL AT THE END -- stop() sent Finalize/CloseStream immediately
- *     after recorder.stop(), but MediaRecorder delivers its final chunk on a
- *     LATER task. That chunk reached the socket after Deepgram had been told the
- *     stream was over (Safari: up to a full second of speech).
+ *  2. TRUNCATED TAIL AT THE END -- stop() told the server the audio was over
+ *     immediately after recorder.stop(), but MediaRecorder delivers its final
+ *     chunk on a LATER task. That chunk reached the socket after the stream had
+ *     been closed (Safari: up to a full second of speech).
+ *
+ * The transport moved from api.deepgram.com to our own Cloudflare Worker
+ * (2026-08-13, because Deepgram-direct ran 8.5-11.8s behind real time from
+ * Thailand), so the wire is now: audio up as binary, ONE `{type:'stop'}` control
+ * message, and normalised `transcript` / `done` frames down. Both bugs above are
+ * transport-independent and still pinned.
  */
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -71,16 +77,19 @@ test('flushes everything spoken during mint + dial once the socket opens', async
   expect(cbs.onOpen).toHaveBeenCalledWith({ chunks: 2, bytes: duringMint.size + duringDial.size })
 })
 
-test('opens with the bearer subprotocol and the configured model', async () => {
+test('dials the Worker with the token in the QUERY STRING, not a subprotocol', async () => {
   begin('tok-123')
   await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
 
   const ws = FakeWebSocket.latest()
-  expect(ws.protocols).toEqual(['bearer', 'tok-123'])
+  // A browser cannot set a header on a WebSocket, and Cloudflare -- unlike
+  // Deepgram -- does not accept a token as a subprotocol. Query string or nothing.
+  expect(ws.url).toContain('t=tok-123')
   expect(ws.url).toContain('model=nova-3')
+  expect(ws.url).toContain('/listen?')
 })
 
-test('sends Finalize only AFTER the recorder final chunk -- no truncated tail', async () => {
+test('sends stop only AFTER the recorder final chunk -- no truncated tail', async () => {
   const { session } = begin('tok')
   await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
   const ws = FakeWebSocket.latest()
@@ -91,14 +100,14 @@ test('sends Finalize only AFTER the recorder final chunk -- no truncated tail', 
   rec.tailChunk = tail
 
   void session.stop()
-  await vi.waitFor(() => expect(ws.controlTypes()).toContain('Finalize'))
+  await vi.waitFor(() => expect(ws.controlTypes()).toContain('stop'))
 
-  // The tail audio must be on the wire BEFORE Deepgram is told the stream ended.
+  // The tail audio must be on the wire BEFORE the server is told it ended.
   const tailIndex = ws.sent.indexOf(tail)
-  const finalizeIndex = ws.sent.findIndex(s => typeof s === 'string' && s.includes('Finalize'))
+  const stopIndex = ws.sent.findIndex(s => typeof s === 'string' && s.includes('stop'))
   expect(tailIndex).toBeGreaterThanOrEqual(0)
-  expect(tailIndex).toBeLessThan(finalizeIndex)
-  expect(ws.controlTypes()).toEqual(['Finalize', 'CloseStream'])
+  expect(tailIndex).toBeLessThan(stopIndex)
+  expect(ws.controlTypes()).toEqual(['stop'])
 })
 
 test('a release during the dial still flushes and finalizes once open', async () => {
@@ -118,10 +127,9 @@ test('a release during the dial still flushes and finalizes once open', async ()
   // Audio first, then the handshake -- the whole utterance survives a release
   // that happened before the socket ever came up.
   expect(ws.audio()).toEqual([utterance])
-  expect(ws.controlTypes()).toEqual(['Finalize', 'CloseStream'])
+  expect(ws.controlTypes()).toEqual(['stop'])
 
-  ws.serverSend({ type: 'Results', is_final: true, channel: { alternatives: [{ transcript: 'quick tap' }] } })
-  ws.serverSend({ type: 'Metadata' })
+  ws.serverSend({ type: 'done', text: 'quick tap', reason: 'upstream-done' })
   await expect(stopped).resolves.toBe('quick tap')
 })
 
@@ -131,15 +139,21 @@ test('accumulates finals and resolves stop() with the full transcript', async ()
   const ws = FakeWebSocket.latest()
   ws.open()
 
-  ws.serverSend({ type: 'Results', is_final: false, channel: { alternatives: [{ transcript: 'hello' }] } })
-  ws.serverSend({ type: 'Results', is_final: true, channel: { alternatives: [{ transcript: 'hello there' }] } })
-  ws.serverSend({ type: 'Results', is_final: true, channel: { alternatives: [{ transcript: 'friend' }] } })
+  // `text` is the segment in flight, `committed` is what is already finished --
+  // the client renders committed+text and NEVER appends, which is what lets a
+  // cumulative model (flux) and a delta model (nova-3) share this code.
+  ws.serverSend({ type: 'transcript', text: 'hello', committed: '', final: false })
+  ws.serverSend({ type: 'transcript', text: 'hello there', committed: '', final: true })
+  ws.serverSend({ type: 'transcript', text: 'friend', committed: 'hello there ', final: true })
 
   expect(cbs.onTranscript).toHaveBeenCalledTimes(3)
+  expect(cbs.onTranscript.mock.calls[2][0]).toMatchObject({ transcript: 'friend', accumulated: 'hello there ' })
 
   const stopped = session.stop()
-  await vi.waitFor(() => expect(ws.controlTypes()).toContain('CloseStream'))
-  ws.serverSend({ type: 'Metadata' })
+  await vi.waitFor(() => expect(ws.controlTypes()).toContain('stop'))
+  // The Worker's `done` carries the WHOLE dictation and wins over anything
+  // accumulated frame by frame.
+  ws.serverSend({ type: 'done', text: 'hello there friend', reason: 'upstream-done' })
 
   await expect(stopped).resolves.toBe('hello there friend')
 })
