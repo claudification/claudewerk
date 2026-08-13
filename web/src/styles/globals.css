@@ -1092,14 +1092,20 @@ html[data-tab-hidden] *::after {
 	background: var(--muted);
 }
 
+/* Mix toward TRANSPARENT, never toward another hued token. `--accent` (hue 85)
+   and `--border` (hue 260) are near-antipodal, so oklch interpolates the hue
+   across the wheel and lands somewhere that is neither: a gold accent mixed
+   with a blue-grey border came out teal, and a "warn" note read as an info
+   box. Mixing with transparent only scales alpha, so the accent hue survives
+   and the block composites over whatever surface it sits on. */
 .anvil-note-warn {
-	background: color-mix(in oklch, var(--accent) 12%, var(--card));
-	border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .anvil-note-danger {
-	background: color-mix(in oklch, var(--destructive) 10%, var(--card));
-	border-color: color-mix(in oklch, var(--destructive) 40%, var(--border));
+	background: color-mix(in srgb, var(--destructive) 10%, transparent);
+	border-color: color-mix(in srgb, var(--destructive) 45%, transparent);
 }
 
 .anvil-warn,

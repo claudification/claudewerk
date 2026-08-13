@@ -22,11 +22,17 @@ const BODIES: Record<AnvilKind, BodyRenderer> = {
   note: renderNote,
 }
 
+/**
+ * ASCII only, on purpose. `◫` and `⇔` fell out of the transcript's monospace
+ * stack into a fallback font and rendered as a tofu box. Every ask block is a
+ * question anyway, so one mark serves all of them and the kind is carried by
+ * the body, not by a glyph the font may not have.
+ */
 const KIND_ICON: Record<AnvilKind, string> = {
   choice: '?',
-  gallery: '◫',
+  gallery: '?',
   input: '?',
-  scale: '⇔',
+  scale: '?',
   note: '',
 }
 
