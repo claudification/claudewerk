@@ -35,7 +35,15 @@ function sanitizeWorkspaces(raw: unknown): Workspace[] | undefined {
     const o = w as Record<string, unknown>
     if (typeof o.id !== 'string' || typeof o.name !== 'string' || seen.has(o.id)) continue
     seen.add(o.id)
-    out.push({ id: o.id, name: o.name, ...(typeof o.color === 'string' ? { color: o.color } : {}) })
+    out.push({
+      id: o.id,
+      name: o.name,
+      ...(typeof o.color === 'string' ? { color: o.color } : {}),
+      // Field-by-field rebuild: anything not named here is DROPPED on the way
+      // through, so a new Workspace field must be added in both places or the
+      // panel writes it and the broker silently eats it on the next read.
+      ...(typeof o.key === 'string' && o.key ? { key: o.key } : {}),
+    })
   }
   return out.length > 0 ? out : undefined
 }

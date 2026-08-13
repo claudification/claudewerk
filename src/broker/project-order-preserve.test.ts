@@ -114,6 +114,30 @@ describe('setProjectOrder workspace preservation', () => {
     expect(Object.keys(order.workspaceTrees ?? {})).toEqual(['ws-3'])
   })
 
+  test('a custom key binding survives the normalize round-trip', () => {
+    // sanitizeWorkspaces rebuilds each workspace field-by-field, so an unlisted
+    // field is silently eaten. A custom key is user data, not decoration.
+    setProjectOrder(USER, {
+      tree: [{ id: PROJ_A, type: 'project' }],
+      workspaces: [{ id: 'ws-1', name: 'Work', color: 'emerald', key: 'mod+shift+w' }],
+      workspaceTrees: { 'ws-1': [{ id: PROJ_A, type: 'project' }] },
+    })
+
+    expect(getProjectOrder(USER).workspaces?.[0]?.key).toBe('mod+shift+w')
+  })
+
+  test('an empty or non-string key is dropped rather than persisted', () => {
+    setProjectOrder(USER, {
+      tree: [{ id: PROJ_A, type: 'project' }],
+      workspaces: [
+        { id: 'ws-1', name: 'Work', key: '' },
+        { id: 'ws-2', name: 'Side', key: 7 as unknown as string },
+      ],
+    })
+
+    expect(getProjectOrder(USER).workspaces?.every(w => w.key === undefined)).toBe(true)
+  })
+
   test('workspaceTrees entries for still-live workspaces survive a tree-only save', () => {
     // The tree edit renames a group and drops a project from the global tree.
     // Workspace membership is a separate axis and must not follow it.

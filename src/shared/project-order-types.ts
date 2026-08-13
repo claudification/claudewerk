@@ -25,6 +25,10 @@ export interface Workspace {
   id: string
   name: string
   color?: string
+  /** Optional custom key-layer binding ('mod+shift+1', or a chord like
+   *  'mod+g w'), ADDITIONAL to the positional Ctrl+N default the tab strip
+   *  hands out. Absent = positional default only. */
+  key?: string
 }
 
 export interface ProjectOrder {

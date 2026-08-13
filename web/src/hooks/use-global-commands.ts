@@ -10,6 +10,7 @@ import { exposeDispatchControl } from '@/components/dispatch-overlay/dispatch-co
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { openForkDialog } from '@/components/fork-dialog-trigger'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
+import { openManageWorkspaces } from '@/components/manage-workspaces/manage-workspaces-state'
 import { openOrganizeProjects } from '@/components/organize-projects/organize-state'
 import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks'
 import { openRecapConfigDialog } from '@/components/recap-jobs/recap-config-trigger'
@@ -644,6 +645,11 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useCommand('organize-projects', () => openOrganizeProjects(), {
     label: 'Organize projects & groups',
+    group: 'Navigation',
+  })
+
+  useCommand('manage-workspaces', () => openManageWorkspaces(), {
+    label: 'Manage workspaces',
     group: 'Navigation',
   })
 

@@ -21,6 +21,7 @@ import { LaunchProfileCommands } from '@/components/launch-profiles/launch-profi
 import { LaunchToastContainer } from '@/components/launch-profiles/launch-toast'
 import { useLaunchProfileManagerState } from '@/components/launch-profiles/manager-state'
 import { LinkPreviewPane } from '@/components/link-preview-pane'
+import { useManageWorkspacesOpen } from '@/components/manage-workspaces/manage-workspaces-state'
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
@@ -205,6 +206,14 @@ const OrganizeProjectsModal = lazyModule(
       default: m.OrganizeProjectsModal,
     })) as Promise<{ default: ComponentType }>,
   useOrganizeProjectsOpen,
+)
+// Workspace manager -- chunk (incl. @dnd-kit) loads only when first opened.
+const ManageWorkspacesModal = lazyModule(
+  () =>
+    import('@/components/manage-workspaces/manage-workspaces-modal').then(m => ({
+      default: m.ManageWorkspacesModal,
+    })) as Promise<{ default: ComponentType }>,
+  useManageWorkspacesOpen,
 )
 // Mermaid pan/zoom overlay -- chunk loads only when a diagram is first opened.
 const MermaidLightbox = lazyModule(
@@ -499,6 +508,7 @@ function Dashboard() {
       <ManageChatConnectionsDialog />
       <LaunchProfileManager />
       <OrganizeProjectsModal />
+      <ManageWorkspacesModal />
       <LaunchProfileCommands />
       <LaunchToastContainer />
       <TerminateConfirmDialog />

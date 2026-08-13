@@ -25,6 +25,61 @@ export function projectsInWorkspace(order: ProjectOrder, wsId: string): string[]
   return [...projectIdsInTree(order.workspaceTrees?.[wsId] ?? [])]
 }
 
+/** Every node id in a tree -- groups AND projects. Membership is asked about
+ *  both: the sidebar can put a whole group into a workspace. */
+function nodeIdsInTree(tree: ProjectOrderNode[], into = new Set<string>()): Set<string> {
+  for (const node of tree) {
+    into.add(node.id)
+    if (node.type === 'group') nodeIdsInTree(node.children, into)
+  }
+  return into
+}
+
+/** True when a node (project OR group) sits anywhere in that workspace's tree. */
+export function isNodeInWorkspace(order: ProjectOrder, wsId: string, nodeId: string): boolean {
+  return nodeIdsInTree(order.workspaceTrees?.[wsId] ?? []).has(nodeId)
+}
+
+/** EVERY workspace holding this node -- zero, one, or many. There is no "the"
+ *  workspace of a project; any caller reaching for a single id (the old
+ *  `projectInWorkspace` helper returned the FIRST match and rendered membership
+ *  as if it were exclusive) is asking the wrong question. */
+export function workspaceIdsForNode(order: ProjectOrder, nodeId: string): Set<string> {
+  const out = new Set<string>()
+  for (const wsId of Object.keys(order.workspaceTrees ?? {})) {
+    if (isNodeInWorkspace(order, wsId, nodeId)) out.add(wsId)
+  }
+  return out
+}
+
+/** Drop a node from a workspace tree at ANY depth. Removing a group takes its
+ *  subtree with it; removing a project leaves its (possibly now empty) parent
+ *  group standing -- that group is the user's structure, not a leftover. Pure:
+ *  returns a new tree, touching only the branches that changed. */
+export function removeNodeDeep(tree: ProjectOrderNode[], nodeId: string): ProjectOrderNode[] {
+  const out: ProjectOrderNode[] = []
+  for (const node of tree) {
+    if (node.id === nodeId) continue
+    if (node.type === 'group') out.push({ ...node, children: removeNodeDeep(node.children, nodeId) })
+    else out.push(node)
+  }
+  return out
+}
+
+/** Find a node by id anywhere in a tree -- used to copy a GROUP (with its
+ *  children) into a workspace instead of filing its id as a bogus project node,
+ *  which is what the assign menu used to do. */
+export function findNode(tree: ProjectOrderNode[], nodeId: string): ProjectOrderNode | undefined {
+  for (const node of tree) {
+    if (node.id === nodeId) return node
+    if (node.type === 'group') {
+      const hit = findNode(node.children, nodeId)
+      if (hit) return hit
+    }
+  }
+  return undefined
+}
+
 // Sentinel workspace id for the "All" view.
 //
 // A workspace is a MODE the user explicitly selects; it is NEVER derived from

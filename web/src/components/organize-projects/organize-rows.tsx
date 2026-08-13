@@ -5,6 +5,7 @@ import { CornerUpLeft, GripVertical, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { type ProjectOrderGroup, projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { SortableRow } from '../ui/sortable-row'
 
 const grip = 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground touch-none shrink-0'
 
@@ -19,21 +20,11 @@ export function ProjectRow({
   count: number
   onUngroup?: () => void
 }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
-    id,
-  })
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(
-        'flex items-center gap-2 py-1 px-2 rounded border border-border/60 bg-background text-xs',
-        isDragging && 'opacity-40 z-10 relative',
-      )}
+    <SortableRow
+      id={id}
+      className="flex items-center gap-2 py-1 px-2 rounded border border-border/60 bg-background text-xs"
     >
-      <button type="button" ref={setActivatorNodeRef} className={grip} title="Drag" {...attributes} {...listeners}>
-        <GripVertical className="size-3.5" />
-      </button>
       <span className="flex-1 truncate" title={projectPath(id)}>
         {label}
       </span>
@@ -48,7 +39,7 @@ export function ProjectRow({
           <CornerUpLeft className="size-3.5" />
         </button>
       )}
-    </div>
+    </SortableRow>
   )
 }
 

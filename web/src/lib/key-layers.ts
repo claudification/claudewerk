@@ -112,7 +112,10 @@ function altCodeToKey(code: string): string | null {
   return null
 }
 
-function normalizeEvent(e: KeyboardEvent): string {
+/** The binding string this keystroke would match. Exported so a key RECORDER
+ *  (the workspace key editor) speaks exactly the dispatcher's dialect instead of
+ *  hand-rolling a second, subtly different normalizer. */
+export function normalizeEvent(e: KeyboardEvent): string {
   const parts: string[] = []
 
   // mod = primary shortcut modifier (Cmd on Mac, Ctrl elsewhere)
@@ -204,11 +207,20 @@ function isChordPrefix(pattern: string, captureTerminalOnly = false): boolean {
   return false
 }
 
-// Fire a binding pattern across all enabled layers (top-down). Returns true if a handler was found.
-function fireBinding(pattern: string, e?: KeyboardEvent): boolean {
+/** Enabled layers, top-down -- the one dispatch order. `inTerminal` drops every
+ *  layer that has not explicitly opted back out of terminal-first (see dispatch). */
+function* eligibleLayers(inTerminal = false): Generator<Layer> {
   for (let i = layers.length - 1; i >= 0; i--) {
     const layer = layers[i]
     if (layer.options.enabled === false) continue
+    if (inTerminal && !layer.options.captureTerminal) continue
+    yield layer
+  }
+}
+
+// Fire a binding pattern across all enabled layers (top-down). Returns true if a handler was found.
+function fireBinding(pattern: string, e?: KeyboardEvent): boolean {
+  for (const layer of eligibleLayers()) {
     const handler = findBinding(layer.bindings, pattern)
     if (handler) {
       handler(e ?? new KeyboardEvent('keydown'))
@@ -218,9 +230,38 @@ function fireBinding(pattern: string, e?: KeyboardEvent): boolean {
   return false
 }
 
+/**
+ * Is some live layer already listening for this binding? Used by the workspace
+ * key editor to refuse a shortcut that would silently shadow an existing one.
+ * `excludeLayerId` skips the layer doing the asking (a workspace re-binding its
+ * own key would otherwise always collide with itself).
+ *
+ * Also true for a binding that is merely a PREFIX of a registered chord: taking
+ * `mod+g` when `mod+g t` exists would swallow the chord's first keystroke.
+ */
+export function isBindingRegistered(pattern: string, excludeLayerId?: string): boolean {
+  for (const layer of layers) {
+    if (layer.options.enabled === false || layer.id === excludeLayerId) continue
+    if (findBinding(layer.bindings, pattern)) return true
+    if (Object.keys(layer.bindings).some(k => isChordBinding(k) && k.startsWith(`${pattern} `))) return true
+  }
+  return false
+}
+
 // ── Dispatch ───────────────────────────────────────────────────────────────
 
+// While a key RECORDER is live (the workspace key editor) the whole stack stands
+// down, so the combo being recorded reaches the recorder instead of firing the
+// shortcut it is about to be bound over. Global, not per-layer: the recorder
+// cannot know which layer owns the key the user is about to press.
+let suspended = false
+
+export function setKeyLayersSuspended(value: boolean): void {
+  suspended = value
+}
+
 function dispatch(e: KeyboardEvent) {
+  if (suspended) return
   // Ignore bare modifier presses
   if (['Control', 'Meta', 'Alt', 'Shift'].includes(e.key)) return
 
@@ -288,11 +329,7 @@ function dispatch(e: KeyboardEvent) {
 
   if (doubleTap.key === normalized && now - doubleTap.time < DOUBLE_TAP_THRESHOLD) {
     const doubleTapPattern = `${normalized} ${normalized}`
-    for (let i = layers.length - 1; i >= 0; i--) {
-      const layer = layers[i]
-      if (layer.options.enabled === false) continue
-      if (inTerminal && !layer.options.captureTerminal) continue
-
+    for (const layer of eligibleLayers(inTerminal)) {
       const handler = findBinding(layer.bindings, doubleTapPattern)
       if (handler) {
         e.preventDefault()
@@ -330,14 +367,10 @@ function dispatch(e: KeyboardEvent) {
   // ── Single-key dispatch ────────────────────────────────────────────────────
   if (inTextInput && !isModified && !isNonPrintable) return
 
-  for (let i = layers.length - 1; i >= 0; i--) {
-    const layer = layers[i]
-    if (layer.options.enabled === false) continue
-    // Terminal-first: a focused xterm owns the key unless this layer explicitly
-    // opts back out with captureTerminal. No modifier-combo exception -- Ctrl/Cmd
-    // shortcuts go to the PTY too, except the captureTerminal allowlist.
-    if (inTerminal && !layer.options.captureTerminal) continue
-
+  // Terminal-first: a focused xterm owns the key unless a layer explicitly opts
+  // back out with captureTerminal. No modifier-combo exception -- Ctrl/Cmd
+  // shortcuts go to the PTY too, except the captureTerminal allowlist.
+  for (const layer of eligibleLayers(inTerminal)) {
     // Skip double-tap bindings in single-key dispatch. Inside a terminal, match
     // EXACTLY (no ctrl<->mod cross-match) so a physical Ctrl combo can't trigger
     // a Cmd-bound captureTerminal exception.
