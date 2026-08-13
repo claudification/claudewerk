@@ -11,6 +11,7 @@
  * All fire `window.dispatchEvent(new Event('open-batch-selector'))`
  */
 
+import { cardRelPath } from '@shared/card-path'
 import { Fzf } from 'fzf'
 import { CheckSquare, Copy, Info, ListChecks, Search, Send, X } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -22,6 +23,7 @@ import { useProject } from '@/hooks/use-project'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
+import { buildBatchPrompt } from './task-batch/prompt'
 import { taskBatchBus } from './task-batch-trigger'
 
 // --- Constants ---
@@ -201,19 +203,6 @@ function scoreTasks(tasks: ProjectTaskMeta[], query: string): ProjectTaskMeta[] 
       return b.score * batchStatusBoost(b.item.status) - a.score * batchStatusBoost(a.item.status)
     })
     .map(r => r.item)
-}
-
-// --- Build prompt markdown ---
-
-function buildBatchPrompt(instructions: string, tasks: ProjectTaskMeta[]): string {
-  const taskList = tasks
-    .map(t => {
-      const prio = t.priority ? ` (${t.priority})` : ''
-      return `- **${t.title}**${prio}\n  .rclaude/project/${t.status}/${t.slug}.md`
-    })
-    .join('\n')
-
-  return `${instructions}\n\nTasks:\n${taskList}`
 }
 
 // --- Hover Preview ---
@@ -699,9 +688,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                   <div key={task.slug} className="text-[10px] font-mono text-foreground/60 leading-relaxed">
                     <span className="text-foreground/80">- {task.title}</span>
                     {task.priority && <span className="text-muted-foreground/40"> ({task.priority})</span>}
-                    <div className="text-muted-foreground/30 pl-2">
-                      .rclaude/project/{task.status}/{task.slug}.md
-                    </div>
+                    <div className="text-muted-foreground/30 pl-2">{cardRelPath(task.slug)}</div>
                   </div>
                 ))}
               </div>
