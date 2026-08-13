@@ -1309,7 +1309,8 @@ function ViewConfigPanel({
 // this 1700-line file is out of scope for the Kanban-modal change.
 // fallow-ignore-next-line complexity
 export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { conversationId: string }) {
-  const { tasks, loading, refresh, createTask, moveTask, deleteTask, readTask, updateTask } = useProject(conversationId)
+  const { projectUri, tasks, loading, refresh, createTask, moveTask, deleteTask, readTask, updateTask } =
+    useProject(conversationId)
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null)
   const [runTask, setRunTask] = useState<ProjectTask | null>(null)
   const [activeDragTask, setActiveDragTask] = useState<ProjectTaskMeta | null>(null)
@@ -1336,7 +1337,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
 
   // Deep links (push notification, #task/<id>, a `.rclaude/project/...` markdown
   // link) -- resolved by slug once the manifest has landed. See the hook.
-  useCardDeepLink({ tasks, loading, readTask, onOpen: setEditingTask })
+  useCardDeepLink({ ready: !!projectUri, readTask, onOpen: setEditingTask })
 
   const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
   const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority

@@ -5,12 +5,13 @@ import { type ProjectTask, useProject } from '@/hooks/use-project'
 
 export function useTaskEditor(selectedConversationId: string | null) {
   const pendingTaskEdit = useConversationsStore(s => s.pendingTaskEdit)
-  const { tasks: projectTasks, loading, readTask, updateTask, moveTask } = useProject(selectedConversationId)
+  const { projectUri, tasks: projectTasks, readTask, updateTask, moveTask } = useProject(selectedConversationId)
   const [taskEditorTask, setTaskEditorTask] = useState<ProjectTask | null>(null)
   const [runTaskFromEditor, setRunTaskFromEditor] = useState<ProjectTask | null>(null)
 
   // The card opens on its own -- no board behind it, and no lane to get wrong.
-  const requestCard = useCardResolver({ tasks: projectTasks, loading, readTask, onOpen: setTaskEditorTask })
+  // `ready` is the project, NOT the manifest: the card is read from the board.
+  const requestCard = useCardResolver({ ready: !!projectUri, readTask, onOpen: setTaskEditorTask })
   useEffect(() => {
     if (!pendingTaskEdit) return
     useConversationsStore.getState().setPendingTaskEdit(null)
