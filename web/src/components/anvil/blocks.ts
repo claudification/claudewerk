@@ -9,7 +9,16 @@
  * in style/src attributes, where escaping alone is not enough. They are
  * allowlisted (see safeColor / safeFont / safeUrl), not sanitised.
  */
-import { type AnvilBlock, type AnvilOption, attrNumber, attrString, galleryRender, isMulti } from './types'
+import {
+  type AnvilBlock,
+  type AnvilOption,
+  attrNumber,
+  attrString,
+  type GalleryRender,
+  galleryRender,
+  isMulti,
+  type NoteTone,
+} from './types'
 
 export function esc(s: string): string {
   return String(s ?? '')
@@ -57,27 +66,31 @@ export function renderChoice(b: AnvilBlock): string {
   return `<div class="anvil-rows" role="group">${rows}</div>${multi ? submitBar(b) : ''}`
 }
 
-function cardFace(b: AnvilBlock, o: AnvilOption): string {
-  const mode = galleryRender(b)
-  if (mode === 'swatch') {
+/** One face per render mode. Strategy map: a new mode is one entry. */
+const FACES: Record<GalleryRender, (o: AnvilOption) => string> = {
+  swatch: o => {
     const chips = (o.swatch ?? [])
       .map(safeColor)
       .filter((c): c is string => c !== null)
       .map(c => `<i style="background:${c}"></i>`)
       .join('')
     return `<span class="anvil-swatch">${chips || '<i class="anvil-swatch-empty"></i>'}</span>`
-  }
-  if (mode === 'type') {
+  },
+  type: o => {
     const fam = o.font ? safeFont(o.font) : null
     const style = fam ? ` style="font-family:'${fam}',serif"` : ''
     return `<span class="anvil-type"${style}>${esc(o.sample || 'Aa Bb Cc')}</span>`
-  }
-  if (mode === 'image') {
+  },
+  image: o => {
     const url = o.img ? safeUrl(o.img) : null
-    if (url) return `<img class="anvil-img" src="${esc(url)}" alt="${esc(o.label)}" loading="lazy">`
-    return '<span class="anvil-img anvil-img-missing"></span>'
-  }
-  return ''
+    if (!url) return '<span class="anvil-img anvil-img-missing"></span>'
+    return `<img class="anvil-img" src="${esc(url)}" alt="${esc(o.label)}" loading="lazy">`
+  },
+  card: () => '',
+}
+
+function cardFace(b: AnvilBlock, o: AnvilOption): string {
+  return (FACES[galleryRender(b)] ?? FACES.card)(o)
 }
 
 export function renderGallery(b: AnvilBlock): string {
@@ -137,9 +150,14 @@ export function renderScale(b: AnvilBlock): string {
   return `<div class="anvil-dials">${rows}</div>${submitBar(b)}`
 }
 
+const NOTE_CLASS: Record<NoteTone, string> = {
+  info: 'anvil-note-info',
+  warn: 'anvil-note-warn',
+  danger: 'anvil-note-danger',
+}
+
 export function renderNote(b: AnvilBlock): string {
-  const tone = attrString(b, 'tone', 'info')
-  const cls = tone === 'danger' ? 'anvil-note-danger' : tone === 'warn' ? 'anvil-note-warn' : 'anvil-note-info'
+  const cls = NOTE_CLASS[attrString(b, 'tone', 'info') as NoteTone] ?? NOTE_CLASS.info
   const text = b.prose || b.prompt
   if (!text) return ''
   const paras = text

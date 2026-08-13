@@ -6,47 +6,22 @@
  * something renderable plus a warning. A throw here white-screens the whole
  * transcript, which is why parse.test.ts fuzzes every truncation of every
  * fixture.
+ *
+ * Row parsing lives in rows.ts; this file is the line dispatch and the block
+ * assembly, nothing else.
  */
-import {
-  ANVIL_KINDS,
-  type AnvilBlock,
-  type AnvilDoc,
-  type AnvilKind,
-  type AnvilOption,
-  FIELD_TYPES,
-  type FieldType,
-} from './types'
+import { parseDial, parseField, parseOption } from './rows'
+import { ANVIL_KINDS, type AnvilBlock, type AnvilDoc, type AnvilKind } from './types'
 
 const KIND_SET = new Set<string>(ANVIL_KINDS)
-const FIELD_TYPE_SET = new Set<string>(FIELD_TYPES)
-
-/** Split on unescaped pipes, then unescape. Trims each cell. */
-function cells(s: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i]
-    if (ch === '\\' && s[i + 1] === '|') {
-      cur += '|'
-      i++
-      continue
-    }
-    if (ch === '|') {
-      out.push(cur.trim())
-      cur = ''
-      continue
-    }
-    cur += ch
-  }
-  out.push(cur.trim())
-  return out
-}
+const DEFAULT_STEPS = 5
+const HEADER = /^@(\w+)\s*(.*)$/
+const ATTR = /([A-Za-z_][\w-]*)(?:=(?:"([^"]*)"|'([^']*)'|(\S+)))?/g
 
 /** `key=value`, `key="quoted value"`, or a bare `key` meaning true. */
 function parseAttrs(s: string): Record<string, string | boolean> {
   const attrs: Record<string, string | boolean> = {}
-  const re = /([A-Za-z_][\w-]*)(?:=(?:"([^"]*)"|'([^']*)'|(\S+)))?/g
-  for (const m of s.matchAll(re)) {
+  for (const m of s.matchAll(ATTR)) {
     const key = m[1]
     if (!key) continue
     const val = m[2] ?? m[3] ?? m[4]
@@ -82,77 +57,57 @@ function blank(kind: AnvilKind): AnvilBlock {
   }
 }
 
-/** `- [!]value | Label | hint | img=… | swatch=… | font=… | sample=…` */
-function parseOption(rest: string, block: AnvilBlock): void {
-  const parts = cells(rest)
-  let head = parts.shift() ?? ''
-  const danger = head.startsWith('!')
-  if (danger) head = head.slice(1).trim()
-  if (!head) {
-    block.warnings.push('option row with no value')
-    return
-  }
-
-  const opt: AnvilOption = { value: head, label: head }
-  if (danger) opt.danger = true
-
-  const positional: string[] = []
-  for (const cell of parts) {
-    const kv = cell.match(/^(img|swatch|font|sample)\s*=\s*(.*)$/i)
-    if (!kv) {
-      positional.push(cell)
-      continue
-    }
-    const key = (kv[1] ?? '').toLowerCase()
-    const val = (kv[2] ?? '').replace(/^["']|["']$/g, '').trim()
-    if (key === 'swatch')
-      opt.swatch = val
-        .split(',')
-        .map(c => c.trim())
-        .filter(Boolean)
-    else if (key === 'img') opt.img = val
-    else if (key === 'font') opt.font = val
-    else opt.sample = val
-  }
-  if (positional[0]) opt.label = positional[0]
-  if (positional[1]) opt.hint = positional[1]
-  block.options.push(opt)
+function join(prev: string, next: string, sep: string): string {
+  return prev ? `${prev}${sep}${next}` : next
 }
 
-/** `_ name[*] | type | Label | placeholder` */
-function parseField(rest: string, block: AnvilBlock): void {
-  const [rawName = '', rawType = '', label = '', placeholder = ''] = cells(rest)
-  const required = rawName.endsWith('*')
-  const name = (required ? rawName.slice(0, -1) : rawName).trim()
-  if (!name) {
-    block.warnings.push('field row with no name')
-    return
-  }
-  const lower = rawType.toLowerCase()
-  const type: FieldType = FIELD_TYPE_SET.has(lower) ? (lower as FieldType) : 'text'
-  if (rawType && !FIELD_TYPE_SET.has(lower)) {
-    block.warnings.push(`unknown field type "${rawType}", using text`)
-  }
-  block.fields.push({
-    name,
-    type,
-    label: label || name.replace(/[_-]+/g, ' ').replace(/^./, c => c.toUpperCase()),
-    placeholder: placeholder || undefined,
-    required,
-  })
+interface Cursor {
+  block: AnvilBlock
+  steps: number
 }
 
-/** `% name | leftPole | rightPole | default` */
-function parseDial(rest: string, block: AnvilBlock, steps: number): void {
-  const [name = '', left = '', right = '', def = ''] = cells(rest)
-  if (!name) {
-    block.warnings.push('scale row with no name')
-    return
+/**
+ * Strategy map, not an if-else chain: one entry per sigil. A line whose first
+ * character is not a key here folds into the prompt (see the fallback in run),
+ * so a forgotten sigil renders slightly wrong instead of vanishing.
+ */
+const LINES: Record<string, (rest: string, cur: Cursor) => void> = {
+  '?': (rest, { block }) => {
+    block.prompt = join(block.prompt, rest, '\n')
+  },
+  ':': (rest, { block }) => {
+    block.subtext = join(block.subtext, rest, ' ')
+  },
+  '>': (rest, { block }) => {
+    block.prose = join(block.prose, rest, '\n')
+  },
+  '-': (rest, { block }) => parseOption(rest, block),
+  _: (rest, { block }) => parseField(rest, block),
+  '%': (rest, cur) => parseDial(rest, cur.block, cur.steps),
+}
+
+/** Reads `steps=` off a freshly opened block, warning when out of range. */
+function readSteps(block: AnvilBlock): number {
+  const raw = block.attrs.steps
+  if (typeof raw !== 'string') return DEFAULT_STEPS
+  const n = Number.parseInt(raw, 10)
+  if (Number.isFinite(n) && n >= 2 && n <= 11) return n
+  block.warnings.push(`steps="${raw}" out of range, using ${DEFAULT_STEPS}`)
+  return DEFAULT_STEPS
+}
+
+function openBlock(line: string): Cursor {
+  const m = HEADER.exec(line)
+  const rawKind = (m?.[1] ?? '').toLowerCase()
+  const known = KIND_SET.has(rawKind)
+  const block = blank(known ? (rawKind as AnvilKind) : 'note')
+  block.attrs = parseAttrs(m?.[2] ?? '')
+  if (!known) {
+    block.attrs.tone = 'warn'
+    block.prose = line
+    block.warnings.push(`unknown block "@${rawKind || '?'}"`)
   }
-  const parsed = Number.parseInt(def, 10)
-  const mid = Math.ceil(steps / 2)
-  const value = Math.min(steps, Math.max(1, Number.isFinite(parsed) ? parsed : mid))
-  block.dials.push({ name, left: left || 'Less', right: right || 'More', value })
+  return { block, steps: readSteps(block) }
 }
 
 function finish(block: AnvilBlock, body: string[]): AnvilBlock {
@@ -171,13 +126,12 @@ function finish(block: AnvilBlock, body: string[]): AnvilBlock {
 
 export function parseAnvil(source: string, opts: { partial?: boolean } = {}): AnvilDoc {
   const doc: AnvilDoc = { blocks: [], partial: opts.partial === true }
-  let block: AnvilBlock | null = null
+  let cur: Cursor | null = null
   let body: string[] = []
-  let steps = 5
 
   const close = (): void => {
-    if (block) doc.blocks.push(finish(block, body))
-    block = null
+    if (cur) doc.blocks.push(finish(cur.block, body))
+    cur = null
     body = []
   }
 
@@ -187,42 +141,17 @@ export function parseAnvil(source: string, opts: { partial?: boolean } = {}): An
 
     if (line.startsWith('@')) {
       close()
-      const m = line.match(/^@(\w+)\s*(.*)$/)
-      const rawKind = (m?.[1] ?? '').toLowerCase()
-      const kind: AnvilKind = KIND_SET.has(rawKind) ? (rawKind as AnvilKind) : 'note'
-      block = blank(kind)
-      block.attrs = parseAttrs(m?.[2] ?? '')
-      if (!KIND_SET.has(rawKind)) {
-        block.attrs.tone = 'warn'
-        block.prose = line
-        block.warnings.push(`unknown block "@${rawKind || '?'}"`)
-      }
-      steps = 5
-      const rawSteps = block.attrs.steps
-      if (typeof rawSteps === 'string') {
-        const n = Number.parseInt(rawSteps, 10)
-        if (Number.isFinite(n) && n >= 2 && n <= 11) steps = n
-        else block.warnings.push(`steps="${rawSteps}" out of range, using 5`)
-      }
+      cur = openBlock(line)
       continue
     }
 
     // Content before any @ header is an implicit note.
-    if (!block) {
-      block = blank('note')
-      body = []
-    }
+    if (!cur) cur = { block: blank('note'), steps: DEFAULT_STEPS }
     body.push(line)
 
-    const sigil = line.charAt(0)
-    const rest = line.slice(1).trim()
-    if (sigil === '?') block.prompt = block.prompt ? `${block.prompt}\n${rest}` : rest
-    else if (sigil === ':') block.subtext = block.subtext ? `${block.subtext} ${rest}` : rest
-    else if (sigil === '-') parseOption(rest, block)
-    else if (sigil === '_') parseField(rest, block)
-    else if (sigil === '%') parseDial(rest, block, steps)
-    else if (sigil === '>') block.prose = block.prose ? `${block.prose}\n${rest}` : rest
-    else block.prompt = block.prompt ? `${block.prompt}\n${line}` : line
+    const handler = LINES[line.charAt(0)]
+    if (handler) handler(line.slice(1).trim(), cur)
+    else cur.block.prompt = join(cur.block.prompt, line, '\n')
   }
 
   close()

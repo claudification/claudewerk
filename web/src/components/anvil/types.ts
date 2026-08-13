@@ -84,10 +84,6 @@ export function attrString(block: AnvilBlock, key: string, fallback = ''): strin
   return typeof v === 'string' ? v : fallback
 }
 
-export function attrFlag(block: AnvilBlock, key: string): boolean {
-  return block.attrs[key] === true || block.attrs[key] === 'true'
-}
-
 export function attrNumber(block: AnvilBlock, key: string, fallback: number): number {
   const v = block.attrs[key]
   const n = typeof v === 'string' ? Number.parseInt(v, 10) : Number.NaN
