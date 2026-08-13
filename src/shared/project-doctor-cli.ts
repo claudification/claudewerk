@@ -81,7 +81,7 @@ const COLLAPSE_AT = 5
 const SAMPLE = 3
 
 /** One finding, three lines: what, what is wrong, what to do. */
-function findingLines(f: DoctorFinding): string[] {
+export function findingLines(f: DoctorFinding): string[] {
   return [`  ${MARK[f.severity]} [${f.check}] ${f.subject}`, `        ${f.problem}`, `        -> ${f.remedy}`]
 }
 

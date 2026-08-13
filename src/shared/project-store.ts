@@ -30,6 +30,7 @@ import { canonicalizeCardPath, resolveInRoot } from './project-paths'
 export {
   getProjectTask,
   getProjectTasksBatch,
+  listCardIds,
   listProjectManifest,
   listProjectTasks,
   locateCard,

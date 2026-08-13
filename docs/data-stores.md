@@ -67,6 +67,33 @@ Code: `src/shared/project-doctor{,-cards,-links,-layout,-types,-cli}.ts`,
 entry `scripts/board-doctor.ts`. The checks are pure fs + string work, so the
 same module can back a sentinel RPC or MCP tool later without moving.
 
+### Catching a bad card at write time
+
+The doctor finds rot after the fact, which means somebody has to remember to run
+it. `scripts/hooks/validate-card.ts` runs the same card checks on the PostToolUse
+edge and hands the findings straight back to the agent that just wrote the file,
+while it still has the context to fix them. Wire it up per-machine in
+`.claude/settings.json` (never committed):
+
+```json
+"PostToolUse": [{
+  "matcher": "Write|Edit|MultiEdit",
+  "hooks": [{ "type": "command",
+              "command": "bun run \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/validate-card.ts" }]
+}]
+```
+
+Exit 2 is what feeds stderr back to the model. Nothing is blocked -- the write
+already happened, this is feedback. It reports a bad/missing `status:`, a card
+written outside `cards/`, an unreadable card, and links to card ids the board
+does not have. **Info-level findings are dropped** (no title, empty body): an
+agent mid-task does not need to hear about a body it is about to write, and a
+hook that cries wolf gets switched off within a day. It **fails open** on any
+unexpected condition -- a validator that breaks a session is worse than none.
+
+Logic in `src/shared/project-card-hook.ts` (pure, tested without a hook or a
+board); the script is only the shell that talks to the process.
+
 ### Upgrading an old board
 
 Boards that predate this layout keep working -- reads fall back to the lane dirs

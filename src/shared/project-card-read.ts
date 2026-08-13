@@ -73,6 +73,11 @@ function allCards(root: string): CardRef[] {
   return out
 }
 
+/** Just the ids, no file reads -- for callers that only need "does it exist". */
+export function listCardIds(root: string): string[] {
+  return allCards(root).map(c => c.id)
+}
+
 export function listProjectTasks(root: string, filterStatus?: TaskStatus): ProjectTaskMeta[] {
   const tasks: ProjectTaskMeta[] = []
   for (const { id, abs, laneStatus } of allCards(root)) {
