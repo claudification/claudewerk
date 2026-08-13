@@ -11,7 +11,7 @@ import { FIELD_TYPES } from './types'
 const FIELD_TYPE_SET = new Set<string>(FIELD_TYPES)
 
 /** Split on unescaped pipes, then unescape. Trims each cell. */
-export function cells(s: string): string[] {
+function cells(s: string): string[] {
   const out: string[] = []
   let cur = ''
   for (let i = 0; i < s.length; i++) {
