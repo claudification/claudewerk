@@ -58,10 +58,18 @@ export interface OrbChannelSource {
   projectLabel?: string
 }
 
+/** What KIND of thing arrived, which decides how the browser phrases it:
+ *  `channel` = a conversation chose to tell the user something (relay it);
+ *  `status`  = a WATCHED conversation changed state and nobody asked for it out
+ *  loud (the orb decides whether it is worth a word, and inspects first). */
+export type OrbDeliveryKind = 'channel' | 'status'
+
 /** Broker -> control panel. The browser's `voice_orb_deliver` handler enqueues
  *  this; the orb reads `sourceName` + `body` aloud. */
 export interface OrbChannelDelivery {
   type: 'voice_orb_deliver'
+  /** Absent on older brokers -- the browser defaults it to `channel`. */
+  kind?: OrbDeliveryKind
   sourceConversationId: string
   sourceName: string
   body: string
@@ -69,6 +77,12 @@ export interface OrbChannelDelivery {
   /** null = every panel accepts; set = only the browser whose instance id
    *  matches speaks it (the rest ignore the broadcast). */
   targetOrbId: string | null
+  /** `status` only: the canonical `project:conversation` this came from, so the
+   *  orb can name it the same way the user subscribed to it. */
+  address?: string
+  /** `status` only: the state it moved to, and the one it left. */
+  state?: string
+  prevState?: string
 }
 
 /** What the orb reads aloud as the sender: the conversation's title, else its

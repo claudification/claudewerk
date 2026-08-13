@@ -13,6 +13,7 @@
 
 import type { Conversation } from '../../shared/protocol'
 import type { ControlConversationRow, ControlToolDeps, GateHold } from './control-tools'
+import { addressFleet } from './desk-addresses'
 import type { DispatchCommand } from './orchestrate'
 import { type DispatchRuntime, runDispatch } from './runtime'
 
@@ -22,8 +23,9 @@ function contextK(c: Conversation): number | undefined {
   return Math.round((tu.input + tu.cacheCreation + tu.cacheRead) / 1000)
 }
 
-function toRow(c: Conversation): ControlConversationRow {
+function toRow(c: Conversation, address?: string): ControlConversationRow {
   const row: ControlConversationRow = { id: c.id, status: c.status }
+  if (address) row.address = address
   if (c.title) row.title = c.title
   if (c.project) row.project = c.project
   if (c.liveStatus?.state) row.liveState = c.liveStatus.state
@@ -40,13 +42,17 @@ function listRows(
 ): ControlConversationRow[] {
   const want = status ?? 'live'
   const f = filter?.toLowerCase()
-  return rt.store
-    .getAllConversations()
+  const all = rt.store.getAllConversations()
+  // Addressed over the WHOLE fleet, not the filtered slice: whether `nightshift`
+  // needs its `-a1b2c3` disambiguator depends on its siblings, so a filter that
+  // hid the twin would otherwise hand out an address that means something else.
+  const addresses = addressFleet(all)
+  return all
     .filter(c => (want === 'all' ? true : want === 'ended' ? c.status === 'ended' : c.status !== 'ended'))
     .filter(c => !f || (c.title?.toLowerCase().includes(f) ?? false) || (c.project?.toLowerCase().includes(f) ?? false))
     .sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))
     .slice(0, 50)
-    .map(toRow)
+    .map(c => toRow(c, addresses.get(c.id)))
 }
 
 /** Send a `control` action to a live conversation's socket; throws if it isn't connected. */

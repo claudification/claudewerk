@@ -52,6 +52,7 @@ import type {
 } from '@/lib/types'
 import { setLastConversationId } from '@/lib/ui-state'
 import { haptic } from '@/lib/utils'
+import type { OrbChannelMessage, OrbMessageKind } from '@/lib/voice-orb/orb-channel'
 import { isOrbChannelDraining, pushOrbChannelMessage } from '@/lib/voice-orb/orb-channel-bus'
 import { isForThisOrb } from '@/lib/voice-orb/orb-instance'
 import { deliverVoiceToolResult, type ToolResultMessage } from '@/lib/voice-orb/tool-bridge'
@@ -1769,36 +1770,62 @@ function handleVoiceToolCallResult(msg: DashboardMessage) {
   deliverVoiceToolResult(msg as unknown as ToolResultMessage)
 }
 
-/** A conversation addressed the orb (`send_message to:"orb"`). The broker
- *  broadcasts every delivery; this browser keeps only the ones aimed at it (or
- *  the broadcast ones), queues them, and -- if no orb is summoned to speak them
- *  -- raises a toast so the message is not silently held. All the modules here
- *  are WebRTC-free, so the heavy orb chunk stays lazy. */
-function handleVoiceOrbDeliver(msg: DashboardMessage) {
-  const m = msg as unknown as {
-    sourceConversationId?: string
-    sourceName?: string
-    body?: string
-    ts?: number
-    targetOrbId?: string | null
-  }
-  if (!m.body || !isForThisOrb(m.targetOrbId)) return
-  pushOrbChannelMessage({
+/** The wire shape of a `voice_orb_deliver`. */
+interface VoiceOrbDelivery {
+  kind?: OrbMessageKind
+  sourceConversationId?: string
+  sourceName?: string
+  body?: string
+  ts?: number
+  targetOrbId?: string | null
+  address?: string
+  state?: string
+  prevState?: string
+}
+
+/** Nobody is summoned to speak a RELAY, so surface it rather than hold it
+ *  silently. Statuses never get here: they are ambient (the conversation list
+ *  already shows the badge), and a toast per state change would turn a
+ *  subscription into a notification storm. */
+function toastHeldOrbRelay(sourceName: string): void {
+  window.dispatchEvent(
+    new CustomEvent('rclaude-toast', {
+      detail: { title: `The orb has a message from ${sourceName}`, body: 'Summon the orb to hear it.' },
+    }),
+  )
+}
+
+/** Wire -> queue shape, defaults applied in one place. */
+function toOrbChannelMessage(m: VoiceOrbDelivery): OrbChannelMessage {
+  return {
+    kind: m.kind,
     sourceConversationId: m.sourceConversationId ?? '',
     sourceName: m.sourceName ?? 'a conversation',
-    body: m.body,
+    body: m.body ?? '',
     ts: typeof m.ts === 'number' ? m.ts : Date.now(),
-  })
-  if (!isOrbChannelDraining()) {
-    window.dispatchEvent(
-      new CustomEvent('rclaude-toast', {
-        detail: {
-          title: `The orb has a message from ${m.sourceName ?? 'a conversation'}`,
-          body: 'Summon the orb to hear it.',
-        },
-      }),
-    )
+    address: m.address,
+    state: m.state,
+    prevState: m.prevState,
   }
+}
+
+/** A conversation addressed the orb (`send_message to:"orb"`), or a WATCHED
+ *  conversation changed state. The broker broadcasts every delivery; this
+ *  browser keeps only the ones aimed at it (or the broadcast ones) and queues
+ *  them. All the modules here are WebRTC-free, so the heavy orb chunk stays
+ *  lazy. */
+function handleVoiceOrbDeliver(msg: DashboardMessage) {
+  const m = msg as unknown as VoiceOrbDelivery
+  if (!isForThisOrb(m.targetOrbId)) return
+  const isStatus = m.kind === 'status'
+  // A relayed line with no body is nothing to say. A STATUS with no body is
+  // still the whole message -- "it finished" needs no prose -- so the
+  // empty-body guard applies to relays only.
+  if (!m.body && !isStatus) return
+
+  const queued = toOrbChannelMessage(m)
+  pushOrbChannelMessage(queued)
+  if (!isStatus && !isOrbChannelDraining()) toastHeldOrbRelay(queued.sourceName)
 }
 
 function handleSotuFleetResult(msg: DashboardMessage) {

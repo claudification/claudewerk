@@ -46,6 +46,22 @@ describe('the voice contract', () => {
     expect(buildVoiceToolset(bare, { names: ['read_transcript'] }).read_transcript).toBeDefined()
   })
 
+  it('can SUBSCRIBE to conversations, and the subscription mutates nothing', () => {
+    expect(ACTIVE_VOICE_TOOLS).toContain('watch_conversations')
+    // In the READ set on purpose: a watch changes what the orb is told, never
+    // what the fleet does, so it needs no spoken confirm.
+    expect(VOICE_READ_TOOLS).toContain('watch_conversations')
+    expect(VOICE_ACTION_TOOLS).not.toContain('watch_conversations')
+
+    // The orb id is stamped by the seam; an orbId in the args is stripped, so a
+    // misheard sentence cannot subscribe somebody else's browser.
+    const { watch_conversations: tool } = buildVoiceToolset(fakeRt(), { names: ['watch_conversations'] })
+    expect(tool).toBeDefined()
+    const parsed = tool?.inputSchema.safeParse({ mode: 'add', patterns: ['x'], orbId: 'someone-else' })
+    expect(parsed?.success).toBe(true)
+    expect(parsed?.data).toEqual({ mode: 'add', patterns: ['x'] })
+  })
+
   it('every mutating verb names its target explicitly -- nothing guesses', () => {
     // `say_to_conversation` resolves against what is ON SCREEN (client-local),
     // `dispatch_quest` takes a named project. Neither accepts a raw id from speech.

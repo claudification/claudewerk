@@ -26,7 +26,6 @@ import { buildRosterSnapshot, shellRegistry } from '../shell-registry'
 import { collectLineageSubtree } from '../spawn-lineage'
 import { deliverPendingVoiceResult } from '../voice-stream'
 import {
-  computeConversationSlug,
   computeLocalId,
   formatAmbiguityError,
   formatCrossProjectAmbiguityError,
@@ -866,7 +865,7 @@ function deliverToOne(
           toConv.formerSlugs = refreshed
           ctx.conversations.persistConversationById(toConv.id)
         }
-        canonicalAddress = `${projectSlug}:${computeConversationSlug(toConv, conversationsAtProject)}`
+        canonicalAddress = computeLocalId(toConv, projectSlug, conversationsAtProject)
         ctx.log.debug(
           `[inter-conversation] ${toTarget} resolved via former slug "${resolved.viaAlias}" -> ${toConv.id.slice(0, 8)} ` +
             `(alias refreshed; canonical=${canonicalAddress})`,
@@ -907,7 +906,7 @@ function deliverToOne(
         const canonProjectSlug = callerProject
           ? ctx.addressBook.getOrAssign(callerProject, matched.project, projectName)
           : slugify(projectName)
-        canonicalAddress = `${canonProjectSlug}:${computeConversationSlug(matched, conversationsAtProject)}`
+        canonicalAddress = computeLocalId(matched, canonProjectSlug, conversationsAtProject)
         if (byName.viaAlias) {
           const refreshed = refreshAliasUse(matched.formerSlugs, byName.viaAlias, Date.now())
           if (refreshed !== matched.formerSlugs) {

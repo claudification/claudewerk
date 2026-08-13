@@ -15,11 +15,23 @@
  *   - DROP STALE: a line older than the TTL is noise by the time it would speak.
  */
 
+/** `channel` = a conversation deliberately sent the user a line (relay it).
+ *  `status`  = a WATCHED conversation changed state and nobody asked out loud
+ *  (the orb decides whether it is worth saying, after going and looking). */
+export type OrbMessageKind = 'channel' | 'status'
+
 export interface OrbChannelMessage {
   sourceConversationId: string
   sourceName: string
   body: string
   ts: number
+  /** Defaults to `channel` -- an older broker sends no kind at all. */
+  kind?: OrbMessageKind
+  /** `status` only: the canonical `project:conversation` it was watched under. */
+  address?: string
+  /** `status` only: where it moved to, and what it left. */
+  state?: string
+  prevState?: string
 }
 
 /** Most lines the browser holds before dropping the oldest. A burst past this
@@ -55,6 +67,29 @@ export function formatChannelNote(msg: OrbChannelMessage, othersWaiting: number)
   )
 }
 
+/**
+ * The note for a WATCHED status.
+ *
+ * FACTS ONLY, deliberately. What to DO about a status lives in the system
+ * prompt (voice-persona.ts REACTING), because that is standing behaviour and
+ * repeating it in every note both burns tokens and invites the model to treat
+ * the note as the script. The one thing the note must carry that the prompt
+ * cannot is the `conversationId` -- without it the orb has nothing to hand
+ * `read_transcript`, and "go and look first" becomes un-followable advice.
+ */
+export function formatStatusNote(msg: OrbChannelMessage, othersWaiting: number): string {
+  const address = msg.address ?? msg.sourceName
+  const moved = msg.prevState ? `${msg.prevState} -> ${msg.state ?? '?'}` : `${msg.state ?? '?'}`
+  const reported = msg.body ? ` It reported: "${msg.body}".` : ' It reported nothing else.'
+  const tail = othersWaiting > 0 ? ` (${othersWaiting} more status change${othersWaiting > 1 ? 's' : ''} waiting)` : ''
+  return `[status] ${address} went ${moved}${tail}.${reported} ` + `conversationId: ${msg.sourceConversationId}`
+}
+
+/** Pick the formatter for what arrived. */
+function formatNote(msg: OrbChannelMessage, othersWaiting: number): string {
+  return msg.kind === 'status' ? formatStatusNote(msg, othersWaiting) : formatChannelNote(msg, othersWaiting)
+}
+
 export interface OrbChannelDecision {
   /** What to tell the orb to say, or null to stay quiet. */
   say: string | null
@@ -85,5 +120,5 @@ export function decideOrbChannel(opts: {
   // Newest-first: the last-arrived fresh line. The rest stay for later ticks.
   const consumed = live[live.length - 1]
   const remaining = live.slice(0, live.length - 1)
-  return { say: formatChannelNote(consumed, remaining.length), remaining }
+  return { say: formatNote(consumed, remaining.length), remaining }
 }
