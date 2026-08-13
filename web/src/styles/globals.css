@@ -563,6 +563,46 @@ body {
 }
 } /* end @layer components */
 
+/* Source-file view (CodeFileView): numbered gutter + horizontally scrolling code.
+   The number is a ::before counter so it never lands in the clipboard when the
+   whole file is selected. It sticks to the left edge of the scrollport, and
+   being a positioned box it paints ABOVE the code that scrolls under it --
+   hence the opaque background. */
+.code-file-lines {
+	font-family: var(--font-mono);
+	line-height: 1.6;
+	counter-reset: code-line;
+	width: max-content;
+	min-width: 100%;
+}
+
+.code-file-lines .code-line {
+	white-space: pre;
+	tab-size: 2;
+}
+
+.code-file-lines .code-line::before {
+	counter-increment: code-line;
+	content: counter(code-line);
+	display: inline-block;
+	position: sticky;
+	left: 0;
+	width: calc(var(--code-gutter-w, 3ch) + 1.5rem);
+	padding-right: 0.75rem;
+	margin-right: 0.75rem;
+	text-align: right;
+	color: var(--muted-foreground);
+	background: var(--background);
+	border-right: 1px solid var(--border);
+	opacity: 0.55;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+.code-file-lines .code-line:hover::before {
+	opacity: 1;
+}
+
 /* Mermaid diagram rendering */
 pre.mermaid {
 	visibility: hidden;

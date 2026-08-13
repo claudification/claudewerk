@@ -11,6 +11,7 @@
 import { useEffect, useState } from 'react'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { readProjectFile } from '@/hooks/use-project-tasks'
+import { CodeFileView } from './code-file-view'
 import { Markdown } from './markdown'
 import { Sheet, SheetContent, SheetTitle } from './ui/sheet'
 
@@ -66,7 +67,7 @@ export function MarkdownViewerModal() {
                 <Markdown copyable>{content}</Markdown>
               </div>
             ) : (
-              <pre className="mx-auto max-w-4xl text-xs whitespace-pre-wrap break-words font-mono">{content}</pre>
+              <CodeFileView content={content} relPath={current.relPath} />
             ))}
           {truncated && (
             <div className="text-amber-400 text-xs p-2 border-t border-border mt-2">
