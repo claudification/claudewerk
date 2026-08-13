@@ -12,9 +12,14 @@ test('ships this app own vocabulary even with no project configured', () => {
 
   // Per-project keyterms are opt-in and mostly empty; without built-ins nobody
   // would get the fix by default.
-  expect(terms).toContain('claudewerk')
-  expect(terms).toContain('Cloudflare')
-  expect(terms).toContain('agent host')
+  expect(terms).toEqual(['Cloudflare', 'Claude', 'claudewerk'])
+})
+
+test('stays tiny -- a long list measurably undoes the fix', () => {
+  // 4 and 6 terms turned "CloudFlo" into "Cloudflare" on the probe fixture;
+  // 10 and 25 put it straight back. Growing this list needs a probe run, so
+  // pin the size and make the next person come and read why.
+  expect(resolveKeyterms()).toHaveLength(3)
 })
 
 test('puts project terms FIRST, so the cap eats the generic ones', () => {

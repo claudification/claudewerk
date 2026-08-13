@@ -28,17 +28,22 @@
 
 import { projectIdentityKey } from '@shared/project-uri'
 
-/** SIX, and the exact six that were measured working together. Additions are
- *  not free -- see the header. */
+/**
+ * THREE. Every one of them earns its slot.
+ *
+ * The list was six, and the trim came from reading the ZERO-keyterm transcript
+ * properly: "sentinel", "agent host", "control panel" and "Deepgram" all came
+ * back correct unaided. They were not helping, they were spending bias on words
+ * flux already knows -- which, per the header, is exactly how the list stops
+ * working. "Cloudflare" is the only word the probe has ever caught it missing.
+ */
 const BUILT_IN_KEYTERMS: readonly string[] = [
-  // Vendors flux demonstrably mangles: "CloudFlo" is what it returns unaided.
+  // Measured: "CloudFlo" unaided, "Cloudflare" with this on.
   'Cloudflare',
-  'Deepgram',
-  // The brand and its parts. "claudewerk" has no chance without this.
+  // Said in nearly every sentence here, and a name rather than a word.
+  'Claude',
+  // No general model has heard of it.
   'claudewerk',
-  'sentinel',
-  'agent host',
-  'worktree',
 ]
 
 /**
