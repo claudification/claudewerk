@@ -591,16 +591,18 @@ body {
 	padding-right: 0.75rem;
 	margin-right: 0.75rem;
 	text-align: right;
-	color: var(--muted-foreground);
 	background: var(--background);
 	border-right: 1px solid var(--border);
-	opacity: 0.55;
+	/* Dim via the text colour, NEVER `opacity` -- opacity fades the whole
+	   pseudo-element including its background, and a see-through gutter lets
+	   the horizontally scrolled code paint straight through the numbers. */
+	color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
 	user-select: none;
 	-webkit-user-select: none;
 }
 
 .code-file-lines .code-line:hover::before {
-	opacity: 1;
+	color: var(--muted-foreground);
 }
 
 /* Mermaid diagram rendering */
