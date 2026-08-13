@@ -8,6 +8,7 @@
  * Backed by StoreDriver KVStore (replaces JSON file persistence).
  */
 
+import { slugifyAddressPart } from '../shared/conversation-address'
 import type { KVStore } from './store/types'
 
 // callerProject -> { localId -> targetProject }
@@ -48,16 +49,13 @@ function save(): void {
   kv.set(KV_KEY, payload)
 }
 
-/** Generate a slug from a name. Lowercase, alphanumeric + hyphens. */
-export function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 24) || 'project'
-  )
-}
+/** Generate a slug from a name. Lowercase, alphanumeric + hyphens.
+ *
+ *  RE-EXPORT, not a definition: the rules live in shared/conversation-address.ts
+ *  because the broker, the agent host and the panel must all slug an address
+ *  half identically. Kept exported under this name so the ~dozen existing
+ *  importers do not care where it moved. */
+export const slugify = slugifyAddressPart
 
 /** Get or assign a local ID for a target project, scoped to the caller. */
 export function getOrAssign(callerProject: string, targetProject: string, targetName: string): string {

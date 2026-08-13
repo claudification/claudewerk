@@ -14,9 +14,11 @@
  * dialog/ask idle timers.
  */
 
+import { isSameProject } from '../../shared/project-uri'
 import type { Conversation, LiveStatus } from '../../shared/protocol'
 import { notifyNeedsYou, rearmAttentionNotify } from '../attention-notify'
 import { emitDeskEvent } from '../desk/event-registry'
+import { relayStatusToWatchers } from '../desk/orb-status-relay'
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, registerHandlers } from '../message-router'
 import { armParentNotify } from '../parent-notify'
@@ -46,6 +48,35 @@ function handleNeedsYouSignal(conv: Conversation, conversationId: string, status
       project: conv.project,
       summary: status.pending || status.blocked || 'Needs your input',
     })
+  }
+}
+
+/**
+ * Tell any orb that SUBSCRIBED to this conversation that it moved. No-op unless
+ * someone called `watch_conversations` for a pattern this address matches, so
+ * the cost on an unwatched fleet is one map lookup. The broadcast handed in is
+ * the PROJECT-SCOPED one -- a watched status must not reach a panel that is not
+ * allowed to see the conversation.
+ */
+function relayToWatchingOrbs(
+  ctx: Ctx,
+  conversationId: string,
+  conv: Conversation,
+  status: LiveStatus,
+  prevState: string,
+): void {
+  const project = conv.project
+  if (!project) return
+  const relayed = relayStatusToWatchers(conversationId, conv, status, prevState, {
+    siblings: p => Array.from(ctx.conversations.getAllConversations()).filter(s => isSameProject(s.project, p)),
+    projectLabel: p => ctx.getProjectSettings(p)?.label ?? null,
+    broadcast: m => ctx.broadcastScoped(m, project),
+  })
+  if (relayed) {
+    ctx.log.info(
+      `[status] relayed to ${relayed.matched} watching orb(s) address=${relayed.address} ` +
+        `state=${prevState}->${status.state}`,
+    )
   }
 }
 
@@ -112,6 +143,7 @@ const agentStatus: MessageHandler = (ctx, data) => {
   }
   handleNeedsYouSignal(conv, conversationId, status)
   emitSotuContribution(conv, conversationId, status)
+  relayToWatchingOrbs(ctx, conversationId, conv, status, prevState)
   // EXPENSIVE report-back: a set_status (re)arms the parent-notify settle timer.
   // No-op unless the child opted in via `notifyParent` at spawn. Re-validated at
   // fire time, so arming mid-turn is safe (a still-active turn just skips).

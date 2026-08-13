@@ -25,6 +25,7 @@ import {
 } from '../../shared/voice-orb-options'
 import { buildDispatchToolset as buildWideToolset } from './dispatch-tools'
 import { orbMemoryTools } from './orb-memory-tools'
+import { orbWatchTools } from './orb-watch-tools'
 import { type RealtimeTool, toRealtimeTools } from './realtime-schema'
 import { buildDispatchRuntimeToolDeps, type DispatchRuntime } from './runtime'
 import { defineTool, type Toolset } from './tool-def'
@@ -48,6 +49,11 @@ export const VOICE_READ_TOOLS = [
   'control_screen',
   'reload_yourself',
   'update_orb_settings',
+  // A SUBSCRIPTION, not an action: it changes what the orb is TOLD, never what
+  // the fleet does. Worst case a misheard pattern makes the orb hear about the
+  // wrong project, which the user notices the moment it speaks and undoes in a
+  // sentence -- so it belongs with the reads, not behind the spoken confirm.
+  'watch_conversations',
 ] as const
 
 /** The ACTION verbs, behind the persona's spoken confirm. Two, both EXPLICIT
@@ -166,6 +172,7 @@ function availableVoiceTools(rt: DispatchRuntime, userId: string | null | undefi
     ...buildDeskToolset(buildDispatchRuntimeToolDeps(rt)),
     ...buildWideToolset(rt),
     ...orbMemoryTools(userId),
+    ...orbWatchTools(rt),
     ...CLIENT_LOCAL_TOOLS,
   }
 }

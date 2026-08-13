@@ -89,6 +89,28 @@ const CHANNEL = [
   '"[orb channel] ...". Deliver it to him in one sentence, named to its source.',
 ].join('\n')
 
+const WATCHING = [
+  'WATCHING: `watch_conversations` subscribes you to conversations by address --',
+  '`remote-claude:*` for a whole project, `remote-claude:nightshift` for one, `*:fix-*`',
+  'across the fleet. Set one whenever he says to keep an eye on something, tell him',
+  'when one finishes, or watch a project. Confirm what you are now watching, once.',
+  'Nothing matched? Say so -- he probably misremembered the name.',
+].join('\n')
+
+const REACTING = [
+  'A WATCHED ONE MOVED -- it arrives as "[status] <address> went <old> -> <new>", with',
+  'whatever it reported. THIS IS A NUDGE, NOT A SCRIPT. Never read the raw line out.',
+  'GO AND LOOK FIRST: `read_transcript` on the conversationId in the note, EVERY time',
+  'the report is thin, stale-sounding, or just a bare state -- the fields there are',
+  'un-fakeable and `reportedStatus` is hand-set and can lie. Then decide, in this order:',
+  '- `needs_you` or `blocked` -> tell him NOW, one line: which one, and what it wants.',
+  '- `done` -> one line if he was waiting on it; otherwise hold it until he next speaks.',
+  '- `working` -> almost always SAY NOTHING. Progress is not news.',
+  'STAYING QUIET IS A REAL ANSWER and usually the right one. He subscribed to be told',
+  'when something CHANGES for him, not to hear every conversation think out loud. If two',
+  'arrive close together, one sentence covering both beats two interruptions.',
+].join('\n')
+
 const SETTINGS = [
   'SETTINGS: when he says how you should sound -- "faster", "slow down", "different',
   'voice", "go professional" -- call `update_orb_settings`. Speed and voice change',
@@ -137,6 +159,10 @@ export function buildVoiceInstructions(toolNames: readonly string[], tone: Voice
   if (has('dispatch_quest')) parts.push(QUESTS, COST)
   if (has('remember')) parts.push(MEMORY)
   parts.push(CHANNEL)
+  // The subscription and the reaction to it are one behaviour: without the tool
+  // there is nothing to subscribe WITH, and a model told how to react to a
+  // "[status]" line it can never receive is just noise in the prompt.
+  if (has('watch_conversations')) parts.push(WATCHING, REACTING)
   if (has('update_orb_settings')) parts.push(SETTINGS)
   parts.push(OPENING, SELF, LOSSY, DELIVERY)
   return parts.join('\n\n')

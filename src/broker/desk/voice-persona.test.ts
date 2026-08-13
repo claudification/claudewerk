@@ -33,6 +33,38 @@ describe('the contract drives the instructions', () => {
     expect(withIt).toContain('never read a transcript out')
   })
 
+  it('teaches subscribing + reacting ONLY when watch_conversations is minted', () => {
+    // Without the verb there is nothing to subscribe with, so a model told how
+    // to react to a "[status]" line it can never receive is just prompt noise.
+    const without = flat(buildVoiceInstructions(['list_conversations', 'read_transcript']))
+    expect(without).not.toContain('`watch_conversations`')
+    expect(without).not.toContain('[status]')
+
+    const withIt = flat(buildVoiceInstructions(ALL))
+    expect(withIt).toContain('`watch_conversations`')
+    expect(withIt).toContain('[status]')
+    // The address convention is taught by example, not by prose.
+    expect(withIt).toContain('remote-claude:*')
+    expect(withIt).toContain('*:fix-*')
+  })
+
+  it('makes the reaction INSPECT rather than parrot the status line', () => {
+    const withIt = flat(buildVoiceInstructions(ALL))
+    // The whole point: a status is a nudge to go look, not a script to read.
+    expect(withIt).toContain('NUDGE, NOT A SCRIPT')
+    expect(withIt).toContain('Never read the raw line out')
+    expect(withIt).toContain('GO AND LOOK FIRST')
+    expect(withIt).toContain('`read_transcript`')
+  })
+
+  it('licenses SILENCE, so a watch does not become a narrator', () => {
+    const withIt = flat(buildVoiceInstructions(ALL))
+    expect(withIt).toContain('STAYING QUIET IS A REAL ANSWER')
+    expect(withIt).toContain('Progress is not news')
+    // Escalate on the two states that actually need him; hold the rest.
+    expect(withIt).toContain('`needs_you` or `blocked` -> tell him NOW')
+  })
+
   it('adds the talking + quest + cost paragraphs once the action verbs are minted', () => {
     const full = buildVoiceInstructions(ALL)
     expect(flat(full)).toContain('`say_to_conversation`')

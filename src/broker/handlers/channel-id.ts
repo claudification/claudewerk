@@ -20,52 +20,14 @@
 
 import { extractProjectLabel, isSameProject } from '../../shared/project-uri'
 import { slugify } from '../address-book'
+import { type ConversationLike, computeConversationSlug, computeLocalId } from '../conversation-address'
 import { isAliasLive } from '../former-slugs'
-import type { FormerSlug } from '../store/types'
 
-export interface ConversationLike {
-  id: string
-  project: string
-  title?: string
-  /** Retired addressable slugs with decay bookkeeping (rename-alias retention). */
-  formerSlugs?: FormerSlug[]
-}
-
-/**
- * Compute the per-conversation slug suffix used inside compound ids.
- * Falls back to a 6-char id slice when two conversations in the same project would
- * slug to the same value (so siblings stay disambiguable).
- */
-export function computeConversationSlug(
-  target: ConversationLike,
-  siblingConversations: ConversationLike[],
-  now: number = Date.now(),
-): string {
-  const conversationSlug = slugify(target.title || target.id.slice(0, 8))
-  // A name collides if a sibling CURRENTLY answers to it OR still holds it as an
-  // in-window former slug (rename-alias retention) -- otherwise a fresh/renamed
-  // conversation could grab a name that is still forwarding to someone else.
-  const collides = siblingConversations.some(other => {
-    if (other.id === target.id) return false
-    if (slugify(other.title || other.id.slice(0, 8)) === conversationSlug) return true
-    return (other.formerSlugs ?? []).some(f => f.slug === conversationSlug && isAliasLive(f, now))
-  })
-  return collides ? `${conversationSlug}-${target.id.slice(0, 6)}` : conversationSlug
-}
-
-/**
- * Always-compound local id: `project:conversation-slug`.
- *
- * Use for both `list_conversations` output and the from-id stamped on outgoing
- * messages so a recipient can replay it verbatim as `to`.
- */
-export function computeLocalId(
-  target: ConversationLike,
-  projectSlug: string,
-  siblingConversations: ConversationLike[],
-): string {
-  return `${projectSlug}:${computeConversationSlug(target, siblingConversations)}`
-}
+// The address FORMATTERS moved up to broker/conversation-address.ts so desk/ can
+// reach them without importing across the handlers/ seam. Re-exported here
+// because this is where every caller already imports them from, and because the
+// resolver below is meaningless without the shape it resolves to.
+export { type ConversationLike, computeConversationSlug, computeLocalId }
 
 // ─── Send target resolution ─────────────────────────────────────────
 
@@ -150,7 +112,7 @@ export function resolveSendTarget(input: ResolveSendInput): ResolveSendTarget {
  */
 export function formatAmbiguityError(canonicalProject: string, candidates: ConversationLike[]): string {
   const siblingConversations = candidates
-  const ids = candidates.map(s => `${canonicalProject}:${computeConversationSlug(s, siblingConversations)}`).join(', ')
+  const ids = candidates.map(s => computeLocalId(s, canonicalProject, siblingConversations)).join(', ')
   return `Ambiguous target: ${candidates.length} conversations at "${canonicalProject}". Use compound address: ${ids}`
 }
 

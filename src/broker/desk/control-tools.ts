@@ -13,7 +13,12 @@ import { defineTool, type Toolset } from './tool-def'
 
 /** A conversation row the dispatcher sees (lighter than a full summary). */
 export interface ControlConversationRow {
+  /** The RAW conversation id -- what read_transcript / read_events take. */
   id: string
+  /** The canonical `project:conversation` address -- what a human says out loud
+   *  and what a `watch_conversations` pattern is written against. Absent for a
+   *  conversation with no project (nothing to address it under). */
+  address?: string
   title?: string
   project?: string
   status: string

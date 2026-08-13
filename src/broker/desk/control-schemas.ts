@@ -55,7 +55,7 @@ const readEventsInput = z.object({
 
 const D = {
   list_conversations:
-    'ALWAYS AVAILABLE. List the fleet of conversations (id, title, project, status, live-state, idle, context size). Use this first whenever the user asks what is going on / to list anything.',
+    'ALWAYS AVAILABLE. List the fleet of conversations (id, address, title, project, status, live-state, idle, context size). Use this first whenever the user asks what is going on / to list anything. TWO HANDLES PER ROW, do not mix them up: `id` is the raw id you pass to read_transcript / read_events, and `address` is the canonical `project:conversation` name -- the one to say out loud, and the only one a watch_conversations pattern is written against.',
   inject: 'Send a message INTO a live conversation (the user wants to tell an agent something).',
   interrupt: 'Stop a conversation mid-turn (it is doing the wrong thing / the user wants to redirect it now).',
   terminate: 'End a conversation. IRREVERSIBLE -- confirm with the user first unless they were explicit.',
