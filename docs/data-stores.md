@@ -31,6 +31,31 @@ Shape of the model: notmuch (files never move, state is an index), Maildir (the
 unique filename *is* the identity), systemd/Nix (one store, generated symlink
 views), Jekyll/Hugo (flat dir, frontmatter is the taxonomy).
 
+### Checking a board's health
+
+```
+bun run board:doctor                          # this project
+bun run board:doctor --root ~/projects/foo    # another one
+bun run board:doctor --all ~/projects -q      # every board under a dir
+```
+
+READ ONLY -- it never writes, moves or deletes; every finding names the command
+or edit that fixes it. Exit 1 on errors, or on warnings too with `--strict`, so
+it works as a CI gate. Big groups collapse to one line (`-v` to list them all).
+
+| Check | Catches |
+|---|---|
+| `card-status-{missing,invalid}` | a lane the board silently coerces to `inbox` |
+| `card-{unreadable,no-frontmatter,title-missing,empty-body}` | cards that are not really cards |
+| `link-rot` | a card link whose target id does not exist -- clicking it does nothing |
+| `view-{dangling,duplicate,wrong-lane,wrong-target,missing,not-a-symlink}` | the `views/` farm drifting from the cards |
+| `legacy-{lane-cards,collision}` | undrained lane dirs, same id in two lanes |
+| `stray-{card-file,entry}`, `cards-{nested-dir,non-card-file}` | files nothing will ever read |
+
+Code: `src/shared/project-doctor{,-cards,-links,-views,-layout,-types,-cli}.ts`,
+entry `scripts/board-doctor.ts`. The checks are pure fs + string work, so the
+same module can back a sentinel RPC or MCP tool later without moving.
+
 ### Upgrading an old board
 
 Boards that predate this layout keep working -- reads fall back to the lane dirs
