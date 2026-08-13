@@ -6,31 +6,12 @@ import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import type { Workspace } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { colorDot, WORKSPACE_COLORS } from '../project-list/workspace-colors'
+import { colorDot } from '../project-list/workspace-colors'
 import { positionalWorkspaceKey } from '../project-list/workspace-hooks'
+import { WorkspaceColorMenu } from './workspace-color-menu'
 import { WorkspaceKeyEditor } from './workspace-key-editor'
 
 const grip = 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground touch-none shrink-0'
-
-function ColorPicker({ value, onPick }: { value: string | undefined; onPick: (c: string) => void }) {
-  return (
-    <div className="flex items-center gap-1">
-      {WORKSPACE_COLORS.map(c => (
-        <button
-          key={c}
-          type="button"
-          title={c}
-          onClick={() => onPick(c)}
-          className={cn(
-            'size-2.5 rounded-full transition-transform hover:scale-125',
-            colorDot(c),
-            value === c ? 'ring-1 ring-offset-1 ring-offset-background ring-foreground/60' : 'opacity-50',
-          )}
-        />
-      ))}
-    </div>
-  )
-}
 
 export interface WorkspaceRowActions {
   onSelect: () => void
@@ -118,7 +99,7 @@ export function WorkspaceRow({
         </button>
       </div>
       <div className="flex items-center justify-between gap-2 pl-6">
-        <ColorPicker value={ws.color} onPick={actions.onRecolor} />
+        <WorkspaceColorMenu value={ws.color} onPick={actions.onRecolor} />
         <WorkspaceKeyEditor
           fallback={positionalWorkspaceKey(index)}
           custom={ws.key}
