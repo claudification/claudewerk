@@ -13,7 +13,8 @@ import { listArchives, monthsToArchive } from '../archive'
 import { checkBackupGate } from '../backup'
 import { freeSpaceBytes } from '../maintenance/steps'
 import { openBrokerDatabase } from '../sqlite-open'
-import { findRedundantIndexes, measureFootprint, measureMonths, measureOrphans } from './measure-db'
+import { type BytesReport, applyBytes, measureBytes, readBytesCache, writeBytesCache } from './measure-bytes'
+import { findRedundantIndexes, measureFootprint, measureMonthRows, measureOrphans } from './measure-db'
 import { measureFileSweeps, measureOrphanedScenes } from './measure-files'
 import type { DbFootprint, GateVerdict, MonthEstimate, VacuumEstimate, VacuumPlan } from './types'
 
@@ -26,6 +27,9 @@ export interface EstimateOptions {
   fileAges?: Record<string, number>
   maxBackupAgeMinutes?: number
   now?: number
+  /** Run the ~2-minute byte pass inline instead of reading its cache. Only ever
+   *  set from an explicit "measure bytes now" action, never from a page load. */
+  remeasureBytes?: boolean
 }
 
 /** Matches the nightly job's default so the dialog and the cron agree on what
@@ -95,6 +99,7 @@ export function measureVacuum(opts: EstimateOptions): VacuumEstimate {
   const eligibleMonths = monthsToArchive(opts.cacheDir, opts.hotDays, now)
   const archivedMonths = new Set(listArchives(opts.archiveDir).map(a => a.month))
 
+  // FAST tier -- ~6 s total on the live database, so it runs on every open.
   const db = openBrokerDatabase(dbPath, { readonly: true })
   let months: MonthEstimate[]
   let footprint: DbFootprint
@@ -102,12 +107,22 @@ export function measureVacuum(opts: EstimateOptions): VacuumEstimate {
   let redundantIndexes: ReturnType<typeof findRedundantIndexes>
   try {
     footprint = measureFootprint(db, fileBytesOf(dbPath), fileBytesOf(`${dbPath}-wal`))
-    months = measureMonths(db, new Set(eligibleMonths), archivedMonths)
+    months = measureMonthRows(db, new Set(eligibleMonths), archivedMonths)
     orphans = measureOrphans(db, new Set(eligibleMonths))
     redundantIndexes = findRedundantIndexes(db, 'transcript_entries')
   } finally {
     db.close()
   }
+
+  // SLOW tier -- ~2 min, so it is cached and only re-run on an explicit ask.
+  let report: BytesReport | null
+  if (opts.remeasureBytes) {
+    report = measureBytes(opts.cacheDir, now)
+    writeBytesCache(opts.cacheDir, report)
+  } else {
+    report = readBytesCache(opts.cacheDir)
+  }
+  const bytes = applyBytes(report, Boolean(opts.remeasureBytes), months, orphans, footprint, now)
 
   const canvasDbPath = join(opts.cacheDir, 'canvases.db')
   const canvasDb = existsSync(canvasDbPath) ? openBrokerDatabase(canvasDbPath, { readonly: true }) : null
@@ -137,6 +152,7 @@ export function measureVacuum(opts: EstimateOptions): VacuumEstimate {
   return {
     measuredAt: new Date(now).toISOString(),
     measureDurationMs: Date.now() - started,
+    bytes,
     hotDays: opts.hotDays,
     gate: gateVerdict(opts.backupDir, opts.maxBackupAgeMinutes ?? DEFAULT_MAX_BACKUP_AGE_MINUTES, now),
     footprint,

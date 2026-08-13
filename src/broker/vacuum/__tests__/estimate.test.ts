@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { measureVacuum } from '../estimate'
+import { BYTES_CACHE_FILE } from '../measure-bytes'
 import { addConversation, makeVacuumDb, seedMonths, writeBackupSentinel } from './fixture'
 
 /** Fixed 'now' so month eligibility is deterministic rather than a function of
@@ -27,8 +28,14 @@ beforeEach(() => {
 
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
+/** Fast tier only -- what a dialog open does. Byte figures stay 0. */
 function estimate(hotDays = 30) {
   return measureVacuum({ cacheDir, backupDir, archiveDir, hotDays, now: NOW })
+}
+
+/** Fast tier plus the expensive byte pass -- what "measure bytes now" does. */
+function estimateWithBytes(hotDays = 30) {
+  return measureVacuum({ cacheDir, backupDir, archiveDir, hotDays, now: NOW, remeasureBytes: true })
 }
 
 describe('month measurement', () => {
@@ -43,11 +50,15 @@ describe('month measurement', () => {
     addConversation(cacheDir, '2026-08', 'active')
   })
 
-  it('counts rows and content bytes per UTC month', () => {
+  it('counts rows per UTC month in the fast tier', () => {
     const months = estimate().months
     expect(months.map(m => m.month)).toEqual(['2026-05', '2026-06', '2026-08'])
     expect(months.find(m => m.month === '2026-05')?.rows).toBe(40)
-    expect(months.every(m => m.contentBytes > 0)).toBe(true)
+  })
+
+  it('reports bytes only once the byte pass has run', () => {
+    expect(estimate().months.every(m => m.contentBytes === 0)).toBe(true)
+    expect(estimateWithBytes().months.every(m => m.contentBytes > 0)).toBe(true)
   })
 
   it('attributes ended rows separately from the delete unit', () => {
@@ -74,7 +85,7 @@ describe('month measurement', () => {
   it('uses octet_length, so multi-byte content is not under-counted', () => {
     // The fixture content carries a snowman (U+2603, 3 bytes in UTF-8). A
     // character count would report fewer bytes than the archive actually holds.
-    const may = estimate().months.find(m => m.month === '2026-05')
+    const may = estimateWithBytes().months.find(m => m.month === '2026-05')
     expect(may && may.contentBytes > may.rows * 100).toBe(true)
   })
 })
@@ -83,7 +94,7 @@ describe('orphan measurement', () => {
   it('finds rows whose conversation no longer exists', () => {
     seedMonths(cacheDir, [{ month: '2026-06', rows: 25 }])
     // No addConversation -- every row is orphaned.
-    const orphans = estimate().orphans
+    const orphans = estimateWithBytes().orphans
     expect(orphans.rows).toBe(25)
     expect(orphans.conversations).toBe(1)
     expect(orphans.contentBytes).toBeGreaterThan(0)
@@ -148,7 +159,7 @@ describe('footprint and projection', () => {
   })
 
   it('measures the real file size and separates content from FTS index', () => {
-    const { footprint } = estimate()
+    const { footprint } = estimateWithBytes()
     expect(footprint.fileBytes).toBeGreaterThan(0)
     expect(footprint.totalRows).toBe(100)
     expect(footprint.contentBytes).toBeGreaterThan(0)
@@ -157,13 +168,13 @@ describe('footprint and projection', () => {
   })
 
   it('never projects a reclaim larger than the database itself', () => {
-    const est = estimate()
+    const est = estimateWithBytes()
     expect(est.projectedTranscriptBytes).toBeLessThanOrEqual(est.footprint.fileBytes)
     expect(est.projectedDbBytesAfter).toBeGreaterThanOrEqual(0)
   })
 
   it('projects nothing when no month is eligible', () => {
-    const est = measureVacuum({ cacheDir, backupDir, archiveDir, hotDays: 3650, now: NOW })
+    const est = measureVacuum({ cacheDir, backupDir, archiveDir, hotDays: 3650, now: NOW, remeasureBytes: true })
     expect(est.months.some(m => m.eligible)).toBe(false)
     expect(est.projectedTranscriptBytes).toBe(0)
   })
@@ -174,6 +185,61 @@ describe('footprint and projection', () => {
 
   it('stamps when it measured, so the panel can show a staleness warning', () => {
     expect(estimate().measuredAt).toBe(new Date(NOW).toISOString())
+  })
+})
+
+describe('byte provenance -- a stale number must never look live', () => {
+  beforeEach(() => {
+    seedMonths(cacheDir, [{ month: '2026-05', rows: 20 }])
+    addConversation(cacheDir, '2026-05', 'ended')
+  })
+
+  it("says 'unmeasured' before any byte pass, rather than implying zero reclaim", () => {
+    const est = estimate()
+    expect(est.bytes.provenance).toBe('unmeasured')
+    expect(est.bytes.measuredAt).toBe('')
+    expect(est.projectedTranscriptBytes).toBe(0)
+  })
+
+  it("says 'measured' when the byte pass ran during this request", () => {
+    const est = estimateWithBytes()
+    expect(est.bytes.provenance).toBe('measured')
+    expect(est.bytes.ageSeconds).toBe(0)
+  })
+
+  it("says 'cached' on a later open, and reports the real age", () => {
+    // Byte pass two hours ago...
+    measureVacuum({
+      cacheDir,
+      backupDir,
+      archiveDir,
+      hotDays: 30,
+      now: NOW - 7_200_000,
+      remeasureBytes: true,
+    })
+    // ...then a plain open now.
+    const est = estimate()
+    expect(est.bytes.provenance).toBe('cached')
+    expect(est.bytes.ageSeconds).toBe(7200)
+    expect(est.months.find(m => m.month === '2026-05')?.contentBytes).toBeGreaterThan(0)
+  })
+
+  it('keeps row counts exact and fresh even when bytes are stale', () => {
+    measureVacuum({ cacheDir, backupDir, archiveDir, hotDays: 30, now: NOW - 7_200_000, remeasureBytes: true })
+    seedMonths(cacheDir, [{ month: '2026-06', rows: 7 }])
+
+    const est = estimate()
+    // The new month appears immediately with an exact count...
+    expect(est.months.find(m => m.month === '2026-06')?.rows).toBe(7)
+    // ...but honestly reports 0 bytes, because the cache predates it.
+    expect(est.months.find(m => m.month === '2026-06')?.contentBytes).toBe(0)
+    expect(est.bytes.provenance).toBe('cached')
+  })
+
+  it('ignores a corrupt cache rather than reading zeroes out of it', () => {
+    estimateWithBytes()
+    writeFileSync(join(cacheDir, BYTES_CACHE_FILE), '{ this is not json')
+    expect(estimate().bytes.provenance).toBe('unmeasured')
   })
 })
 
