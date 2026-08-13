@@ -8,6 +8,7 @@
 import type { LiveStatus } from '../../shared/protocol'
 import type { ScheduledRun } from '../../shared/scheduled-run'
 import type { ScheduledTask } from '../../shared/scheduled-task'
+import type { RecentWindow } from './recent-window'
 
 // ---------------------------------------------------------------------------
 // Session
@@ -106,6 +107,12 @@ export interface ConversationFilter {
   offset?: number
 }
 
+export interface RecentScopeFilter extends Partial<RecentWindow> {
+  status?: string[]
+  /** Injected so the window is testable without touching the clock. */
+  now?: number
+}
+
 export interface ConversationSummaryRecord {
   id: string
   scope: string
@@ -141,6 +148,19 @@ export interface ConversationStore {
   delete(id: string): void
   list(filter?: ConversationFilter): ConversationSummaryRecord[]
   listByScope(scope: string, filter?: { status?: string[] }): ConversationSummaryRecord[]
+  /**
+   * One project's conversations, newest activity first, bounded by the recent
+   * window (see `store/recent-window.ts`): the newest `minCount` OR everything
+   * within `withinMs`, whichever reaches further back, capped by `hardCap`.
+   *
+   * This is what the project summary page asks for. `listByScope` is unbounded
+   * and a project can hold 800+ ended conversations, so it is the wrong tool
+   * for anything user-facing.
+   */
+  listRecentByScope(scope: string, filter: RecentScopeFilter): ConversationSummaryRecord[]
+  /** Ended-conversation counts per project scope, for badges that must stay
+   *  correct even though ended rows are no longer shipped in the load payload. */
+  countByScopeAndStatus(status: string[]): Array<{ scope: string; count: number }>
   /** Per-conversation `set_status` for one project scope, read cheaply from the
    *  meta blob (only rows that actually carry a liveStatus). Used by the recap
    *  agent_status signal. Order is unspecified. */

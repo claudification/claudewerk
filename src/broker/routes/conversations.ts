@@ -39,6 +39,30 @@ export function createConversationsRouter(
     return c.json(filtered.map(s => conversationToOverview(s, conversationStore, childCounts.get(s.id) ?? 0)))
   })
 
+  /**
+   * The project summary page's list. MUST stay registered above
+   * `/conversations/:id`, which would otherwise match "recent" as an id.
+   *
+   * `project` is a `claude://` URI (the identity), never a path. The window is
+   * the newest 50 OR the last 5 days, whichever reaches further back, capped at
+   * 500 -- see store/recent-window.ts.
+   */
+  app.get('/conversations/recent', c => {
+    const project = c.req.query('project')
+    if (!project) return c.json({ error: 'project is required' }, 400)
+    if (!httpHasPermission(c.req.raw, 'chat:read', project)) return c.json({ error: 'Forbidden' }, 403)
+
+    const status = c.req.query('status')?.split(',').filter(Boolean)
+    const minCount = parseInt(c.req.query('minCount') || '', 10)
+    const conversations = conversationStore.listRecentProjectConversations(project, {
+      ...(status?.length && { status }),
+      ...(Number.isFinite(minCount) && minCount > 0 && { minCount }),
+    })
+
+    const childCounts = buildDirectChildCounts(conversationStore.getAllConversations())
+    return c.json(conversations.map(s => conversationToOverview(s, conversationStore, childCounts.get(s.id) ?? 0)))
+  })
+
   app.get('/conversations/:id', c => {
     const conv = conversationStore.getConversation(c.req.param('id'))
     if (!conv) return c.json({ error: 'Conversation not found' }, 404)

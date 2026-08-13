@@ -153,6 +153,8 @@ function createMockStoreDriver(): StoreDriver {
     delete: () => false,
     list: () => [],
     listByScope: () => [],
+    listRecentByScope: () => [],
+    countByScopeAndStatus: () => [],
     liveStatusByScope: () => [],
     listScopes: () => [],
     updateStats: noop,

@@ -335,6 +335,10 @@ function handleSyncStale(msg: DashboardMessage) {
 // ─── conversation lifecycle ────────────────────────────────────────────────
 
 function handleConversationsList(msg: DashboardMessage) {
+  // Ended conversations are no longer in this payload, so their per-project
+  // counts arrive as an aggregate instead. Without this the ended badge would
+  // silently read zero -- a regression that throws nothing and looks plausible.
+  useConversationsStore.setState({ endedCountsByProject: msg.endedCounts ?? {} })
   if (msg.conversations) {
     useConversationsStore.getState().setConversations(msg.conversations.map(toConversation))
     applyHashRoute()
