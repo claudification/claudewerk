@@ -29,6 +29,19 @@ export interface SettingItem {
   fullWidth?: boolean
   /** Extra search terms for the filter box */
   keywords?: string
+  /**
+   * Hide this item when it cannot currently do anything.
+   *
+   * HIDE, don't grey out. A setting that is inert in the present configuration
+   * should not occupy a row: it competes for attention with the ones that work,
+   * and -- worse -- it implies the feature is available. The audit that produced
+   * this found "LLM refinement" rendering as a live toggle on a transport where
+   * the refiner is never called at all.
+   *
+   * Honoured by BOTH the tab view and the search filter, so a hidden item cannot
+   * be resurrected by typing its name.
+   */
+  visible?: (ctx: SettingsContext) => boolean
   render: (ctx: SettingsContext, ariaLabel: string) => ReactNode
 }
 

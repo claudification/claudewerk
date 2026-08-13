@@ -38,7 +38,7 @@ export const VOICE_TRANSPORT_ITEMS: SettingItem[] = [
     group: 'Transport',
     label: 'Direct to the Cloudflare edge',
     description:
-      'ON: mic audio goes straight from this browser to the speech Worker at the nearest Cloudflare colo, with the broker out of the audio path (it only signs a short-lived token). OFF relays audio through the broker instead -- close on the home LAN, a round trip to the house from anywhere else. Takes effect on the next recording.',
+      'Audio goes browser -> nearest Cloudflare colo, broker out of the path. Off relays through the broker instead.',
     keywords: 'voice transport cloudflare worker direct broker relay latency edge colo',
     render: (ctx, ariaLabel) => (
       <SettingCheckbox
@@ -52,8 +52,7 @@ export const VOICE_TRANSPORT_ITEMS: SettingItem[] = [
     tab: 'voice',
     group: 'Transport',
     label: 'Measure transport latency',
-    description:
-      'Ping each speech transport 10 times from THIS browser and compare round trips -- including Deepgram direct, the old path, as a reference. Measures distance, not transcription speed.',
+    description: 'Ping each transport 10 times from this browser and compare. Distance, not transcription speed.',
     keywords: 'voice latency ping rtt measure probe benchmark deepgram cloudflare broker compare',
     render: () => <MeasureLatency />,
   },

@@ -8,8 +8,15 @@ import type { SettingItem, SettingsContext } from './settings/settings-item'
 import { DASHBOARD_TABS, SETTINGS } from './settings/settings-registry'
 import { SettingsShell } from './settings/settings-shell'
 
-function filterSettings(lowerFilter: string): SettingItem[] {
-  return SETTINGS.filter(
+/** Drop items that cannot do anything right now. Applied before BOTH the tab
+ *  split and the search filter, so typing a hidden setting's name cannot
+ *  resurrect it. */
+function applicable(items: SettingItem[], ctx: SettingsContext): SettingItem[] {
+  return items.filter(s => !s.visible || s.visible(ctx))
+}
+
+function filterSettings(lowerFilter: string, ctx: SettingsContext): SettingItem[] {
+  return applicable(SETTINGS, ctx).filter(
     s =>
       s.label.toLowerCase().includes(lowerFilter) ||
       s.description.toLowerCase().includes(lowerFilter) ||
@@ -65,10 +72,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   // Filter settings (flat view; tabs hidden while a filter is active)
   const lowerFilter = filter.toLowerCase()
   const isFiltering = lowerFilter.length > 0
-  const filtered = useMemo(() => (lowerFilter ? filterSettings(lowerFilter) : SETTINGS), [lowerFilter])
+  const filtered = useMemo(
+    () => (lowerFilter ? filterSettings(lowerFilter, ctx) : applicable(SETTINGS, ctx)),
+    [lowerFilter, ctx],
+  )
 
   const activeTab = resolveActiveTab(prefs.settingsTab)
-  const visibleItems = isFiltering ? filtered : SETTINGS.filter(s => s.tab === activeTab)
+  const visibleItems = isFiltering ? filtered : applicable(SETTINGS, ctx).filter(s => s.tab === activeTab)
   const pinned = visiblePinned(prefs, activeTab, lowerFilter)
 
   // Focus filter on open

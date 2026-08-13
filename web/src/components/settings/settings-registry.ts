@@ -38,10 +38,14 @@ export const SETTINGS: SettingItem[] = [
   ...LABEL_ITEMS,
   ...SIDEBAR_ITEMS,
   ...INPUT_ITEMS,
-  ...VOICE_ITEMS,
-  ...VOICE_ENGINE_ITEMS,
+  // Voice order is a DECISION HIERARCHY, not alphabetical: transport decides
+  // whether the model settings below it apply at all, so it comes first. It used
+  // to sit last, which meant scrolling to the bottom to learn which of two model
+  // pickers was live.
   ...VOICE_TRANSPORT_ITEMS,
   ...VOICE_MODEL_ITEMS,
+  ...VOICE_ITEMS,
+  ...VOICE_ENGINE_ITEMS,
   ...VOICE_ORB_ITEMS,
   ...CONVERSATION_ITEMS,
   ...SYSTEM_ITEMS,
