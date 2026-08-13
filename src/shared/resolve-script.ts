@@ -121,6 +121,35 @@ if [[ -z "$SKIP_INIT" ]]; then
   fi
 fi
 
+# Exclude this worktree's node_modules from Time Machine.
+#
+# WHY (2026-08-13 incident): every worktree's install drops ~6.5k files into a
+# tree Time Machine would otherwise scan and back up. With 70+ live worktrees
+# that was ~460k transient files feeding TM's change-scan -- and backupd was the
+# ONLY FSEvents client whose buffer overflowed (11558 of 11559 USER DROPPED
+# events in 24h) while fseventsd sat on 16.5 GB of retained events and the box
+# ran out of swap. node_modules is fully reproducible from the lockfile, so
+# backing it up buys nothing and costs a lot.
+#
+# Writes the xattr directly instead of shelling out to \`tmutil addexclusion\`,
+# which round-trips through backupd and measured ~11s per call (a full sweep of
+# 647 dirs would have taken ~2h). The value is byte-identical to what tmutil
+# writes; confirmed with \`tmutil isexcluded\`. Never gates worktree creation --
+# this is an optimisation, and a failure here must not cost the user a worktree.
+TM_EXCLUDE_XATTR='62706C69737430305F1011636F6D2E6170706C652E6261636B75706408000000000000010100000000000000010000000000000000000000000000001C'
+if command -v xattr >/dev/null 2>&1; then
+  while IFS= read -r NM_DIR; do
+    [[ -n "$NM_DIR" ]] || continue
+    # Deliberately no backslash line-continuation: this script is ALSO embedded
+    # in a JS template literal (src/shared/resolve-script.ts), where a trailing
+    # backslash-newline is a JS escape and gets swallowed, silently reflowing
+    # the command. An if-block survives both copies intact.
+    if xattr -wx com.apple.metadata:com_apple_backup_excludeItem "$TM_EXCLUDE_XATTR" "$NM_DIR" 2>/dev/null; then
+      echo "WorktreeCreate: Time Machine exclusion set on $NM_DIR" >&2
+    fi
+  done < <(find "$WORKTREE_PATH" -type d -name node_modules -prune 2>/dev/null)
+fi
+
 # ONLY output: the worktree path
 echo "$WORKTREE_PATH"
 `,
