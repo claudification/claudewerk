@@ -17,6 +17,7 @@ import { VOICE_ENGINE_ITEMS } from './items-voice-engine'
 import { VOICE_MODEL_ITEMS } from './items-voice-model'
 import { VOICE_ORB_ITEMS } from './items-voice-orb'
 import type { SettingItem } from './settings-item'
+import { VOICE_TRANSPORT_ITEMS } from './voice-transport-items'
 
 export interface SettingsDialogTab {
   id: SettingsTab
@@ -39,6 +40,7 @@ export const SETTINGS: SettingItem[] = [
   ...INPUT_ITEMS,
   ...VOICE_ITEMS,
   ...VOICE_ENGINE_ITEMS,
+  ...VOICE_TRANSPORT_ITEMS,
   ...VOICE_MODEL_ITEMS,
   ...VOICE_ORB_ITEMS,
   ...CONVERSATION_ITEMS,

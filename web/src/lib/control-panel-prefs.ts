@@ -56,9 +56,18 @@ export interface ControlPanelPrefs {
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
-  /** EXPERIMENTAL: stream mic audio DIRECTLY to Deepgram from the browser (broker
-   *  out of the audio path; broker only mints a short-lived token). Deepgram does
-   *  the endpointing via utterance_end_ms. Off by default. See voice-deepgram-direct.ts. */
+  /**
+   * Stream mic audio from the browser straight to the stt-proxy Worker at the
+   * nearest Cloudflare colo, with the broker out of the audio path entirely (it
+   * only signs a short-lived token). ON BY DEFAULT.
+   *
+   * The alternative -- `false` -- relays audio through the broker, which is the
+   * old path. It is kept only as an escape hatch: the broker is milliseconds away
+   * on the home LAN but a round trip to the owner's house from anywhere else,
+   * whereas the Cloudflare edge measures ~45ms from anywhere in the world.
+   * Settings > Voice has a latency probe so the choice can be made on numbers
+   * rather than belief.
+   */
   voiceDirectToDeepgram: boolean
   /** Which speech model the stt-proxy Worker should use ('flux' | 'nova-3').
    *  This also decides what the browser CAPTURES with -- flux is raw-PCM-only
@@ -159,7 +168,10 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceLingerMs: 1500,
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
-  voiceDirectToDeepgram: false,
+  // DIRECT BY DEFAULT (2026-08-13). The relay path measured 8.5-11.8 SECONDS
+  // behind real time on 2 of 3 runs from Thailand; the Cloudflare edge was flat
+  // on 3 of 3. A fresh browser must not land on the slow path.
+  voiceDirectToDeepgram: true,
   voiceSttModel: DEFAULT_STT_MODEL,
   voiceEotThreshold: 0,
   voiceEotTimeoutMs: 0,
