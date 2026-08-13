@@ -9,6 +9,7 @@ import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import { parseProjectCardPath } from '@/lib/project-card-link'
 import { isMobileViewport } from '@/lib/utils'
+import { renderAnvilFence } from './anvil/render'
 import { playAudio } from './audio-player-bus'
 import { openProjectCard } from './conversation-detail/open-project-card'
 import { CopyMenu } from './copy-menu'
@@ -202,6 +203,12 @@ renderer.codespan = ({ text }) => {
 }
 
 renderer.code = ({ text, lang, raw }) => {
+  // ANVIL blocks: an agent-authored interaction surface rendered inline in the
+  // transcript instead of as a code block. Same streaming guard as mermaid --
+  // a block whose last option has not arrived must never look answerable.
+  if (lang === 'anvil') {
+    return renderAnvilFence(text, /\n`{3,}[ \t]*$/.test(raw))
+  }
   // Mermaid blocks: emit placeholder, rendered post-mount via useEffect
   if (lang === 'mermaid') {
     const escaped = text.replace(/</g, '&lt;').replace(/>/g, '&gt;')

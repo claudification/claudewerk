@@ -779,3 +779,352 @@ html[data-tab-hidden] *::after {
 		opacity: 1;
 	}
 }
+
+/* ── ANVIL ──────────────────────────────────────────────────────────────
+   Agent-Native Visual Interaction Language: an ```anvil fence rendered as UI
+   inline in the transcript. SPIKE: every control is inert (disabled), so the
+   styling below deliberately does NOT dim disabled state -- a preview should
+   look like the real thing. The footer says "preview", the pixels do not. */
+
+.anvil-doc {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin: 0.6rem 0;
+}
+
+.anvil-block {
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	background: var(--card);
+	padding: 0.75rem 0.85rem 0.5rem;
+}
+
+.anvil-prompt {
+	display: flex;
+	gap: 0.45rem;
+	font-weight: 600;
+	line-height: 1.4;
+	white-space: pre-wrap;
+}
+
+.anvil-icon {
+	color: var(--muted-foreground);
+	flex: none;
+}
+
+.anvil-subtext {
+	margin-top: 0.2rem;
+	font-size: 0.82em;
+	color: var(--muted-foreground);
+	line-height: 1.45;
+}
+
+/* choice rows */
+
+.anvil-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-top: 0.6rem;
+}
+
+.anvil-row {
+	display: flex;
+	align-items: baseline;
+	gap: 0.6rem;
+	width: 100%;
+	text-align: left;
+	padding: 0.4rem 0.5rem;
+	border: 1px solid transparent;
+	border-radius: 7px;
+	background: var(--muted);
+	color: inherit;
+	font: inherit;
+	min-height: 36px;
+}
+
+.anvil-row-main {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.anvil-row-danger {
+	border-color: color-mix(in oklch, var(--destructive) 45%, transparent);
+}
+
+.anvil-key {
+	flex: none;
+	min-width: 1.35em;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 0.72em;
+	color: var(--muted-foreground);
+	text-align: center;
+}
+
+.anvil-mark {
+	display: inline-block;
+	width: 11px;
+	height: 11px;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+}
+
+.anvil-label {
+	font-weight: 500;
+}
+
+.anvil-hint {
+	font-size: 0.8em;
+	color: var(--muted-foreground);
+}
+
+/* gallery */
+
+.anvil-grid {
+	display: grid;
+	gap: 0.5rem;
+	margin-top: 0.6rem;
+	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.anvil-grid-swatch,
+.anvil-grid-card {
+	grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+
+.anvil-card {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	background: var(--muted);
+	color: inherit;
+	font: inherit;
+	text-align: left;
+}
+
+.anvil-card-foot {
+	display: flex;
+	align-items: baseline;
+	gap: 0.4rem;
+}
+
+.anvil-img {
+	display: block;
+	width: 100%;
+	aspect-ratio: 4 / 3;
+	object-fit: cover;
+	border-radius: 6px;
+	background: var(--background);
+}
+
+.anvil-img-missing {
+	border: 1px dashed var(--border);
+}
+
+.anvil-swatch {
+	display: flex;
+	height: 42px;
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.anvil-swatch i {
+	flex: 1;
+}
+
+.anvil-swatch-empty {
+	background: var(--background);
+	border: 1px dashed var(--border);
+}
+
+.anvil-type {
+	display: flex;
+	align-items: center;
+	min-height: 42px;
+	font-size: 1.15rem;
+	line-height: 1.2;
+}
+
+/* input */
+
+.anvil-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	margin-top: 0.6rem;
+}
+
+.anvil-field-label {
+	display: flex;
+	gap: 0.45rem;
+	align-items: baseline;
+	font-size: 0.8em;
+	color: var(--muted-foreground);
+	margin-bottom: 0.2rem;
+}
+
+.anvil-optional {
+	font-size: 0.9em;
+	opacity: 0.7;
+}
+
+.anvil-input {
+	width: 100%;
+	padding: 0.36rem 0.5rem;
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	background: var(--background);
+	color: inherit;
+	font: inherit;
+	font-size: 0.9em;
+	resize: vertical;
+}
+
+.anvil-field-mono .anvil-input {
+	font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.anvil-switch {
+	display: inline-block;
+	width: 30px;
+	height: 17px;
+	border-radius: 999px;
+	background: var(--border);
+	position: relative;
+}
+
+.anvil-switch::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 13px;
+	height: 13px;
+	border-radius: 50%;
+	background: var(--background);
+}
+
+/* scale */
+
+.anvil-dials {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+	margin-top: 0.7rem;
+}
+
+.anvil-dial {
+	display: grid;
+	grid-template-columns: minmax(52px, auto) 1fr minmax(52px, auto);
+	align-items: center;
+	gap: 0.6rem;
+	font-size: 0.82em;
+}
+
+.anvil-pole {
+	color: var(--muted-foreground);
+}
+
+.anvil-pole-right {
+	text-align: right;
+}
+
+.anvil-track {
+	position: relative;
+	height: 3px;
+	border-radius: 999px;
+	background: var(--border);
+}
+
+.anvil-knob {
+	position: absolute;
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: var(--primary);
+	transform: translate(-50%, -50%);
+}
+
+/* actions, notes, chrome */
+
+.anvil-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 0.6rem;
+}
+
+.anvil-submit {
+	padding: 0.32rem 0.8rem;
+	border: 1px solid var(--border);
+	border-radius: 7px;
+	background: var(--muted);
+	color: inherit;
+	font: inherit;
+	font-size: 0.85em;
+	font-weight: 500;
+}
+
+.anvil-note {
+	border: 1px solid var(--border);
+	border-radius: 9px;
+	padding: 0.55rem 0.7rem;
+	font-size: 0.9em;
+	line-height: 1.5;
+}
+
+.anvil-note p {
+	margin: 0;
+}
+
+.anvil-note p + p {
+	margin-top: 0.35rem;
+}
+
+.anvil-note-info {
+	background: var(--muted);
+}
+
+.anvil-note-warn {
+	background: color-mix(in oklch, var(--accent) 12%, var(--card));
+	border-color: color-mix(in oklch, var(--accent) 40%, var(--border));
+}
+
+.anvil-note-danger {
+	background: color-mix(in oklch, var(--destructive) 10%, var(--card));
+	border-color: color-mix(in oklch, var(--destructive) 40%, var(--border));
+}
+
+.anvil-warn,
+.anvil-empty {
+	margin-top: 0.5rem;
+	font-size: 0.78em;
+	color: var(--muted-foreground);
+	font-style: italic;
+}
+
+.anvil-foot {
+	margin-top: 0.5rem;
+	padding-top: 0.35rem;
+	border-top: 1px solid var(--border);
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 0.68em;
+	color: var(--muted-foreground);
+	text-align: right;
+	letter-spacing: 0.04em;
+}
+
+.anvil-fallback pre {
+	margin: 0;
+}
+
+.anvil-doc-streaming .anvil-block {
+	border-style: dashed;
+}
