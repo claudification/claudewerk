@@ -21,6 +21,13 @@ export interface ProjectTaskMeta {
    *  Orthogonal to `status` (the card's lane) -- a quest card keeps this key as
    *  it moves between lanes. Absent = not part of any quest. */
   quest?: string
+  /** Epic membership: the id of the epic card this one belongs to. Declared by
+   *  the CHILD (like `quest`) so no parent-side list can drift. See
+   *  `epic-cards.ts` for the rollup this feeds. */
+  epic?: string
+  /** Sibling ids that must reach `done` before this card is ready. SEQUENCING
+   *  only -- never parenthood, which is what the old `blocks:` key conflated. */
+  dependsOn?: string[]
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number

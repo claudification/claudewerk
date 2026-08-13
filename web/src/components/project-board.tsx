@@ -3,7 +3,6 @@
  * Three columns: Open | In Progress | Done, plus collapsible Archive
  */
 
-import type { EditorView } from '@codemirror/view'
 import {
   DndContext,
   type DragEndEvent,
@@ -16,31 +15,23 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
-import { deriveConversationName } from '@shared/spawn-naming'
-import { composeSpawnPrompt } from '@shared/spawn-prompt'
-import type { SpawnRequest } from '@shared/spawn-schema'
+import { buildEpicIndex, type EpicRollup, notStartedChildren } from '@shared/epic-cards'
 import {
   Archive,
   ArrowLeft,
   ArrowRight,
   ChevronDown,
   ChevronRight,
-  Eye,
   ListChecks,
-  Moon,
   MoreHorizontal,
-  Pencil,
   RotateCcw,
   Search,
   Sliders,
   Trash2,
-  Zap,
 } from 'lucide-react'
-import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Kbd } from '@/components/ui/kbd'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BOARD_MODES,
   type BoardViewConfig,
   CLAMP_CLASS,
   DENSITY_PADDING,
@@ -48,23 +39,26 @@ import {
   useBoardViewConfig,
 } from '@/hooks/use-board-view-config'
 import { useCardDeepLink } from '@/hooks/use-card-deeplink'
-import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
-import { focusLaunchTargetAndClose, useLaunchProgress } from '@/hooks/use-launch-progress'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
-import { sendSpawnRequest } from '@/hooks/use-spawn'
-import { applySubagentCapEnv } from '@/lib/env-parse'
-import { useKeyLayer } from '@/lib/key-layers'
-import { loadRunTaskDefaults, saveRunTaskDefaults } from '@/lib/run-task-defaults'
-import { buildTaskPrompt } from '@/lib/task-scoring'
-import { extractProjectLabel, projectPath } from '@/lib/types'
-import { uploadFileWithPlaceholder } from '@/lib/upload'
+import { extractProjectLabel } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
-import { LaunchConfigFields, type LaunchFieldsValue } from './launch-config-fields'
-import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from './launch-monitor'
-import { Markdown } from './markdown'
+import {
+  NEXT_STATUS,
+  PREV_STATUS,
+  PRIORITY_COLORS,
+  TASK_COLUMNS,
+  tagColor,
+  taskAge,
+} from './project-board/board-constants'
+import { EpicBadge } from './project-board/epic-badge'
+import { EpicsView } from './project-board/epics-view'
+import { RunTaskDialog } from './project-board/run-task-dialog'
+import { TaskEditor } from './project-board/task-editor'
+import { openTaskBatch } from './task-batch-trigger'
 
 /** The board header's project name label, resolved from the conversation. Kept
  *  as its own component so the (already large) ProjectBoard gains no hook. */
@@ -78,63 +72,6 @@ function BoardHeaderLabel({ conversationId }: { conversationId: string }) {
       {label}
     </span>
   )
-}
-
-function taskAge(created: string): string {
-  if (!created) return ''
-  const ms = Date.now() - new Date(created).getTime()
-  if (ms < 0) return ''
-  const mins = Math.floor(ms / 60000)
-  if (mins < 1) return 'now'
-  if (mins < 60) return `${mins}m`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h`
-  const days = Math.floor(hrs / 24)
-  if (days < 30) return `${days}d`
-  return `${Math.floor(days / 30)}mo`
-}
-
-const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
-  { status: 'inbox', label: 'Inbox', color: 'text-event-prompt' },
-  { status: 'open', label: 'Open', color: 'text-primary' },
-  { status: 'in-progress', label: 'In Progress', color: 'text-accent' },
-  { status: 'in-review', label: 'In Review', color: 'text-info' },
-  { status: 'done', label: 'Done', color: 'text-active' },
-]
-
-const NEXT_STATUS: Record<string, TaskStatus> = {
-  inbox: 'open',
-  open: 'in-progress',
-  'in-progress': 'in-review',
-  'in-review': 'done',
-}
-const PREV_STATUS: Record<string, TaskStatus> = {
-  open: 'inbox',
-  'in-progress': 'open',
-  'in-review': 'in-progress',
-  done: 'in-review',
-}
-
-// Rotating tag pill colors
-const TAG_COLORS = [
-  'bg-primary/20 text-primary border-primary/30',
-  'bg-event-prompt/20 text-event-prompt border-event-prompt/30',
-  'bg-info/20 text-info border-info/30',
-  'bg-active/20 text-active border-active/30',
-  'bg-accent/20 text-accent border-accent/30',
-  'bg-destructive/20 text-destructive border-destructive/30',
-]
-
-function tagColor(tag: string): string {
-  let hash = 0
-  for (const ch of tag) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0
-  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length]
-}
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: 'bg-red-500/20 text-red-400 border-red-500/30',
-  medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 }
 
 function matchesTextFilter(query: string, task: ProjectTaskMeta): boolean {
@@ -156,816 +93,25 @@ function getTagFrequencies(tasks: ProjectTaskMeta[]): Array<{ tag: string; count
   return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count)
 }
 
-// CodeMirror markdown editor for task bodies, lazy-loaded.
-const MarkdownBodyPane = lazy(() => import('./markdown-body-pane'))
-
-function MarkdownEditorPane(props: {
-  initialContent: string
-  onChange: (value: string) => void
-  onUpload: (file: File) => void
-  editorViewRef: React.RefObject<EditorView | null>
-}) {
-  return (
-    <Suspense fallback={<div className="relative w-full min-h-[200px]" />}>
-      <MarkdownBodyPane {...props} />
-    </Suspense>
-  )
-}
-
-export function TaskEditor({
-  task,
-  conversationId,
-  onSave,
-  onMove,
-  onRun,
-  onPromote,
-  onClose,
-}: {
-  task: ProjectTask
-  conversationId: string
-  onSave: (id: string, patch: { title?: string; body?: string; priority?: string; tags?: string[] }) => Promise<unknown>
-  onMove: (id: string, to: TaskStatus) => Promise<boolean>
-  onRun: (task: ProjectTask) => void
-  /** Promote this card into the project's nightshift queue (absent => hidden). */
-  onPromote?: (task: ProjectTask) => void
-  onClose: () => void
-}) {
-  const [title, setTitle] = useState(task.title)
-  const [body, setBody] = useState(task.body)
-  const [status, setStatus] = useState<TaskStatus>(task.status)
-  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>(task.priority || 'medium')
-  const [tags, setTags] = useState<string[]>(task.tags || [])
-  const [tagInput, setTagInput] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [editing, setEditing] = useState(!body.trim())
-  const editorViewRef = useRef<EditorView | null>(null)
-  const canWork = status === 'inbox' || status === 'open' || status === 'in-progress' || status === 'in-review'
-
-  useKeyLayer(
-    {
-      // Bare keys -- auto-blocked when a text input / CodeMirror is focused.
-      // Radix Dialog handles Escape itself via onOpenChange.
-      w: () => {
-        if (!canWork) return
-        sendInput(conversationId, buildTaskPrompt({ ...task, title, body, status, priority, tags }))
-        haptic('success')
-        onClose()
-      },
-      l: () => {
-        if (!canWork) return
-        haptic('tap')
-        onRun({ ...task, title, body, status, priority, tags })
-      },
-      a: () => {
-        if (status === 'archived') return
-        setStatus('archived')
-        onMove(task.slug, 'archived')
-        haptic('tap')
-      },
-      // Modifier keys -- fire even in text inputs
-      'mod+s': () => handleSave(),
-      'mod+Enter': () => handleSave(),
-      // Ctrl+Shift+Arrow: move task status (safe on Mac -- not a standard text editing combo)
-      'ctrl+shift+ArrowRight': () => {
-        const next = NEXT_STATUS[status]
-        if (next) {
-          setStatus(next)
-          onMove(task.slug, next)
-          haptic('tap')
-        }
-      },
-      'ctrl+shift+ArrowLeft': () => {
-        const prev = PREV_STATUS[status]
-        if (prev) {
-          setStatus(prev)
-          onMove(task.slug, prev)
-          haptic('tap')
-        }
-      },
-    },
-    { id: 'task-editor' },
-  )
-
-  // Sync non-editing fields from prop when task is updated externally (e.g. project_changed)
-  // Intentionally does NOT sync title/body to avoid overwriting user edits
-  useEffect(() => {
-    setStatus(task.status)
-    setPriority(task.priority || 'medium')
-    setTags(task.tags || [])
-  }, [task.status, task.priority, task.tags])
-
-  function uploadFile(file: File) {
-    const view = editorViewRef.current
-    if (!view) return
-    uploadFileWithPlaceholder(
-      file,
-      placeholder => {
-        view.dispatch({ changes: { from: view.state.selection.main.head, insert: placeholder } })
-      },
-      (search: string, replacement: string) => {
-        const content = view.state.doc.toString()
-        const idx = content.indexOf(search)
-        if (idx >= 0) view.dispatch({ changes: { from: idx, to: idx + search.length, insert: replacement } })
-      },
-      conversationId,
-    )
-  }
-
-  function addTag() {
-    const t = tagInput.trim().toLowerCase()
-    if (t && !tags.includes(t)) {
-      setTags([...tags, t])
-    }
-    setTagInput('')
-  }
-
-  async function handleSave() {
-    setSaving(true)
-    await onSave(task.slug, { title, body, priority, tags })
-    setSaving(false)
-    haptic('success')
-    onClose()
-  }
-
-  return (
-    <Dialog open={true} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0">
-        <DialogTitle className="sr-only">Edit task: {title}</DialogTitle>
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20 shrink-0">
-          <input
-            aria-label="Task title"
-            type="text"
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            className="flex-1 bg-transparent text-sm font-mono text-foreground outline-none placeholder:text-muted-foreground/30"
-            placeholder="Title..."
-          />
-          <select
-            value={status}
-            onChange={e => {
-              const newStatus = e.target.value as TaskStatus
-              if (newStatus === status) return
-              const oldStatus = status
-              setStatus(newStatus)
-              haptic('tap')
-              // Immediately move the file on disk and update the board UI
-              onMove(task.slug, newStatus)
-            }}
-            className={cn(
-              'text-[10px] font-mono bg-transparent border px-1 py-0.5 outline-none',
-              status === 'inbox' && 'border-event-prompt/50 text-event-prompt',
-              status === 'open' && 'border-primary/50 text-primary',
-              status === 'in-progress' && 'border-accent/50 text-accent',
-              status === 'in-review' && 'border-info/50 text-info',
-              status === 'done' && 'border-emerald-500/50 text-emerald-400',
-              status === 'archived' && 'border-primary/20 text-muted-foreground',
-            )}
-          >
-            <option value="inbox">inbox</option>
-            <option value="open">open</option>
-            <option value="in-progress">in-progress</option>
-            <option value="in-review">in-review</option>
-            <option value="done">done</option>
-            <option value="archived">archived</option>
-          </select>
-          <select
-            value={priority}
-            onChange={e => setPriority(e.target.value as 'low' | 'medium' | 'high')}
-            className="text-[10px] font-mono bg-transparent border border-primary/20 text-muted-foreground px-1 py-0.5 outline-none"
-          >
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
-          <span className="text-[9px] text-muted-foreground/40 font-mono">{taskAge(task.created)}</span>
-        </div>
-
-        {/* Tags */}
-        <div className="flex items-center gap-1 px-4 py-1.5 border-b border-primary/12 flex-wrap shrink-0">
-          {tags.map(tag => (
-            <span
-              key={tag}
-              className={cn('text-[9px] px-1.5 py-0.5 border font-mono flex items-center gap-1', tagColor(tag))}
-            >
-              {tag}
-              <button type="button" className="hover:opacity-60" onClick={() => setTags(tags.filter(t => t !== tag))}>
-                x
-              </button>
-            </span>
-          ))}
-          <input
-            aria-label="Add tag to task"
-            type="text"
-            value={tagInput}
-            onChange={e => setTagInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                addTag()
-              }
-              if (e.key === 'Backspace' && !tagInput && tags.length > 0) {
-                setTags(tags.slice(0, -1))
-              }
-            }}
-            placeholder="add tag..."
-            className="text-[10px] bg-transparent text-muted-foreground outline-none w-16 font-mono placeholder:text-muted-foreground/20"
-          />
-        </div>
-
-        {/* Body - toggle between markdown view and edit */}
-        <div className="flex items-center justify-between px-4 py-1 border-b border-primary/8 shrink-0">
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setEditing(false)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono transition-colors',
-                !editing ? 'text-accent' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Eye className="size-3" /> View
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className={cn(
-                'flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono transition-colors',
-                editing ? 'text-accent' : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              <Pencil className="size-3" /> Edit
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          {editing ? (
-            <MarkdownEditorPane
-              initialContent={body}
-              onChange={setBody}
-              onUpload={uploadFile}
-              editorViewRef={editorViewRef}
-            />
-          ) : body.trim() ? (
-            // markdown body may contain links; cannot be a native <button>
-            // react-doctor-disable-next-line react-doctor/prefer-tag-over-role
-            <div
-              role="button"
-              tabIndex={0}
-              className="text-sm text-foreground prose prose-invert prose-sm max-w-none cursor-text"
-              onClick={() => setEditing(true)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') setEditing(true)
-              }}
-            >
-              <Markdown>{body}</Markdown>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="text-sm text-muted-foreground/30 font-mono cursor-text min-h-[200px] text-left w-full appearance-none bg-transparent border-0 p-0"
-              onClick={() => setEditing(true)}
-            >
-              Click to add content…
-            </button>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-primary/20 shrink-0">
-          <div className="flex items-center justify-between px-4 py-2">
-            <div className="flex items-center gap-3">
-              {/* Context-aware actions based on task status */}
-              {canWork && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      sendInput(conversationId, buildTaskPrompt({ ...task, title, body, status, priority, tags }))
-                      haptic('success')
-                      onClose()
-                    }}
-                    className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
-                  >
-                    Work on this <Kbd className="ml-1.5 opacity-60">W</Kbd>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      haptic('tap')
-                      onRun({ ...task, title, body, status, priority, tags })
-                    }}
-                    className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
-                  >
-                    <Zap className="size-3" />
-                    Launch <Kbd className="ml-1 opacity-60">L</Kbd>
-                  </button>
-                </>
-              )}
-              {status === 'in-review' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatus('done')
-                    onMove(task.slug, 'done')
-                    haptic('success')
-                  }}
-                  className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-colors"
-                >
-                  Approve
-                </button>
-              )}
-              {status === 'done' && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatus('in-review')
-                      onMove(task.slug, 'in-review')
-                      haptic('tap')
-                    }}
-                    className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-info/15 text-info border border-info/30 hover:bg-info/25 transition-colors"
-                  >
-                    Reopen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStatus('archived')
-                      onMove(task.slug, 'archived')
-                      haptic('tap')
-                    }}
-                    className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-primary/12 text-muted-foreground border border-primary/20 hover:bg-primary/20 transition-colors"
-                  >
-                    <Archive className="size-3" />
-                    Archive <Kbd className="ml-1.5 opacity-60">A</Kbd>
-                  </button>
-                </>
-              )}
-              {status === 'archived' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStatus('open')
-                    onMove(task.slug, 'open')
-                    haptic('tap')
-                  }}
-                  className="whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 transition-colors"
-                >
-                  Reopen
-                </button>
-              )}
-              {onPromote && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    haptic('tap')
-                    onPromote({ ...task, title, body, status, priority, tags })
-                  }}
-                  title="Promote this card into the nightshift queue"
-                  className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-amber-400/10 text-amber-300 border border-amber-400/25 hover:bg-amber-400/20 transition-colors"
-                >
-                  <Moon className="size-3" />
-                  Nightshift
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Cancel <Kbd className="opacity-60">Esc</Kbd>
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="px-3 py-1 text-xs font-bold font-mono bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50"
-              >
-                {saving ? '...' : 'Save'} <Kbd className="ml-1.5 opacity-60">^S</Kbd>
-              </button>
-            </div>
-          </div>
-          <div className="flex items-center justify-between px-4 pb-1.5">
-            <span className="text-[10px] text-muted-foreground/30 font-mono">{task.slug}.md</span>
-            <div className="flex items-center gap-3 text-[9px] text-comment font-mono">
-              {PREV_STATUS[status] && (
-                <span>
-                  <Kbd>^⇧←</Kbd> {PREV_STATUS[status]}
-                </span>
-              )}
-              {NEXT_STATUS[status] && (
-                <span>
-                  <Kbd>^⇧→</Kbd> {NEXT_STATUS[status]}
-                </span>
-              )}
-              {status !== 'archived' && (
-                <span>
-                  <Kbd>A</Kbd> archive
-                </span>
-              )}
-              <span>
-                <Kbd>esc</Kbd> close
-              </span>
-            </div>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-export function RunTaskDialog({
-  task,
-  conversationId,
-  onClose,
-}: {
-  task: ProjectTask
-  conversationId: string
-  onClose: () => void
-}) {
-  const spawnPath = useConversationsStore(state => {
-    const s = state.conversationsById[conversationId]
-    return s ? projectPath(s.project) : ''
-  })
-  const savedDefaults = useMemo(() => loadRunTaskDefaults(), [])
-  const [model, setModel] = useState(savedDefaults.model)
-  const [effort, setEffort] = useState<string>(savedDefaults.effort)
-  const [useWorktree, setUseWorktree] = useState(savedDefaults.useWorktree)
-  const [branchName, setBranchName] = useState(task.slug)
-  const [autoCommit, setAutoCommit] = useState(savedDefaults.autoCommit)
-  const [leaveRunning, setLeaveRunning] = useState(savedDefaults.leaveRunning)
-  const [maxBudgetUsd, setMaxBudgetUsd] = useState(savedDefaults.maxBudgetUsd)
-  const [maxConcurrentSubagents, setMaxConcurrentSubagents] = useState('')
-  const [maxSubagentSpawnDepth, setMaxSubagentSpawnDepth] = useState('')
-  const [includePartialMessages, setIncludePartialMessages] = useState(savedDefaults.includePartialMessages)
-  const [timeout, setTimeout_] = useState(savedDefaults.timeout)
-
-  // Launch state
-  const [phase, setPhase] = useState<'config' | 'launching'>('config')
-  const spawnedConversationIdRef = useRef<string | null>(null)
-  const [jobId, setJobId] = useState<string | null>(null)
-  const conversationAtLaunchRef = useRef<string | null>(null)
-
-  // Shared launch progress hook
-  const progress = useLaunchProgress({
-    jobId,
-    conversationId,
-    timeoutMs: 30_000,
-    enabled: phase === 'launching',
-  })
-
-  useKeyLayer({
-    Enter: () => {
-      if (phase === 'config') handleRun()
-      else if (progress.isConnected) handleViewConversation()
-    },
-  })
-
-  // Task lifecycle tracking: add steps after conversation connects
-  const connectedStepRef = useRef(false)
-  // Guards the close-on-done effect so it fires exactly once per run.
-  const closedOnDoneRef = useRef(false)
-  useEffect(() => {
-    if (!progress.isConnected || connectedStepRef.current || !progress.spawnedConversation) return
-    connectedStepRef.current = true
-    progress.setSteps(prev => [
-      ...prev,
-      {
-        label: 'Conversation connected',
-        status: 'done' as const,
-        ts: Date.now(),
-        detail: progress.spawnedConversation?.id.slice(0, 8),
-      },
-      { label: 'Waiting for prompt submission...', status: 'active' as const, ts: Date.now() },
-    ])
-  }, [progress.isConnected, progress.spawnedConversation, progress.setSteps])
-
-  // Detect conversation becoming active (prompt submitted) -> add "Running..." step
-  const promptDoneRef = useRef(false)
-  useEffect(() => {
-    if (!progress.spawnedConversation || promptDoneRef.current) return
-    const status = progress.spawnedConversation.status
-    if (status !== 'active' && status !== 'idle') return
-    promptDoneRef.current = true
-    progress.setSteps(prev => {
-      const updated = prev.map(s =>
-        s.label === 'Waiting for prompt submission...' && s.status === 'active'
-          ? { ...s, status: 'done' as const, detail: progress.spawnedConversation?.lastEvent?.hookEvent || 'active' }
-          : s,
-      )
-      updated.push({
-        label: 'Running...',
-        status: 'active' as const,
-        ts: Date.now(),
-        detail: `${progress.spawnedConversation?.eventCount || 0} events`,
-      })
-      return updated
-    })
-  }, [progress.spawnedConversation, progress.setSteps])
-
-  // Update running step event count + detect completion
-  useEffect(() => {
-    if (!progress.spawnedConversation || !promptDoneRef.current) return
-    if (progress.isComplete) {
-      progress.setSteps(prev =>
-        prev.map(s =>
-          s.label === 'Running...' && s.status === 'active'
-            ? {
-                ...s,
-                status: 'done' as const,
-                label: 'Task complete',
-                detail: `${progress.elapsed}s, ${progress.spawnedConversation?.eventCount || 0} events`,
-              }
-            : s,
-        ),
-      )
-    } else {
-      progress.setSteps(prev =>
-        prev.map(s =>
-          s.label === 'Running...' ? { ...s, detail: `${progress.spawnedConversation?.eventCount || 0} events` } : s,
-        ),
-      )
-    }
-  }, [progress.spawnedConversation, progress.isComplete, progress.elapsed, progress.setSteps])
-
-  // Done is done: the instant the conversation connects, focus it and close.
-  // No countdown, no lingering timer to yank the user back if they tabbed away.
-  // One-shot per run via closedOnDoneRef. Only re-select if not already focused
-  // (rekey-follow may have moved the viewport there) and the user hasn't
-  // navigated away mid-launch.
-  useEffect(() => {
-    if (!progress.isConnected || progress.hasError || closedOnDoneRef.current) return
-    closedOnDoneRef.current = true
-    focusLaunchTargetAndClose({
-      launchConversationId: progress.launch.conversationId,
-      spawnedConversation: progress.spawnedConversation,
-      conversationAtLaunch: conversationAtLaunchRef.current,
-      reason: 'project-board-launch-done',
-      close: onClose,
-    })
-  }, [progress.isConnected, progress.hasError, progress.launch.conversationId, progress.spawnedConversation, onClose])
-
-  async function handleRun() {
-    if (phase !== 'config' || !spawnPath) return
-    saveRunTaskDefaults({
-      model,
-      effort,
-      useWorktree,
-      autoCommit,
-      leaveRunning,
-      includePartialMessages,
-      maxBudgetUsd,
-      timeout,
-    })
-    setPhase('launching')
-    conversationAtLaunchRef.current = useConversationsStore.getState().selectedConversationId
-    closedOnDoneRef.current = false
-    haptic('tap')
-
-    const newJobId = crypto.randomUUID()
-    setJobId(newJobId)
-    progress.start([{ label: 'Sending spawn request...', status: 'active', ts: Date.now() }])
-
-    const prompt = composeSpawnPrompt('', {
-      taskWrapper: task,
-      autoCommit,
-      worktreeMergeBack: useWorktree,
-    })
-
-    const spawnReq: SpawnRequest = {
-      cwd: spawnPath,
-      adHoc: true,
-      adHocTaskId: task.slug,
-      prompt,
-      headless: true,
-      model: (model || undefined) as SpawnRequest['model'],
-      effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
-      worktree: useWorktree ? branchName : undefined,
-      leaveRunning: leaveRunning || undefined,
-      name:
-        deriveConversationName(
-          {},
-          { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
-        ) ?? undefined,
-      includePartialMessages: includePartialMessages || undefined,
-      maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
-      env: applySubagentCapEnv(null, { maxConcurrentSubagents, maxSubagentSpawnDepth }) || undefined,
-      jobId: newJobId,
-    }
-    const result = await sendSpawnRequest(spawnReq)
-    if (result.ok) {
-      haptic('success')
-      const wid = result.conversationId
-      spawnedConversationIdRef.current = wid
-      progress.setSteps(prev => [
-        ...prev.map(s =>
-          s.status === 'active' ? { ...s, status: 'done' as const, detail: `agent-host=${wid.slice(0, 8)}` } : s,
-        ),
-        { label: 'Waiting for conversation...', status: 'active' as const, ts: Date.now() },
-      ])
-    } else {
-      progress.setError(result.error)
-    }
-  }
-
-  function handleViewConversation() {
-    const sid = progress.launch.conversationId || progress.spawnedConversation?.id
-    if (sid) {
-      useConversationsStore.getState().selectConversation(sid, 'project-board-view-conversation')
-      onClose()
-    }
-  }
-
-  function handleCopyDiagnostics() {
-    const diag = buildSpawnDiagnostics({
-      source: 'run-task-dialog',
-      jobId,
-      connectionId: spawnedConversationIdRef.current || progress.launch.conversationId || null,
-      conversationId: progress.launch.conversationId ?? null,
-      elapsedSec: progress.elapsed,
-      error: progress.error || progress.launch.error || null,
-      config: {
-        cwd: spawnPath || undefined,
-        model: (model || undefined) as SpawnRequest['model'],
-        effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
-        worktree: useWorktree ? branchName : undefined,
-        leaveRunning: leaveRunning || undefined,
-        maxBudgetUsd: maxBudgetUsd ? Number(maxBudgetUsd) : undefined,
-      },
-      steps: progress.steps.map(s => ({
-        label: s.label,
-        status: s.status,
-        detail: s.detail ?? null,
-        ts: s.ts ?? null,
-      })),
-      launchEvents: progress.launch.events.map(e => ({
-        step: e.step,
-        status: e.status,
-        detail: e.detail ?? null,
-        t: e.t,
-      })),
-      launchState: { completed: progress.launch.completed, failed: progress.launch.failed },
-      task: { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
-    })
-    progress.copyToClipboard(JSON.stringify(diag, null, 2))
-  }
-
-  const displayError = progress.error || progress.launch.error
-
-  return (
-    <Dialog open={true} onOpenChange={open => !open && onClose()}>
-      <DialogContent className="max-w-md rounded-lg p-0 gap-0 bg-surface-inset border-amber-500/30">
-        <DialogTitle className="sr-only">Run Task: {task.title}</DialogTitle>
-        {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-amber-500/20">
-          <Zap className="size-4 text-amber-400" />
-          <span className="text-sm font-mono font-bold text-amber-400">
-            {phase === 'config'
-              ? 'Run Task'
-              : progress.isComplete
-                ? 'Task Complete'
-                : progress.hasError
-                  ? 'Launch Failed'
-                  : 'Launching...'}
-          </span>
-          {phase === 'launching' && (
-            <span className="text-[10px] font-mono text-muted-foreground/60 ml-auto mr-2 tabular-nums">
-              {progress.elapsed}s
-            </span>
-          )}
-        </div>
-
-        {/* Task title */}
-        <div className="px-4 py-3 border-b border-primary/12">
-          <div className="text-xs font-mono text-foreground truncate">{task.title}</div>
-          {phase === 'config' && task.body && (
-            <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{task.body.slice(0, 200)}</div>
-          )}
-        </div>
-
-        {/* Phase 1: Config form */}
-        {phase === 'config' && (
-          <>
-            <div className="px-4 py-3">
-              <LaunchConfigFields
-                value={{
-                  model,
-                  effort: effort === 'default' ? '' : effort,
-                  includePartialMessages,
-                  useWorktree,
-                  worktreeName: branchName,
-                  autoCommit,
-                  leaveRunning,
-                  maxBudgetUsd,
-                  maxConcurrentSubagents,
-                  maxSubagentSpawnDepth,
-                  timeout,
-                }}
-                // Patch-fan-out idiom shared with spawn-dialog's applyFieldsPatch;
-                // two new cap fields tipped this god-component handler past thresholds.
-                // fallow-ignore-next-line complexity
-                onChange={(patch: Partial<LaunchFieldsValue>) => {
-                  if ('model' in patch) setModel(patch.model ?? '')
-                  if ('effort' in patch) setEffort(patch.effort ? patch.effort : 'default')
-                  if ('useWorktree' in patch) setUseWorktree(!!patch.useWorktree)
-                  if ('worktreeName' in patch) setBranchName(patch.worktreeName ?? '')
-                  if ('autoCommit' in patch) setAutoCommit(!!patch.autoCommit)
-                  // fallow-ignore-next-line code-duplication
-                  if ('leaveRunning' in patch) setLeaveRunning(!!patch.leaveRunning)
-                  if ('maxBudgetUsd' in patch) setMaxBudgetUsd(patch.maxBudgetUsd ?? '')
-                  if ('maxConcurrentSubagents' in patch) setMaxConcurrentSubagents(patch.maxConcurrentSubagents ?? '')
-                  if ('maxSubagentSpawnDepth' in patch) setMaxSubagentSpawnDepth(patch.maxSubagentSpawnDepth ?? '')
-                  if ('includePartialMessages' in patch) setIncludePartialMessages(!!patch.includePartialMessages)
-                  if ('timeout' in patch) setTimeout_(patch.timeout ?? '30')
-                }}
-                show={{
-                  model: true,
-                  effort: true,
-                  includePartialMessages: true,
-                  worktree: true,
-                  autoCommit: true,
-                  leaveRunning: true,
-                  maxBudgetUsd: true,
-                  maxConcurrentSubagents: true,
-                  maxSubagentSpawnDepth: true,
-                  timeout: true,
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-primary/12">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-mono text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-                <Kbd className="opacity-60">Esc</Kbd>
-              </button>
-              <button
-                type="button"
-                onClick={handleRun}
-                disabled={!spawnPath}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
-              >
-                <Zap className="size-3" />
-                Run
-                <Kbd className="bg-amber-500/20 text-amber-400/70">↵</Kbd>
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Phase 2: Launch monitor */}
-        {phase === 'launching' && (
-          <>
-            <div className="px-4 py-3">
-              <LaunchStepList steps={progress.steps} />
-            </div>
-
-            {displayError && (
-              <div className="px-4 py-2 border-t border-red-500/20">
-                <LaunchErrorBanner
-                  error={displayError}
-                  copied={progress.copied}
-                  onCopy={handleCopyDiagnostics}
-                  copyLabel="Copy diagnostics"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-primary/12">
-              <LaunchFooterActions
-                isConnected={progress.isConnected}
-                isComplete={progress.isComplete}
-                hasError={progress.hasError}
-                onViewConversation={handleViewConversation}
-                onClose={onClose}
-              />
-            </div>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function ProjectCard({
   task,
   view,
+  epicRollup,
   onMove,
   onDelete,
   onArchive,
   onEdit,
+  onOpenSlug,
 }: {
   task: ProjectTaskMeta
   view: BoardViewConfig
+  /** The parent epic's rollup, when this card belongs to one. */
+  epicRollup?: EpicRollup
   onMove: (id: string, to: TaskStatus) => void
   onDelete: (id: string) => void
   onArchive: (id: string) => void
   onEdit: (task: ProjectTaskMeta) => void
+  onOpenSlug: (slug: string) => void
 }) {
   const [showActions, setShowActions] = useState(false)
   const canMoveRight = task.status in NEXT_STATUS
@@ -1017,6 +163,7 @@ function ProjectCard({
             </div>
           )}
           <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {task.epic && <EpicBadge epicId={task.epic} rollup={epicRollup} onOpen={onOpenSlug} />}
             {task.priority && (
               <span className={cn('text-[9px] px-1 py-0.5 border font-mono', PRIORITY_COLORS[task.priority])}>
                 {task.priority}
@@ -1339,6 +486,32 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
   // link) -- resolved by slug once the manifest has landed. See the hook.
   useCardDeepLink({ ready: !!projectUri, readTask, onOpen: setEditingTask })
 
+  // One fold over the cards the board already holds -- no extra I/O, and the
+  // lane cards and the EPICS view read the same numbers by construction.
+  const epicIndex = useMemo(() => buildEpicIndex(tasks), [tasks])
+
+  const openCardBySlug = useCallback(
+    async (slug: string) => {
+      const full = await readTask(slug)
+      if (full) setEditingTask(full)
+    },
+    [readTask],
+  )
+
+  /** Hand the EXISTING batch selector this epic's not-started children, ticked. */
+  const handleWorkOnEpic = useCallback(
+    (epicId: string) => {
+      const rollup = epicIndex.get(epicId)
+      if (!rollup) return
+      openTaskBatch({
+        scope: rollup.children.map(c => c.card.slug),
+        preselect: notStartedChildren(rollup).map(c => c.slug),
+        scopeLabel: rollup.card?.title ?? epicId,
+      })
+    },
+    [epicIndex],
+  )
+
   const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
   const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority
 
@@ -1448,16 +621,15 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         key={task.slug}
         task={task}
         view={view}
+        epicRollup={task.epic ? epicIndex.get(task.epic) : undefined}
         onMove={handleMove}
         onDelete={handleDelete}
         onArchive={handleArchive}
-        onEdit={async meta => {
-          const full = await readTask(meta.slug)
-          if (full) setEditingTask(full)
-        }}
+        onEdit={meta => void openCardBySlug(meta.slug)}
+        onOpenSlug={slug => void openCardBySlug(slug)}
       />
     ),
-    [view, handleMove, handleDelete, handleArchive, readTask],
+    [view, epicIndex, handleMove, handleDelete, handleArchive, openCardBySlug],
   )
 
   const archivedTasks = filteredTasks.filter(n => n.status === 'archived')
@@ -1476,13 +648,31 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         <div className="flex items-center justify-between px-3 py-2">
           <BoardHeaderLabel conversationId={conversationId} />
           <div className="flex items-center gap-2">
+            <div className="flex items-center border border-primary/15">
+              {BOARD_MODES.map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    haptic('tap')
+                    updateView('mode', m)
+                  }}
+                  className={cn(
+                    'px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider transition-colors',
+                    view.mode === m ? 'bg-accent/15 text-accent' : 'text-muted-foreground/40 hover:text-foreground',
+                  )}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               title="Batch select tasks"
               className="p-0.5 text-muted-foreground/40 hover:text-accent transition-colors"
               onClick={() => {
                 haptic('tap')
-                window.dispatchEvent(new Event('open-batch-selector'))
+                openTaskBatch()
               }}
             >
               <ListChecks className="size-3.5" />
@@ -1599,49 +789,55 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         </div>
       </div>
 
+      {view.mode === 'epics' && (
+        <EpicsView tasks={filteredTasks} onOpenCard={openCardBySlug} onWorkOnEpic={handleWorkOnEpic} />
+      )}
+
       {/* Kanban columns */}
-      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
-          <div className="flex gap-0 h-full min-w-max">
-            {COLUMNS.map(col => {
-              const colTasks = activeTasks.filter(n => n.status === col.status)
-              return (
-                <DroppableColumn key={col.status} status={col.status} width={view.columnWidth}>
-                  {/* Column header */}
-                  <div className="px-3 py-2 border-b border-border/50 flex items-center gap-2 shrink-0">
-                    <span className={cn('text-[11px] font-bold font-mono uppercase tracking-wider', col.color)}>
-                      {col.label}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground/40 font-mono">{colTasks.length}</span>
-                  </div>
+      {view.mode === 'lanes' && (
+        <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+          <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
+            <div className="flex gap-0 h-full min-w-max">
+              {TASK_COLUMNS.map(col => {
+                const colTasks = activeTasks.filter(n => n.status === col.status)
+                return (
+                  <DroppableColumn key={col.status} status={col.status} width={view.columnWidth}>
+                    {/* Column header */}
+                    <div className="px-3 py-2 border-b border-border/50 flex items-center gap-2 shrink-0">
+                      <span className={cn('text-[11px] font-bold font-mono uppercase tracking-wider', col.color)}>
+                        {col.label}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/40 font-mono">{colTasks.length}</span>
+                    </div>
 
-                  {/* Cards */}
-                  <div className="flex-1 overflow-y-auto space-y-0 pb-4">
-                    {colTasks.map(renderCard)}
+                    {/* Cards */}
+                    <div className="flex-1 overflow-y-auto space-y-0 pb-4">
+                      {colTasks.map(renderCard)}
 
-                    {col.status === 'inbox' && <InlineAdd onAdd={handleCreate} />}
-                  </div>
-                </DroppableColumn>
-              )
-            })}
-          </div>
-        </div>
-        <DragOverlay dropAnimation={null}>
-          {activeDragTask && (
-            <div className="px-3 py-2 bg-surface-inset border border-primary/25 shadow-xl opacity-90 max-w-[250px]">
-              <div className="text-xs font-mono text-foreground truncate">{activeDragTask.title}</div>
-              {activeDragTask.bodyPreview && (
-                <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
-                  {activeDragTask.bodyPreview}
-                </div>
-              )}
+                      {col.status === 'inbox' && <InlineAdd onAdd={handleCreate} />}
+                    </div>
+                  </DroppableColumn>
+                )
+              })}
             </div>
-          )}
-        </DragOverlay>
-      </DndContext>
+          </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragTask && (
+              <div className="px-3 py-2 bg-surface-inset border border-primary/25 shadow-xl opacity-90 max-w-[250px]">
+                <div className="text-xs font-mono text-foreground truncate">{activeDragTask.title}</div>
+                {activeDragTask.bodyPreview && (
+                  <div className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">
+                    {activeDragTask.bodyPreview}
+                  </div>
+                )}
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
 
       {/* Archived section - collapsible */}
-      {archivedTasks.length > 0 && (
+      {view.mode === 'lanes' && archivedTasks.length > 0 && (
         <div className="border-t border-border shrink-0">
           <button
             type="button"
@@ -1704,3 +900,8 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     </div>
   )
 })
+
+export { RunTaskDialog } from './project-board/run-task-dialog'
+// Split out 2026-08-14 (this file was 1766 LOC). Re-exported here because both
+// are imported from '../project-board' by TaskEditorOverlay and by tests.
+export { TaskEditor } from './project-board/task-editor'

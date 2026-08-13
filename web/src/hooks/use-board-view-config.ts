@@ -2,12 +2,17 @@ import { useCallback, useEffect, useState } from 'react'
 
 type Density = 'compact' | 'normal' | 'roomy'
 type TitleSize = 'xs' | 'sm'
+/** Lanes = the kanban columns. Epics = one swimlane per epic card. */
+export type BoardMode = 'lanes' | 'epics'
+
+export const BOARD_MODES: BoardMode[] = ['lanes', 'epics']
 
 export type BoardViewConfig = {
   columnWidth: number
   bodyLines: number
   density: Density
   titleSize: TitleSize
+  mode: BoardMode
 }
 
 const BOARD_VIEW_DEFAULTS: BoardViewConfig = {
@@ -15,6 +20,7 @@ const BOARD_VIEW_DEFAULTS: BoardViewConfig = {
   bodyLines: 6,
   density: 'roomy',
   titleSize: 'sm',
+  mode: 'lanes',
 }
 
 const STORAGE_KEY = 'rclaude.project-board-view.v2'
@@ -30,6 +36,7 @@ function load(): BoardViewConfig {
       bodyLines: clampNum(parsed.bodyLines, 0, 6, BOARD_VIEW_DEFAULTS.bodyLines),
       density: ['compact', 'normal', 'roomy'].includes(parsed.density) ? parsed.density : BOARD_VIEW_DEFAULTS.density,
       titleSize: ['xs', 'sm'].includes(parsed.titleSize) ? parsed.titleSize : BOARD_VIEW_DEFAULTS.titleSize,
+      mode: BOARD_MODES.includes(parsed.mode) ? parsed.mode : BOARD_VIEW_DEFAULTS.mode,
     }
   } catch {
     return BOARD_VIEW_DEFAULTS

@@ -20,6 +20,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
+import { checkEpics, type EpicCardView } from './project-doctor-epics'
 import { checkLayout } from './project-doctor-layout'
 import { checkLinks } from './project-doctor-links'
 import { type DoctorFinding, type DoctorReport, sortFindings } from './project-doctor-types'
@@ -69,6 +70,25 @@ function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>): Docto
   return [...findings, ...checkLinks({ id: card.id, body, refs }, existingIds)]
 }
 
+/** Project the loaded cards down to what the epic checks need. Unreadable cards
+ *  are dropped -- `card-unreadable` already reports those, and guessing at their
+ *  linkage would stack a second finding on the same root cause. */
+function epicViews(cards: LoadedCard[]): EpicCardView[] {
+  const out: EpicCardView[] = []
+  for (const card of cards) {
+    if (card.raw === null) continue
+    const { meta } = parseFrontmatter(card.raw)
+    out.push({
+      id: card.id,
+      status: card.status,
+      tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
+      epic: meta.epic ? String(meta.epic) : undefined,
+      dependsOn: Array.isArray(meta.depends_on) ? meta.depends_on.map(String) : [],
+    })
+  }
+  return out
+}
+
 export function runProjectDoctor(root: string): DoctorReport {
   const board = boardRoot(root)
   if (!existsSync(board)) return { board, noBoard: true, cards: 0, findings: [] }
@@ -79,6 +99,7 @@ export function runProjectDoctor(root: string): DoctorReport {
 
   const findings: DoctorFinding[] = []
   for (const card of cards) findings.push(...cardFindings(card, existingIds))
+  findings.push(...checkEpics(epicViews(cards)))
   findings.push(...checkLayout(root, legacy.length))
 
   return { board, noBoard: false, cards: cards.length, findings: sortFindings(findings) }
