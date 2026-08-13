@@ -18,14 +18,8 @@
 
 import type { ProfileUsageSnapshot, SentinelProfileInfo } from '@shared/protocol'
 import { Check, Hash, User } from 'lucide-react'
+import { usageTextColor } from '@/components/usage/usage-colors'
 import { cn, formatAge } from '@/lib/utils'
-
-function usageTextColor(pct: number): string {
-  if (pct < 50) return 'text-emerald-400'
-  if (pct < 75) return 'text-amber-400'
-  if (pct < 90) return 'text-orange-400'
-  return 'text-red-400'
-}
 
 interface SentinelProfileRadioProps {
   /** Profiles reported by the target sentinel (NAMES + display only). */

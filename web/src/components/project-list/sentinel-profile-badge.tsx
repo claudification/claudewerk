@@ -16,9 +16,9 @@
  */
 
 import type { LaunchConfig } from '@shared/protocol'
-import { Shuffle } from 'lucide-react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { findProfileMeta, profileDisplayName } from '@/lib/profile-display'
+import { ProfileChip } from '../profile-chip'
 
 interface SentinelProfileBadgeProps {
   /** Resolved profile NAME the sentinel picked at spawn time. Read from
@@ -64,17 +64,14 @@ export function SentinelProfileBadge({ resolvedProfile, hostSentinelAlias, launc
   // even when the resolved profile is hidden.
   if (profileMeta?.showLabel === false && !isShuffleIntent) return null
 
-  const colorStyle = profileMeta?.color ? { color: profileMeta.color, borderColor: profileMeta.color } : undefined
   const title = buildBadgeTitle(profileName, profileMeta?.label, intentLabelFor(intent))
 
   return (
-    <span
-      className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[8px] rounded border border-primary/20 bg-muted text-muted-foreground font-medium"
-      style={colorStyle}
+    <ProfileChip
+      label={profileMeta?.showLabel === false ? '' : profileDisplayName(profileMeta, profileName)}
+      color={profileMeta?.color}
       title={title}
-    >
-      {isShuffleIntent && <Shuffle className="size-2.5" />}
-      {profileMeta?.showLabel === false ? null : profileDisplayName(profileMeta, profileName)}
-    </span>
+      shuffle={isShuffleIntent}
+    />
   )
 }
