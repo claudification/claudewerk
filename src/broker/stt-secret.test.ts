@@ -22,9 +22,22 @@ function fakeKv(initial: Record<string, unknown> = {}): KVStore & { data: Record
   } as unknown as KVStore & { data: Record<string, unknown> }
 }
 
-beforeEach(() => resetSttSigningSecretCache())
+beforeEach(() => {
+  resetSttSigningSecretCache()
+  delete process.env.STT_SIGNING_SECRET
+})
 
 describe('getSttSigningSecret', () => {
+  it('prefers STT_SIGNING_SECRET from the env, so an operator can pin it', () => {
+    // `wrangler secret list` cannot read a value back, so pinning the broker to
+    // the Worker's existing secret has to come from somewhere explicit.
+    process.env.STT_SIGNING_SECRET = 'pinned-to-the-worker'
+    const kv = fakeKv({ 'stt-signing-secret': 'the-kv-one' })
+    expect(getSttSigningSecret(kv)).toBe('pinned-to-the-worker')
+    // ...and it must NOT overwrite what is in KV.
+    expect(kv.data['stt-signing-secret']).toBe('the-kv-one')
+  })
+
   it('returns the stored secret unchanged', () => {
     const kv = fakeKv({ 'stt-signing-secret': 'the-existing-one' })
     expect(getSttSigningSecret(kv)).toBe('the-existing-one')

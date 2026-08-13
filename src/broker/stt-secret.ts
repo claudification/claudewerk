@@ -41,6 +41,17 @@ function generate(): string {
 export function getSttSigningSecret(kv: KVStore): string {
   if (cached) return cached
 
+  // An explicit env var WINS. That is how an operator pins this to the value the
+  // Worker already holds (`wrangler secret list` cannot read one back), without
+  // reaching into the KV store by hand. KV remains the fallback so rotation
+  // afterwards stays restart-free.
+  const fromEnv = process.env.STT_SIGNING_SECRET
+  if (fromEnv) {
+    cached = fromEnv
+    console.log('[stt] signing secret loaded from STT_SIGNING_SECRET env')
+    return cached
+  }
+
   const stored = kv.get<string>(KV_KEY)
   if (typeof stored === 'string' && stored.length > 0) {
     cached = stored

@@ -14,6 +14,11 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - DEEPGRAM_API_KEY=${DEEPGRAM_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Shared with the stt-proxy Worker, which verifies the dictation tokens this
+      # broker signs. MUST match `wrangler secret put STT_SIGNING_SECRET` or every
+      # dictation 401s. Unset is fine on a fresh install -- the broker generates
+      # and persists one (and says so loudly); this pins it to an existing Worker.
+      - STT_SIGNING_SECRET=${STT_SIGNING_SECRET:-}
     ports:
       - "${PORT:-9999}:9999"
     volumes:
