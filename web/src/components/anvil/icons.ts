@@ -54,7 +54,7 @@ const GEOMETRY: Record<IconName, string> = {
 
 const NAMES = new Set<string>(Object.keys(GEOMETRY))
 
-export function isIconName(name: string): name is IconName {
+function isIconName(name: string): name is IconName {
   return NAMES.has(name)
 }
 
