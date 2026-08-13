@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
+import { walkFiles } from './fs-walk'
 import type { FileSweepEstimate } from './types'
 
 interface SweepSpec {
@@ -38,37 +39,18 @@ interface WalkResult {
   matchedBytes: number
 }
 
-/** Recursive size + age walk. Symlinks are counted but never followed, so a
- *  loop cannot hang the estimate and a link out of the cache dir cannot make a
- *  sweep propose deleting something outside it. */
-function walk(dir: string, cutoffMs: number, depth = 0): WalkResult {
+/** Size + age totals for a directory, using the SHARED walker that the sweep
+ *  itself uses -- so what this reports and what gets deleted cannot diverge. */
+function walk(dir: string, cutoffMs: number): WalkResult {
   const acc: WalkResult = { files: 0, bytes: 0, matchedFiles: 0, matchedBytes: 0 }
-  if (depth > 12 || !existsSync(dir)) return acc
-
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name)
-    if (entry.isSymbolicLink()) continue
-    if (entry.isDirectory()) {
-      const sub = walk(path, cutoffMs, depth + 1)
-      acc.files += sub.files
-      acc.bytes += sub.bytes
-      acc.matchedFiles += sub.matchedFiles
-      acc.matchedBytes += sub.matchedBytes
-      continue
-    }
-    let st: ReturnType<typeof statSync>
-    try {
-      st = statSync(path)
-    } catch {
-      continue // raced with a writer; it is not ours to report on
-    }
+  walkFiles(dir, file => {
     acc.files += 1
-    acc.bytes += st.size
-    if (st.mtimeMs < cutoffMs) {
+    acc.bytes += file.bytes
+    if (file.mtimeMs < cutoffMs) {
       acc.matchedFiles += 1
-      acc.matchedBytes += st.size
+      acc.matchedBytes += file.bytes
     }
-  }
+  })
   return acc
 }
 
