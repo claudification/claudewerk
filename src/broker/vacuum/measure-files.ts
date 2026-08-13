@@ -8,9 +8,9 @@
  * they are where the space is.
  */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Database } from 'bun:sqlite'
 import { walkFiles } from './fs-walk'
 import type { FileSweepEstimate } from './types'
 
@@ -87,9 +87,7 @@ export function measureOrphanedScenes(cacheDir: string, canvasDb: Database | nul
     return { key: 'canvas-scenes', label: 'Orphaned canvas scenes', path, configured: false, ...empty }
   }
 
-  const live = new Set(
-    (canvasDb.query('SELECT id FROM canvases').all() as Array<{ id: string }>).map(r => r.id),
-  )
+  const live = new Set((canvasDb.query('SELECT id FROM canvases').all() as Array<{ id: string }>).map(r => r.id))
 
   const acc = { ...empty }
   for (const entry of readdirSync(path, { withFileTypes: true })) {

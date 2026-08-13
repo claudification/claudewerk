@@ -13,7 +13,7 @@ import { listArchives, monthsToArchive } from '../archive'
 import { checkBackupGate } from '../backup'
 import { freeSpaceBytes } from '../maintenance/steps'
 import { openBrokerDatabase } from '../sqlite-open'
-import { type BytesReport, applyBytes, measureBytes, readBytesCache, writeBytesCache } from './measure-bytes'
+import { applyBytes, type BytesReport, measureBytes, readBytesCache, writeBytesCache } from './measure-bytes'
 import { findRedundantIndexes, measureFootprint, measureMonthRows, measureOrphans } from './measure-db'
 import { measureFileSweeps, measureOrphanedScenes } from './measure-files'
 import type { DbFootprint, GateVerdict, MonthEstimate, VacuumEstimate, VacuumPlan } from './types'
@@ -91,6 +91,52 @@ function fileBytesOf(path: string): number {
   return existsSync(path) ? statSync(path).size : 0
 }
 
+interface FastTier {
+  months: MonthEstimate[]
+  footprint: DbFootprint
+  orphans: ReturnType<typeof measureOrphans>
+  redundantIndexes: ReturnType<typeof findRedundantIndexes>
+}
+
+/** ~6 s on the live database, so it runs on every dialog open. One database
+ *  handle for all four measurements. */
+function measureFastTier(dbPath: string, eligible: Set<string>, archived: Set<string>): FastTier {
+  const db = openBrokerDatabase(dbPath, { readonly: true })
+  try {
+    return {
+      footprint: measureFootprint(db, fileBytesOf(dbPath), fileBytesOf(`${dbPath}-wal`)),
+      months: measureMonthRows(db, eligible, archived),
+      orphans: measureOrphans(db, eligible),
+      redundantIndexes: findRedundantIndexes(db, 'transcript_entries'),
+    }
+  } finally {
+    db.close()
+  }
+}
+
+function loadBytes(cacheDir: string, remeasure: boolean, now: number): BytesReport | null {
+  if (!remeasure) return readBytesCache(cacheDir)
+  const report = measureBytes(cacheDir, now)
+  writeBytesCache(cacheDir, report)
+  return report
+}
+
+/** The mtime sweeps plus the reference-based canvas-scene sweep, which needs
+ *  its own database handle. */
+function measureAllFileSweeps(
+  cacheDir: string,
+  ages: Record<string, number> | undefined,
+  now: number,
+): VacuumEstimate['fileSweeps'] {
+  const canvasDbPath = join(cacheDir, 'canvases.db')
+  const canvasDb = existsSync(canvasDbPath) ? openBrokerDatabase(canvasDbPath, { readonly: true }) : null
+  try {
+    return [...measureFileSweeps(cacheDir, ages, now), measureOrphanedScenes(cacheDir, canvasDb)]
+  } finally {
+    canvasDb?.close()
+  }
+}
+
 export function measureVacuum(opts: EstimateOptions): VacuumEstimate {
   const started = Date.now()
   const now = opts.now ?? started
@@ -99,43 +145,14 @@ export function measureVacuum(opts: EstimateOptions): VacuumEstimate {
   const eligibleMonths = monthsToArchive(opts.cacheDir, opts.hotDays, now)
   const archivedMonths = new Set(listArchives(opts.archiveDir).map(a => a.month))
 
-  // FAST tier -- ~6 s total on the live database, so it runs on every open.
-  const db = openBrokerDatabase(dbPath, { readonly: true })
-  let months: MonthEstimate[]
-  let footprint: DbFootprint
-  let orphans: ReturnType<typeof measureOrphans>
-  let redundantIndexes: ReturnType<typeof findRedundantIndexes>
-  try {
-    footprint = measureFootprint(db, fileBytesOf(dbPath), fileBytesOf(`${dbPath}-wal`))
-    months = measureMonthRows(db, new Set(eligibleMonths), archivedMonths)
-    orphans = measureOrphans(db, new Set(eligibleMonths))
-    redundantIndexes = findRedundantIndexes(db, 'transcript_entries')
-  } finally {
-    db.close()
-  }
+  const fast = measureFastTier(dbPath, new Set(eligibleMonths), archivedMonths)
+  const { months, footprint, orphans, redundantIndexes } = fast
 
   // SLOW tier -- ~2 min, so it is cached and only re-run on an explicit ask.
-  let report: BytesReport | null
-  if (opts.remeasureBytes) {
-    report = measureBytes(opts.cacheDir, now)
-    writeBytesCache(opts.cacheDir, report)
-  } else {
-    report = readBytesCache(opts.cacheDir)
-  }
+  const report = loadBytes(opts.cacheDir, Boolean(opts.remeasureBytes), now)
   const bytes = applyBytes(report, Boolean(opts.remeasureBytes), months, orphans, footprint, now)
 
-  const canvasDbPath = join(opts.cacheDir, 'canvases.db')
-  const canvasDb = existsSync(canvasDbPath) ? openBrokerDatabase(canvasDbPath, { readonly: true }) : null
-  let fileSweeps: VacuumEstimate['fileSweeps']
-  try {
-    fileSweeps = [
-      ...measureFileSweeps(opts.cacheDir, opts.fileAges, now),
-      measureOrphanedScenes(opts.cacheDir, canvasDb),
-    ]
-  } finally {
-    canvasDb?.close()
-  }
-
+  const fileSweeps = measureAllFileSweeps(opts.cacheDir, opts.fileAges, now)
   const selected = months.filter(m => m.eligible)
   const projectedTranscriptBytes = projectReclaim(
     footprint,

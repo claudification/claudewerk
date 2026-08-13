@@ -35,9 +35,9 @@ function indexNames(): string[] {
   const db = new Database(join(cacheDir, 'store.db'), { strict: true, readonly: true })
   try {
     return (
-      db
-        .query(`SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name`)
-        .all() as Array<{ name: string }>
+      db.query(`SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name`).all() as Array<{
+        name: string
+      }>
     ).map(r => r.name)
   } finally {
     db.close()

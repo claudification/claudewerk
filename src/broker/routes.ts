@@ -40,11 +40,13 @@ import { createSheafRouter } from './routes/sheaf'
 import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import { createStatuspageWebhookRouter } from './routes/statuspage-webhook'
+import { createVacuumRouter } from './routes/vacuum'
 import { getScheduledTaskEngine } from './scheduled-tasks/engine-registry'
 import { createScheduledTasksRouter } from './scheduled-tasks/routes'
 import type { SentinelRegistry } from './sentinel-registry'
 import type { StoreDriver } from './store/types'
 import type { TerminationLog } from './termination-log'
+import { broadcastVacuumStep } from './vacuum/broadcast'
 
 // Re-export the blob/file append helper for external consumers (conversation-store).
 // The `SharedFileEntry` type is deliberately NOT re-exported: nothing imported it
@@ -312,6 +314,10 @@ export function createRouter(options: RouteOptions): Hono {
   )
   app.route('/', createCommitsRouter(conversationStore, store, helpers))
   app.route('/', createArchivesRouter(helpers, cacheDir ?? ''))
+  app.route(
+    '/',
+    createVacuumRouter(helpers, cacheDir ?? '', msg => broadcastVacuumStep(conversationStore.getSubscribers(), msg)),
+  )
   app.route('/', createStatsRouter(conversationStore, store, helpers, serverStartTime))
   app.route('/', createStatuspageWebhookRouter(store, rclaudeSecret))
   app.route('/', createSheafRouter(store, conversationStore, helpers, terminationLog))

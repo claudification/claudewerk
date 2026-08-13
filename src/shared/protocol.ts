@@ -6638,6 +6638,37 @@ export interface RecapGetMessage {
   recapId: string
   includeLogs?: boolean
 }
+/** One step of a vacuum run, broadcast as it completes.
+ *
+ *  EVERYTHING IS A STRUCTURED MESSAGE: an apply archives and verifies gigabytes
+ *  and then rewrites the database, which runs for minutes. Returning only an
+ *  HTTP response at the end would leave the panel blind for the entire window
+ *  in which the destructive work actually happens.
+ *
+ *  LOG EVERYTHING: each step carries the counts and bytes on both sides of it,
+ *  plus who asked for it, so a future engineer can reconstruct exactly what a
+ *  run did from the broadcast stream alone. */
+export interface VacuumStepMessage {
+  type: 'vacuum_step'
+  runId: string
+  /** 'gate' | 'archive:<month>' | 'delete:<month>' | 'checkpoint' | 'vacuum' |
+   *  'index:<name>' | 'files:<key>' | 'smoketest' | 'done' */
+  step: string
+  status: 'started' | 'ok' | 'skipped' | 'failed'
+  /** Always populated, including for a skip -- a step that reports no reason is
+   *  indistinguishable from one that silently vanished. */
+  detail: string
+  rowsBefore: number
+  rowsAfter: number
+  dbBytesBefore: number
+  dbBytesAfter: number
+  /** Auth principal that started the run. */
+  initiator: string
+  /** True for a --dry-run: nothing was touched. */
+  dryRun: boolean
+  ts: number
+}
+
 export interface RecapProgressMessage {
   type: 'recap_progress'
   recapId: string
