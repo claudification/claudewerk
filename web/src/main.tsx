@@ -23,6 +23,7 @@ if (localStorage.getItem('sw-crash-detected')) {
 import React, { lazy, Suspense, useCallback, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './app'
+import { installCacheStorageProbe } from './lib/cache-storage-probe'
 import { installChunkLoadLog } from './lib/chunk-load-log'
 import { installLogCapture } from './lib/debug-log'
 import { installLongTaskLog } from './lib/longtask-log'
@@ -31,6 +32,8 @@ import { installTabVisibility } from './lib/tab-visibility'
 // Capture console output into ring buffer before anything else runs
 installLogCapture()
 installChunkLoadLog()
+// Reports leaked service-worker cache generations once the load settles
+installCacheStorageProbe()
 installLongTaskLog()
 // Freeze infinite CSS animations while the tab is hidden (composite/layer win)
 installTabVisibility()
