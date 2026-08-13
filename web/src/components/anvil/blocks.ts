@@ -9,6 +9,7 @@
  * in style/src attributes, where escaping alone is not enough. They are
  * allowlisted (see safeColor / safeFont / safeUrl), not sanitised.
  */
+import { type IconName, icon, resolveIcon } from './icons'
 import {
   type AnvilBlock,
   type AnvilOption,
@@ -156,8 +157,15 @@ const NOTE_CLASS: Record<NoteTone, string> = {
   danger: 'anvil-note-danger',
 }
 
+const NOTE_ICON: Record<NoteTone, IconName> = {
+  info: 'info',
+  warn: 'triangle-alert',
+  danger: 'octagon-alert',
+}
+
 export function renderNote(b: AnvilBlock): string {
-  const cls = NOTE_CLASS[attrString(b, 'tone', 'info') as NoteTone] ?? NOTE_CLASS.info
+  const tone = attrString(b, 'tone', 'info') as NoteTone
+  const cls = NOTE_CLASS[tone] ?? NOTE_CLASS.info
   const text = b.prose || b.prompt
   if (!text) return ''
   const paras = text
@@ -165,7 +173,8 @@ export function renderNote(b: AnvilBlock): string {
     .filter(Boolean)
     .map(l => `<p>${esc(l)}</p>`)
     .join('')
-  return `<div class="anvil-note ${cls}">${paras}</div>`
+  const mark = icon(resolveIcon(b.attrs.icon, NOTE_ICON[tone] ?? 'info'))
+  return `<div class="anvil-note ${cls}"><span class="anvil-icon">${mark}</span><div class="anvil-note-body">${paras}</div></div>`
 }
 
 function submitBar(b: AnvilBlock): string {

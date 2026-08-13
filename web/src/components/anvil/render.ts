@@ -8,8 +8,9 @@
  * parse.ts and types.ts survive as-is.
  */
 import { esc, renderChoice, renderGallery, renderInput, renderNote, renderScale } from './blocks'
+import { type IconName, icon, resolveIcon } from './icons'
 import { parseAnvil } from './parse'
-import type { AnvilBlock, AnvilKind } from './types'
+import { type AnvilBlock, type AnvilKind, type GalleryRender, galleryRender } from './types'
 
 type BodyRenderer = (block: AnvilBlock) => string
 
@@ -23,17 +24,28 @@ const BODIES: Record<AnvilKind, BodyRenderer> = {
 }
 
 /**
- * ASCII only, on purpose. `◫` and `⇔` fell out of the transcript's monospace
- * stack into a fallback font and rendered as a tofu box. Every ask block is a
- * question anyway, so one mark serves all of them and the kind is carried by
- * the body, not by a glyph the font may not have.
+ * Inline SVG, never a glyph. Text icons fell out of the transcript's monospace
+ * stack into a fallback font and drew a tofu box; a vector cannot.
  */
-const KIND_ICON: Record<AnvilKind, string> = {
-  choice: '?',
-  gallery: '?',
-  input: '?',
-  scale: '?',
-  note: '',
+const KIND_ICON: Record<AnvilKind, IconName> = {
+  choice: 'list-checks',
+  gallery: 'images',
+  input: 'text-cursor-input',
+  scale: 'sliders-horizontal',
+  note: 'info',
+}
+
+/** A gallery's icon follows what its cards actually show. */
+const GALLERY_ICON: Record<GalleryRender, IconName> = {
+  image: 'images',
+  swatch: 'palette',
+  type: 'type',
+  card: 'layout-grid',
+}
+
+function blockIcon(block: AnvilBlock): IconName {
+  const base = block.kind === 'gallery' ? GALLERY_ICON[galleryRender(block)] : KIND_ICON[block.kind]
+  return resolveIcon(block.attrs.icon, base)
 }
 
 function warnings(block: AnvilBlock): string {
@@ -48,9 +60,8 @@ function shell(block: AnvilBlock, partial: boolean): string {
   // A note is chrome-less: it is prose, not a question.
   if (block.kind === 'note') return `${body}${warnings(block)}`
 
-  const icon = KIND_ICON[block.kind]
   const head = block.prompt
-    ? `<div class="anvil-prompt"><span class="anvil-icon">${esc(icon)}</span>${esc(block.prompt)}</div>`
+    ? `<div class="anvil-prompt"><span class="anvil-icon">${icon(blockIcon(block))}</span>${esc(block.prompt)}</div>`
     : ''
   const sub = block.subtext ? `<div class="anvil-subtext">${esc(block.subtext)}</div>` : ''
   const state = partial ? 'streaming' : 'preview'

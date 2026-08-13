@@ -176,6 +176,35 @@ describe('renderAnvilFence', () => {
     expect(html).not.toContain('url(z)')
   })
 
+  test('icons are inline SVG, never a text glyph that could tofu', () => {
+    const html = renderAnvilFence(CHOICE, true)
+    expect(html).toContain('<svg class="anvil-svg"')
+    expect(html).toContain('stroke="currentColor"')
+    // No non-ASCII may reach the emitted markup: that is what tofu'd before.
+    expect(/[^\x20-\x7E\n]/.test(html.replace(/[·]/g, ''))).toBe(false)
+  })
+
+  test('a gallery icon follows its render mode', () => {
+    const swatch = renderAnvilFence('@gallery id=g render=swatch\n? P\n- a | A', true)
+    const type = renderAnvilFence('@gallery id=g render=type\n? P\n- a | A', true)
+    // palette has the distinctive blob path; type has the serif-T stem.
+    expect(swatch).toContain('M12 22a1 1 0 0 1 0-20')
+    expect(type).toContain('M12 4v16')
+    expect(swatch).not.toContain('M12 4v16')
+  })
+
+  test('note tone picks its own icon and an unknown icon= falls back', () => {
+    expect(renderAnvilFence('@note tone=danger\n> boom', true)).toContain('M15.312 2a2 2')
+    const bogus = renderAnvilFence('@note tone=warn icon=nonsense\n> hm', true)
+    expect(bogus).toContain('<svg')
+    expect(bogus).toContain('m21.73 18-8-14') // fell back to triangle-alert
+  })
+
+  test('icon= overrides the kind default', () => {
+    const html = renderAnvilFence('@choice id=x icon=palette\n? P\n- a | A', true)
+    expect(html).toContain('M12 22a1 1 0 0 1 0-20')
+  })
+
   test('prompt text is escaped', () => {
     const html = renderAnvilFence('@choice id=x\n? <img src=x onerror=alert(1)>\n- a | A', true)
     expect(html).not.toContain('<img src=x')

@@ -809,8 +809,22 @@ html[data-tab-hidden] *::after {
 }
 
 .anvil-icon {
+	display: inline-flex;
+	align-items: center;
 	color: var(--muted-foreground);
 	flex: none;
+}
+
+/* Sized in em so the icon tracks whatever type scale it sits in, and drawn in
+   currentColor so it inherits tone (a danger note tints its own icon). */
+.anvil-svg {
+	width: 1.05em;
+	height: 1.05em;
+	flex: none;
+}
+
+.anvil-prompt .anvil-icon {
+	margin-top: 0.14em;
 }
 
 .anvil-subtext {
@@ -1073,11 +1087,31 @@ html[data-tab-hidden] *::after {
 }
 
 .anvil-note {
+	display: flex;
+	gap: 0.55rem;
+	align-items: flex-start;
 	border: 1px solid var(--border);
 	border-radius: 9px;
 	padding: 0.55rem 0.7rem;
 	font-size: 0.9em;
 	line-height: 1.5;
+}
+
+.anvil-note-body {
+	min-width: 0;
+}
+
+.anvil-note .anvil-icon {
+	margin-top: 0.18em;
+	color: inherit;
+}
+
+.anvil-note-warn .anvil-icon {
+	color: var(--accent);
+}
+
+.anvil-note-danger .anvil-icon {
+	color: var(--destructive);
 }
 
 .anvil-note p {
