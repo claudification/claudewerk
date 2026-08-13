@@ -1425,6 +1425,14 @@ function handleReviveResult(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('revive-agent-result', { detail: msg }))
 }
 
+/** Vacuum progress. Re-emitted as a window event rather than pushed into a
+ *  store: the panel is lazy and usually not mounted, and a run's steps are only
+ *  meaningful to whoever is watching it. The broker already restricts these
+ *  broadcasts to admin sockets. */
+function handleVacuumStep(msg: DashboardMessage) {
+  window.dispatchEvent(new CustomEvent('vacuum-step', { detail: msg }))
+}
+
 function handleLaunchJobEvent(msg: DashboardMessage) {
   window.dispatchEvent(new CustomEvent('launch-job-event', { detail: msg }))
 }
@@ -1980,6 +1988,7 @@ export const handlers: Record<string, MessageHandler> = {
   job_complete: handleLaunchJobEvent,
   job_failed: handleLaunchJobEvent,
   spawn_request_ack: handleSpawnRequestAckMsg,
+  vacuum_step: handleVacuumStep,
   // recap jobs widget
   recap_progress: handleRecapProgress,
   recap_complete: handleRecapComplete,

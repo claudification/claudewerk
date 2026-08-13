@@ -15,6 +15,7 @@ import { PlainRendererLabSection } from './plain-renderer-lab-section'
 import { GroupHeader } from './settings-inputs'
 import { ShortcutsSection, shortcutsSectionMatches } from './shortcuts-section'
 import { ToolDisplaySection, toolDisplayMatches } from './tool-display-section'
+import { VacuumSection, vacuumMatches } from './vacuum-section'
 import { VersionSection, versionMatches } from './version-section'
 import { VirtualizerLabSection } from './virtualizer-lab-section'
 
@@ -114,6 +115,17 @@ export const PINNED_SECTIONS: PinnedSection[] = [
       <div>
         <GroupHeader label="Transcript Coverage" />
         <ArchiveCoverageSection />
+      </div>
+    ),
+  },
+  {
+    id: 'vacuum',
+    tab: 'system',
+    matches: vacuumMatches,
+    render: () => (
+      <div>
+        <GroupHeader label="Vacuum / Cleanup" />
+        <VacuumSection />
       </div>
     ),
   },

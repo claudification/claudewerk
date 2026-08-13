@@ -22,6 +22,7 @@ import { openManageProjectLinks } from '@/components/settings/manage-project-lin
 import { openSpawnDialog } from '@/components/spawn-dialog-trigger'
 import { openTerminateConfirm } from '@/components/terminate-confirm-trigger'
 import { openTerminateLineageConfirm } from '@/components/terminate-lineage-confirm-trigger'
+import { openVacuum } from '@/components/vacuum/vacuum-state'
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
 import { openCommitBrowser } from '@/hooks/use-commit-modals'
@@ -651,6 +652,11 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useCommand('manage-workspaces', () => openManageWorkspaces(), {
     label: 'Manage workspaces',
     group: 'Navigation',
+  })
+
+  useCommand('vacuum', () => openVacuum(), {
+    label: 'Vacuum -- reclaim disk space',
+    group: 'System',
   })
 
   // Quick task opener. Registered HERE (eager, app-shell level) and NOT inside

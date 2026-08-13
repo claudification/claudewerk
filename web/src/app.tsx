@@ -51,6 +51,7 @@ import { ToastContainer } from '@/components/toast'
 import { TranscriptSearch } from '@/components/transcript-search'
 import { Button } from '@/components/ui/button'
 import { UpdateBanner } from '@/components/update-banner'
+import { useVacuumOpen } from '@/components/vacuum/vacuum-state'
 import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
 import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
@@ -214,6 +215,15 @@ const ManageWorkspacesModal = lazyModule(
       default: m.ManageWorkspacesModal,
     })) as Promise<{ default: ComponentType }>,
   useManageWorkspacesOpen,
+)
+// Vacuum workbench -- admin-only and rarely opened, so the chunk stays off the
+// hot path entirely until someone asks for it.
+const VacuumModal = lazyModule(
+  () =>
+    import('@/components/vacuum/vacuum-modal').then(m => ({
+      default: m.VacuumModal,
+    })) as Promise<{ default: ComponentType }>,
+  useVacuumOpen,
 )
 // Mermaid pan/zoom overlay -- chunk loads only when a diagram is first opened.
 const MermaidLightbox = lazyModule(
@@ -509,6 +519,7 @@ function Dashboard() {
       <LaunchProfileManager />
       <OrganizeProjectsModal />
       <ManageWorkspacesModal />
+      <VacuumModal />
       <LaunchProfileCommands />
       <LaunchToastContainer />
       <TerminateConfirmDialog />
