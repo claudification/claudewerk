@@ -65,13 +65,15 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Transcription',
-    label: 'Deepgram model (broker relay)',
+    group: 'Speech model',
+    label: 'Model (broker relay)',
+    // The relay path's own model. Dead when audio goes direct to the edge.
+    visible: ctx => !(ctx.prefs.voiceDirectToDeepgram !== false),
     // Nova ONLY, and not a stale list: the relay speaks Deepgram v1 against
     // api.deepgram.com, where resolveDeepgramModel falls anything that is not a
     // nova-* back to nova-3. flux is not reachable from this path at all -- it
     // lives on the direct transport, under "Speech model (direct)" above.
-    description: 'STT model for the broker-relay transport (server-wide). The direct transport has its own model.',
+    description: 'Model for the relay transport (server-wide).',
     server: true,
     keywords: 'speech recognition deepgram nova broker relay server',
     render: (ctx, ariaLabel) => (
@@ -90,9 +92,13 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Transcription',
+    group: 'Refinement',
     label: 'LLM refinement',
-    description: 'Post-process voice transcripts with Haiku to fix ASR errors',
+    // refineTranscript() is called from voice-stream.ts ONLY -- the relay. The
+    // direct path never routes the transcript through the broker, so this does
+    // nothing there. Hidden rather than shown-and-inert. See task #20.
+    visible: ctx => !(ctx.prefs.voiceDirectToDeepgram !== false),
+    description: 'Clean up ASR errors with Haiku after dictation.',
     server: true,
     keywords: 'speech recognition',
     render: (ctx, ariaLabel) => (
@@ -105,9 +111,12 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Transcription',
+    group: 'Refinement',
     label: 'Refinement prompt',
-    description: 'Custom system prompt for voice refinement (leave empty for default)',
+    // Relay-only like the toggle above, AND pointless until refinement is on:
+    // a 2000-char editor for a disabled feature is pure noise.
+    visible: ctx => !(ctx.prefs.voiceDirectToDeepgram !== false) && (ctx.server.voiceRefinement as boolean) !== false,
+    description: 'System prompt for the refiner. Empty = default.',
     server: true,
     fullWidth: true,
     keywords: 'speech recognition prompt',

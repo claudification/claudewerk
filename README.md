@@ -297,10 +297,15 @@ with automatic cleanup. Revoke at any time.
 ### Voice Input
 
 **Touch devices:** Floating hold-to-record FAB. Two-stage activation. Drag
-left to cancel. Interim transcription via Deepgram.
+left to cancel.
 
 **Desktop:** Configure any key as push-to-talk in Settings > Input. Hold to
 record, release to submit.
+
+Two transports, and **where you are decides which is faster** -- Settings >
+Voice > Transport has a Measure button that pings both plus Deepgram-direct and
+shows you the round trips. See
+[Speech-to-text on the Cloudflare edge](#speech-to-text-on-the-cloudflare-edge).
 
 ### Clipboard Capture
 
@@ -560,6 +565,147 @@ curl http://localhost:9999/health
 ```
 
 ---
+
+## Speech-to-text on the Cloudflare edge
+
+Voice dictation works out of the box with **no setup**: audio relays through the
+broker to Deepgram. That path is fine when you sit near your broker and gets
+worse the further you travel from it.
+
+The faster option streams audio from the browser to a small Cloudflare Worker at
+the nearest Cloudflare colo, which runs Deepgram's models on Workers AI. It is
+optional, and this is how you stand one up.
+
+### Why bother
+
+Measured from Thailand, same audio, same pacing, browser out of the loop:
+
+| path | socket open | decode lag (start -> end) | verdict |
+|---|---|---|---|
+| `api.deepgram.com` direct | 1115ms | 1008ms -> **8484ms** | fell behind real time on 2 of 3 runs |
+| Workers AI `nova-3` | 553ms | 48ms -> 156ms | flat every run |
+| Workers AI `flux` | 1299ms | 91ms -> 74ms | flat every run |
+
+`api.deepgram.com` resolves to a **single US datacenter** with no anycast. If you
+are far from it, every audio chunk and every interim result crosses that distance,
+and when the link congests the decoder falls behind and never recovers inside an
+utterance. Cloudflare terminates at whichever colo is nearest you.
+
+If you are in the US, near your broker, the difference may not be worth the setup.
+**Measure before you decide:** Settings > Voice > Transport > Measure.
+
+### What you need
+
+- A Cloudflare account with **Workers AI** enabled (the models are billed per
+  audio minute: `nova-3` $0.0092, `flux` $0.0077).
+- `wrangler` (comes with the repo: `bunx wrangler`).
+- A hostname you control on Cloudflare, or the free `*.workers.dev` subdomain.
+
+### 1. Point the Worker at your account
+
+`workers/stt-proxy/wrangler.jsonc` ships with this project's route. Change it:
+
+```jsonc
+{
+  "name": "stt-proxy",
+  "routes": [{ "pattern": "stt.example.com", "custom_domain": true }],
+  "ai": { "binding": "AI" }
+}
+```
+
+Drop `routes` entirely to deploy on `stt-proxy.<your-subdomain>.workers.dev`.
+
+**There is no API token to configure.** The Worker reaches the speech models
+through the `AI` binding, which the deployment itself authorises, so it holds no
+Cloudflare credential and makes no outbound call. A credential that does not
+exist cannot leak.
+
+### 2. Pair the signing secret (the step everyone gets wrong)
+
+The broker signs a short-lived token; the Worker verifies it. **If the two do not
+hold the same secret, every dictation fails with a 401 and nothing else looks
+wrong.** This is the single most likely setup failure.
+
+```bash
+# generate one
+openssl rand -base64 48
+
+# give it to the Worker
+cd workers/stt-proxy
+bunx wrangler secret put STT_SIGNING_SECRET
+
+# give the SAME value to the broker (.env, then restart it)
+echo 'STT_SIGNING_SECRET=<paste the same value>' >> .env
+docker compose up -d
+```
+
+The broker will invent and persist its own secret if you skip this, and say so
+loudly in its log. That is fine for a broker with no Worker; it is a guaranteed
+401 if a Worker exists and was told something else. `wrangler secret list` cannot
+read a value back, so keep the one you generated until both sides have it.
+
+### 3. Deploy
+
+```bash
+cd workers/stt-proxy
+bunx wrangler deploy
+curl https://stt.example.com/health     # -> ok
+```
+
+### 4. Point the panel at it
+
+Set `VITE_STT_HOST` before building the web bundle, then rebuild:
+
+```bash
+VITE_STT_HOST=stt.example.com bun run build:web
+```
+
+### 5. Verify before you trust it
+
+```bash
+bash scripts/fixtures/make-stt-probe.sh          # generate the audio fixture
+bun run probe:stt:worker -- --model nova-3       # broker mint -> Worker -> model
+```
+
+That exercises everything a browser does except opening a microphone, and prints
+each leg separately:
+
+```
+[probe] leg 1 broker mint      10ms
+[probe] leg 2 worker socket    553ms
+[probe] LAG first=48ms last=156ms  FLAT
+[probe] text: "Okay. So I want to add a new endpoint..."
+```
+
+Reading failures:
+
+| symptom | cause |
+|---|---|
+| `LEG 1 FAILED ... 401/403` | broker auth; set `RCLAUDE_SECRET` |
+| `LEG 1 FAILED ... 404` | broker is not running a build with `/api/voice/stt-token` |
+| socket closes immediately | the two `STT_SIGNING_SECRET` values disagree |
+| `NO TRANSCRIPT FRAMES` | model/encoding mismatch. `flux` is **raw PCM only** and answers a container with silence, no error |
+
+`bun run probe:stt` is the other half: it compares vendors directly with our code
+out of the loop, which answers "which service is fast from here" rather than "is
+my pipeline working".
+
+### Choosing a model
+
+| | `flux` | `nova-3` |
+|---|---|---|
+| Capture | raw PCM only | container (webm/opus, mp4) or PCM |
+| Turn detection | built in, gives paragraph breaks | v1 endpointing |
+| Price / audio-min | $0.0077 | $0.0092 |
+
+Both are selectable in Settings > Voice. The Worker normalises their two very
+different wire formats into one, so the browser never learns which answered.
+
+### Turning it off
+
+Uncheck Settings > Voice > Transport > "Direct to the Cloudflare edge". Audio
+goes back through the broker relay. Nothing else changes, and the Worker can sit
+deployed and unused.
 
 ## Sentinel (host daemon)
 

@@ -19,10 +19,11 @@ const EOT_THRESHOLD_MAX = 0.9
 export const VOICE_MODEL_ITEMS: SettingItem[] = [
   {
     tab: 'voice',
-    group: 'Transcription',
-    label: 'Speech model (direct)',
-    description:
-      'Model the stt-proxy Worker runs, for the direct transport. It also picks the capture engine: flux is raw-PCM-only, nova-3 takes a container. Takes effect on the next recording.',
+    group: 'Speech model',
+    label: 'Model',
+    // Meaningless on the relay path, which has its own server-side model.
+    visible: ctx => ctx.prefs.voiceDirectToDeepgram !== false,
+    description: 'flux is fastest and splits paragraphs; nova-3 is the fallback. Also picks the capture engine.',
     keywords: 'voice stt model flux nova cloudflare workers ai deepgram capture pcm',
     render: (ctx, ariaLabel) => (
       <select
@@ -41,10 +42,12 @@ export const VOICE_MODEL_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Transcription',
-    label: 'End-of-turn threshold',
+    group: 'Paragraph breaks',
+    label: 'Break sensitivity',
+    // flux is the only model with turn detection, and only on the direct path.
+    visible: ctx => ctx.prefs.voiceDirectToDeepgram !== false && ctx.prefs.voiceSttModel !== 'nova-3',
     description:
-      'flux only. How sure the model must be that you finished before it closes a turn (0.5-0.9, 0 = model default). A turn close inserts a PARAGRAPH BREAK -- it never submits, only releasing the key does. Lower = more paragraphs.',
+      'How sure flux must be you finished before breaking a paragraph. Lower = more breaks. 0 = model default.',
     keywords: 'voice flux eot end of turn threshold paragraph confidence',
     render: (ctx, ariaLabel) => (
       <input
@@ -61,10 +64,11 @@ export const VOICE_MODEL_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Transcription',
-    label: 'End-of-turn timeout',
-    description:
-      'flux only. How long the model waits before calling the turn anyway (ms, 0 = model default). Same deal: a turn is a paragraph break, not a submit.',
+    group: 'Paragraph breaks',
+    label: 'Break after silence',
+    // flux is the only model with turn detection, and only on the direct path.
+    visible: ctx => ctx.prefs.voiceDirectToDeepgram !== false && ctx.prefs.voiceSttModel !== 'nova-3',
+    description: 'How long flux waits before breaking a paragraph anyway (ms). 0 = model default.',
     keywords: 'voice flux eot end of turn timeout paragraph',
     render: (ctx, ariaLabel) => (
       <input
@@ -75,26 +79,6 @@ export const VOICE_MODEL_ITEMS: SettingItem[] = [
         step={100}
         value={ctx.prefs.voiceEotTimeoutMs ?? 0}
         onChange={e => ctx.updatePrefs({ voiceEotTimeoutMs: Math.max(0, Number(e.target.value) || 0) })}
-        className={`${NUM_INPUT_CLS} w-20`}
-      />
-    ),
-  },
-  {
-    tab: 'voice',
-    group: 'Transcription',
-    label: 'Eager end-of-turn (agents only)',
-    description:
-      'flux only, 0 = off (recommended). Fires a SPECULATIVE end-of-turn early (0.3-0.9) so a voice agent can start generating, then retracts it if you keep talking. For dictation it buys nothing and makes the live text flicker.',
-    keywords: 'voice flux eager eot speculative turn resumed agent',
-    render: (ctx, ariaLabel) => (
-      <input
-        aria-label={ariaLabel}
-        type="number"
-        min={0}
-        max={EOT_THRESHOLD_MAX}
-        step={0.05}
-        value={ctx.prefs.voiceEagerEotThreshold ?? 0}
-        onChange={e => ctx.updatePrefs({ voiceEagerEotThreshold: clampEager(Number(e.target.value)) })}
         className={`${NUM_INPUT_CLS} w-20`}
       />
     ),
