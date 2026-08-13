@@ -66,12 +66,14 @@ export function createApiRouter(
   app.get('/api/models', c => c.json({ models: getModels(), fetchedAt: getModelsFetchedAt() }))
 
   // ─── Server capabilities ───────────────────────────────────────────
-  // `voice` = Deepgram DICTATION (the mic-to-text path). `realtimeVoice` = the
-  // Jarvis voice ORB (OpenAI Realtime); the orb's summon command hides itself
-  // when the broker has no OPENAI_API_KEY rather than failing at mint.
-  app.get('/api/capabilities', c =>
-    c.json({ voice: !!process.env.DEEPGRAM_API_KEY, realtimeVoice: !!process.env.OPENAI_API_KEY }),
-  )
+  // `voice` = DICTATION (the mic-to-text path). It no longer depends on a
+  // Deepgram key: audio goes browser -> stt-proxy Worker -> Workers AI, and this
+  // broker only signs a short-lived token. Gating it on DEEPGRAM_API_KEY would
+  // now hide a working feature (and did, until the key outlived its use).
+  // `realtimeVoice` = the Jarvis voice ORB (OpenAI Realtime); the orb's summon
+  // command hides itself when the broker has no OPENAI_API_KEY rather than
+  // failing at mint.
+  app.get('/api/capabilities', c => c.json({ voice: true, realtimeVoice: !!process.env.OPENAI_API_KEY }))
 
   // ─── Link preview (mobile in-app pane) ───────────────────────────
   // Server-side fetch of an external URL's framing headers + OG metadata so the
@@ -233,7 +235,13 @@ export function createApiRouter(
     if (!httpHasPermission(c.req.raw, 'voice', '*'))
       return c.json({ error: 'Forbidden: voice permission required' }, 403)
     const user = getAuthenticatedUser(c.req.raw) ?? 'unknown'
+    const t0 = Date.now()
     const token = await signSttToken({ user, exp: Date.now() + STT_TOKEN_TTL_MS }, getSttSigningSecret(store.kv))
+    // Logged because otherwise a dictation leaves NO broker-side trace at all --
+    // the audio never touches this process, so absence of the old relay's lines
+    // was the only evidence the new path ran. The ms is the point of comparison:
+    // the Deepgram grant call this replaced measured 838-2718ms.
+    console.log(`[stt] token minted for ${user} in ${Date.now() - t0}ms (ttl ${STT_TOKEN_TTL_MS / 1000}s)`)
     return c.json({ accessToken: token, expiresIn: Math.floor(STT_TOKEN_TTL_MS / 1000) })
   })
 
@@ -492,32 +500,60 @@ export function createApiRouter(
     return c.json(filtered)
   })
 
+  // Three settings-mutating routes repeated this gate verbatim, and two of them
+  // also repeated the project-key resolution and the broadcast-then-echo tail.
+  // Extracted on the way past (CLEAN AS YOU GO): a permission check duplicated by
+  // copy-paste is one refactor away from being silently dropped on one route.
+  type SettingsCtx = {
+    req: { raw: Request; json: <T>() => Promise<T> }
+    json: (body: unknown, status?: number) => Response
+  }
+
+  /** The `settings` gate. Returns a 403 to hand back, or null to proceed. */
+  function settingsDenied(c: SettingsCtx): Response | null {
+    if (httpHasPermission(c.req.raw, 'settings', '*')) return null
+    return c.json({ error: 'Forbidden: settings permission required' }, 403)
+  }
+
+  /** A project key, which two different field names both spell. */
+  function projectKey(body: { project?: string; cwd?: string }): string | null {
+    return body.project || body.cwd || null
+  }
+
+  /** Guard + body + project key, which the two project-settings mutations shared
+   *  line for line. Returns the Response to hand back, or the resolved target. */
+  async function projectSettingsRequest<T extends { project?: string; cwd?: string }>(
+    c: SettingsCtx,
+  ): Promise<{ denied: Response } | { denied?: undefined; project: string; body: T }> {
+    const denied = settingsDenied(c)
+    if (denied) return { denied }
+    const body = await c.req.json<T>()
+    const project = projectKey(body)
+    if (!project) return { denied: c.json({ error: 'Missing project' }, 400) }
+    return { project, body }
+  }
+
+  /** Both project-settings mutations answer the same way: the full set, and a
+   *  broadcast so every open panel updates without polling. */
+  function echoProjectSettings(c: SettingsCtx): Response {
+    const settings = getAllProjectSettings()
+    broadcastToSubscribers(conversationStore, { type: 'project_settings_updated', settings })
+    return c.json({ success: true, settings })
+  }
+
   app.post('/api/settings/projects', async c => {
-    if (!httpHasPermission(c.req.raw, 'settings', '*'))
-      return c.json({ error: 'Forbidden: settings permission required' }, 403)
-    const body = await c.req.json<{
-      project?: string
-      cwd?: string
-      settings: { label?: string; icon?: string; color?: string }
-    }>()
-    const project = body.project || body.cwd
-    if (!project) return c.json({ error: 'Missing project' }, 400)
-    setProjectSettings(project, body.settings || {})
-    const allSettings = getAllProjectSettings()
-    broadcastToSubscribers(conversationStore, { type: 'project_settings_updated', settings: allSettings })
-    return c.json({ success: true, settings: allSettings })
+    type Body = { project?: string; cwd?: string; settings: { label?: string; icon?: string; color?: string } }
+    const req = await projectSettingsRequest<Body>(c)
+    if (req.denied) return req.denied
+    setProjectSettings(req.project, req.body.settings || {})
+    return echoProjectSettings(c)
   })
 
   app.delete('/api/settings/projects', async c => {
-    if (!httpHasPermission(c.req.raw, 'settings', '*'))
-      return c.json({ error: 'Forbidden: settings permission required' }, 403)
-    const body = await c.req.json<{ project?: string; cwd?: string }>()
-    const project = body.project || body.cwd
-    if (!project) return c.json({ error: 'Missing project' }, 400)
-    deleteProjectSettings(project)
-    const allSettings = getAllProjectSettings()
-    broadcastToSubscribers(conversationStore, { type: 'project_settings_updated', settings: allSettings })
-    return c.json({ success: true, settings: allSettings })
+    const req = await projectSettingsRequest<{ project?: string; cwd?: string }>(c)
+    if (req.denied) return req.denied
+    deleteProjectSettings(req.project)
+    return echoProjectSettings(c)
   })
 
   app.post('/api/settings/projects/generate-keyterms', async c => {
@@ -725,8 +761,8 @@ Output a JSON array of strings. Each string should be the correct spelling of on
   })
 
   app.post('/api/project-order', async c => {
-    if (!httpHasPermission(c.req.raw, 'settings', '*'))
-      return c.json({ error: 'Forbidden: settings permission required' }, 403)
+    const denied = settingsDenied(c)
+    if (denied) return denied
     const body = await c.req.json<{ tree: unknown[] }>()
     if (!Array.isArray(body.tree)) {
       return c.json({ error: 'Invalid project order: expected { tree: [...] }' }, 400)

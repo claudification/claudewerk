@@ -41,6 +41,9 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   // The model picks the capture engine, not the user and not this file.
   const model = resolveSttModel(opts.model)
 
+  let transcriptFrames = 0
+  let firstWordMs = 0
+
   const lag = new VoiceLagMeter()
   lag.audioStarted()
   const uplink: Uplink = startUplink(opts.stream, model.capture, {
@@ -100,6 +103,12 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     transcript: msg => {
       const text = msg.text ?? ''
       accumulated = msg.committed ?? accumulated
+      transcriptFrames++
+      // Time-to-first-word is what "does it feel fast" actually measures.
+      if (!firstWordMs && text) {
+        firstWordMs = Math.round(performance.now() - t0)
+        console.log(`[voice] first word +${firstWordMs}ms`)
+      }
       if (!msg.final) lag.interim(0, (msg.audioEndMs ?? 0) / 1000, text)
       opts.callbacks.onTranscript({
         transcript: text,
@@ -112,10 +121,24 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     // paragraphs and all, so it wins over anything accumulated frame by frame.
     done: msg => {
       accumulated = msg.text ?? accumulated
+      // One line per dictation with every number needed to explain a bad one.
+      // frames=0 with a clean reason means the model ate the audio silently --
+      // almost always a model/encoding mismatch (flux is raw-PCM ONLY).
+      console.log(
+        `[voice] dictation done reason=${msg.reason ?? '?'} totalMs=${Math.round(performance.now() - t0)} ` +
+          `firstWordMs=${firstWordMs || -1} frames=${transcriptFrames} chars=${accumulated.length} ` +
+          `paragraphs=${accumulated ? accumulated.split('\n\n').length : 0}`,
+      )
+      if (!transcriptFrames) {
+        console.warn('[voice] NO transcript frames -- audio went out but nothing came back. Check model/encoding.')
+      }
       settleFinal(accumulated)
       teardown()
     },
-    error: msg => opts.callbacks.onError(msg.error ?? 'speech backend error', 'socket'),
+    error: msg => {
+      console.error(`[voice] backend error: ${msg.error ?? 'unknown'}`)
+      opts.callbacks.onError(msg.error ?? 'speech backend error', 'socket')
+    },
   }
 
   function connect(token: string) {

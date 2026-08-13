@@ -35,9 +35,14 @@ function closeQuietly(socket: WebSocket, reason?: string) {
 
 export function pipeSession(client: WebSocket, upstream: WebSocket, spec: ModelSpec, log: (line: string) => void) {
   const acc = new TranscriptAccumulator()
+  const startedAt = Date.now()
   let finished = false
   let audioBytes = 0
+  let audioChunks = 0
   let upFrames = 0
+  let transcriptFrames = 0
+  /** Time-to-first-word: the number that decides whether dictation FEELS fast. */
+  let firstTranscriptMs = 0
 
   // Only for models that HAVE a keepalive. flux does not, and sending one closes
   // the stream -- see ModelSpec.keepAlive.
@@ -53,13 +58,32 @@ export function pipeSession(client: WebSocket, upstream: WebSocket, spec: ModelS
     }
   }
 
+  /**
+   * Everything needed to reconstruct a bad session from ONE line: which leg was
+   * empty (chunks vs frames), how fast the first word came back, how much audio
+   * it took. A silent no-op reads as audioChunks>0 with transcriptFrames=0.
+   */
+  function summarise(reason: string, text: string): string {
+    return (
+      `session end reason=${reason} durationMs=${Date.now() - startedAt} ` +
+      `audioChunks=${audioChunks} audioBytes=${audioBytes} upstreamFrames=${upFrames} ` +
+      `transcriptFrames=${transcriptFrames} firstWordMs=${firstTranscriptMs || -1} ` +
+      `chars=${text.length} paragraphs=${text ? text.split('\n\n').length : 0}`
+    )
+  }
+
   /** Deliver the final text exactly once, however the session ended. */
+  // Zero-coverage CRAP estimate; every branch is a teardown guard.
+  // fallow-ignore-next-line complexity
   function finish(reason: string) {
     if (finished) return
     finished = true
     if (keepAlive) clearInterval(keepAlive)
     const text = acc.finalText()
-    log(`session end reason=${reason} bytes=${audioBytes} chars=${text.length}`)
+    log(summarise(reason, text))
+    if (audioBytes > 0 && transcriptFrames === 0) {
+      log('WARNING: audio was received but NOTHING was transcribed -- check the model/encoding pairing')
+    }
     send(client, { type: 'done', text, reason })
     closeQuietly(upstream)
     closeQuietly(client, reason)
@@ -78,6 +102,7 @@ export function pipeSession(client: WebSocket, upstream: WebSocket, spec: ModelS
       return finish('binary-type')
     }
     audioBytes += data.byteLength
+    audioChunks++
     try {
       upstream.send(data)
     } catch {
@@ -115,7 +140,13 @@ export function pipeSession(client: WebSocket, upstream: WebSocket, spec: ModelS
       return
     }
     if (event.done) return finish('upstream-done')
-    if (event.frame) send(client, event.frame)
+    if (!event.frame) return
+    transcriptFrames++
+    if (!firstTranscriptMs && event.frame.text) {
+      firstTranscriptMs = Date.now() - startedAt
+      log(`first word +${firstTranscriptMs}ms "${event.frame.text.slice(0, 40)}"`)
+    }
+    send(client, event.frame)
   })
 
   client.addEventListener('close', () => finish('client-closed'))
