@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import type { LiveStatus } from '../../../shared/protocol'
 import { ConversationNotFound, DuplicateEntry } from '../errors'
+import { recentCutoff, recentLimit, resolveRecentWindow } from '../recent-window'
 import type {
   ConversationCreate,
   ConversationFilter,
@@ -246,6 +247,52 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       const sql = `SELECT ${LIST_COLS} FROM conversations ${where} ORDER BY created_at DESC`
       const rows = db.prepare(sql).all(params) as Params[]
       return rows.map(rowToSummary)
+    },
+
+    listRecentByScope(scope, filter) {
+      const window = resolveRecentWindow(filter)
+      const now = filter.now ?? Date.now()
+      const statuses = filter.status?.length ? filter.status : undefined
+
+      const statusClause = statuses ? ` AND status IN (${statuses.map((_, i) => `$status${i}`).join(', ')})` : ''
+      const statusParams: Params = {}
+      if (statuses) for (let i = 0; i < statuses.length; i++) statusParams[`status${i}`] = statuses[i]
+
+      // Two indexed probes rather than one clever query: count what is inside the
+      // age window, then take max(minCount, thatCount). Both hit
+      // idx_conversations_scope_status_activity, and the shape stays obvious.
+      const countRow = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM conversations
+            WHERE scope = $scope${statusClause} AND last_activity >= $cutoff`,
+        )
+        .get({ scope, ...statusParams, cutoff: recentCutoff(window, now) }) as { n: number } | null
+
+      const limit = recentLimit(window, countRow?.n ?? 0)
+      const rows = db
+        .prepare(
+          `SELECT ${LIST_COLS} FROM conversations
+            WHERE scope = $scope${statusClause}
+            ORDER BY last_activity DESC
+            LIMIT $limit`,
+        )
+        .all({ scope, ...statusParams, limit }) as Params[]
+      return rows.map(rowToSummary)
+    },
+
+    countByScopeAndStatus(status) {
+      if (status.length === 0) return []
+      const placeholders = status.map((_, i) => `$status${i}`).join(', ')
+      const params: Params = {}
+      for (let i = 0; i < status.length; i++) params[`status${i}`] = status[i]
+      const rows = db
+        .prepare(
+          `SELECT scope, COUNT(*) AS n FROM conversations
+            WHERE status IN (${placeholders})
+            GROUP BY scope`,
+        )
+        .all(params) as Array<{ scope: string; n: number }>
+      return rows.map(r => ({ scope: r.scope, count: r.n }))
     },
 
     liveStatusByScope(scope) {

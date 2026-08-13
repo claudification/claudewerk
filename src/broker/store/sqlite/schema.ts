@@ -164,6 +164,14 @@ export function createSchema(db: Database) {
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_scope ON conversations(scope)')
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status)')
   db.run('CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON conversations(created_at)')
+  // Covers the project summary page's "this project's recent ended conversations"
+  // query: scope + status equality, then last_activity for ordering AND for the
+  // age half of the recent window. Without the trailing column SQLite filters on
+  // the index but still sorts the survivors -- and a single project can hold 800+
+  // ended rows.
+  db.run(
+    'CREATE INDEX IF NOT EXISTS idx_conversations_scope_status_activity ON conversations(scope, status, last_activity DESC)',
+  )
 
   // Phase 2 spawn-parent-tracking: add parent_conversation_id +
   // root_conversation_id (NULL = unrooted / human-started). Idempotent.

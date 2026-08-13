@@ -97,7 +97,8 @@ import { resolvePermissionFlags, resolvePermissions, type SubscriberAuth, subscr
 import { cancelRecap, generateRecapOnEnd, scheduleRecap } from './recap/away-summary'
 import type { SentinelRegistry } from './sentinel-registry'
 import { listShares } from './shares'
-import type { ConversationStats, StoreDriver, TaskRecord } from './store/types'
+import { recentCutoff, recentLimit, resolveRecentWindow } from './store/recent-window'
+import type { ConversationStats, RecentScopeFilter, StoreDriver, TaskRecord } from './store/types'
 import type { TerminationLog } from './termination-log'
 
 export type { ControlPanelMessage, ConversationSummary }
@@ -229,6 +230,15 @@ export interface ConversationStore {
   removeJsonStreamViewer: (conversationId: string, ws: ServerWebSocket<unknown>) => void
   removeJsonStreamViewerBySocket: (ws: ServerWebSocket<unknown>) => void
   hasJsonStreamViewers: (conversationId: string) => boolean
+  /**
+   * One project's conversations, newest activity first, bounded by the recent
+   * window. Backs the project summary page, which is the only surface that
+   * lists ENDED conversations now that they are off the load payload.
+   *
+   * Returns ids: the page is selected by an indexed SQL query (a project can
+   * hold 800+ ended rows) and the caller enriches from the in-memory roster.
+   */
+  listRecentProjectConversations: (project: string, opts?: RecentScopeFilter) => Conversation[]
   // Dashboard subscriber methods
   addSubscriber: (ws: ServerWebSocket<unknown>, protocolVersion?: number) => void
   sendConversationsList: (ws: ServerWebSocket<unknown>) => void
@@ -2483,17 +2493,79 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
    * many shared projects). Output is byte-identical to stringifying
    * `{type, conversations, serverVersion, _epoch, _seq}` in that key order.
    */
-  function buildConversationsListMessage(grants?: UserGrant[], restrictToConversationId?: string): string {
-    const permFor = grants ? createProjectPermissionMemo(grants) : undefined
+  type ListSnapshot = { fragments: string[]; endedCounts: Record<string, number> }
+
+  /**
+   * A share pinned to one conversation: a direct lookup, not a scan, and ended
+   * is deliberately allowed through (an ended conversation is usually exactly
+   * what a share is FOR). No counts -- a share viewer has no project badges.
+   */
+  function collectPinnedSnapshot(id: string, canRead: (project: string) => boolean): ListSnapshot {
+    const conv = conversations.get(id)
+    if (!conv || !canRead(conv.project)) return { fragments: [], endedCounts: {} }
+    return { fragments: [getSummaryEntry(conv).json], endedCounts: {} }
+  }
+
+  /** The normal load: every readable non-ended conversation, plus ended counts. */
+  function collectFullSnapshot(canRead: (project: string) => boolean): ListSnapshot {
     const fragments: string[] = []
+    const endedCounts: Record<string, number> = {}
     for (const conv of conversations.values()) {
-      if (restrictToConversationId && conv.id !== restrictToConversationId) continue
-      if (permFor && !permFor(conv.project).permissions.has('chat:read')) continue
-      fragments.push(getSummaryEntry(conv).json)
+      if (!canRead(conv.project)) continue
+      if (conv.status === 'ended') endedCounts[conv.project] = (endedCounts[conv.project] ?? 0) + 1
+      else fragments.push(getSummaryEntry(conv).json)
     }
-    return `{"type":"conversations_list","conversations":[${fragments.join(',')}],"serverVersion":${JSON.stringify(
+    return { fragments, endedCounts }
+  }
+
+  function collectListSnapshot(grants?: UserGrant[], restrictToConversationId?: string): ListSnapshot {
+    const permFor = grants ? createProjectPermissionMemo(grants) : undefined
+    const canRead = (project: string) => !permFor || permFor(project).permissions.has('chat:read')
+    return restrictToConversationId
+      ? collectPinnedSnapshot(restrictToConversationId, canRead)
+      : collectFullSnapshot(canRead)
+  }
+
+  function buildConversationsListMessage(grants?: UserGrant[], restrictToConversationId?: string): string {
+    const { fragments, endedCounts } = collectListSnapshot(grants, restrictToConversationId)
+
+    // Counts ride along because dropping the rows would otherwise silently zero
+    // the per-project ended badge -- a regression with no error to notice.
+    return `{"type":"conversations_list","conversations":[${fragments.join(
+      ',',
+    )}],"endedCounts":${JSON.stringify(endedCounts)},"serverVersion":${JSON.stringify(
       BUILD_VERSION.gitHashShort,
     )},"_epoch":${JSON.stringify(sync.epoch)},"_seq":${sync.seq}}`
+  }
+
+  /**
+   * Select the page in SQL (indexed on scope+status+last_activity), then hydrate
+   * from the in-memory roster so callers get the same Conversation objects every
+   * other route serves. Rows the roster does not know about are skipped rather
+   * than half-built -- a partial Conversation would break every consumer.
+   */
+  function listRecentProjectConversations(project: string, opts?: RecentScopeFilter): Conversation[] {
+    if (!store) {
+      // No persistence configured (tests, memory-only runs): fall back to the
+      // roster with the SAME window rule so behaviour does not fork.
+      const window = resolveRecentWindow(opts)
+      const now = opts?.now ?? Date.now()
+      const statuses = opts?.status
+      const matches = Array.from(conversations.values())
+        .filter(c => c.project === project && (!statuses?.length || statuses.includes(c.status)))
+        .sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0))
+      const cutoff = recentCutoff(window, now)
+      const within = matches.filter(c => (c.lastActivity ?? 0) >= cutoff).length
+      return matches.slice(0, recentLimit(window, within))
+    }
+
+    const page = store.conversations.listRecentByScope(project, opts ?? {})
+    const out: Conversation[] = []
+    for (const rec of page) {
+      const conv = conversations.get(rec.id)
+      if (conv) out.push(conv)
+    }
+    return out
   }
 
   function sendConversationsList(ws: ServerWebSocket<unknown>): void {
@@ -3346,6 +3418,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     removeJsonStreamViewerBySocket,
     hasJsonStreamViewers,
     addSubscriber,
+    listRecentProjectConversations,
     sendConversationsList,
     handleSyncCheck,
     getSyncState: () => ({ epoch: sync.epoch, seq: sync.seq }),

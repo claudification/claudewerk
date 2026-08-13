@@ -644,14 +644,35 @@ describe('summary cache invalidation', () => {
   function summaryOf(id: string): Record<string, unknown> | undefined {
     return snapshot().find(c => c.id === id)
   }
+  /** Total ended conversations across every project in the load snapshot.
+   *  Summed rather than read by key: the counts are keyed by NORMALIZED project
+   *  URI, and this store is shared across the tests in this block. */
+  function totalEnded(): number {
+    const out: { endedCounts?: Record<string, number> } = {}
+    const ws = {
+      ...mockSocket(),
+      data: {},
+      send: (m: string) => {
+        Object.assign(out, JSON.parse(m))
+        return 0
+      },
+    } as unknown as ServerWebSocket<unknown>
+    store.sendConversationsList(ws)
+    return Object.values(out.endedCounts ?? {}).reduce((n, c) => n + c, 0)
+  }
 
   it('serves a cached fragment but reflects status flips (endConversation)', () => {
     store.createConversation('inv-end', '/cwd')
     expect(summaryOf('inv-end')?.status).not.toBe('ended')
     // Second read with no mutation must still be correct (cache hit).
     expect(summaryOf('inv-end')?.status).not.toBe('ended')
+    const before = totalEnded()
     store.endConversation('inv-end', { source: 'cc-exit-normal' })
-    expect(summaryOf('inv-end')?.status).toBe('ended')
+    // Ending now REMOVES it from the load snapshot rather than flipping its
+    // status in place: ended conversations are not shipped on load. The flip is
+    // still observable -- as a disappearance plus a bump in the ended count.
+    expect(summaryOf('inv-end')).toBeUndefined()
+    expect(totalEnded()).toBe(before + 1)
   })
 
   it('reflects task updates (updateTasks -> scheduleConversationUpdate chokepoint)', () => {
@@ -677,9 +698,15 @@ describe('summary cache invalidation', () => {
   it('reflects resumeConversation (status back to idle)', () => {
     store.createConversation('inv-resume', '/cwd')
     store.endConversation('inv-resume', { source: 'cc-exit-normal' })
-    expect(summaryOf('inv-resume')?.status).toBe('ended')
+    expect(summaryOf('inv-resume')).toBeUndefined()
+    const whileEnded = totalEnded()
+
     store.resumeConversation('inv-resume')
+    // Coming back from ended must put it back IN the snapshot and drop it from
+    // the ended count -- otherwise a revived conversation stays invisible until
+    // the next reload.
     expect(summaryOf('inv-resume')?.status).toBe('idle')
+    expect(totalEnded()).toBe(whileEnded - 1)
   })
 
   it('reflects clearConversation (event count reset)', () => {

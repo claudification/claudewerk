@@ -16,6 +16,7 @@ import { ProjectCommitsSection } from './project-commits-section'
 import { ProjectNightshiftCard } from './project-nightshift-card'
 import { ProjectReadmeSection } from './project-readme-section'
 import { ProjectRecapsSection } from './project-recaps-section'
+import { useProjectRecentEnded } from './use-project-recent-ended'
 
 function matchesFilter(conversation: Conversation, query: string): boolean {
   const q = query.toLowerCase()
@@ -239,9 +240,13 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
     .filter(s => s.status !== 'ended')
     .sort((a, b) => b.lastActivity - a.lastActivity)
 
-  const recentEnded = projectConversations
-    .filter(s => s.status === 'ended')
-    .sort((a, b) => b.lastActivity - a.lastActivity)
+  // Ended conversations are not in the roster on load, so they are fetched for
+  // this project. Anything that ended during THIS session is still in the
+  // roster and gets merged in by the hook.
+  const { conversations: recentEnded } = useProjectRecentEnded(
+    projectUri,
+    projectConversations.filter(s => s.status === 'ended'),
+  )
 
   const filteredActive = filter ? activeConversations.filter(s => matchesFilter(s, filter)) : activeConversations
   const filteredRecent = filter ? recentEnded.filter(s => matchesFilter(s, filter)) : recentEnded

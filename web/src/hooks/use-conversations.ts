@@ -184,6 +184,14 @@ interface ConversationsState {
    *  `selectConversations(byId)` selector / `useConversations()` hook -- it is no
    *  longer stored, so a single-conversation update no longer reallocates the list. */
   conversationsById: Record<string, Conversation>
+  /** Ended-conversation count per project URI, from the broker.
+   *
+   *  Ended conversations are NOT in `conversationsById` on load -- they were
+   *  97.7% of the payload -- so any count over them has to come from the server.
+   *  A conversation that ends DURING this session is still in the index, and is
+   *  not yet in this map, so consumers add the two together; a reconnect
+   *  replaces the whole index and refreshes this map, so nothing double counts. */
+  endedCountsByProject: Record<string, number>
   selectedConversationId: string | null
   /** Reason passed to the last selectConversation call. Drives the locate pulse: a
    *  direct click/touch passes 'click' to suppress the pulse; programmatic selections
@@ -887,6 +895,7 @@ function shortId(id: string | null): string {
 
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversationsById: {},
+  endedCountsByProject: {},
   selectedConversationId: null,
   lastSelectReason: null,
   selectedProjectUri: null,
