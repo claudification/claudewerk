@@ -35,7 +35,8 @@ function buildSpawnToolInputSchema(): {
         .optional()
         .describe(
           'How much to carry over when fork_from is set. "condensed" (default) digests large tool outputs, ' +
-            'keeps recent turns verbatim, ~80% smaller and free; "full" copies everything; "summarized" ' +
+            'keeps recent turns verbatim -- free, though the saving depends on how much of the transcript is '
+            + 'big tool output (measured 34% on a prose-heavy session); "full" copies everything; "summarized" ' +
             'writes a continuation summary and starts fresh from it (costs a model call).',
         ),
       host: z.string().optional().describe('Target sentinel alias (from list_hosts). Maps to sentinel field.'),

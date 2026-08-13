@@ -6,7 +6,7 @@
  * and the fork launches as a FRESH CC session seeded with that text.
  *
  * Worth being honest about the trade: once `digestLargeToolResults` lands, the
- * condensed fork is ~80% smaller for FREE and keeps the real tool history. What
+ * condensed fork is smaller for FREE and keeps the real tool history. What
  * a summary buys instead is a short, readable handoff a human can check -- and
  * a fork that carries none of the original's dead ends. It costs one model call
  * and is the lossiest of the three.

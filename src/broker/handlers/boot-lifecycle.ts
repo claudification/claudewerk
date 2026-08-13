@@ -122,14 +122,19 @@ const agentHostBoot: MessageHandler = (ctx, data) => {
   } else {
     // Create a placeholder conversation keyed by conversationId -- the real conversationId
     // replaces this once conversation_promote arrives.
-    // Lineage capture (Phase 2 spawn-parent-tracking): if the rendezvous
-    // registry has a caller entry for this conversationId, persist parent +
-    // root on the INSERT. The lineage is computed once -- subsequent reboots
-    // hit the `existing` branch above which intentionally does NOT touch
-    // parent/root.
+    // Lineage capture (Phase 2 spawn-parent-tracking): persist parent + root on
+    // the INSERT. Two possible ancestors, and the FORK SOURCE wins -- a fork's
+    // ancestor is what it forked from, not whoever issued the spawn. The source
+    // does not ride the rendezvous because the rendezvous is skipped when there
+    // is no caller, which is exactly the control-panel fork.
+    // The lineage is computed once -- subsequent reboots hit the `existing`
+    // branch above which intentionally does NOT touch parent/root.
     const rv = ctx.conversations.getRendezvousInfo(conversationId)
     const callerId = rv?.callerConversationId
-    const lineage = computeSpawnLineage(ctx.conversations, callerId, conversationId, 'boot', rv?.notifyParentSettleMs)
+    const lineage = computeSpawnLineage(ctx.conversations, callerId, conversationId, 'boot', {
+      notifyParentSettleMs: rv?.notifyParentSettleMs,
+      forkedFromId: ctx.conversations.consumePendingForkSource(conversationId),
+    })
     const placeholder = ctx.conversations.createConversation(
       conversationId,
       resolvedProject,

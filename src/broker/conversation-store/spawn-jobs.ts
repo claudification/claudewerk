@@ -87,6 +87,11 @@ export interface RendezvousInfo {
   notifyParentSettleMs?: number
 }
 
+/** Optional rendezvous inputs, bagged so the signature stays readable. */
+export interface RendezvousExtra {
+  notifyParentSettleMs?: number
+}
+
 export interface PendingRestartInfo {
   callerConversationId: string
   targetConversationId: string
@@ -100,7 +105,7 @@ export interface RendezvousRegistry {
     callerConversationId: ConversationId,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-    notifyParentSettleMs?: number,
+    extra?: RendezvousExtra,
   ) => Promise<Conversation>
   resolveRendezvous: (
     connectionId: ConnectionId,
@@ -305,7 +310,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
   const pendingRestarts = new Map<string, PendingRestartInfo>()
 
   return {
-    addRendezvous(conversationId, callerConversationId, project, action, notifyParentSettleMs) {
+    addRendezvous(conversationId, callerConversationId, project, action, extra) {
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
           conversationRendezvous.delete(conversationId)
@@ -320,7 +325,7 @@ export function createRendezvousRegistry(): RendezvousRegistry {
           conversationId,
           project,
           action,
-          notifyParentSettleMs,
+          notifyParentSettleMs: extra?.notifyParentSettleMs,
           resolve,
           reject,
           timer,

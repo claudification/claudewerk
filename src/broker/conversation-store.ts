@@ -73,6 +73,7 @@ import {
   createRendezvousRegistry,
   createSpawnJobRegistry,
   type PendingRestartInfo,
+  type RendezvousExtra,
   type RendezvousInfo,
 } from './conversation-store/spawn-jobs'
 import { createSummaryCache } from './conversation-store/summary-cache'
@@ -397,7 +398,7 @@ export interface ConversationStore {
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-    notifyParentSettleMs?: number,
+    extra?: RendezvousExtra,
   ) => Promise<Conversation>
   // Pending restart (terminate + auto-revive on disconnect)
   addPendingRestart: (conversationId: string, info: PendingRestartInfo) => void
@@ -406,6 +407,8 @@ export interface ConversationStore {
   getRendezvousInfo: (conversationId: string) => RendezvousInfo | undefined
   // Pending launch configs (set at spawn, consumed on connect to restore on revive)
   setPendingLaunchConfig: (conversationId: string, config: LaunchConfig) => void
+  setPendingForkSource: (conversationId: string, sourceConversationId: string) => void
+  consumePendingForkSource: (conversationId: string) => string | undefined
   consumePendingLaunchConfig: (conversationId: string) => LaunchConfig | undefined
   // Pending resolved sentinel-profile name (set when spawn_result echoes back
   // the sentinel's pick; consumed when boot / meta lands so the conversation's
@@ -3137,6 +3140,27 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return config
   }
 
+  // ─── Pending Fork Source (conversationId -> source conversationId) ───────
+  // A fork's ancestor is the conversation it forked FROM. The rendezvous cannot
+  // carry that: it is skipped entirely when there is no caller, which is exactly
+  // the control-panel fork (a browser is not a conversation). So the source
+  // rides the same pre-boot channel as the launch config, which every spawn
+  // path sets regardless of caller.
+  const pendingForkSources = new Map<string, string>()
+
+  function setPendingForkSource(conversationId: string, sourceConversationId: string) {
+    pendingForkSources.set(conversationId, sourceConversationId)
+    // Same 5 min ceiling as the launch config -- a fork that never boots must
+    // not pin its source id in memory forever.
+    setTimeout(() => pendingForkSources.delete(conversationId), 5 * 60 * 1000)
+  }
+
+  function consumePendingForkSource(conversationId: string): string | undefined {
+    const sourceId = pendingForkSources.get(conversationId)
+    if (sourceId) pendingForkSources.delete(conversationId)
+    return sourceId
+  }
+
   // ─── Pending Resolved Profile (conversationId -> profileName) ───────────
   // Set by spawn-dispatch when the sentinel echoes `resolvedProfile`; consumed
   // by boot-lifecycle / conversation-lifecycle so the conversation's stored
@@ -3182,9 +3206,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     callerConversationId: string,
     project: string,
     action: 'spawn' | 'revive' | 'restart',
-    notifyParentSettleMs?: number,
+    extra?: RendezvousExtra,
   ): Promise<Conversation> {
-    return rendezvous.addRendezvous(conversationId, callerConversationId, project, action, notifyParentSettleMs)
+    return rendezvous.addRendezvous(conversationId, callerConversationId, project, action, extra)
   }
 
   function resolveRendezvous(conversationId: string, connectionId: string): boolean {
@@ -3436,6 +3460,8 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getRendezvousInfo,
     setPendingLaunchConfig,
     consumePendingLaunchConfig,
+    setPendingForkSource,
+    consumePendingForkSource,
     setPendingResolvedProfile,
     consumePendingResolvedProfile,
     setPendingConversationName,

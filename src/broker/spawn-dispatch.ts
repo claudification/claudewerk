@@ -528,6 +528,9 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     ].filter(Boolean)
     const appendSystemPrompt = appendParts.length ? appendParts.join('\n\n') : undefined
 
+    // A fork's parent is its SOURCE, not whoever called spawn -- and a panel
+    // fork has no caller at all. Recorded here so boot can persist the edge.
+    if (req.forkedFrom) deps.conversationStore.setPendingForkSource(conversationId, req.forkedFrom)
     deps.conversationStore.setPendingLaunchConfig(conversationId, {
       headless,
       transport,
@@ -680,7 +683,7 @@ function registerSpawnRendezvous(opts: {
   // conversationId. The rendezvous resolves async via boot-lifecycle's
   // `resolveRendezvous` call (or times out at 120s).
   deps.conversationStore
-    .addRendezvous(conversationId, callerConversationId, project, 'spawn', notifyParentSettleMs)
+    .addRendezvous(conversationId, callerConversationId, project, 'spawn', { notifyParentSettleMs })
     .then(conv => {
       emitProgress(deps.conversationStore, jobId, 'conversation_connected', 'done', {
         ccSessionId: (conv.agentHostMeta?.ccSessionId as string) || conv.id,

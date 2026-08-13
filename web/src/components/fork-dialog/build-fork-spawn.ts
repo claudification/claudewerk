@@ -67,6 +67,11 @@ export function buildForkSpawnRequest(
     prompt: overrides.prompt?.trim() || undefined,
     headless: overrides.headless,
     profile: forkLaunchProfile(conversation, resumeId),
+    // The panel folds first and spawns second, so the broker cannot infer this
+    // is a fork -- and a browser is not a conversation, so there is no caller to
+    // fall back to. Without this the child row is written with a NULL parent and
+    // the fork's ancestry is lost everywhere except its own system prompt.
+    forkedFrom: conversation.id,
     jobId: crypto.randomUUID(),
   }
 }

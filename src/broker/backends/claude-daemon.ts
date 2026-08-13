@@ -459,7 +459,7 @@ function finalizeDaemonConversation(
     deps.rendezvousCallerConversationId,
     conversationId,
     'daemon',
-    resolveNotifyParentSettleMs(req),
+    { notifyParentSettleMs: resolveNotifyParentSettleMs(req), forkedFromId: req.forkedFrom },
   )
   const conv = getOrCreateDaemonConversation(deps, conversationId, project, req.model, lineage)
   const statusBefore = conv.status

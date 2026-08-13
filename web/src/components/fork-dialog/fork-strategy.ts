@@ -3,8 +3,15 @@
  * the transcript.
  *
  * All three produce a NEW conversation resuming a NEW CC session; they differ
- * only in how much of the source survives verbatim. The numbers below come from
- * folding a real 675k-token session (see scripts/spike-fork-supercompact.ts).
+ * only in how much of the source survives verbatim.
+ *
+ * Deliberately NO headline percentage here. The saving is bounded by how much
+ * of a given transcript is large tool output: a session full of big file reads
+ * folds enormously, a prose-heavy one barely at all (measured: 34% on a real
+ * 239k-token session). Quoting one number as if it were typical is how the
+ * dialog ended up promising ~80% and delivering a third of that. The honest
+ * number is the post-fold readout in `fold-stats.tsx`, which reports what THIS
+ * fold actually bought before the user commits to launching.
  */
 
 export type ForkStrategy = 'full' | 'compacted' | 'summarized'
@@ -36,7 +43,7 @@ export const FORK_STRATEGIES: Record<ForkStrategy, ForkStrategySpec> = {
   compacted: {
     value: 'compacted',
     label: 'Condensed',
-    hint: 'Big tool outputs digested to a stub + preview, recent turns kept verbatim. Free, deterministic, ~80% smaller.',
+    hint: 'Big tool outputs digested to a stub + preview, recent turns kept verbatim. Free and deterministic -- how much it saves depends on how much of this transcript is big tool output.',
     digestOverTokens: 400,
     tailTokenBudget: 20_000,
   },

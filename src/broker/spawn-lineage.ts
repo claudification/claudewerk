@@ -36,10 +36,26 @@ export function resolveNotifyParentSettleMs(
   return req.notifyParentSettleMs ?? DEFAULT_NOTIFY_PARENT_SETTLE_MS
 }
 
+/** Optional lineage inputs. A bag, so this does not grow a 6th positional. */
+export interface SpawnLineageOptions {
+  /** EXPENSIVE report-back settle window (ms); see `resolveNotifyParentSettleMs`. */
+  notifyParentSettleMs?: number
+  /**
+   * The conversation this spawn is a FORK OF. Takes precedence over `callerId`:
+   * a fork's ancestor is what it forked from, not whoever happened to issue the
+   * spawn. Without this, fork parentage was never recorded -- the web dialog has
+   * no caller at all (a browser is not a conversation) so parent/root came out
+   * NULL, and MCP `fork_from` recorded the calling agent, which looked correct
+   * and pointed at the wrong conversation.
+   */
+  forkedFromId?: string
+}
+
 /**
- * Compute the lineage to persist for a freshly-created conversation, given
- * the caller conversationId (or undefined / null for a top-level conversation).
- * Returns `undefined` when there is no caller -- the conversation is then
+ * Compute the lineage to persist for a freshly-created conversation.
+ *
+ * The ancestor is the fork source when this spawn is a fork, else the caller.
+ * Returns `undefined` only when there is neither -- the conversation is then
  * self-rooted (default for human-started conversations).
  */
 // fallow-ignore-next-line complexity
@@ -48,20 +64,25 @@ export function computeSpawnLineage(
   callerId: string | null | undefined,
   conversationId: string,
   via: string,
-  notifyParentSettleMs?: number,
+  opts?: SpawnLineageOptions,
 ): CreateConversationLineage | undefined {
-  if (!callerId) {
+  const { notifyParentSettleMs, forkedFromId } = opts ?? {}
+  const parentId = forkedFromId || callerId
+  if (!parentId) {
     console.log(`[parent-track] conv=${conversationId.slice(0, 8)} parent=none root=self via=${via}`)
     return undefined
   }
-  const parent = conversations.getConversation(callerId)
-  const rootId = parent?.rootConversationId ?? callerId
+  const parent = conversations.getConversation(parentId)
+  const rootId = parent?.rootConversationId ?? parentId
   const missingTag = parent ? '' : ' (parent-missing)'
   const notifyTag = notifyParentSettleMs ? ` notifyParent=${notifyParentSettleMs}ms` : ''
+  // Which edge was used is the whole point of the fix -- log it, or a future
+  // reader cannot tell a fork's lineage from a spawn's from the log alone.
+  const originTag = forkedFromId ? ` origin=fork caller=${callerId?.slice(0, 8) ?? 'none'}` : ' origin=spawn'
   console.log(
-    `[parent-track] conv=${conversationId.slice(0, 8)} parent=${callerId.slice(0, 8)} root=${rootId.slice(0, 8)}${missingTag}${notifyTag} via=${via}`,
+    `[parent-track] conv=${conversationId.slice(0, 8)} parent=${parentId.slice(0, 8)} root=${rootId.slice(0, 8)}${missingTag}${notifyTag}${originTag} via=${via}`,
   )
-  return { parentConversationId: callerId, rootConversationId: rootId, notifyParentSettleMs }
+  return { parentConversationId: parentId, rootConversationId: rootId, notifyParentSettleMs }
 }
 
 /**

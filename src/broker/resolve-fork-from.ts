@@ -52,7 +52,10 @@ async function resolveSummarized(
 
   const seed = buildForkSeedPrompt(summary.summary, { conversationId: source.id, title })
   const appendSystemPrompt = rest.appendSystemPrompt ? `${rest.appendSystemPrompt}\n\n${seed}` : seed
-  return { ok: true, req: { ...rest, appendSystemPrompt } }
+  // Summarized starts a FRESH session rather than resuming a fold, but it is
+  // still a fork -- its ancestor is the summarized conversation, so it records
+  // the same edge the other strategies do.
+  return { ok: true, req: { ...rest, appendSystemPrompt, forkedFrom: source.id } }
 }
 
 export async function resolveForkFrom(
@@ -108,5 +111,11 @@ export async function resolveForkFrom(
   })
   if (!forked.ok) return { ok: false, statusCode: forked.status, error: `forkFrom: ${forked.error}` }
 
-  return { ok: true, req: { ...rest, mode: 'resume', resumeId: forked.resumeId, profile: forkProfile } }
+  // `forkedFrom` is what makes the child's row point at its SOURCE. Without it
+  // the lineage falls back to the spawn caller, which for a fork is the wrong
+  // conversation (and for a panel-initiated fork is nobody at all).
+  return {
+    ok: true,
+    req: { ...rest, mode: 'resume', resumeId: forked.resumeId, profile: forkProfile, forkedFrom: source.id },
+  }
 }

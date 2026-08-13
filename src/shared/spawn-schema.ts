@@ -127,12 +127,22 @@ export const spawnRequestSchema = z.object({
         "that conversation's transcript first and launches this spawn resuming the fold, so the new " +
         'conversation inherits its context. Sets mode/resumeId itself -- do not pass those with it.',
     ),
+  forkedFrom: z
+    .string()
+    .optional()
+    .describe(
+      'The conversation this spawn is a FORK OF, recorded as its parent. Set automatically by the ' +
+        'broker when forkFrom is used, and by the control panel when it folds first and spawns second. ' +
+        "A fork's ancestor is its source, NOT whoever issued the spawn -- pass this or the lineage is lost.",
+    ),
   forkStrategy: z
     .enum(['full', 'condensed', 'summarized'])
     .optional()
     .describe(
       'How much of the forked conversation to carry over. "condensed" (default) digests large tool ' +
-        'outputs and keeps recent turns verbatim (~80% smaller, free); "full" copies everything; ' +
+        'outputs over 400 tokens and keeps the last 20k tokens verbatim -- free, but the saving depends ' +
+        'entirely on how much of the transcript is big tool output (measured: 34% on a prose-heavy ' +
+        'session, far more on one full of large file reads); "full" copies everything; ' +
         '"summarized" writes a continuation summary and starts a FRESH session from it (costs a model call).',
     ),
   headless: z
