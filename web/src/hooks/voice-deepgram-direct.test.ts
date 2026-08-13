@@ -143,6 +143,43 @@ test('forwards only the end-of-turn tuning it was given', async () => {
   session.abort()
 })
 
+test('repeats keyterm per term -- a set() would keep only the last', async () => {
+  const session = startDeepgramDirect({
+    stream: fakeStream(),
+    token: 'tok',
+    model: 'flux',
+    keyterms: ['Cloudflare', '  ', 'agent host', 'claudewerk'],
+    callbacks: callbacks(),
+  })
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+
+  const url = new URL(FakeWebSocket.latest().url.replace('wss://', 'https://'))
+  // Measured, not assumed: this is what turned "CloudFlo" into "Cloudflare".
+  expect(url.searchParams.getAll('keyterm')).toEqual(['Cloudflare', 'agent host', 'claudewerk'])
+
+  session.abort()
+})
+
+test('caps the keyterm list, because a long one measurably stops working', async () => {
+  const many = Array.from({ length: 80 }, (_, i) => `term-${i}`)
+  const session = startDeepgramDirect({
+    stream: fakeStream(),
+    token: 'tok',
+    model: 'flux',
+    keyterms: many,
+    callbacks: callbacks(),
+  })
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+
+  // 4 and 6 terms fixed "CloudFlo" on the probe fixture; 10 and 25 undid the
+  // fix. The cap is that measurement, not URL hygiene.
+  const sent = new URL(FakeWebSocket.latest().url.replace('wss://', 'https://')).searchParams.getAll('keyterm')
+  expect(sent).toHaveLength(8)
+  expect(sent[0]).toBe('term-0')
+
+  session.abort()
+})
+
 test('sends stop only AFTER the recorder final chunk -- no truncated tail', async () => {
   const { session } = begin('tok')
   await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))

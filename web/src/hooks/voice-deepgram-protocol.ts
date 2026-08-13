@@ -71,6 +71,12 @@ export interface DeepgramDirectOptions {
   sampleRate?: number
   /** End-of-turn tuning, forwarded verbatim; the Worker allowlists them. */
   tuning?: Record<string, string>
+  /**
+   * Project vocabulary to bias the model with. MEASURED, not assumed: the same
+   * 26s fixture came back with "CloudFlo" bare and "Cloudflare" with keyterms
+   * on, and the lag did not move (max 358ms -> 133ms, if anything better).
+   */
+  keyterms?: string[]
   callbacks: DeepgramDirectCallbacks
 }
 
@@ -92,10 +98,22 @@ export interface SttFrame {
  * VAD / force-Finalize (which kept falling behind real time and shredding
  * transcripts) are out of the loop.
  */
+/**
+ * How many keyterms go on the wire, and it is small for a MEASURED reason, not
+ * to keep the URL tidy: on the same fixture, 4 and 6 terms turned "CloudFlo"
+ * into "Cloudflare" while 10 and 25 put it straight back. Past roughly half a
+ * dozen, extra terms dilute the bias until the feature stops working.
+ *
+ * (A cap is also the thing standing between a big project vocabulary and a WS
+ * UPGRADE rejection, which is how flux fails an oversized input set -- voice
+ * refusing to start, not degrading.) Truncation is LOGGED, never silent.
+ */
+const MAX_KEYTERMS = 8
+
 export function liveUrl(
   model: string,
   token: string,
-  opts: { capture: CaptureKind; sampleRate?: number; tuning?: Record<string, string> },
+  opts: { capture: CaptureKind; sampleRate?: number; tuning?: Record<string, string>; keyterms?: string[] },
 ) {
   const params = new URLSearchParams({ t: token, model })
   // RAW PCM HAS NO CONTAINER TO SNIFF. Declaring it is not an optimisation: an
@@ -111,5 +129,15 @@ export function liveUrl(
   for (const [key, value] of Object.entries(opts.tuning ?? {})) {
     if (value) params.set(key, value)
   }
+  // append(), NOT set(): keyterm is the one repeatable parameter, and a set()
+  // would quietly keep only the last term of the vocabulary.
+  const terms = (opts.keyterms ?? []).map(t => t.trim()).filter(Boolean)
+  if (terms.length > MAX_KEYTERMS) {
+    console.warn(`[voice] ${terms.length} keyterms, sending the first ${MAX_KEYTERMS}`)
+  }
+  // Sent BARE, no `:boost` suffix. The broker's v1 relay appends `:3`; flux was
+  // measured with plain terms and there is no evidence it parses the suffix --
+  // if it does not, ":3" becomes part of the term and biases toward nonsense.
+  for (const term of terms.slice(0, MAX_KEYTERMS)) params.append('keyterm', term)
   return `wss://${STT_HOST}/listen?${params}`
 }

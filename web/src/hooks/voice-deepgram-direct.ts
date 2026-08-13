@@ -121,7 +121,12 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   function connect(token: string) {
     if (torn) return
     ws = new WebSocket(
-      liveUrl(model.id, token, { capture: model.capture, sampleRate: opts.sampleRate, tuning: opts.tuning }),
+      liveUrl(model.id, token, {
+        capture: model.capture,
+        sampleRate: opts.sampleRate,
+        tuning: opts.tuning,
+        keyterms: opts.keyterms,
+      }),
     )
     ws.onopen = onSocketOpen
     ws.onmessage = ev => {

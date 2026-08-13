@@ -71,6 +71,11 @@ export interface ControlPanelPrefs {
   /** flux `eot_timeout_ms`: how long it waits before calling the turn anyway.
    *  0 = model default. */
   voiceEotTimeoutMs: number
+  /** flux `eager_eot_threshold` (0.3-0.9, 0 = off). Fires a SPECULATIVE
+   *  EagerEndOfTurn early so a voice agent can start generating, retracted with
+   *  TurnResumed if the speaker carries on. Built for agents, not dictation:
+   *  here it only makes the on-screen text flicker. Off by default. */
+  voiceEagerEotThreshold: number
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
   /** The voice ORB's tone dial (Professional | Snarky | Homicidal | Overkill).
    *  Sent with the mint; the broker narrows it and picks the persona preamble.
@@ -158,6 +163,7 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceSttModel: DEFAULT_STT_MODEL,
   voiceEotThreshold: 0,
   voiceEotTimeoutMs: 0,
+  voiceEagerEotThreshold: 0,
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
   voiceOrbSpeed: DEFAULT_VOICE_ORB_SPEED,

@@ -15,6 +15,7 @@ import { useWakeLock } from '@/hooks/use-wake-lock'
 import type { CaptureHandle } from '@/hooks/voice-capture-shared'
 import { startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
 import type { DeepgramDirectSession, DirectFailure } from '@/hooks/voice-deepgram-protocol'
+import { projectKeyterms, resolveKeyterms } from '@/hooks/voice-keyterms'
 import { startMediaRecorderCapture } from '@/hooks/voice-mediarecorder-capture'
 import {
   acquireMicStream,
@@ -595,7 +596,19 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     const tuning: Record<string, string> = {}
     if (prefs.voiceEotThreshold) tuning.eot_threshold = String(prefs.voiceEotThreshold)
     if (prefs.voiceEotTimeoutMs) tuning.eot_timeout_ms = String(prefs.voiceEotTimeoutMs)
+    if (prefs.voiceEagerEotThreshold) tuning.eager_eot_threshold = String(prefs.voiceEagerEotThreshold)
     return tuning
+  }
+
+  /**
+   * Vocabulary to bias the model with: this app's own nouns, plus the active
+   * project's. Read off the store the recording is starting against, not the
+   * live selection -- same reason the target conversation is pinned.
+   */
+  function sttKeyterms(conversationId: string | null): string[] {
+    const store = useConversationsStore.getState()
+    const project = conversationId ? store.conversationsById[conversationId]?.project : undefined
+    return resolveKeyterms(projectKeyterms(project, store.projectSettings))
   }
 
   /**
@@ -609,12 +622,16 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     // it (flux -> raw PCM, nova-3 -> container), because a mismatch is silent:
     // flux fed a container returns no transcript and no error at all.
     const model = useConversationsStore.getState().controlPanelPrefs.voiceSttModel || DEFAULT_STT_MODEL
-    console.log(`[voice] ${elapsed()} stt model=${model} capture=${resolveSttModel(model).capture}`)
+    const keyterms = sttKeyterms(targetConversationIdRef.current)
+    console.log(
+      `[voice] ${elapsed()} stt model=${model} capture=${resolveSttModel(model).capture} keyterms=${keyterms.length}`,
+    )
     directSessionRef.current = startDeepgramDirect({
       stream,
       token,
       model,
       tuning: sttTuning(),
+      keyterms,
       callbacks: {
         onOpen: flushed => {
           clearConnectTimer()

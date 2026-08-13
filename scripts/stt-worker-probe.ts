@@ -28,6 +28,32 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && args[i + 1] ? (args[i + 1] as string) : fallback
 }
 
+/**
+ * Repeatable `--param k=v`, appended verbatim to the socket URL.
+ *
+ * This exists because of how flux fails: a bad input set is rejected at the
+ * WEBSOCKET UPGRADE, not on a later message, so ONE unsupported parameter does
+ * not degrade voice -- it takes voice down completely. Anything new goes through
+ * here against the real chain before it is allowed near a microphone.
+ *
+ *   --param keyterm=sentinel --param keyterm=broker   (repeats are kept)
+ *   --param language_hint=en
+ */
+function extraParams(): Array<[string, string]> {
+  const pairs: Array<[string, string]> = []
+  args.forEach((a, i) => {
+    if (a !== '--param') return
+    const raw = args[i + 1]
+    if (!raw) return
+    const eq = raw.indexOf('=')
+    if (eq > 0) pairs.push([raw.slice(0, eq), raw.slice(eq + 1)])
+  })
+  return pairs
+}
+
+/** Print the whole transcript, for diffing one model or setting against another. */
+const showFull = args.includes('--full')
+
 const brokerHost = arg('host', 'concentrator.frst.dev')
 /** A bare loopback host is plain HTTP -- the broker only has TLS in front of it
  *  via Caddy. Getting this wrong reads as ConnectionRefused, not as a scheme bug. */
@@ -73,6 +99,10 @@ console.log(`[probe] leg 1 broker mint      ${mintMs}ms (ttl ${expiresIn}s, ${ac
 // container instead returns silence rather than an error. The browser sends a
 // MediaRecorder container and omits this.
 const params = new URLSearchParams({ t: accessToken, model, encoding: 'linear16', sample_rate: '16000' })
+// append(), not set(): keyterm is repeatable and a set() would keep only the last.
+for (const [key, value] of extraParams()) params.append(key, value)
+const extras = extraParams()
+if (extras.length) console.log(`[probe] extra params        ${extras.map(([k, v]) => `${k}=${v}`).join(' ')}`)
 const dial = Date.now()
 const ws = new WebSocket(`${sttBase}/listen?${params}`)
 
@@ -155,6 +185,7 @@ function report(reason: string) {
   }
   console.log(`[probe] ${verdict(samples)}`)
   console.log(`[probe] paragraphs=${finalText.split('\n\n').length} chars=${finalText.length}`)
+  if (showFull) return console.log(`[probe] full:\n${finalText}`)
   console.log(`[probe] text: "${finalText.slice(0, 240)}${finalText.length > 240 ? '...' : ''}"`)
 }
 

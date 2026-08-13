@@ -79,6 +79,26 @@ export const VOICE_MODEL_ITEMS: SettingItem[] = [
       />
     ),
   },
+  {
+    tab: 'voice',
+    group: 'Transcription',
+    label: 'Eager end-of-turn (agents only)',
+    description:
+      'flux only, 0 = off (recommended). Fires a SPECULATIVE end-of-turn early (0.3-0.9) so a voice agent can start generating, then retracts it if you keep talking. For dictation it buys nothing and makes the live text flicker.',
+    keywords: 'voice flux eager eot speculative turn resumed agent',
+    render: (ctx, ariaLabel) => (
+      <input
+        aria-label={ariaLabel}
+        type="number"
+        min={0}
+        max={EOT_THRESHOLD_MAX}
+        step={0.05}
+        value={ctx.prefs.voiceEagerEotThreshold ?? 0}
+        onChange={e => ctx.updatePrefs({ voiceEagerEotThreshold: clampEager(Number(e.target.value)) })}
+        className={`${NUM_INPUT_CLS} w-20`}
+      />
+    ),
+  },
 ]
 
 /** 0 means "unset"; anything else is pulled into flux's usable band rather than
@@ -86,4 +106,10 @@ export const VOICE_MODEL_ITEMS: SettingItem[] = [
 function clampThreshold(value: number): number {
   if (!value || value < 0) return 0
   return Math.min(EOT_THRESHOLD_MAX, Math.max(EOT_THRESHOLD_MIN, value))
+}
+
+/** Eager's own band starts lower than eot_threshold's. */
+function clampEager(value: number): number {
+  if (!value || value < 0) return 0
+  return Math.min(EOT_THRESHOLD_MAX, Math.max(0.3, value))
 }
