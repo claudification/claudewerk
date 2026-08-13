@@ -223,6 +223,35 @@ export function createApiRouter(
     }
   })
 
+  // ─── Transport probe (how far is the BROKER from the speech vendor) ──
+  // The control panel can time its own hop to the broker, but NOT the broker's
+  // onward hop -- and on the relay transport that second leg is most of the
+  // journey. Without this the probe compared a first hop against a full path and
+  // flattered the relay 3x, recommending the slower option.
+  //
+  // It cannot be estimated from the browser: browser->vendor only approximates
+  // broker->vendor while the browser sits on the same LAN, and is meaningless
+  // from a phone abroad, which is precisely the case the setting exists for.
+  app.get('/api/voice/transport-probe', async c => {
+    if (!httpHasPermission(c.req.raw, 'voice', '*'))
+      return c.json({ error: 'Forbidden: voice permission required' }, 403)
+    const t0 = Date.now()
+    let reachable = true
+    try {
+      // HEAD would be cheaper but Deepgram does not answer it; the status is
+      // irrelevant either way -- a 401 proves the round trip just as well as a 200.
+      await fetch('https://api.deepgram.com/v1/listen', {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      })
+    } catch {
+      reachable = false
+    }
+    const upstreamMs = Date.now() - t0
+    console.log(`[stt] transport probe: broker -> deepgram ${upstreamMs}ms reachable=${reachable}`)
+    return c.json({ upstreamMs, reachable })
+  })
+
   // ─── STT token mint (browser -> stt-proxy Worker dictation) ─────────
   // A short-lived HMAC the browser presents to the Cloudflare Worker, which
   // verifies it and opens the Workers AI speech socket on its behalf.

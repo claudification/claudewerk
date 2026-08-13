@@ -11,8 +11,10 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { type LatencySample, probeVoiceLatency } from '@/lib/voice-latency-probe'
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { formatLatencyReport, type LatencySample, probeVoiceLatency } from '@/lib/voice-latency-probe'
 
 const ROUNDS = 10
 
@@ -28,6 +30,12 @@ function Bar({ value, worst }: { value: number; worst: number }) {
   )
 }
 
+/** What a dictation actually pays: this hop, plus any onward hop the target
+ *  makes on our behalf. The relay does not end at the broker. */
+function total(sample: LatencySample): number {
+  return sample.median + (sample.upstreamMs ?? 0)
+}
+
 function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
   return (
     <div className="py-2 border-b border-border/40 last:border-0">
@@ -35,10 +43,12 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
         <span className="text-xs font-medium">{sample.label}</span>
         {sample.samples.length > 0 ? (
           <span className="text-xs font-mono tabular-nums">
-            <span className="text-foreground">{sample.median}ms</span>
+            <span className="text-foreground">{total(sample)}ms</span>
             <span className="text-muted-foreground/60">
               {' '}
-              ({sample.min}-{sample.max})
+              {sample.upstreamMs === undefined
+                ? `(${sample.min}-${sample.max})`
+                : `(${sample.median}+${sample.upstreamMs})`}
             </span>
           </span>
         ) : (
@@ -47,7 +57,7 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
       </div>
       {sample.samples.length > 0 && (
         <div className="mt-1">
-          <Bar value={sample.median} worst={worst} />
+          <Bar value={total(sample)} worst={worst} />
         </div>
       )}
       <p className="mt-1 text-[10px] leading-snug text-muted-foreground/70">{sample.note}</p>
@@ -55,6 +65,33 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
         <p className="mt-0.5 text-[10px] text-amber-400/80">some pings failed: {sample.error}</p>
       )}
     </div>
+  )
+}
+
+/** A screenshot cannot be grepped, diffed, or pasted into an issue. A fenced
+ *  table can, so the numbers leave this modal in a form that survives. */
+function CopyStats({ results }: { results: LatencySample[] }) {
+  const [copied, setCopied] = useState(false)
+  const prefs = useConversationsStore(s => s.controlPanelPrefs)
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="text-xs self-start"
+      onClick={() => {
+        const report = formatLatencyReport(results, {
+          transport: prefs?.voiceDirectToDeepgram === false ? 'broker relay' : 'direct',
+          model: prefs?.voiceSttModel || 'default',
+          takenAt: new Date().toISOString(),
+        })
+        void navigator.clipboard.writeText(report).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        })
+      }}
+    >
+      {copied ? 'Copied' : 'Copy stats'}
+    </Button>
   )
 }
 
@@ -80,7 +117,7 @@ export function VoiceLatencyModal({ open, onClose }: { open: boolean; onClose: (
     return () => controller.abort()
   }, [open])
 
-  const worst = results.reduce((max, r) => Math.max(max, r.median), 0)
+  const worst = results.reduce((max, r) => Math.max(max, total(r)), 0)
 
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
@@ -100,6 +137,7 @@ export function VoiceLatencyModal({ open, onClose }: { open: boolean; onClose: (
             <Row key={r.label} sample={r} worst={worst} />
           ))}
         </div>
+        {!running && results.length > 0 && <CopyStats results={results} />}
         {!running && results.length > 0 && (
           <p className="text-[10px] leading-snug text-muted-foreground/70">
             Lower is better. The Cloudflare edge stays ~45ms from anywhere in the world; the broker is close on the home
