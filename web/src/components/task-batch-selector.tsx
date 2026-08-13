@@ -23,8 +23,8 @@ import { useProject } from '@/hooks/use-project'
 import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
-import { buildBatchPrompt } from './task-batch/prompt'
-import { taskBatchBus } from './task-batch-trigger'
+import { batchOpenState, buildBatchPrompt } from './task-batch/prompt'
+import { type TaskBatchOpen, taskBatchBus } from './task-batch-trigger'
 
 // --- Constants ---
 
@@ -278,6 +278,8 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  /** Non-null when a caller opened us for a subset of the board (e.g. one epic). */
+  const [scope, setScope] = useState<{ ids: Set<string>; label?: string } | null>(null)
   const [activeStatuses, setActiveStatuses] = useState<Set<TaskStatus>>(() => {
     const out = new Set<TaskStatus>()
     for (const c of STATUS_CHIPS) {
@@ -358,23 +360,29 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     if (!open) clearHoverPreview()
   }, [open, clearHoverPreview])
 
-  // Listen for open event
+  // Listen for open event. A caller may hand us a scope + a preselection --
+  // that is how "work on this epic" arrives with its not-started cards already
+  // ticked instead of making you find them again.
   useEffect(() => {
-    function handleOpen() {
+    function handleOpen(detail?: TaskBatchOpen) {
+      const next = batchOpenState(detail)
       setOpen(true)
       setQuery('')
       setShowSelected(false)
+      setScope(next.scope)
+      setSelected(next.selected)
       requestAnimationFrame(() => searchRef.current?.focus())
     }
     taskBatchBus.setHandler(handleOpen)
     return () => taskBatchBus.setHandler(null)
   }, [])
 
-  // Filter tasks by active status chips, then score
+  // Filter tasks by scope, then active status chips, then score
   const visibleTasks = useMemo(() => {
-    const statusFiltered = tasks.filter(t => activeStatuses.has(t.status))
+    const scoped = scope ? tasks.filter(t => scope.ids.has(t.slug)) : tasks
+    const statusFiltered = scoped.filter(t => activeStatuses.has(t.status))
     return scoreTasks(statusFiltered, query)
-  }, [tasks, activeStatuses, query])
+  }, [tasks, scope, activeStatuses, query])
 
   // Get selected task objects (preserving selection order)
   const selectedTasks = useMemo(() => {
@@ -477,6 +485,14 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
           <div className="flex items-center gap-2">
             <ListChecks className="size-4 text-accent" />
             <DialogTitle className="text-sm">Select Tasks</DialogTitle>
+            {scope && (
+              <span
+                className="text-[9px] font-mono px-1 py-0.5 border border-accent/30 text-accent/80 max-w-[180px] truncate"
+                title={`Scoped to ${scope.ids.size} card(s)`}
+              >
+                ◈ {scope.label ?? `${scope.ids.size} cards`}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Kbd className="text-[9px]">Esc</Kbd>
@@ -526,6 +542,18 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                 {chip.label}
               </button>
             ))}
+            {scope && (
+              <button
+                type="button"
+                onClick={() => {
+                  haptic('tap')
+                  setScope(null)
+                }}
+                className="text-[10px] font-mono text-muted-foreground/40 hover:text-foreground"
+              >
+                show whole board
+              </button>
+            )}
             <span className="ml-auto text-[10px] text-muted-foreground/30 font-mono">{visibleTasks.length} tasks</span>
           </div>
         </div>

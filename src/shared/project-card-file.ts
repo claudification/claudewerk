@@ -18,7 +18,7 @@ import { TASK_STATUSES, type TaskStatus } from './task-statuses'
 
 /** Keys the store owns and renders in a stable order. Everything else is
  *  preserved verbatim, after these. */
-const ORDERED_KEYS = ['title', 'status', 'priority', 'tags', 'refs', 'quest', 'created'] as const
+const ORDERED_KEYS = ['title', 'status', 'priority', 'tags', 'refs', 'quest', 'epic', 'depends_on', 'created'] as const
 
 const PRIORITIES = ['low', 'medium', 'high'] as const
 type Priority = (typeof PRIORITIES)[number]
@@ -65,6 +65,10 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     tags: Array.isArray(raw.meta.tags) ? raw.meta.tags.map(String) : [],
     refs: Array.isArray(raw.meta.refs) ? raw.meta.refs.map(String) : [],
     quest: raw.meta.quest ? String(raw.meta.quest) : undefined,
+    epic: raw.meta.epic ? String(raw.meta.epic) : undefined,
+    // `depends_on` keeps its snake_case name on disk (that is what the cards
+    // already carry); the wire shape is camelCase like every other field.
+    dependsOn: Array.isArray(raw.meta.depends_on) ? raw.meta.depends_on.map(String) : undefined,
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,

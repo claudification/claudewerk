@@ -27,6 +27,12 @@ export interface ProjectTaskInput {
   status?: TaskStatus
   /** Quest membership (plan-quest-engine §4a) -- survives every lane change. */
   quest?: string
+  /** Epic membership: the parent epic's card id. Same shape as `quest` --
+   *  declared here on the child, never as a list on the parent. */
+  epic?: string
+  /** Sibling ids this card waits on. Serialized as `depends_on` (snake_case is
+   *  what the existing cards carry). Sequencing only, never parenthood. */
+  dependsOn?: string[]
 }
 
 /**
@@ -74,6 +80,8 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     tags: input.tags?.length ? input.tags : undefined,
     refs: input.refs?.length ? input.refs : undefined,
     quest: input.quest,
+    epic: input.epic,
+    depends_on: input.dependsOn?.length ? input.dependsOn : undefined,
     created,
   }
   writeFileSync(cardPath(root, id), serializeCard(meta, input.body), 'utf8')
@@ -85,6 +93,8 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     tags: input.tags || [],
     refs: input.refs || [],
     quest: input.quest,
+    epic: input.epic,
+    dependsOn: input.dependsOn,
     created,
     mtime: nowMs,
     bodyPreview: input.body.split('\n').filter(Boolean).join(' ').slice(0, 600),
@@ -109,6 +119,8 @@ export function updateProjectTask(root: string, id: string, patch: Partial<Proje
   if (patch.tags !== undefined) meta.tags = patch.tags
   if (patch.refs !== undefined) meta.refs = patch.refs
   if (patch.quest !== undefined) meta.quest = patch.quest
+  if (patch.epic !== undefined) meta.epic = patch.epic
+  if (patch.dependsOn !== undefined) meta.depends_on = patch.dependsOn
   if (patch.status !== undefined) meta.status = patch.status
   // A legacy card's lane directory was its only status record -- pin it before
   // the file leaves that directory behind.

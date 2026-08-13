@@ -5,11 +5,22 @@
     "bun:test",
     "@codemirror/theme-one-dark",
     "@ast-grep/cli",
+    // `@shared/*` is a Vite/tsconfig ALIAS onto ../src/shared, not a package.
+    // Each module has to be listed as it gains its first web importer; a new
+    // one otherwise fails the gate as an "unlisted dependency" the moment a
+    // component imports it.
     "@shared/canvas-selection",
+    "@shared/card-path",
     "@shared/draw-dsl",
+    "@shared/epic-cards",
     "@shared/project-order-types",
+    "@shared/project-task-types",
     "@shared/project-uri",
-    "@shared/protocol"
+    "@shared/protocol",
+    "@shared/spawn-diagnostics",
+    "@shared/spawn-naming",
+    "@shared/spawn-prompt",
+    "@shared/spawn-schema"
   ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [

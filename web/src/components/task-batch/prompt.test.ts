@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
-import { buildBatchPrompt, taskPromptLine } from './prompt'
+import { batchOpenState, buildBatchPrompt, taskPromptLine } from './prompt'
 
 function card(over: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
   return {
@@ -68,5 +68,31 @@ describe('buildBatchPrompt', () => {
 
   it('survives an empty selection without emitting a stray path', () => {
     expect(buildBatchPrompt('x', [])).toBe('x\n\nTasks:\n')
+  })
+})
+
+describe('batchOpenState', () => {
+  it('opens unscoped with nothing ticked when there is no payload', () => {
+    const s = batchOpenState()
+    expect(s.scope).toBeNull()
+    expect(s.selected.size).toBe(0)
+  })
+
+  it('ticks the preselection', () => {
+    expect([...batchOpenState({ preselect: ['a', 'b'] }).selected].toSorted()).toEqual(['a', 'b'])
+  })
+
+  it('carries the scope label through for the header chip', () => {
+    const s = batchOpenState({ scope: ['a'], scopeLabel: 'ANVIL epic' })
+    expect(s.scope?.label).toBe('ANVIL epic')
+    expect(s.scope?.ids.has('a')).toBe(true)
+  })
+
+  it('a preselection without a scope stays unscoped', () => {
+    expect(batchOpenState({ preselect: ['a'] }).scope).toBeNull()
+  })
+
+  it('an empty scope array is still a scope -- it means "nothing matches", not "whole board"', () => {
+    expect(batchOpenState({ scope: [] }).scope?.ids.size).toBe(0)
   })
 })
