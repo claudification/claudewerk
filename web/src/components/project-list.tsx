@@ -18,20 +18,11 @@ import { WorkspaceTabs } from './project-list/workspace-tabs'
 // two ProjectLists were mounted at once.
 
 export function ProjectList() {
-  const {
-    structure,
-    selectedConversationId,
-    projectOrder,
-    projectSettings,
-    showEnded,
-    showInactive,
-    activeWorkspaceId,
-    updatePrefs,
-  } = useProjectListStore()
+  const { structure, selectedConversationId, projectOrder, projectSettings, activeWorkspaceId } = useProjectListStore()
   const { collapsedGroups, toggleGroup } = useCollapsedGroups()
 
-  const { structureById, filteredTree, visibleIdsByProject, stubIdsByProject, pinnedNotInTree, unorganized, inactive } =
-    useProjectGroups(structure, projectOrder, projectSettings, showEnded, activeWorkspaceId)
+  const { structureById, filteredTree, visibleIdsByProject, stubIdsByProject, pinnedNotInTree, unorganized } =
+    useProjectGroups(structure, projectOrder, projectSettings, activeWorkspaceId)
 
   // Tree-only edit -- saveProjectTree carries the workspace fields over.
   const handleRename = useCallback(
@@ -91,9 +82,6 @@ export function ProjectList() {
           pinnedNotInTree={pinnedNotInTree}
           stubIdsByProject={stubIdsByProject}
           structureById={structureById}
-          inactive={inactive}
-          showInactive={showInactive}
-          onShowInactiveChange={next => updatePrefs({ showInactiveByDefault: next })}
         />
       </div>
     </MaybeProfiler>

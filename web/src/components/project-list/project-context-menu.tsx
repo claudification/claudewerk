@@ -17,6 +17,7 @@ import { GroupingMenuItems } from './grouping-menu-items'
 import { menuContentClass, menuItemClass, menuSeparatorClass } from './menu-shared'
 import { ProjectMenuItems } from './project-menu-items'
 import { terminateAllSummary } from './project-order-tree'
+import { useEndedIdsForProject } from './row-hooks'
 import { WorkspaceAssignSub } from './workspace-assign-menu'
 
 function ProjectMenuShell({
@@ -53,20 +54,20 @@ export function PinnedProjectContextMenu(props: { project: string; onOpenSetting
 // Bulk "cleanup" fan-out: kill every running conversation and clear the
 // already-ended ones, leaving the project empty. Each kill/dismiss is its own
 // structured wire message (terminate_conversation / dismiss).
-function terminateAllInProject(active: Conversation[], ended: Conversation[]) {
-  if (!confirm(terminateAllSummary(active.length, ended.length))) return
+function terminateAllInProject(active: Conversation[], endedIds: string[]) {
+  if (!confirm(terminateAllSummary(active.length, endedIds.length))) return
   const store = useConversationsStore.getState()
   for (const s of active) store.terminateConversation(s.id, 'dashboard-terminate-project')
-  for (const s of ended) store.dismissConversation(s.id)
+  for (const id of endedIds) store.dismissConversation(id)
 }
 
-function TerminateAllItem({ active, ended }: { active: Conversation[]; ended: Conversation[] }) {
+function TerminateAllItem({ active, endedIds }: { active: Conversation[]; endedIds: string[] }) {
   return (
     <ContextMenu.Item
       className={cn(menuItemClass, 'text-destructive')}
       onSelect={() => {
         haptic('error')
-        terminateAllInProject(active, ended)
+        terminateAllInProject(active, endedIds)
       }}
     >
       Terminate all ({active.length})…
@@ -74,29 +75,29 @@ function TerminateAllItem({ active, ended }: { active: Conversation[]; ended: Co
   )
 }
 
-function DismissEndedItem({ ended }: { ended: Conversation[] }) {
+function DismissEndedItem({ endedIds }: { endedIds: string[] }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   return (
     <ContextMenu.Item
       className={cn(menuItemClass, 'text-destructive')}
       onSelect={() => {
         haptic('tap')
-        for (const s of ended) dismissConversation(s.id)
+        for (const id of endedIds) dismissConversation(id)
       }}
     >
-      Dismiss {ended.length} ended
+      Dismiss {endedIds.length} ended
     </ContextMenu.Item>
   )
 }
 
 /** The destructive tail. The caller decides whether there is anything to act on,
  *  so this never has to render an orphan separator. */
-function BulkItems({ active, ended }: { active: Conversation[]; ended: Conversation[] }) {
+function BulkItems({ active, endedIds }: { active: Conversation[]; endedIds: string[] }) {
   return (
     <>
       <ContextMenu.Separator className={menuSeparatorClass} />
-      {active.length > 0 && <TerminateAllItem active={active} ended={ended} />}
-      {ended.length > 0 && <DismissEndedItem ended={ended} />}
+      {active.length > 0 && <TerminateAllItem active={active} endedIds={endedIds} />}
+      {endedIds.length > 0 && <DismissEndedItem endedIds={endedIds} />}
     </>
   )
 }
@@ -112,9 +113,12 @@ export function ProjectContextMenu({
   onOpenSettings: () => void
   children: ReactNode
 }) {
-  const ended = conversations.filter(s => s.status === 'ended')
+  // `conversations` are the rendered rows, which by construction never include an
+  // ended one -- the ended set has to come from the store or "dismiss ended"
+  // would silently have nothing to do.
+  const endedIds = useEndedIdsForProject(project)
   const active = conversations.filter(s => s.status !== 'ended')
-  const tail = conversations.length > 0 ? <BulkItems active={active} ended={ended} /> : undefined
+  const tail = active.length + endedIds.length > 0 ? <BulkItems active={active} endedIds={endedIds} /> : undefined
   return (
     <ProjectMenuShell project={project} onOpenSettings={onOpenSettings} tail={tail}>
       {children}

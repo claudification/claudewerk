@@ -58,20 +58,12 @@ interface CanvasGraphProps {
   nodes: CanvasNode[]
   edges: Edge[]
   presentIds: ReadonlySet<string>
-  showEnded: boolean
   onExpandConversation: (id: string) => void
   /** Pin a card's manual position when a drag finishes. */
   onPinConversation: (id: string, pos: { x: number; y: number }) => void
 }
 
-export function CanvasGraph({
-  nodes,
-  edges,
-  presentIds,
-  showEnded,
-  onExpandConversation,
-  onPinConversation,
-}: CanvasGraphProps) {
+export function CanvasGraph({ nodes, edges, presentIds, onExpandConversation, onPinConversation }: CanvasGraphProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const pulses = useMessagePulses(presentIds)
 
@@ -93,7 +85,7 @@ export function CanvasGraph({
   if (nodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        No conversations to map{showEnded ? '' : ' (ended hidden)'}.
+        No conversations to map.
       </div>
     )
   }

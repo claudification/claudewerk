@@ -1,37 +1,14 @@
-/** Sidebar + header chrome toggles (all per-device prefs). */
+/** Sidebar + header chrome toggles (all per-device prefs).
+ *
+ *  There is deliberately NO toggle here for ended/inactive conversations. The
+ *  sidebar shows projects and live conversations only -- thousands of ended
+ *  sessions have accumulated and any switch that reveals them overflows the
+ *  list. Adding one back is the bug, not the feature. */
 
 import { SettingCheckbox } from './settings-inputs'
 import type { SettingItem } from './settings-item'
 
 export const SIDEBAR_ITEMS: SettingItem[] = [
-  {
-    tab: 'display',
-    group: 'Sidebar',
-    label: 'Show ended conversations',
-    description: 'Show [ENDED] conversations within CWD groups in sidebar',
-    keywords: 'sidebar ended filter',
-    render: (ctx, ariaLabel) => (
-      <SettingCheckbox
-        ariaLabel={ariaLabel}
-        checked={ctx.prefs.showEndedConversations}
-        onChange={v => ctx.updatePrefs({ showEndedConversations: v })}
-      />
-    ),
-  },
-  {
-    tab: 'display',
-    group: 'Sidebar',
-    label: 'Show inactive projects',
-    description: 'Show projects with only ended conversations at bottom of sidebar',
-    keywords: 'sidebar inactive',
-    render: (ctx, ariaLabel) => (
-      <SettingCheckbox
-        ariaLabel={ariaLabel}
-        checked={ctx.prefs.showInactiveByDefault}
-        onChange={v => ctx.updatePrefs({ showInactiveByDefault: v })}
-      />
-    ),
-  },
   {
     tab: 'display',
     group: 'Sidebar',
