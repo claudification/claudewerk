@@ -1,6 +1,6 @@
 export { exportMonth } from './export'
 export { importMonth } from './import'
-export { archiveCoverage, monthsToArchive } from './list'
+export { archiveCoverage, listArchives, monthsToArchive } from './list'
 export { pruneArchivedMonth } from './retention'
 export { searchArchives } from './search'
 export { planArchiveSearch } from './search-plan'
