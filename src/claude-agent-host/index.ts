@@ -34,6 +34,7 @@ import type { AgentHostMessage, HookEvent, TranscriptEntry } from '../shared/pro
 import { writeSecureFile, writeSecureFileSync } from '../shared/secure-temp'
 import { wsToHttpUrl } from '../shared/ws-url'
 import type { AgentHostContext } from './agent-host-context'
+import { composeAppendSystemPrompt } from './append-system-prompt'
 import { type BrokerConnectionDeps, connectToBroker } from './broker-connection'
 import { createCleanup, registerSignalHandlers } from './cleanup'
 import {
@@ -91,6 +92,19 @@ async function main() {
   const cwd = process.cwd()
   const rclaudeDir = ensureRclaudeDir(cwd)
   const permissionRules = createRulesEngine(cwd)
+
+  // Compose the launch argv BEFORE anything captures it. `brokerDeps` below
+  // holds `cli.claudeArgs` by reference and the broker persists whatever it
+  // finds there, so composing first means no caller has to reason about when
+  // that serialization happens.
+  //
+  // Write the harness prompt to a 0600 file (it is the full system prompt) and
+  // fold it together with whatever the spawn injected -- fork seed, nightshift
+  // preamble, SOTU brief, a user-supplied flag -- into ONE flag. CC keeps only
+  // the LAST --append-system-prompt, so a second one silently discards the rest.
+  const promptFile = join(rclaudeDir, 'settings', `prompt-${conversationId}.txt`)
+  writeSecureFileSync(promptFile, buildSystemPrompt({ channelEnabled: cli.channelEnabled, headless: cli.headless }))
+  composeAppendSystemPrompt(cli.claudeArgs, readFileSync(promptFile, 'utf-8'))
 
   const claudeVersion = detectClaudeVersion()
   setClaudeCodeVersion(claudeVersion)
@@ -307,17 +321,6 @@ async function main() {
   }
 
   setTerminalTitle(cwd)
-
-  // Write system prompt (0600 -- contains the full system prompt)
-  const promptFile = join(rclaudeDir, 'settings', `prompt-${conversationId}.txt`)
-  writeSecureFileSync(
-    promptFile,
-    buildSystemPrompt({
-      channelEnabled: cli.channelEnabled,
-      headless: cli.headless,
-    }),
-  )
-  cli.claudeArgs.push('--append-system-prompt', readFileSync(promptFile, 'utf-8'))
 
   // Prepare final claude args
   const brokerHttpUrl = cli.noBroker ? undefined : wsToHttpUrl(cli.brokerUrl)

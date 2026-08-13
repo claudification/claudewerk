@@ -14,6 +14,7 @@ import {
 } from '../shared/thinking-display'
 import { checkForUpdate, formatUpdateResult, formatVersion } from '../shared/update-check'
 import { wsToHttpUrl } from '../shared/ws-url'
+import { APPEND_SYSTEM_PROMPT_FLAG } from './append-system-prompt'
 import { debug } from './debug'
 
 export interface CliConfig {
@@ -419,14 +420,17 @@ export async function parseCliArgs(args: string[]): Promise<CliConfig> {
   // the text inline via CLAUDWERK_APPEND_SYSTEM_PROMPT (real env, safe at any
   // size). The PTY path can't put 16 KiB of arbitrary text through the tmux
   // shell prefix, so it writes a file and passes CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE.
-  // Inline wins; the file is the fallback. CC accepts multiple --append-system-prompt
-  // flags (this stacks on the agent host's own generated system prompt).
+  // Inline wins; the file is the fallback.
+  //
+  // This pushes its OWN flag, which is safe only because `composeAppendSystemPrompt`
+  // later folds every occurrence into one. CC does NOT stack the flag -- it keeps
+  // the last and drops the rest -- so nothing downstream may push a second one.
   if (process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT) {
-    claudeArgs.push('--append-system-prompt', process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT)
+    claudeArgs.push(APPEND_SYSTEM_PROMPT_FLAG, process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT)
   } else if (process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE) {
     const sysPromptFile = process.env.CLAUDWERK_APPEND_SYSTEM_PROMPT_FILE
     try {
-      claudeArgs.push('--append-system-prompt', readFileSync(sysPromptFile, 'utf-8'))
+      claudeArgs.push(APPEND_SYSTEM_PROMPT_FLAG, readFileSync(sysPromptFile, 'utf-8'))
       // Consumed once at boot -- unlink so the (now in-memory) system prompt
       // doesn't linger on disk. Best-effort; security comes from the 0700 dir.
       try {
