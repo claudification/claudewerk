@@ -65,21 +65,6 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
-    group: 'Capture',
-    label: 'Direct to the edge (experimental)',
-    description:
-      'Stream mic audio from the browser straight to our Cloudflare Worker, with the broker out of the audio path (it only mints a short-lived token, signed locally in ~40ms). The model does the endpointing at the nearest colo instead of a single US datacenter -- measured flat where Deepgram-direct ran 8.5s behind. Takes effect on the next recording.',
-    keywords: 'voice deepgram direct websocket broker latency endpointing token experimental cloudflare worker edge',
-    render: (ctx, ariaLabel) => (
-      <SettingCheckbox
-        ariaLabel={ariaLabel}
-        checked={ctx.prefs.voiceDirectToDeepgram === true}
-        onChange={v => ctx.updatePrefs({ voiceDirectToDeepgram: v })}
-      />
-    ),
-  },
-  {
-    tab: 'voice',
     group: 'Transcription',
     label: 'Deepgram model (broker relay)',
     // Nova ONLY, and not a stale list: the relay speaks Deepgram v1 against
