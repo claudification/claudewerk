@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "stt-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  // Routed on frst.dev so it shares the origin family with concentrator.frst.dev.
+  "routes": [{ "pattern": "stt.frst.dev", "custom_domain": true }],
+  // The AI binding is what authorises the speech models. It means this Worker
+  // holds NO account token and makes no egress call -- a credential that does
+  // not exist cannot leak.
+  "ai": { "binding": "AI" }
+  // The ONE secret, set with `wrangler secret put` (NEVER in this file):
+  //   STT_SIGNING_SECRET -- shared with the broker, which signs the client tokens
+}
