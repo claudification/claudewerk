@@ -9,11 +9,15 @@ import { formatLatencyReport, type LatencySample } from './voice-latency-probe'
 
 const META = { transport: 'direct', model: 'nova-3', takenAt: '2026-08-14T00:30:00Z' }
 
-const sample = (label: string, samples: number[]): LatencySample => {
+const sample = (label: string, samples: number[], upstreamMs?: number): LatencySample => {
   const sorted = [...samples].sort((a, b) => a - b)
   return {
     label,
     note: 'irrelevant to the report',
+    api: 'cloudflare',
+    connection: 'direct',
+    available: true,
+    upstreamMs,
     samples,
     min: sorted[0] ?? 0,
     median: sorted[Math.floor(sorted.length / 2)] ?? 0,
@@ -50,6 +54,15 @@ describe('formatLatencyReport', () => {
     expect(out).toContain('unreachable')
     // A zero would read as "instant", which is the opposite of the truth.
     expect(out).not.toContain('0ms')
+  })
+
+  it('reports the TOTAL of both legs, not just the first hop', () => {
+    // The bug this pins: a relay row that printed only its hop to the broker
+    // made the slower path look 3x faster than the direct one.
+    const out = formatLatencyReport([sample('Relay', [20, 24, 28], 270)], META)
+    const row = out.split('\n').find(l => l.startsWith('Relay')) as string
+    expect(row).toContain('294ms')
+    expect(row).toContain('24+270ms')
   })
 
   it('reports the sample count, so a partial run cannot pass as a full one', () => {

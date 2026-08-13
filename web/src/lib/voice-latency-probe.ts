@@ -18,6 +18,9 @@
  */
 
 export interface LatencySample {
+  api: SttApi
+  connection: SttConnection
+  available: boolean
   /** The second leg, when this target forwards somewhere else (broker relay). */
   upstreamMs?: number
   /** Display name of the target. */
@@ -33,14 +36,24 @@ export interface LatencySample {
   error?: string
 }
 
+/** The two independent axes. A path is one choice from each, not one of four
+ *  options -- which is why a single boolean could never name this cleanly. */
+export type SttApi = 'cloudflare' | 'deepgram'
+export type SttConnection = 'direct' | 'broker'
+
 export interface LatencyTarget {
   label: string
   note: string
   url: string
+  api: SttApi
+  connection: SttConnection
   /** Cross-origin targets we cannot read: timed opaquely, which is enough. */
   opaque?: boolean
-  /** Add the broker's OWN hop to the speech vendor -- only the broker can time it. */
-  addUpstream?: boolean
+  /** Which broker onward hop to ADD -- only the broker can time its own leg. */
+  addUpstream?: SttApi
+  /** False when this combination is not implemented yet: the number is real, the
+   *  path is not. Measuring before building is the entire point of showing it. */
+  available: boolean
 }
 
 /**
@@ -53,25 +66,39 @@ export interface LatencyTarget {
 function defaultTargets(): LatencyTarget[] {
   return [
     {
-      label: 'Cloudflare edge (live)',
-      note: 'Where dictation goes now. Terminates at the nearest Cloudflare colo.',
+      label: 'Cloudflare, direct',
+      note: 'Live, and the default. Browser to the nearest Cloudflare colo.',
       url: 'https://stt.frst.dev/health',
+      api: 'cloudflare',
+      connection: 'direct',
+      available: true,
     },
     {
-      label: 'Broker relay (full path)',
-      note: "Your hop to the broker PLUS the broker's own hop to the vendor.",
+      label: 'Cloudflare, via broker',
+      note: 'Not built yet. This is what it WOULD cost -- worth it only if it beats direct.',
       url: `${location.origin}/api/capabilities`,
-      // The relay does not END at the broker: it forwards to the speech vendor,
-      // and that second leg is most of the journey. Measuring only the first hop
-      // compared half a path against a whole one and made the relay look 3x
-      // faster than it is.
-      addUpstream: true,
+      api: 'cloudflare',
+      connection: 'broker',
+      addUpstream: 'cloudflare',
+      available: false,
     },
     {
-      label: 'Deepgram direct (reference)',
-      note: 'The OLD path. One US datacenter -- this is the number that broke voice.',
+      label: 'Deepgram, via broker',
+      note: 'Live. Your hop to the broker, then the broker across the Pacific.',
+      url: `${location.origin}/api/capabilities`,
+      api: 'deepgram',
+      connection: 'broker',
+      addUpstream: 'deepgram',
+      available: true,
+    },
+    {
+      label: 'Deepgram, direct',
+      note: 'The path that started all this. One US datacenter, no anycast.',
       url: 'https://api.deepgram.com/v1/listen',
+      api: 'deepgram',
+      connection: 'direct',
       opaque: true,
+      available: false,
     },
   ]
 }
@@ -91,14 +118,20 @@ function stats(samples: number[]): Pick<LatencySample, 'min' | 'median' | 'max'>
  * measures the disk, not the network. An opaque (no-cors) response still gives
  * an honest round trip -- we only need the timing, never the body.
  */
-async function brokerUpstreamMs(signal: AbortSignal): Promise<number | undefined> {
+/** The broker times its OWN hops and reports them; -1 means unreachable. Asked
+ *  once per probe run and shared, because both relay rows need it. */
+async function brokerUpstream(signal: AbortSignal): Promise<Partial<Record<SttApi, number>>> {
   try {
     const res = await fetch('/api/voice/transport-probe', { credentials: 'same-origin', cache: 'no-store', signal })
-    if (!res.ok) return undefined
-    const body = (await res.json()) as { upstreamMs?: number; reachable?: boolean }
-    return body.reachable ? body.upstreamMs : undefined
+    if (!res.ok) return {}
+    const body = (await res.json()) as { upstream?: Record<string, number> }
+    const out: Partial<Record<SttApi, number>> = {}
+    for (const [api, ms] of Object.entries(body.upstream ?? {})) {
+      if (ms >= 0) out[api as SttApi] = ms
+    }
+    return out
   } catch {
-    return undefined
+    return {}
   }
 }
 
@@ -136,9 +169,13 @@ export async function probeVoiceLatency(
   const total = targets.length * rounds
   let done = 0
 
+  // Asked ONCE and shared: both relay rows need it, and probing twice would
+  // measure the broker's warm connection rather than its distance.
+  const upstream = targets.some(t => t.addUpstream) ? await brokerUpstream(controller.signal) : {}
+
   const results: LatencySample[] = []
   for (const target of targets) {
-    results.push(await probeTarget(target, rounds, controller.signal, () => opts.onProgress?.(++done, total)))
+    results.push(await probeTarget(target, rounds, controller.signal, upstream, () => opts.onProgress?.(++done, total)))
   }
   return results
 }
@@ -148,6 +185,7 @@ async function probeTarget(
   target: LatencyTarget,
   rounds: number,
   signal: AbortSignal,
+  upstream: Partial<Record<SttApi, number>>,
   tick: () => void,
 ): Promise<LatencySample> {
   const samples: number[] = []
@@ -163,8 +201,18 @@ async function probeTarget(
     }
     tick()
   }
-  const upstreamMs = target.addUpstream ? await brokerUpstreamMs(signal) : undefined
-  return { label: target.label, note: target.note, samples, ...stats(samples), error, upstreamMs }
+  const upstreamMs = target.addUpstream ? upstream[target.addUpstream] : undefined
+  return {
+    label: target.label,
+    note: target.note,
+    api: target.api,
+    connection: target.connection,
+    available: target.available,
+    samples,
+    ...stats(samples),
+    error,
+    upstreamMs,
+  }
 }
 
 /**

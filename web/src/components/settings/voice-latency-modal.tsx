@@ -38,9 +38,18 @@ function total(sample: LatencySample): number {
 
 function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
   return (
-    <div className="py-2 border-b border-border/40 last:border-0">
+    <div className={`py-2 border-b border-border/40 last:border-0 ${sample.available ? '' : 'opacity-60'}`}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-xs font-medium">{sample.label}</span>
+        <span className="text-xs font-medium">
+          {sample.label}
+          {/* A number for a path that does not exist is useful -- measure before
+              you build -- but it must never look selectable. */}
+          {!sample.available && (
+            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-muted-foreground/50">
+              not built
+            </span>
+          )}
+        </span>
         {sample.samples.length > 0 ? (
           <span className="text-xs font-mono tabular-nums">
             <span className="text-foreground">{total(sample)}ms</span>

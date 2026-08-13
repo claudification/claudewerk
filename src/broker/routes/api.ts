@@ -36,6 +36,24 @@ import { fetchLinkPreview, isSafePreviewUrl } from './link-preview'
 import type { RouteHelpers } from './shared'
 import { broadcastToSubscribers } from './shared'
 
+/** The onward hops a relay could take. A 401 proves the round trip as well as a
+ *  200 does, so the status is irrelevant -- only the clock matters. */
+const UPSTREAM_PROBES: Record<string, string> = {
+  deepgram: 'https://api.deepgram.com/v1/listen',
+  cloudflare: 'https://stt.frst.dev/health',
+}
+
+/** Round trip in ms, or -1 when the host could not be reached at all. */
+async function timedReach(url: string): Promise<number> {
+  const t0 = Date.now()
+  try {
+    await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
+    return Date.now() - t0
+  } catch {
+    return -1
+  }
+}
+
 /** Max wait for the sentinel to return artifact bytes before the route 504s. */
 const ARTIFACT_RPC_TIMEOUT_MS = 15_000
 
@@ -235,21 +253,19 @@ export function createApiRouter(
   app.get('/api/voice/transport-probe', async c => {
     if (!httpHasPermission(c.req.raw, 'voice', '*'))
       return c.json({ error: 'Forbidden: voice permission required' }, 403)
-    const t0 = Date.now()
-    let reachable = true
-    try {
-      // HEAD would be cheaper but Deepgram does not answer it; the status is
-      // irrelevant either way -- a 401 proves the round trip just as well as a 200.
-      await fetch('https://api.deepgram.com/v1/listen', {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000),
-      })
-    } catch {
-      reachable = false
-    }
-    const upstreamMs = Date.now() - t0
-    console.log(`[stt] transport probe: broker -> deepgram ${upstreamMs}ms reachable=${reachable}`)
-    return c.json({ upstreamMs, reachable })
+    // BOTH onward hops, because there are two relay variants worth comparing:
+    // the one that exists (relay -> Deepgram, a US datacenter) and the one we
+    // might build (relay -> Cloudflare, the same edge the direct path uses).
+    // Measuring the second BEFORE building it is the whole point.
+    const upstream = Object.fromEntries(
+      await Promise.all(Object.entries(UPSTREAM_PROBES).map(async ([name, url]) => [name, await timedReach(url)])),
+    )
+    console.log(
+      `[stt] transport probe: ${Object.entries(upstream)
+        .map(([k, v]) => `${k}=${v}ms`)
+        .join(' ')}`,
+    )
+    return c.json({ upstream })
   })
 
   // ─── STT token mint (browser -> stt-proxy Worker dictation) ─────────
