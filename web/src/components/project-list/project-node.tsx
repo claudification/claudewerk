@@ -13,12 +13,11 @@ import { PlaceScopeAffordance } from '../scope-cards/place-scope-affordance'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { ConversationItemRail } from './conversation-item-rail'
-import { InlineConfirmButton } from './inline-confirm-button'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
 import { ProjectBadges } from './project-badges'
 import { PinnedProjectContextMenu, ProjectContextMenu } from './project-context-menu'
-import { useEndedIdsForProject, useHydratedConversations } from './row-hooks'
+import { useHydratedConversations } from './row-hooks'
 
 function idsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -32,32 +31,6 @@ function optionalIdsEqual(a: string[] | undefined, b: string[] | undefined): boo
   if (a === b) return true
   if (!a || !b) return (a?.length ?? 0) === 0 && (b?.length ?? 0) === 0
   return idsEqual(a, b)
-}
-
-// ─── Dismiss all ended conversations button ────────────────────────────
-
-function DismissAllEndedButton({ endedIds }: { endedIds: string[] }) {
-  const dismissConversation = useConversationsStore(s => s.dismissConversation)
-  if (endedIds.length === 0) return null
-
-  return (
-    <InlineConfirmButton
-      onConfirm={() => {
-        for (const id of endedIds) dismissConversation(id)
-      }}
-      confirmLabel={<span className="text-muted-foreground">dismiss {endedIds.length}?</span>}
-      trigger={requestConfirm => (
-        <button
-          type="button"
-          onClick={requestConfirm}
-          className="text-[9px] text-muted-foreground/40 hover:text-destructive cursor-pointer px-1 transition-colors appearance-none bg-transparent border-0"
-          title={`Dismiss ${endedIds.length} ended conversation${endedIds.length > 1 ? 's' : ''}`}
-        >
-          {'✕'} ended
-        </button>
-      )}
-    />
-  )
 }
 
 // ─── Spawn-root stub with context menu ──────────────────────────────────
@@ -126,9 +99,6 @@ const ProjectConversationGroup = memo(
     // short-circuits when no referenced conversation's identity changed).
     const conversations = useHydratedConversations(conversationIds)
     const { worktrees, adhoc, normal } = useMemo(() => partitionConversations(conversations), [conversations])
-    // Ended conversations are never among the rendered rows -- ask the store for
-    // the project's ended set so "dismiss all ended" still has something to act on.
-    const endedIds = useEndedIdsForProject(project)
     // Project-level rollups: any conversation in this project needing attention?
     const hasPendingPermission = useConversationsStore(s => {
       const ids = new Set(conversationIds)
@@ -205,7 +175,6 @@ const ProjectConversationGroup = memo(
                   hasPendingAttention={hasPendingAttention}
                   hasNotification={hasNotification}
                 />
-                {endedIds.length > 0 && <DismissAllEndedButton endedIds={endedIds} />}
                 <PlaceScopeAffordance project={project} />
                 <ProjectSettingsButton
                   onClick={e => {

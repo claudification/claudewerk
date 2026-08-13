@@ -75,6 +75,10 @@ function TerminateAllItem({ active, endedIds }: { active: Conversation[]; endedI
   )
 }
 
+/** The ONLY remaining purge path for a project's ended conversations. The project
+ *  header used to carry an inline "✕ ended" button; it was removed because the
+ *  header must not advertise ended conversations at all. Right-click still reaches
+ *  this -- without it thousands of ended conversations pile up unclearable. */
 function DismissEndedItem({ endedIds }: { endedIds: string[] }) {
   const dismissConversation = useConversationsStore(s => s.dismissConversation)
   return (
