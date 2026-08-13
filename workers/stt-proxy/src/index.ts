@@ -56,7 +56,10 @@ async function handleListen(url: URL, env: Env): Promise<Response> {
   const claims = await verifySttToken(token, env.STT_SIGNING_SECRET)
   if (!claims) {
     // Logged with a reason server-side; the client is told only "no".
-    console.log(`[stt] rejected: token invalid or expired (len=${token.length})`)
+    console.log(
+      `[stt] REJECTED /listen: token invalid or expired (len=${token.length}, model=${url.searchParams.get('model') ?? 'default'}). ` +
+        `If this is every request, the broker and this Worker disagree about STT_SIGNING_SECRET.`,
+    )
     return new Response('unauthorized\n', { status: 401 })
   }
 
@@ -65,11 +68,13 @@ async function handleListen(url: URL, env: Env): Promise<Response> {
   const log = (line: string) => console.log(`[stt] user=${claims.user} model=${spec.id} ${line}`)
 
   let upstream: WebSocket
+  const dialStart = Date.now()
   try {
     upstream = await dialUpstream(env, spec, inputs)
+    log(`upstream dialled in ${Date.now() - dialStart}ms`)
   } catch (err) {
     const status = err instanceof UpstreamError ? err.status : 502
-    log(`upstream dial failed: ${err instanceof Error ? err.message : err}`)
+    log(`upstream dial FAILED after ${Date.now() - dialStart}ms: ${err instanceof Error ? err.message : err}`)
     return new Response('speech backend unavailable\n', { status: 502, headers: { 'x-upstream-status': `${status}` } })
   }
 
