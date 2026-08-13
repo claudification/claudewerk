@@ -482,15 +482,6 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     group: 'Navigation',
   })
 
-  useChordCommand(
-    'toggle-ended-conversations',
-    () => {
-      const store = useConversationsStore.getState()
-      store.updateControlPanelPrefs({ showEndedConversations: !store.controlPanelPrefs.showEndedConversations })
-    },
-    { label: 'Toggle show ended conversations', key: 'e', group: 'View' },
-  )
-
   useCommand(
     'toggle-scrollback-reservation',
     () => {

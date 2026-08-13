@@ -1,12 +1,17 @@
 import { useMemo } from 'react'
-import { type ConversationStructure, useConversationsStore } from '@/hooks/use-conversations'
+import type { ConversationStructure } from '@/hooks/use-conversations'
 import type { ProjectOrderNode, ProjectSettings } from '@/lib/types'
 import { parseWorktreeUri } from '@/lib/utils'
 
 /**
  * Every derivation that turns the flat conversation structure into the shape the
  * sidebar renders: which project hosts which conversation, what the active
- * workspace filters down to, what is unorganized, what is inactive.
+ * workspace filters down to, what is unorganized.
+ *
+ * ENDED CONVERSATIONS NEVER SURVIVE THESE DERIVATIONS. There is no pref, no
+ * toggle, no "inactive" roll-up that brings them back -- with thousands of
+ * accumulated sessions the list would overflow. The sidebar shows projects and
+ * live conversations, full stop.
  *
  * Extracted out of `ProjectList` because eleven chained `useMemo`s in a component
  * that also owns collapse state and 400 lines of JSX is unreadable and untestable.
@@ -20,21 +25,19 @@ export type ProjectGroups = {
   structureById: Map<string, ConversationStructure>
   /** The tree to render: the whole thing, or just the active workspace's slice. */
   filteredTree: ProjectOrderNode[]
-  /** Host project URI -> conversation ids, after the showEnded filter. */
+  /** Host project URI -> conversation ids, after the ended conversations are dropped. */
   visibleIdsByProject: Map<string, string[]>
   /** Project URI -> root ids of cross-project lineage members, sorted. */
   stubIdsByProject: Map<string, string[]>
   /** Pinned projects with nothing in them -- shown anyway. */
   pinnedNotInTree: string[]
   unorganized: Array<{ project: string; conversationIds: string[] }>
-  inactive: ConversationStructure[][]
 }
 
 export function useProjectGroups(
   structure: ConversationStructure[],
   projectOrder: ProjectOrder,
   projectSettings: Record<string, ProjectSettings>,
-  showEnded: boolean,
   activeWorkspaceId: string | null,
 ): ProjectGroups {
   const structureById = useMemo(() => {
@@ -81,15 +84,16 @@ export function useProjectGroups(
     [structure, effectiveProjectByConvId],
   )
 
+  // Ended conversations are NEVER listed. Not a default, not a toggle -- there is
+  // no code path that puts an ended row in the sidebar.
   const visibleIdsByProject = useMemo(() => {
-    if (showEnded) return idsByProject
     const map = new Map<string, string[]>()
     for (const [project, ids] of idsByProject) {
       const filtered = ids.filter(id => structureById.get(id)?.status !== 'ended')
       if (filtered.length > 0) map.set(project, filtered)
     }
     return map
-  }, [idsByProject, showEnded, structureById])
+  }, [idsByProject, structureById])
 
   // Stable-array form so ProjectNode's memo can shallow-compare instead of
   // rebuilding from a Set every render.
@@ -112,12 +116,7 @@ export function useProjectGroups(
     [structure, treeProjects, visibleIdsByProject, effectiveProjectByConvId, structureById],
   )
 
-  // Ended, not in the tree, no active sibling. lastActivity is read lazily from
-  // the live store at sort time -- ended conversations rarely tick, and keeping it
-  // out of the structural selector saves a re-render on every WS message.
-  const inactive = useMemo(() => collectInactive(structure, treeProjects), [structure, treeProjects])
-
-  return { structureById, filteredTree, visibleIdsByProject, stubIdsByProject, pinnedNotInTree, unorganized, inactive }
+  return { structureById, filteredTree, visibleIdsByProject, stubIdsByProject, pinnedNotInTree, unorganized }
 }
 
 /**
@@ -186,22 +185,4 @@ function collectUnorganized(
     return newest(b.conversationIds) - newest(a.conversationIds)
   })
   return result
-}
-
-function collectInactive(structure: ConversationStructure[], treeProjects: Set<string>) {
-  const activeProjects = new Set<string>()
-  for (const s of structure) if (s.status !== 'ended') activeProjects.add(s.project)
-
-  const byProject = new Map<string, ConversationStructure[]>()
-  for (const s of structure) {
-    if (s.status !== 'ended' || treeProjects.has(s.project) || activeProjects.has(s.project)) continue
-    const group = byProject.get(s.project) || []
-    group.push(s)
-    byProject.set(s.project, group)
-  }
-
-  const { conversationsById } = useConversationsStore.getState()
-  const newest = (group: ConversationStructure[]) =>
-    Math.max(...group.map(s => conversationsById[s.id]?.lastActivity ?? 0))
-  return Array.from(byProject.values()).sort((a, b) => newest(b) - newest(a))
 }

@@ -26,11 +26,11 @@ interface FilterState {
   status: 'any' | 'live' | 'idle'
   sentinel: string
   text: string
-  showEnded: boolean
 }
 
 function matchesStatus(c: Conversation, filter: FilterState): boolean {
-  if (!filter.showEnded && c.status === 'ended') return false
+  // Ended conversations are never batch-selectable. No toggle reinstates them.
+  if (c.status === 'ended') return false
   if (filter.status === 'any') return true
   if (filter.status === 'live') return c.status === 'active'
   return c.status === 'idle'
@@ -140,7 +140,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
   const [filterStatus, setFilterStatus] = useState<FilterState['status']>('any')
   const [filterSentinel, setFilterSentinel] = useState('')
   const [filterText, setFilterText] = useState('')
-  const [showEnded, setShowEnded] = useState(false)
   const [groupByProject, setGroupByProject] = useState(true)
   const [selectedOnly, setSelectedOnly] = useState(false)
   const [selectedActionId, setSelectedActionId] = useState<string>(ALL_BATCH_ACTIONS[0]?.id ?? 'broadcast')
@@ -171,7 +170,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
       status: filterStatus,
       sentinel: filterSentinel,
       text: filterText,
-      showEnded,
     })
     const after = selectedOnly ? base.filter(c => selectedForBatch.has(c.id)) : base
     return after.toSorted((a, b) => defaultSort(a, b, projectSettings))
@@ -181,7 +179,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
     filterStatus,
     filterSentinel,
     filterText,
-    showEnded,
     selectedOnly,
     selectedForBatch,
     projectSettings,
@@ -445,15 +442,6 @@ export function BatchModeModal({ open, onClose }: BatchModeModalProps) {
                     className="cursor-pointer accent-accent"
                   />
                   group by project
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer hover:text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={showEnded}
-                    onChange={e => setShowEnded(e.target.checked)}
-                    className="cursor-pointer accent-accent"
-                  />
-                  show ended
                 </label>
                 {selectedIds.length > 0 && (
                   <label className="flex items-center gap-1 cursor-pointer hover:text-foreground">

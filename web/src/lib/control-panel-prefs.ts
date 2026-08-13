@@ -38,8 +38,6 @@ const DEFAULT_TOOL_DISPLAY: Record<ToolDisplayKey, ToolDisplayPrefs> = {
 }
 
 export interface ControlPanelPrefs {
-  showEndedConversations: boolean // show [ENDED] conversations within CWD groups (organized + unorganized)
-  showInactiveByDefault: boolean
   compactMode: boolean
   showVoiceInput: boolean
   showVoiceFab: boolean
@@ -127,8 +125,6 @@ export type SettingsTab =
   | 'experiments'
 
 const defaultPrefs: ControlPanelPrefs = {
-  showEndedConversations: true,
-  showInactiveByDefault: false,
   compactMode: false,
   showVoiceInput: true,
   showVoiceFab: false,
@@ -182,6 +178,10 @@ export function loadPrefs(): ControlPanelPrefs {
       // via `transcriptRenderer`. Drop the dead key rather than migrate -- a
       // stale `plainTranscript:false` must NOT strand a device on TanStack.
       delete stored.plainTranscript
+      // Ended conversations are never shown -- these toggles are gone by decree,
+      // not defaulted off. Drop the stored keys so nothing can resurrect them.
+      delete stored.showEndedConversations
+      delete stored.showInactiveByDefault
       return { ...defaultPrefs, ...stored }
     }
   } catch {}

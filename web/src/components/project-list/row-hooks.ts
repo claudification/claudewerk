@@ -44,6 +44,28 @@ export function useConversationRowData(conversation: Conversation) {
   return { isSelected, selectedSubagentId, ps, displayColor: ps?.color, isGhost, ctx, costInfo, cacheInfo }
 }
 
+/**
+ * Ended conversation ids belonging to one project, read straight from the store.
+ *
+ * The sidebar never LISTS an ended conversation, so the dismiss affordances can
+ * no longer derive their target set from the rendered rows -- that set is empty
+ * by construction now. They ask the store instead, which is what keeps "purge
+ * the ended ones" reachable at all: without it thousands of ended conversations
+ * would pile up in broker memory with no way to clear them.
+ */
+export function useEndedIdsForProject(project: string): string[] {
+  const key = projectIdentityKey(project)
+  return useConversationsStore(
+    useShallow(s => {
+      const out: string[] = []
+      for (const c of Object.values(s.conversationsById)) {
+        if (c.status === 'ended' && projectIdentityKey(c.project) === key) out.push(c.id)
+      }
+      return out
+    }),
+  )
+}
+
 /** Hydrate Conversations from the per-id index with a shallow-equal short-circuit
  *  (so the list re-renders only when a referenced conversation's identity changes). */
 export function useHydratedConversations(ids: string[]): Conversation[] {

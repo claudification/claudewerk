@@ -18,7 +18,7 @@ import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
 import { ProjectBadges } from './project-badges'
 import { PinnedProjectContextMenu, ProjectContextMenu } from './project-context-menu'
-import { useHydratedConversations } from './row-hooks'
+import { useEndedIdsForProject, useHydratedConversations } from './row-hooks'
 
 function idsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
@@ -125,7 +125,10 @@ const ProjectConversationGroup = memo(
     // Hydrate conversations from the per-id index (shared hook -- shallow-equal
     // short-circuits when no referenced conversation's identity changed).
     const conversations = useHydratedConversations(conversationIds)
-    const { worktrees, adhoc, normal, ended } = useMemo(() => partitionConversations(conversations), [conversations])
+    const { worktrees, adhoc, normal } = useMemo(() => partitionConversations(conversations), [conversations])
+    // Ended conversations are never among the rendered rows -- ask the store for
+    // the project's ended set so "dismiss all ended" still has something to act on.
+    const endedIds = useEndedIdsForProject(project)
     // Project-level rollups: any conversation in this project needing attention?
     const hasPendingPermission = useConversationsStore(s => {
       const ids = new Set(conversationIds)
@@ -202,7 +205,7 @@ const ProjectConversationGroup = memo(
                   hasPendingAttention={hasPendingAttention}
                   hasNotification={hasNotification}
                 />
-                {ended.length > 0 && <DismissAllEndedButton endedIds={ended.map(s => s.id)} />}
+                {endedIds.length > 0 && <DismissAllEndedButton endedIds={endedIds} />}
                 <PlaceScopeAffordance project={project} />
                 <ProjectSettingsButton
                   onClick={e => {

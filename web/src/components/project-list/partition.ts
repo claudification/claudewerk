@@ -1,20 +1,19 @@
 import type { Conversation } from '@/lib/types'
 import { parseWorktreeUri } from '@/lib/utils'
 
-/** Walks conversations once and returns four overlapping views:
- *  - worktrees / adhoc / normal: mutually exclusive, worktrees detected by URI,
- *    adhoc routed by capability, rest is normal
- *  - ended: status-based view, overlaps with all three (so DismissAllEndedButton
- *    sees the same conversations rendered in any list)
+/** Walks conversations once and splits them into three mutually exclusive
+ *  buckets: worktrees detected by URI, adhoc routed by capability, rest is
+ *  normal. Each bucket is sorted by startedAt descending (newest first).
  *
- * Each bucket is sorted by startedAt descending (newest first) for stable display. */
+ *  There is no `ended` bucket: the sidebar never renders an ended conversation,
+ *  so a status view derived from the rendered rows would always be empty. The
+ *  dismiss affordances read the project's ended set from the store instead
+ *  (`useEndedIdsForProject`). */
 export function partitionConversations(conversations: Conversation[]) {
   const worktrees: Conversation[] = []
   const adhoc: Conversation[] = []
   const normal: Conversation[] = []
-  const ended: Conversation[] = []
   for (const s of conversations) {
-    if (s.status === 'ended') ended.push(s)
     if (parseWorktreeUri(s.project)) worktrees.push(s)
     // rule misclassifies string .includes / .indexOf as Array lookups (already documented in phase 6)
     // react-doctor-disable-next-line react-doctor/js-set-map-lookups
@@ -26,6 +25,5 @@ export function partitionConversations(conversations: Conversation[]) {
     worktrees: worktrees.sort(byStartedAt),
     adhoc: adhoc.sort(byStartedAt),
     normal: normal.sort(byStartedAt),
-    ended,
   }
 }

@@ -18,10 +18,9 @@ function run(
   structure: ConversationStructure[],
   order: ProjectOrder = { tree: [] },
   settings: Record<string, ProjectSettings> = {},
-  showEnded = false,
   workspace: string | null = null,
 ) {
-  return renderHook(() => useProjectGroups(structure, order, settings, showEnded, workspace)).result.current
+  return renderHook(() => useProjectGroups(structure, order, settings, workspace)).result.current
 }
 
 beforeEach(() => {
@@ -36,13 +35,16 @@ describe('useProjectGroups', () => {
     expect(g.visibleIdsByProject.get('claude:///home/me/alpha')).toEqual(['a', 'b'])
   })
 
-  it('hides ended conversations unless showEnded', () => {
+  // No toggle, no pref, no escape hatch: an ended conversation never reaches the
+  // sidebar. If this test ever needs a flag added back, the flag is the bug.
+  it('always hides ended conversations', () => {
     const structure = [conv({ id: 'a' }), conv({ id: 'dead', status: 'ended' })]
     expect(run(structure).visibleIdsByProject.get('claude:///home/me/alpha')).toEqual(['a'])
-    expect(run(structure, { tree: [] }, {}, true).visibleIdsByProject.get('claude:///home/me/alpha')).toEqual([
-      'a',
-      'dead',
-    ])
+  })
+
+  it('drops a project entirely when every conversation in it has ended', () => {
+    const structure = [conv({ id: 'dead', status: 'ended' }), conv({ id: 'gone', status: 'ended' })]
+    expect(run(structure).visibleIdsByProject.get('claude:///home/me/alpha')).toBeUndefined()
   })
 
   // Spawn lineage transcends project boundaries: a child filed under its root's
@@ -83,15 +85,16 @@ describe('useProjectGroups', () => {
     expect(run([conv({ id: 'a' })], order).unorganized).toEqual([])
   })
 
-  it('groups a project whose conversations have all ended into inactive', () => {
+  it('exposes no inactive roll-up at all -- ended-only projects vanish', () => {
     const g = run([conv({ id: 'dead', status: 'ended', project: 'claude:///home/me/gone' })])
-    expect(g.inactive).toHaveLength(1)
-    expect(g.inactive[0][0].id).toBe('dead')
+    expect('inactive' in g).toBe(false)
+    expect(g.visibleIdsByProject.size).toBe(0)
+    expect(g.unorganized).toEqual([])
   })
 
-  it('keeps a project out of inactive while any conversation is live', () => {
+  it('keeps the live siblings of an ended conversation', () => {
     const g = run([conv({ id: 'dead', status: 'ended' }), conv({ id: 'live' })])
-    expect(g.inactive).toEqual([])
+    expect(g.visibleIdsByProject.get('claude:///home/me/alpha')).toEqual(['live'])
   })
 
   it('surfaces a pinned project with no conversations', () => {
@@ -104,8 +107,12 @@ describe('useProjectGroups', () => {
       tree: [{ type: 'project', id: 'claude:///home/me/alpha' }] as never,
       workspaceTrees: { work: [{ type: 'project', id: 'claude:///home/me/beta' }] as never },
     }
-    expect(run([], order, {}, false, 'work').filteredTree).toHaveLength(1)
-    expect(run([], order, {}, false, 'work').filteredTree[0].id).toBe('claude:///home/me/beta')
-    expect(run([], order, {}, false, 'missing').filteredTree).toEqual([])
+    expect(run([], order, {}, 'work').filteredTree).toHaveLength(1)
+    expect(run([], order, {}, 'work').filteredTree[0].id).toBe('claude:///home/me/beta')
+    expect(run([], order, {}, 'missing').filteredTree).toEqual([])
+  })
+
+  it('hides an ended-only project from unorganized', () => {
+    expect(run([conv({ id: 'dead', status: 'ended', project: 'claude:///home/me/gone' })]).unorganized).toEqual([])
   })
 })

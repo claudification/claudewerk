@@ -1,14 +1,6 @@
-import { projectIdentityKey } from '@shared/project-uri'
-import { memo, useState } from 'react'
-import { reservedRowHeight } from '@/components/sidebar/row-height-cache'
+import { memo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { projectPath } from '@/lib/types'
-import { formatAge, haptic, projectDisplayName } from '@/lib/utils'
-import { ProjectIcon } from '../project-icons'
-import { ProjectSettingsEditor } from '../project-settings-editor-lazy'
-import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact } from './conversation-item-compact'
-import { useHydratedConversations } from './row-hooks'
 
 export { ConversationItemCompact } from './conversation-item-compact'
 export { SpawnRootStub } from './conversation-item-helpers'
@@ -26,65 +18,3 @@ export const ConversationCompactPeek = memo(function ConversationCompactPeek({
   if (!conversation) return null
   return <ConversationItemCompact conversation={conversation} />
 })
-
-// ─── Inactive project item ────────────────────────────────────────
-
-export const InactiveProjectItem = memo(
-  function InactiveProjectItem({ conversationIds }: { conversationIds: string[] }) {
-    const [showSettings, setShowSettings] = useState(false)
-    const selectConversation = useConversationsStore(s => s.selectConversation)
-    const conversations = useHydratedConversations(conversationIds)
-    const latest =
-      conversations.length > 0 ? conversations.reduce((a, b) => (a.lastActivity > b.lastActivity ? a : b)) : null
-    const ps = useConversationsStore(s => (latest ? s.projectSettings[projectIdentityKey(latest.project)] : undefined))
-    if (!latest) return null
-    const displayName = projectDisplayName(projectPath(latest.project), ps?.label)
-    const displayColor = ps?.color
-
-    return (
-      <ConversationContextMenu conversation={latest} onOpenSettings={() => setShowSettings(true)}>
-        <div>
-          <button
-            type="button"
-            data-conversation-id={latest.id}
-            onClick={() => {
-              haptic('tap')
-              selectConversation(latest.id, 'click')
-            }}
-            className="w-full text-left border border-border hover:border-primary p-2 pl-3 transition-colors cursor-pointer appearance-none bg-transparent text-inherit [content-visibility:auto]"
-            style={{
-              ...(displayColor ? { borderLeftColor: displayColor, borderLeftWidth: '3px' } : null),
-              containIntrinsicSize: reservedRowHeight(latest.id, 2.5),
-            }}
-            title={`${conversations.length} conversation${conversations.length > 1 ? 's' : ''}\n${projectPath(latest.project)}`}
-          >
-            <div className="flex items-center gap-1.5">
-              {ps?.icon && (
-                <span className="text-muted-foreground" style={displayColor ? { color: displayColor } : undefined}>
-                  <ProjectIcon iconId={ps.icon} />
-                </span>
-              )}
-              <span
-                className="font-mono text-xs text-muted-foreground truncate flex-1"
-                style={displayColor ? { color: `${displayColor}99` } : undefined}
-              >
-                {displayName}
-              </span>
-              <span className="text-[10px] text-muted-foreground/60 font-mono shrink-0">
-                {formatAge(latest.lastActivity)}
-              </span>
-            </div>
-          </button>
-          {showSettings && <ProjectSettingsEditor project={latest.project} onClose={() => setShowSettings(false)} />}
-        </div>
-      </ConversationContextMenu>
-    )
-  },
-  (prev, next) => {
-    if (prev.conversationIds.length !== next.conversationIds.length) return false
-    for (let i = 0; i < prev.conversationIds.length; i++) {
-      if (prev.conversationIds[i] !== next.conversationIds[i]) return false
-    }
-    return true
-  },
-)

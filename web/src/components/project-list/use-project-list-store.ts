@@ -23,10 +23,7 @@ export function useProjectListStore() {
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const rawProjectOrder = useConversationsStore(s => s.projectOrder)
   const projectSettings = useConversationsStore(s => s.projectSettings)
-  const showEnded = useConversationsStore(s => s.controlPanelPrefs.showEndedConversations)
-  const showInactive = useConversationsStore(s => s.controlPanelPrefs.showInactiveByDefault)
   const activeWorkspaceId = useConversationsStore(s => s.controlPanelPrefs.activeWorkspaceId)
-  const updatePrefs = useConversationsStore(s => s.updateControlPanelPrefs)
 
   // Guards on `.tree` specifically, not just on the object: a partially-hydrated
   // projectOrder with no tree would otherwise crash every consumer downstream.
@@ -43,10 +40,7 @@ export function useProjectListStore() {
     selectedConversationId,
     projectOrder,
     projectSettings,
-    showEnded,
-    showInactive,
     activeWorkspaceId,
-    updatePrefs,
   }
 }
 
