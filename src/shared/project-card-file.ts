@@ -12,13 +12,25 @@
  */
 
 import { statSync } from 'node:fs'
+import { normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
 import { TASK_STATUSES, type TaskStatus } from './task-statuses'
 
 /** Keys the store owns and renders in a stable order. Everything else is
  *  preserved verbatim, after these. */
-const ORDERED_KEYS = ['title', 'status', 'priority', 'tags', 'refs', 'quest', 'epic', 'depends_on', 'created'] as const
+const ORDERED_KEYS = [
+  'title',
+  'status',
+  'priority',
+  'tags',
+  'refs',
+  'quest',
+  'epic',
+  'depends_on',
+  'relates_to',
+  'created',
+] as const
 
 const PRIORITIES = ['low', 'medium', 'high'] as const
 type Priority = (typeof PRIORITIES)[number]
@@ -57,18 +69,23 @@ export function readRawCard(abs: string, content: string | null): RawCard | null
  */
 export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskStatus): ProjectTask {
   const body = raw.body
+  // Linkage goes through the registry, never straight off `meta`: that is what
+  // makes `blocked_by:` actually work rather than merely survive, and what stops
+  // a scalar `depends_on: one-card` from silently reading as nothing at all.
+  // Keys keep their snake_case names on disk (that is what the cards already
+  // carry); the wire shape is camelCase like every other field.
+  const linkage = readLinkage(raw.meta)
   return {
     slug: id,
     status: asStatus(raw.meta.status) ?? fallbackStatus ?? 'inbox',
     title: String(raw.meta.title || id),
     priority: asPriority(raw.meta.priority),
     tags: Array.isArray(raw.meta.tags) ? raw.meta.tags.map(String) : [],
-    refs: Array.isArray(raw.meta.refs) ? raw.meta.refs.map(String) : [],
-    quest: raw.meta.quest ? String(raw.meta.quest) : undefined,
-    epic: raw.meta.epic ? String(raw.meta.epic) : undefined,
-    // `depends_on` keeps its snake_case name on disk (that is what the cards
-    // already carry); the wire shape is camelCase like every other field.
-    dependsOn: Array.isArray(raw.meta.depends_on) ? raw.meta.depends_on.map(String) : undefined,
+    refs: linkage.refs ?? [],
+    quest: readOne(linkage, 'quest'),
+    epic: readOne(linkage, 'epic'),
+    dependsOn: linkage.depends_on,
+    relatesTo: linkage.relates_to,
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,
@@ -79,13 +96,20 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
 /**
  * Serialize a card, store-owned keys first (stable order) then every other key
  * the file already carried, untouched.
+ *
+ * Linkage aliases collapse onto their stored key on the way out -- ONE spelling
+ * of each fact reaches disk, so no reader ever has to check two. This is the
+ * single exception to preserve-unknown-keys, and only because the two spellings
+ * are the same fact: nothing is lost, it is just spelled once.
  */
 export function serializeCard(meta: Record<string, unknown>, body: string): string {
+  const normalized = normalizeLinkageMeta(meta)
   const ordered: Record<string, unknown> = {}
   for (const key of ORDERED_KEYS) {
-    if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') ordered[key] = meta[key]
+    const val = normalized[key]
+    if (val !== undefined && val !== null && val !== '') ordered[key] = val
   }
-  for (const [key, val] of Object.entries(meta)) {
+  for (const [key, val] of Object.entries(normalized)) {
     if (!(ORDERED_KEYS as readonly string[]).includes(key)) ordered[key] = val
   }
   return serializeFrontmatter(ordered, body)

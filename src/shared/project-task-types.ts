@@ -26,8 +26,15 @@ export interface ProjectTaskMeta {
    *  `epic-cards.ts` for the rollup this feeds. */
   epic?: string
   /** Sibling ids that must reach `done` before this card is ready. SEQUENCING
-   *  only -- never parenthood, which is what the old `blocks:` key conflated. */
+   *  only -- never parenthood, which is what the old `blocks:` key conflated.
+   *  Stored as `depends_on:`; `blocked_by:` is an accepted spelling that folds
+   *  into this one on read and on write (see card-linkage.ts). */
   dependsOn?: string[]
+  /** Cards worth reading alongside this one. Symmetric and untyped: it asserts
+   *  no order and no parenthood, which is exactly why it is a separate verb
+   *  from `dependsOn` rather than a weaker flavour of it. Stored as
+   *  `relates_to:`, also spelled `see_also:`. */
+  relatesTo?: string[]
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number

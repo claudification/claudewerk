@@ -196,6 +196,48 @@ describe('ordering', () => {
   })
 })
 
+describe('linkage verbs reach the report', () => {
+  test('a forward reference on ANY verb is a warning, never an error', () => {
+    writeCard('e', 'title: E\nstatus: open\ntags: [epic]')
+    writeCard('a', 'title: A\nstatus: open\nepic: not-written\ndepends_on: [also-not]\nrelates_to: [nor-this]')
+    const { findings } = runProjectDoctor(root)
+    expect(checks(findings).toSorted()).toEqual(['epic-depends-missing', 'epic-orphan', 'relates-missing'])
+    expect(findings.every(f => f.severity === 'warning')).toBe(true)
+  })
+
+  test('blocked_by resolves as depends_on -- the alias is not merely tolerated', () => {
+    writeCard('a', 'title: A\nstatus: open\nblocked_by: [ghost]')
+    expect(forCheck(runProjectDoctor(root).findings, 'epic-depends-missing')).toHaveLength(1)
+  })
+
+  test('blocked_by pointing at a real card is completely clean', () => {
+    writeCard('a', 'title: A\nstatus: open\nblocked_by: [b]')
+    writeCard('b', 'title: B\nstatus: open')
+    expect(checks(runProjectDoctor(root).findings).filter(c => c !== 'linkage-alias')).toEqual([])
+  })
+
+  test('a depends_on ring is an ERROR -- that one the board cannot resolve', () => {
+    writeCard('a', 'title: A\nstatus: open\ndepends_on: [b]')
+    writeCard('b', 'title: B\nstatus: open\ndepends_on: [a]')
+    const found = forCheck(runProjectDoctor(root).findings, 'depends-cycle')
+    expect(found).toHaveLength(2)
+    expect(found.every(f => f.severity === 'error')).toBe(true)
+  })
+
+  test('a mistyped verb surfaces instead of vanishing into the frontmatter bag', () => {
+    writeCard('a', 'title: A\nstatus: open\ndepends-on: [b]')
+    writeCard('b', 'title: B\nstatus: open')
+    const found = forCheck(runProjectDoctor(root).findings, 'linkage-verb-typo')
+    expect(found).toHaveLength(1)
+    expect(found[0].problem).toContain('depends_on')
+  })
+
+  test('the gate machinery keeps its open frontmatter bag', () => {
+    writeCard('a', 'title: A\nstatus: open\nevidence_commits: [abc123]\ngate: green\ntest_cmd: bun test')
+    expect(runProjectDoctor(root).findings).toEqual([])
+  })
+})
+
 describe('illustration is not link rot', () => {
   test('a card path inside backticks or a fence is an EXAMPLE, not a link', () => {
     writeCard(

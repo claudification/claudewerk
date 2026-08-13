@@ -19,6 +19,7 @@
 import { CARDS_DIR, canonicalizeCardPath } from './card-path'
 import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
+import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
 import type { DoctorFinding } from './project-doctor-types'
 
@@ -81,6 +82,10 @@ export function checkWrittenCard(target: CardWriteTarget, io: CardWriteChecks): 
   if (content !== null) {
     const { meta, body } = parseFrontmatter(content)
     const refs = Array.isArray(meta.refs) ? meta.refs.map(String) : []
+    // A mistyped linkage verb is the one thing on a card that is completely
+    // invisible afterwards -- it parses, it persists, and nothing reads it. This
+    // is the only moment somebody is still looking at the key they just typed.
+    findings.push(...checkLinkageKeys({ id: target.id, meta }))
     findings.push(...checkLinks({ id: target.id, body, refs }, new Set(io.listIds(target.root))))
   }
 

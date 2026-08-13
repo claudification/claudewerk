@@ -128,6 +128,26 @@ describe('cross-epic dependencies', () => {
   })
 })
 
+describe('composing the shared resolver', () => {
+  it('resolves every verb on the card, not just parenthood', () => {
+    const findings = checkEpics([{ ...card('a'), linkage: { relates_to: ['ghost'], depends_on: ['ghost2'] } }])
+    expect(findings.map(f => f.check).toSorted()).toEqual(['epic-depends-missing', 'relates-missing'])
+  })
+
+  it('derives linkage from epic/dependsOn when the caller has no bag', () => {
+    expect(checkEpics([card('a', { epic: 'ghost' })]).map(f => f.check)).toEqual(['epic-orphan'])
+  })
+
+  it('a ring outranks "your parent is not an epic" -- one root cause, one finding', () => {
+    const findings = checkEpics([card('a', { epic: 'b' }), card('b', { epic: 'a' })])
+    expect(findings.map(f => f.check)).toEqual(['epic-cycle', 'epic-cycle'])
+  })
+
+  it('still reports a non-epic parent once the ring is gone', () => {
+    expect(checksFor([card('plain'), card('a', { epic: 'plain' })])).toEqual(['epic-not-an-epic'])
+  })
+})
+
 describe('every finding carries a remedy', () => {
   it('holds for all checks', () => {
     const findings = checkEpics([

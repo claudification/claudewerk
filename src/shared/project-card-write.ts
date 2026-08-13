@@ -14,26 +14,9 @@ import { asStatus, readRawCard, serializeCard } from './project-card-file'
 import { getProjectTask, locateCard, readFileOrNull } from './project-card-read'
 import { findLegacyCard, relocateLegacyCard } from './project-legacy'
 import { cardPath } from './project-paths'
+import { foldAliases, type ProjectTaskInput } from './project-task-input'
 import type { ProjectTask, ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
-
-export interface ProjectTaskInput {
-  title?: string
-  body: string
-  priority?: 'low' | 'medium' | 'high'
-  tags?: string[]
-  refs?: string[]
-  /** Lane. A frontmatter key, not a folder. Defaults to `inbox` on create. */
-  status?: TaskStatus
-  /** Quest membership (plan-quest-engine §4a) -- survives every lane change. */
-  quest?: string
-  /** Epic membership: the parent epic's card id. Same shape as `quest` --
-   *  declared here on the child, never as a list on the parent. */
-  epic?: string
-  /** Sibling ids this card waits on. Serialized as `depends_on` (snake_case is
-   *  what the existing cards carry). Sequencing only, never parenthood. */
-  dependsOn?: string[]
-}
 
 /**
  * Resolve a card for WRITING, relocating it out of a legacy lane on the way.
@@ -69,7 +52,8 @@ function dedupId(root: string, base: string, nowMs: number): string {
   return `${base}-${nowMs}`
 }
 
-export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: number): ProjectTaskMeta {
+export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: number): ProjectTaskMeta {
+  const input = foldAliases(raw) as ProjectTaskInput
   const id = dedupId(root, input.title ? slugify(input.title, nowMs) : `task-${nowMs}`, nowMs)
   const status = input.status ?? 'inbox'
   const created = new Date(nowMs).toISOString()
@@ -82,6 +66,7 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     quest: input.quest,
     epic: input.epic,
     depends_on: input.dependsOn?.length ? input.dependsOn : undefined,
+    relates_to: input.relatesTo?.length ? input.relatesTo : undefined,
     created,
   }
   writeFileSync(cardPath(root, id), serializeCard(meta, input.body), 'utf8')
@@ -95,6 +80,7 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     quest: input.quest,
     epic: input.epic,
     dependsOn: input.dependsOn,
+    relatesTo: input.relatesTo,
     created,
     mtime: nowMs,
     bodyPreview: input.body.split('\n').filter(Boolean).join(' ').slice(0, 600),
@@ -107,12 +93,13 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
  * `gate:`, `test_cmd:`, `base:`). The old store rebuilt cards from a fixed key
  * list and silently destroyed all of that on every update.
  */
-export function updateProjectTask(root: string, id: string, patch: Partial<ProjectTaskInput>): ProjectTask | null {
+export function updateProjectTask(root: string, id: string, rawPatch: Partial<ProjectTaskInput>): ProjectTask | null {
   const target = locateForWrite(root, id)
   if (!target) return null
   const raw = readRawCard(target.abs, readFileOrNull(target.abs))
   if (!raw) return null
 
+  const patch = foldAliases(rawPatch)
   const meta = { ...raw.meta }
   if (patch.title !== undefined) meta.title = patch.title
   if (patch.priority !== undefined) meta.priority = patch.priority
@@ -121,6 +108,7 @@ export function updateProjectTask(root: string, id: string, patch: Partial<Proje
   if (patch.quest !== undefined) meta.quest = patch.quest
   if (patch.epic !== undefined) meta.epic = patch.epic
   if (patch.dependsOn !== undefined) meta.depends_on = patch.dependsOn
+  if (patch.relatesTo !== undefined) meta.relates_to = patch.relatesTo
   if (patch.status !== undefined) meta.status = patch.status
   // A legacy card's lane directory was its only status record -- pin it before
   // the file leaves that directory behind.

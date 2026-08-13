@@ -4014,12 +4014,30 @@ export interface FetchArtifactResult {
   error?: string
 }
 
+/**
+ * Create/patch payload for a board card. Mirrors `ProjectTaskInput`
+ * (project-task-input.ts) -- the store has accepted lane, quest, epic and
+ * linkage for a while, but this type never said so, so a caller writing
+ * `input: { epic: 'x' }` got a type error and reasonably concluded the field
+ * did not exist. Nothing was ever dropped at runtime; the contract was just
+ * understated. Every field is optional and additive: no protocol bump.
+ */
 export interface ProjectTaskInputWire {
   title?: string
   body: string
   priority?: 'low' | 'medium' | 'high'
   tags?: string[]
   refs?: string[]
+  /** Lane. A frontmatter key, not a folder. Defaults to `inbox` on create. */
+  status?: ProjectTaskStatus
+  quest?: string
+  epic?: string
+  /** Stored as `depends_on`. */
+  dependsOn?: string[]
+  /** Accepted spelling of `dependsOn`; folded into it before anything is written. */
+  blockedBy?: string[]
+  /** Stored as `relates_to`. */
+  relatesTo?: string[]
 }
 
 /** Broker -> Sentinel: a single project-board operation envelope. One message

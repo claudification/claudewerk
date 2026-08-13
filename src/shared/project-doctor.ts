@@ -18,10 +18,12 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { readLinkage, readOne } from './card-linkage-read'
 import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
 import { checkEpics, type EpicCardView } from './project-doctor-epics'
 import { checkLayout } from './project-doctor-layout'
+import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
 import { type DoctorFinding, type DoctorReport, sortFindings } from './project-doctor-types'
 import { listLegacyCards } from './project-legacy'
@@ -67,23 +69,34 @@ function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>): Docto
   if (card.raw === null) return findings
   const { meta, body } = parseFrontmatter(card.raw)
   const refs = Array.isArray(meta.refs) ? meta.refs.map(String) : []
-  return [...findings, ...checkLinks({ id: card.id, body, refs }, existingIds)]
+  return [
+    ...findings,
+    ...checkLinkageKeys({ id: card.id, meta }),
+    ...checkLinks({ id: card.id, body, refs }, existingIds),
+  ]
 }
 
-/** Project the loaded cards down to what the epic checks need. Unreadable cards
- *  are dropped -- `card-unreadable` already reports those, and guessing at their
- *  linkage would stack a second finding on the same root cause. */
+/**
+ * Project the loaded cards down to what the linkage pass needs. The FULL
+ * linkage bag rides along (aliases already folded by `readLinkage`), so every
+ * verb in the registry gets resolved -- not only the two epics happen to use.
+ *
+ * Unreadable cards are dropped: `card-unreadable` already reports those, and
+ * guessing at their linkage would stack a second finding on one root cause.
+ */
 function epicViews(cards: LoadedCard[]): EpicCardView[] {
   const out: EpicCardView[] = []
   for (const card of cards) {
     if (card.raw === null) continue
     const { meta } = parseFrontmatter(card.raw)
+    const linkage = readLinkage(meta)
     out.push({
       id: card.id,
       status: card.status,
       tags: Array.isArray(meta.tags) ? meta.tags.map(String) : [],
-      epic: meta.epic ? String(meta.epic) : undefined,
-      dependsOn: Array.isArray(meta.depends_on) ? meta.depends_on.map(String) : [],
+      epic: readOne(linkage, 'epic'),
+      dependsOn: linkage.depends_on ?? [],
+      linkage,
     })
   }
   return out

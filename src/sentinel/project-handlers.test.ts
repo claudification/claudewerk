@@ -118,3 +118,46 @@ describe('handleProjectBoardOp', () => {
     expect(r.type).toBe('project_board_result')
   })
 })
+
+/**
+ * `ProjectTaskInputWire` used to declare only title/body/priority/tags/refs, so
+ * a caller writing `input: { epic: 'x' }` got a type error and reasonably
+ * concluded the board could not be told. Nothing was dropped at runtime -- the
+ * envelope is forwarded whole -- but an understated contract is indistinguishable
+ * from an absent feature from the caller's side. These lock the real one down.
+ */
+describe('the wire carries the WHOLE input, not the five fields it started with', () => {
+  test('create keeps status, quest, epic and linkage', () => {
+    const r = op({
+      op: 'create',
+      input: {
+        title: 'Wired',
+        body: 'b',
+        status: 'open',
+        quest: 'q1',
+        epic: 'the-epic',
+        dependsOn: ['a'],
+        relatesTo: ['b'],
+      },
+    })
+    const task = op({ op: 'get', slug: r.note?.slug as string }).task
+    expect(task).toMatchObject({
+      status: 'open',
+      quest: 'q1',
+      epic: 'the-epic',
+      dependsOn: ['a'],
+      relatesTo: ['b'],
+    })
+  })
+
+  test('blocked_by crosses the wire and lands as depends_on', () => {
+    const r = op({ op: 'create', input: { title: 'Aliased', body: 'b', blockedBy: ['x'] } })
+    expect(op({ op: 'get', slug: r.note?.slug as string }).task?.dependsOn).toEqual(['x'])
+  })
+
+  test('update patches linkage too', () => {
+    const id = seed('Patched')
+    op({ op: 'update', slug: id, patch: { epic: 'e', relatesTo: ['r'] } })
+    expect(op({ op: 'get', slug: id }).task).toMatchObject({ epic: 'e', relatesTo: ['r'] })
+  })
+})
