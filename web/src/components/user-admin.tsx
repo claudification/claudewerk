@@ -338,8 +338,12 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
   return (
     <Dialog open={open} onOpenChange={v => !v && handleClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogTitle className="text-accent font-bold uppercase tracking-wider text-[10px]">Create Invite</DialogTitle>
+      {/* DialogContent ships no padding in this repo -- state it, or the content
+          renders flush to the edges. pr-10 clears the close button at right-3. */}
+      <DialogContent className="max-w-lg p-4">
+        <DialogTitle className="pr-10 text-accent font-bold uppercase tracking-wider text-[10px]">
+          Create Invite
+        </DialogTitle>
 
         {inviteUrl ? (
           <div className="space-y-3 mt-2">

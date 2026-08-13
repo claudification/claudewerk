@@ -31,10 +31,14 @@ export function ApplyConfirm({ open, estimate, selection, onCancel, onConfirm }:
 
   return (
     <Dialog open={open} onOpenChange={o => o || onCancel()}>
-      <DialogContent className="max-w-md">
-        <DialogTitle className="text-sm">Vacuum -- this deletes data</DialogTitle>
+      {/* p-0 + padded sections is this repo's idiom (20 of 24 dialogs). DialogContent
+          ships NO padding of its own -- unlike upstream shadcn's p-6 -- so a dialog
+          that states nothing renders flush against all four edges. pr-10 on the
+          title clears the absolutely-positioned close button at right-3. */}
+      <DialogContent className="max-w-md p-0 overflow-hidden">
+        <DialogTitle className="px-4 pt-4 pb-2 pr-10 text-sm">Vacuum -- this deletes data</DialogTitle>
 
-        <div className="space-y-3 text-xs leading-relaxed">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 space-y-3 text-xs leading-relaxed">
           {selection.transcripts && months.length > 0 && (
             <div>
               <div className="font-medium">Transcript months</div>
@@ -67,13 +71,13 @@ export function ApplyConfirm({ open, estimate, selection, onCancel, onConfirm }:
             </div>
           )}
 
-          <div className="rounded bg-muted px-2 py-1.5 text-[10px] text-muted-foreground">
+          <div className="rounded bg-muted px-2.5 py-2 text-[10px] text-muted-foreground">
             The broker will stop answering for a minute or two during the final rewrite. Progress appears in the panel
             as each step completes.
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
           <Button variant="outline" size="sm" onClick={onCancel}>
             Cancel
           </Button>
