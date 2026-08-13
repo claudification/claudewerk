@@ -14,6 +14,7 @@ import { SIDEBAR_ITEMS } from './items-sidebar'
 import { SYSTEM_ITEMS } from './items-system'
 import { VOICE_ITEMS } from './items-voice'
 import { VOICE_ENGINE_ITEMS } from './items-voice-engine'
+import { VOICE_MODEL_ITEMS } from './items-voice-model'
 import { VOICE_ORB_ITEMS } from './items-voice-orb'
 import type { SettingItem } from './settings-item'
 
@@ -38,6 +39,7 @@ export const SETTINGS: SettingItem[] = [
   ...INPUT_ITEMS,
   ...VOICE_ITEMS,
   ...VOICE_ENGINE_ITEMS,
+  ...VOICE_MODEL_ITEMS,
   ...VOICE_ORB_ITEMS,
   ...CONVERSATION_ITEMS,
   ...SYSTEM_ITEMS,

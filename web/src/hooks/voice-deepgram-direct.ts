@@ -8,16 +8,20 @@
  * order the moment the socket opens (see voice-deepgram-uplink). This module
  * therefore accepts a token PROMISE -- waiting on the mint costs no speech.
  *
- * THE MODEL IS INVISIBLE HERE. The Worker sends one frame shape whichever model
- * answered, and it does its own end-of-audio handshake in whatever dialect that
- * model speaks (flux, for instance, rejects v1's `Finalize` outright). All this
- * file says is `{"type":"stop"}` -- the key came up.
+ * THE MODEL IS ALMOST INVISIBLE HERE. The Worker sends one frame shape whichever
+ * model answered, and it does its own end-of-audio handshake in whatever dialect
+ * that model speaks (flux, for instance, rejects v1's `Finalize` outright). All
+ * this file says is `{"type":"stop"}` -- the key came up. The ONE thing the model
+ * still dictates on this side is what the mic is captured with, because only the
+ * browser can act on that: flux is raw-PCM-only and says so by returning nothing
+ * at all when it is fed a container.
  */
 
 import type { DeepgramDirectOptions, DeepgramDirectSession, SttFrame } from '@/hooks/voice-deepgram-protocol'
 import { liveUrl } from '@/hooks/voice-deepgram-protocol'
 import { startUplink, type Uplink } from '@/hooks/voice-deepgram-uplink'
 import { VoiceLagMeter } from '@/hooks/voice-lag-meter'
+import { resolveSttModel } from '@/hooks/voice-stt-models'
 
 /** If the Worker never answers the stop, resolve anyway rather than hang. */
 const STOP_BACKSTOP_MS = 4000
@@ -34,11 +38,15 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
   /** The recorder delivered its last chunk, so the Worker can be told to stop. */
   let audioDone = false
 
+  // The model picks the capture engine, not the user and not this file.
+  const model = resolveSttModel(opts.model)
+
   const lag = new VoiceLagMeter()
   lag.audioStarted()
-  const uplink: Uplink = startUplink(opts.stream, {
+  const uplink: Uplink = startUplink(opts.stream, model.capture, {
     onOverflow: bytes => opts.callbacks.onError(`buffered ${Math.round(bytes / 1024)}KB with no connection`, 'buffer'),
-    onDelivery: (size, buffered, mimeType) => lag.chunk(size, buffered, mimeType),
+    onCaptureError: err => opts.callbacks.onError(`${model.capture} capture failed: ${err}`, 'capture'),
+    onDelivery: (size, buffered, label) => lag.chunk(size, buffered, label),
   })
 
   function teardown() {
@@ -112,7 +120,9 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
 
   function connect(token: string) {
     if (torn) return
-    ws = new WebSocket(liveUrl(opts.model, token, { sampleRate: opts.sampleRate, tuning: opts.tuning }))
+    ws = new WebSocket(
+      liveUrl(model.id, token, { capture: model.capture, sampleRate: opts.sampleRate, tuning: opts.tuning }),
+    )
     ws.onopen = onSocketOpen
     ws.onmessage = ev => {
       let msg: SttFrame

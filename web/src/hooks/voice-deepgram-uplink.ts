@@ -12,13 +12,24 @@
  * mp4 init segment). Deepgram cannot decode the stream without it, and cannot
  * decode a stream with a hole in it -- so the buffer is flushed whole, in order,
  * or the attempt fails honestly. It is never partially dropped to make room.
+ * Raw PCM has no header, but it has no framing either: a hole is silently
+ * mis-decoded rather than rejected, which is worse.
+ *
+ * WHAT IT CAPTURES WITH IS THE MODEL'S CALL, not this file's -- see
+ * voice-capture-engine. The container engine exists synchronously, so capture is
+ * running before this function returns; the PCM engine has to load its worklet
+ * module first, so there is a short async gap that nothing can remove. Every
+ * ordering guarantee below holds across both.
  */
 
+import {
+  type AudioChunk,
+  type CaptureEngine,
+  type CaptureKind,
+  chunkBytes,
+  startCapture,
+} from '@/hooks/voice-capture-engine'
 import type { FlushStats } from '@/hooks/voice-deepgram-protocol'
-
-/** MediaRecorder timeslice. Safari's mp4 muxer ignores this and emits ~1s
- *  fragments regardless (a WebKit law, see project_voice_pcm_worklet_lag_fix). */
-const CHUNK_MS = 100
 
 /**
  * Hard bound on pre-open buffering. ~4MB is minutes of opus -- far past any
@@ -27,67 +38,80 @@ const CHUNK_MS = 100
  */
 const MAX_BUFFERED_BYTES = 4_000_000
 
-/** If the `stop` event never lands, don't hang the release forever. */
-const RECORDER_STOP_TIMEOUT_MS = 500
-
 export interface UplinkCallbacks {
   /** Buffered past the bound -- the socket is never coming up. Fatal. */
   onOverflow(bufferedBytes: number): void
+  /** The capture engine never came up (worklet module failed to load, no mic
+   *  permission left by the time it started). Fatal: there is no audio at all. */
+  onCaptureError(err: unknown): void
   /**
-   * Every MediaRecorder delivery, for the lag meter: a gap here means the ENCODER
+   * Every capture delivery, for the lag meter: a gap here means the ENCODER
    * starved us, while a non-zero `buffered` means the SOCKET is the bottleneck.
    * Observation only -- it must not affect what gets sent.
    */
-  onDelivery?(size: number, buffered: number, mimeType: string): void
+  onDelivery?(size: number, buffered: number, label: string): void
 }
 
 export interface Uplink {
   /** Hand over the OPEN socket: flush every buffered chunk in order, then stream live. */
   attach(ws: WebSocket): FlushStats
   /**
-   * Stop capturing. Resolves only once the recorder's FINAL `dataavailable` has
-   * been delivered (MediaRecorder fires it asynchronously, then `stop`), so the
-   * caller can flush Deepgram knowing the last chunk is already on the wire or
-   * in the buffer. Awaiting this is what keeps the tail of an utterance -- up to
-   * a full second of speech on Safari, whose muxer emits ~1s fragments.
+   * Stop capturing. Resolves only once the engine's FINAL chunk has been
+   * delivered (MediaRecorder fires it asynchronously, then `stop`; the worklet
+   * posts its sub-frame remainder, then an ack), so the caller can flush the
+   * Worker knowing the last chunk is already on the wire or in the buffer.
+   * Awaiting this is what keeps the tail of an utterance -- up to a full second
+   * of speech on Safari, whose muxer emits ~1s fragments.
    */
   stopRecorder(): Promise<void>
   /** Tear down and drop anything still buffered. Idempotent. */
   dispose(): void
 }
 
-/** webm/opus everywhere it exists; Safari has no opus in MediaRecorder -> mp4/AAC. */
-function pickMimeType(): string {
-  return MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/mp4'
-}
-
-export function startUplink(stream: MediaStream, callbacks: UplinkCallbacks): Uplink {
-  const pending: Blob[] = []
+export function startUplink(stream: MediaStream, kind: CaptureKind, callbacks: UplinkCallbacks): Uplink {
+  const pending: AudioChunk[] = []
   let pendingBytes = 0
   let socket: WebSocket | null = null
   let disposed = false
   let overflowed = false
 
-  const mimeType = pickMimeType()
-  const recorder = new MediaRecorder(stream, { mimeType })
-  recorder.ondataavailable = ev => {
-    callbacks.onDelivery?.(ev.data.size, socket?.bufferedAmount ?? 0, mimeType)
-    if (disposed || ev.data.size === 0) return
+  function deliver(data: AudioChunk, label: string) {
+    const size = chunkBytes(data)
+    callbacks.onDelivery?.(size, socket?.bufferedAmount ?? 0, label)
+    if (disposed || size === 0) return
     if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(ev.data)
+      socket.send(data)
       return
     }
-    buffer(ev.data)
+    buffer(data, size)
   }
-  recorder.start(CHUNK_MS)
 
-  function buffer(blob: Blob) {
+  // Started BEFORE anything below can await: for `container` the recorder is
+  // already running when this line returns, and `engine` is set synchronously so
+  // a release in the same tick still stops the real recorder.
+  const started = startCapture(stream, kind, deliver)
+  let engine: CaptureEngine | null = started instanceof Promise ? null : started
+  const ready: Promise<void> =
+    started instanceof Promise
+      ? started.then(
+          e => {
+            if (disposed) return e.dispose()
+            engine = e
+          },
+          err => {
+            console.error('[voice] capture engine failed to start --', err)
+            callbacks.onCaptureError(err)
+          },
+        )
+      : Promise.resolve()
+
+  function buffer(chunk: AudioChunk, size: number) {
     if (overflowed) return
-    pending.push(blob)
-    pendingBytes += blob.size
+    pending.push(chunk)
+    pendingBytes += size
     if (pendingBytes <= MAX_BUFFERED_BYTES) return
-    // Dropping to make room would punch a hole in the container -- Deepgram
-    // would decode garbage or nothing. Fail loudly instead.
+    // Dropping to make room would punch a hole in the audio -- the decoder would
+    // read garbage or nothing. Fail loudly instead.
     overflowed = true
     console.error(`[voice] uplink buffer overflow at ${pendingBytes}B -- socket never opened`)
     callbacks.onOverflow(pendingBytes)
@@ -96,35 +120,23 @@ export function startUplink(stream: MediaStream, callbacks: UplinkCallbacks): Up
   function attach(ws: WebSocket): FlushStats {
     socket = ws
     const stats: FlushStats = { chunks: pending.length, bytes: pendingBytes }
-    for (const blob of pending) ws.send(blob)
+    for (const chunk of pending) ws.send(chunk)
     pending.length = 0
     pendingBytes = 0
     return stats
   }
 
-  function stopRecorder(): Promise<void> {
-    if (recorder.state === 'inactive') return Promise.resolve()
-    return new Promise<void>(resolve => {
-      let settled = false
-      const done = () => {
-        if (settled) return
-        settled = true
-        resolve()
-      }
-      recorder.onstop = done
-      setTimeout(done, RECORDER_STOP_TIMEOUT_MS)
-      try {
-        recorder.stop()
-      } catch {
-        done()
-      }
-    })
+  async function stopRecorder(): Promise<void> {
+    // Released before the worklet finished loading: wait for it, then stop it,
+    // rather than leaving a live engine streaming into a closed session.
+    if (!engine) await ready
+    await engine?.stop()
   }
 
   function dispose() {
     if (disposed) return
     disposed = true
-    void stopRecorder()
+    engine?.dispose()
     pending.length = 0
     pendingBytes = 0
     socket = null

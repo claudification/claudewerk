@@ -16,6 +16,8 @@
  * never learns which one answered. See workers/stt-proxy/src/normalize.ts.
  */
 
+import { type CaptureKind, PCM_SAMPLE_RATE } from '@/hooks/voice-capture-engine'
+
 /** Same-origin by default so a deploy cannot leave this pointing at a stale host. */
 const STT_HOST = import.meta.env.VITE_STT_HOST ?? 'stt.frst.dev'
 
@@ -36,7 +38,7 @@ export interface TranscriptUpdate {
 }
 
 /** Which leg failed, so the caller can pick honest user-facing wording. */
-export type DirectFailure = 'token' | 'socket' | 'buffer'
+export type DirectFailure = 'token' | 'socket' | 'buffer' | 'capture'
 
 /** Pre-open audio handed to the socket the moment it opened. */
 export interface FlushStats {
@@ -62,9 +64,10 @@ export interface DeepgramDirectOptions {
   stream: MediaStream
   /** Token, or a promise for one. Recording begins before it resolves. */
   token: string | Promise<string>
-  /** 'flux' (default) or 'nova-3'. The Worker owns what each one means. */
+  /** 'flux' (default) or 'nova-3'. The Worker owns what each one means; the
+   *  browser only has to agree on what to capture with (voice-stt-models). */
   model: string
-  /** Capture sample rate, so a PCM model decodes at the right speed. */
+  /** Override the capture sample rate. Defaults to the worklet's 16 kHz. */
   sampleRate?: number
   /** End-of-turn tuning, forwarded verbatim; the Worker allowlists them. */
   tuning?: Record<string, string>
@@ -89,9 +92,22 @@ export interface SttFrame {
  * VAD / force-Finalize (which kept falling behind real time and shredding
  * transcripts) are out of the loop.
  */
-export function liveUrl(model: string, token: string, opts: { sampleRate?: number; tuning?: Record<string, string> }) {
+export function liveUrl(
+  model: string,
+  token: string,
+  opts: { capture: CaptureKind; sampleRate?: number; tuning?: Record<string, string> },
+) {
   const params = new URLSearchParams({ t: token, model })
-  if (opts.sampleRate) params.set('sample_rate', String(opts.sampleRate))
+  // RAW PCM HAS NO CONTAINER TO SNIFF. Declaring it is not an optimisation: an
+  // undeclared PCM stream is read as a broken container and yields NOTHING -- no
+  // error, no transcript. This is also what lets nova-3 accept our PCM, so the
+  // capture engine and the model can be chosen independently.
+  if (opts.capture === 'pcm16') {
+    params.set('encoding', 'linear16')
+    params.set('sample_rate', String(opts.sampleRate ?? PCM_SAMPLE_RATE))
+  } else if (opts.sampleRate) {
+    params.set('sample_rate', String(opts.sampleRate))
+  }
   for (const [key, value] of Object.entries(opts.tuning ?? {})) {
     if (value) params.set(key, value)
   }

@@ -8,8 +8,15 @@
  * carried the bugs (recorder started too late, socket flushed too early), so
  * they are faked with the real async shape rather than stubbed away.
  *
+ * The Web Audio doubles for the raw-PCM engine live in voice-fakes-audio and are
+ * re-exported here, so a test has one place to import fakes from.
+ *
  * Test-only, imported by *.test.ts.
  */
+
+import { installAudioFakes } from '@/hooks/voice-fakes-audio'
+
+export { FakeAudioContext, FakeAudioWorkletNode } from '@/hooks/voice-fakes-audio'
 
 type DataHandler = (ev: { data: Blob }) => void
 
@@ -137,14 +144,17 @@ export function fakeStream(): MediaStream {
 
 /** Install the fakes as globals. Returns a restore function. */
 export function installVoiceFakes(): () => void {
-  const prevRecorder = (globalThis as Record<string, unknown>).MediaRecorder
-  const prevSocket = (globalThis as Record<string, unknown>).WebSocket
+  const globals = globalThis as Record<string, unknown>
+  const prevRecorder = globals.MediaRecorder
+  const prevSocket = globals.WebSocket
+  const restoreAudio = installAudioFakes()
   FakeMediaRecorder.reset()
   FakeWebSocket.reset()
-  ;(globalThis as Record<string, unknown>).MediaRecorder = FakeMediaRecorder
-  ;(globalThis as Record<string, unknown>).WebSocket = FakeWebSocket
+  globals.MediaRecorder = FakeMediaRecorder
+  globals.WebSocket = FakeWebSocket
   return () => {
-    ;(globalThis as Record<string, unknown>).MediaRecorder = prevRecorder
-    ;(globalThis as Record<string, unknown>).WebSocket = prevSocket
+    globals.MediaRecorder = prevRecorder
+    globals.WebSocket = prevSocket
+    restoreAudio()
   }
 }

@@ -66,10 +66,10 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   {
     tab: 'voice',
     group: 'Capture',
-    label: 'Direct-to-Deepgram (experimental)',
+    label: 'Direct to the edge (experimental)',
     description:
-      'Stream mic audio straight from the browser to Deepgram, with the broker out of the audio path (it only mints a short-lived token). Deepgram does the endpointing. Lower latency + no broker relay. Takes effect on the next recording.',
-    keywords: 'voice deepgram direct websocket broker latency endpointing token experimental',
+      'Stream mic audio from the browser straight to our Cloudflare Worker, with the broker out of the audio path (it only mints a short-lived token, signed locally in ~40ms). The model does the endpointing at the nearest colo instead of a single US datacenter -- measured flat where Deepgram-direct ran 8.5s behind. Takes effect on the next recording.',
+    keywords: 'voice deepgram direct websocket broker latency endpointing token experimental cloudflare worker edge',
     render: (ctx, ariaLabel) => (
       <SettingCheckbox
         ariaLabel={ariaLabel}
@@ -81,10 +81,14 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   {
     tab: 'voice',
     group: 'Transcription',
-    label: 'Deepgram model',
-    description: 'STT model for voice transcription',
+    label: 'Deepgram model (broker relay)',
+    // Nova ONLY, and not a stale list: the relay speaks Deepgram v1 against
+    // api.deepgram.com, where resolveDeepgramModel falls anything that is not a
+    // nova-* back to nova-3. flux is not reachable from this path at all -- it
+    // lives on the direct transport, under "Speech model (direct)" above.
+    description: 'STT model for the broker-relay transport (server-wide). The direct transport has its own model.',
     server: true,
-    keywords: 'speech recognition deepgram nova flux',
+    keywords: 'speech recognition deepgram nova broker relay server',
     render: (ctx, ariaLabel) => (
       <select
         aria-label={ariaLabel}

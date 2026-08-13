@@ -1,4 +1,5 @@
 import { DEFAULT_VOICE_ORB_SPEED, DEFAULT_VOICE_ORB_VOICE } from '@shared/voice-orb-options'
+import { DEFAULT_STT_MODEL } from '@/hooks/voice-stt-models'
 import type { PlainRendererLabPrefs } from './plain-renderer-lab'
 import type { VirtualizerLabPrefs } from './virtualizer-lab'
 
@@ -59,6 +60,17 @@ export interface ControlPanelPrefs {
    *  out of the audio path; broker only mints a short-lived token). Deepgram does
    *  the endpointing via utterance_end_ms. Off by default. See voice-deepgram-direct.ts. */
   voiceDirectToDeepgram: boolean
+  /** Which speech model the stt-proxy Worker should use ('flux' | 'nova-3').
+   *  This also decides what the browser CAPTURES with -- flux is raw-PCM-only
+   *  and silently returns nothing when fed a container. See voice-stt-models. */
+  voiceSttModel: string
+  /** flux `eot_threshold`: how sure the model must be that the speaker finished
+   *  before it closes a turn (0.5-0.9). 0 = leave it to the model's own default.
+   *  A turn close is a PARAGRAPH BREAK, never a submit. */
+  voiceEotThreshold: number
+  /** flux `eot_timeout_ms`: how long it waits before calling the turn anyway.
+   *  0 = model default. */
+  voiceEotTimeoutMs: number
   voiceDeviceId: string // preferred audio input device ID ('' = system default)
   /** The voice ORB's tone dial (Professional | Snarky | Homicidal | Overkill).
    *  Sent with the mint; the broker narrows it and picks the persona preamble.
@@ -143,6 +155,9 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
   voiceDirectToDeepgram: false,
+  voiceSttModel: DEFAULT_STT_MODEL,
+  voiceEotThreshold: 0,
+  voiceEotTimeoutMs: 0,
   voiceDeviceId: '',
   voiceOrbTone: 'snarky',
   voiceOrbSpeed: DEFAULT_VOICE_ORB_SPEED,

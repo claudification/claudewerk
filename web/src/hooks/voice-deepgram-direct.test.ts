@@ -23,7 +23,13 @@
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { startDeepgramDirect } from '@/hooks/voice-deepgram-direct'
-import { FakeMediaRecorder, FakeWebSocket, fakeStream, installVoiceFakes } from '@/hooks/voice-fakes'
+import {
+  FakeAudioWorkletNode,
+  FakeMediaRecorder,
+  FakeWebSocket,
+  fakeStream,
+  installVoiceFakes,
+} from '@/hooks/voice-fakes'
 
 let restore: () => void
 
@@ -87,6 +93,54 @@ test('dials the Worker with the token in the QUERY STRING, not a subprotocol', a
   expect(ws.url).toContain('t=tok-123')
   expect(ws.url).toContain('model=nova-3')
   expect(ws.url).toContain('/listen?')
+})
+
+test('flux captures raw PCM and DECLARES it -- the silent-no-op guard', async () => {
+  const session = startDeepgramDirect({ stream: fakeStream(), token: 'tok', model: 'flux', callbacks: callbacks() })
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+
+  // Fed a container, flux accepts every byte, errors on nothing, and returns NO
+  // transcript. There is no failure to catch, so the pairing is asserted here.
+  expect(FakeAudioWorkletNode.instances).toHaveLength(1)
+  expect(FakeMediaRecorder.instances).toHaveLength(0)
+
+  // And raw PCM has no container to sniff: undeclared, it decodes to nothing.
+  const url = new URL(FakeWebSocket.latest().url.replace('wss://', 'https://'))
+  expect(url.searchParams.get('model')).toBe('flux')
+  expect(url.searchParams.get('encoding')).toBe('linear16')
+  expect(url.searchParams.get('sample_rate')).toBe('16000')
+
+  session.abort()
+})
+
+test('nova-3 captures a container and declares no encoding, so it auto-detects', async () => {
+  const { session } = begin('tok')
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+
+  expect(FakeMediaRecorder.instances).toHaveLength(1)
+  expect(FakeAudioWorkletNode.instances).toHaveLength(0)
+  expect(FakeWebSocket.latest().url).not.toContain('encoding=')
+
+  session.abort()
+})
+
+test('forwards only the end-of-turn tuning it was given', async () => {
+  const session = startDeepgramDirect({
+    stream: fakeStream(),
+    token: 'tok',
+    model: 'flux',
+    tuning: { eot_threshold: '0.7', eot_timeout_ms: '' },
+    callbacks: callbacks(),
+  })
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+
+  const url = FakeWebSocket.latest().url
+  expect(url).toContain('eot_threshold=0.7')
+  // An empty setting must not become a real one: eot_timeout_ms=0 would end
+  // every turn instantly, shredding a long dictation into one-word paragraphs.
+  expect(url).not.toContain('eot_timeout_ms')
+
+  session.abort()
 })
 
 test('sends stop only AFTER the recorder final chunk -- no truncated tail', async () => {

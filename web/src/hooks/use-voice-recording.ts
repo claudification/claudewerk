@@ -23,14 +23,23 @@ import {
   scheduleStreamRelease,
   setMicExpired,
 } from '@/hooks/voice-mic-stream'
+import { DEFAULT_STT_MODEL, resolveSttModel } from '@/hooks/voice-stt-models'
 import { getSttToken } from '@/hooks/voice-stt-token'
 import { describeMicError } from '@/lib/mic-error'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 
-// Capture is MediaRecorder-only: a real container (webm/opus, Safari audio/mp4)
-// that the broker hands Deepgram for NATIVE endpointing. The raw-PCM AudioWorklet
-// engine was deleted -- on a raw mic it regressed dictation with unbounded growing
-// ASR lag + mishearing, and there is no reason to keep a broken path reachable.
+// TWO TRANSPORTS, TWO CAPTURE STORIES.
+//   broker relay (default)  MediaRecorder only. A real container the broker hands
+//                           Deepgram v1 for NATIVE endpointing. The raw-PCM
+//                           worklet was deleted from THIS path on purpose: a raw
+//                           mic never goes quiet, v1's RMS endpointer never fires,
+//                           and the decode window grows until it runs 10-15s
+//                           behind. Never put PCM back here.
+//   direct to the Worker    The MODEL picks (voice-stt-models): flux is
+//                           raw-PCM-only, nova-3 takes a container. flux's turn
+//                           detection is a conversational model rather than a
+//                           silence threshold, which is why PCM is safe there and
+//                           was re-measured flat over 197s before it came back.
 
 // Re-export the warm-stream public API so existing consumers (voice-key,
 // settings-page) keep importing from here. Warming is NOT here: it lives in
@@ -573,6 +582,20 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     token: 'Voice service unavailable',
     socket: 'Lost connection to voice service',
     buffer: 'Voice service did not connect',
+    capture: 'Could not start audio capture',
+  }
+
+  /**
+   * End-of-turn tuning, forwarded verbatim for the Worker to allowlist. 0 means
+   * "leave it to the model" -- sending an empty or zero value would be a real
+   * setting flux has to honour, and a 0ms turn timeout ends every turn instantly.
+   */
+  function sttTuning(): Record<string, string> {
+    const prefs = useConversationsStore.getState().controlPanelPrefs
+    const tuning: Record<string, string> = {}
+    if (prefs.voiceEotThreshold) tuning.eot_threshold = String(prefs.voiceEotThreshold)
+    if (prefs.voiceEotTimeoutMs) tuning.eot_timeout_ms = String(prefs.voiceEotTimeoutMs)
+    return tuning
   }
 
   /**
@@ -582,16 +605,16 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
    * Transcripts route into the same interim/final state the broker path uses.
    */
   function beginDirect(stream: MediaStream, token: Promise<string>): void {
+    // The model is the ONLY choice here; it drags the capture engine along with
+    // it (flux -> raw PCM, nova-3 -> container), because a mismatch is silent:
+    // flux fed a container returns no transcript and no error at all.
+    const model = useConversationsStore.getState().controlPanelPrefs.voiceSttModel || DEFAULT_STT_MODEL
+    console.log(`[voice] ${elapsed()} stt model=${model} capture=${resolveSttModel(model).capture}`)
     directSessionRef.current = startDeepgramDirect({
       stream,
       token,
-      // nova-3, NOT flux, and the reason is the capture layer: flux on Workers AI
-      // is RAW PCM ONLY -- fed a MediaRecorder container it accepts every byte and
-      // returns NO transcript, silently. MediaRecorder is what we capture with
-      // today, so nova-3 (which auto-detects containers) is the only correct
-      // pairing. flux measured better (LAG 91->74ms vs 138->308ms) and is cheaper,
-      // and switching to it means shipping the AudioWorklet PCM engine first.
-      model: 'nova-3',
+      model,
+      tuning: sttTuning(),
       callbacks: {
         onOpen: flushed => {
           clearConnectTimer()
