@@ -25,10 +25,10 @@ const legacyCard = (slug: string, status: UpgradeReport['legacy'][number]['statu
 })
 
 describe('parseUpgradeArgs', () => {
-  test('defaults to cwd, single board, views on, backup on', () => {
+  test('defaults to cwd, single board, backup on', () => {
     expect(parseUpgradeArgs([], CWD)).toEqual({
       kind: 'run',
-      args: { root: CWD, all: false, dryRun: false, views: true, backup: true },
+      args: { root: CWD, all: false, dryRun: false, backup: true },
     })
   })
 
@@ -48,8 +48,8 @@ describe('parseUpgradeArgs', () => {
   })
 
   test('flags, long and short', () => {
-    const r = parseUpgradeArgs(['--dry-run', '--no-views', '--no-backup'], CWD)
-    expect(r.kind === 'run' && r.args).toMatchObject({ dryRun: true, views: false, backup: false })
+    const r = parseUpgradeArgs(['--dry-run', '--no-backup'], CWD)
+    expect(r.kind === 'run' && r.args).toMatchObject({ dryRun: true, backup: false })
     expect(parseUpgradeArgs(['-n'], CWD)).toMatchObject({ args: { dryRun: true } })
   })
 
@@ -70,9 +70,8 @@ describe('formatUpgradeReport', () => {
   })
 
   test('an already-migrated board is reported as such', () => {
-    const f = formatUpgradeReport(report({ views: { created: 0, pruned: 0, supported: true } }), false)
+    const f = formatUpgradeReport(report({}), false)
     expect(f.out).toContain('already migrated')
-    expect(f.out).toContain('views: +0 -0')
     expect(f.exitCode).toBe(0)
   })
 
@@ -114,15 +113,10 @@ describe('formatUpgradeReport', () => {
     expect(f.exitCode).toBe(1)
     expect(f.err.join('\n')).toContain('open/a.md: boom')
   })
-
-  test('unsupported symlinks are called out as cosmetic', () => {
-    const f = formatUpgradeReport(report({ views: { created: 0, pruned: 0, supported: false } }), false)
-    expect(f.out.join('\n')).toContain('cosmetic')
-  })
 })
 
 describe('runUpgrade', () => {
-  const args = { root: '/p', all: false, dryRun: false, views: true, backup: true }
+  const args = { root: '/p', all: false, dryRun: false, backup: true }
   const ok = (board: string) => report({ board })
   const noFind = () => {
     throw new Error('should not look for sibling boards')

@@ -19,7 +19,7 @@ import { boardRoot } from './project-paths'
 import { TASK_STATUSES } from './task-statuses'
 
 /** Board-root entries that are expected and owned by something. */
-const KNOWN_ENTRIES = new Set<string>([CARDS_DIR, VIEWS_DIR, 'quests', 'priority.md', 'gate.conf'])
+const KNOWN_ENTRIES = new Set<string>([CARDS_DIR, 'quests', 'priority.md', 'gate.conf'])
 /** Generated or historical entries that are fine to find and not worth a line. */
 const IGNORED_PREFIXES = ['.upgrade-backup-', '.DS_Store']
 
@@ -67,13 +67,34 @@ function legacyFindings(root: string, legacyCount: number): DoctorFinding[] {
   return findings
 }
 
+/**
+ * The deleted symlink farm, if this board still has one on disk. Nothing
+ * creates or maintains it any more, so from here on it can only get more wrong
+ * -- but it is the USER'S directory and these boards are not in git, so the
+ * doctor says so and hands over the command. It never deletes it.
+ */
+function leftoverFarmFindings(root: string): DoctorFinding[] {
+  const farm = join(boardRoot(root), VIEWS_DIR)
+  if (!isDir(farm)) return []
+  return [
+    {
+      check: 'views-leftover',
+      severity: 'warning',
+      subject: `.rclaude/project/${VIEWS_DIR}/`,
+      problem: 'the old symlink farm is still here -- nothing maintains it now, so it only drifts further',
+      remedy: `rm -rf ${farm}  (links pointing INTO it still open their card, so nothing breaks)`,
+    },
+  ]
+}
+
 /** Anything directly under the board root that nothing reads. */
 function strayFindings(root: string): DoctorFinding[] {
   const board = boardRoot(root)
   const findings: DoctorFinding[] = []
   for (const name of entries(board)) {
     if (KNOWN_ENTRIES.has(name) || isIgnored(name)) continue
-    // A legacy lane dir is reported by legacyFindings, not as a stray.
+    // Reported by their own checks, not as generic strays.
+    if (name === VIEWS_DIR) continue
     if ((TASK_STATUSES as readonly string[]).includes(name)) continue
     const isCardLike = name.endsWith('.md')
     findings.push({
@@ -112,5 +133,10 @@ function cardsDirFindings(root: string): DoctorFinding[] {
 }
 
 export function checkLayout(root: string, legacyCount: number): DoctorFinding[] {
-  return [...legacyFindings(root, legacyCount), ...strayFindings(root), ...cardsDirFindings(root)]
+  return [
+    ...legacyFindings(root, legacyCount),
+    ...leftoverFarmFindings(root),
+    ...strayFindings(root),
+    ...cardsDirFindings(root),
+  ]
 }

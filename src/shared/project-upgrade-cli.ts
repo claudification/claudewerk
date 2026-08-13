@@ -8,12 +8,11 @@
 
 import type { UpgradeOptions, UpgradeReport } from './project-upgrade'
 
-export const UPGRADE_USAGE = `usage: bun run board:upgrade [--root <path> | --all <dir>] [--dry-run] [--no-views] [--no-backup]
+export const UPGRADE_USAGE = `usage: bun run board:upgrade [--root <path> | --all <dir>] [--dry-run] [--no-backup]
 
   --root <path>  project root holding .rclaude/project (default: cwd)
   --all <dir>    sweep every immediate subdirectory of <dir> that has a board
   --dry-run, -n  report what would happen, touch nothing
-  --no-views     skip rebuilding the views/ symlink farm
   --no-backup    skip the pre-move copy of every lane file
 
 The sentinel sweeps each board it watches automatically, so this is for boards
@@ -24,49 +23,46 @@ export interface UpgradeArgs {
   /** Treat `root` as a PARENT of many project roots, not a project itself. */
   all: boolean
   dryRun: boolean
-  views: boolean
   backup: boolean
 }
 
-/** Valueless flags, keyed by every spelling that selects them. */
-const FLAGS: Record<string, (a: UpgradeArgs) => void> = {
+export type ParseResult = { kind: 'run'; args: UpgradeArgs } | { kind: 'help' } | { kind: 'error'; message: string }
+
+/**
+ * ONE entry per argument (STRATEGY MAPS OVER CHAINS). `next()` consumes the
+ * following argv entry, so a value flag and a bare flag are the same shape;
+ * returning a ParseResult ends parsing early (that is what `--help` does).
+ */
+type ArgHandler = (a: UpgradeArgs, next: () => string) => ParseResult | void
+
+const ARGS: Record<string, ArgHandler> = {
   '--dry-run': a => {
     a.dryRun = true
   },
   '-n': a => {
     a.dryRun = true
   },
-  '--no-views': a => {
-    a.views = false
-  },
   '--no-backup': a => {
     a.backup = false
   },
-}
-
-export type ParseResult = { kind: 'run'; args: UpgradeArgs } | { kind: 'help' } | { kind: 'error'; message: string }
-
-/** Flags that take the next argv entry as their value. */
-const VALUE_FLAGS: Record<string, (a: UpgradeArgs, v: string) => void> = {
-  '--root': (a, v) => {
-    a.root = v
+  '--root': (a, next) => {
+    a.root = next()
   },
-  '--all': (a, v) => {
-    a.root = v
+  '--all': (a, next) => {
+    a.root = next()
     a.all = true
   },
+  '--help': () => ({ kind: 'help' }),
+  '-h': () => ({ kind: 'help' }),
 }
 
 export function parseUpgradeArgs(argv: string[], cwd: string): ParseResult {
-  const args: UpgradeArgs = { root: cwd, all: false, dryRun: false, views: true, backup: true }
+  const args: UpgradeArgs = { root: cwd, all: false, dryRun: false, backup: true }
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]
-    const flag = FLAGS[arg]
-    const valueFlag = VALUE_FLAGS[arg]
-    if (flag) flag(args)
-    else if (valueFlag) valueFlag(args, argv[++i] ?? args.root)
-    else if (arg === '--help' || arg === '-h') return { kind: 'help' }
-    else return { kind: 'error', message: `unknown argument: ${arg}` }
+    const handler = ARGS[argv[i]]
+    if (!handler) return { kind: 'error', message: `unknown argument: ${argv[i]}` }
+    const early = handler(args, () => argv[++i] ?? args.root)
+    if (early) return early
   }
   return { kind: 'run', args }
 }
@@ -95,12 +91,6 @@ function moveLines(r: UpgradeReport, dryRun: boolean): string[] {
     `moved ${r.moved.length} card(s) into cards/`,
     ...(r.lanesRemoved.length > 0 ? [`removed empty lane dirs: ${r.lanesRemoved.join(', ')}`] : []),
   ]
-}
-
-function viewLines(r: UpgradeReport): string[] {
-  if (!r.views) return []
-  if (!r.views.supported) return ['views: filesystem refused symlinks -- skipped (they are cosmetic)']
-  return [`views: +${r.views.created} -${r.views.pruned}`]
 }
 
 export interface FormattedReport {
@@ -144,7 +134,6 @@ export function formatUpgradeReport(r: UpgradeReport, dryRun: boolean): Formatte
     `cards in legacy lane folders: ${r.legacy.length}`,
     ...collisionLines(r),
     ...moveLines(r, dryRun),
-    ...viewLines(r),
   ]
   if (r.failures.length === 0) return { out, err: [], exitCode: 0 }
   return {

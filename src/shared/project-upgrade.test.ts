@@ -121,14 +121,10 @@ describe('upgradeProjectBoard', () => {
     expect(existsSync(cardFile('priority'))).toBe(false)
   })
 
-  test('builds the views farm, and --no-views skips it', () => {
+  test('builds NO views farm -- the upgrade drains lanes, it does not mirror them', () => {
     lane('done', 'a', '---\ntitle: A\n---\n')
-    const r = upgradeProjectBoard(root, { nowMs: NOW })
-    if (r.views?.supported) {
-      expect(readFileSync(join(root, '.rclaude/project/views/done/a.md'), 'utf8')).toContain('title: A')
-    }
-
-    lane('open', 'b', '---\ntitle: B\n---\n')
-    expect(upgradeProjectBoard(root, { views: false, nowMs: NOW }).views).toBeUndefined()
+    upgradeProjectBoard(root, { nowMs: NOW })
+    expect(readFileSync(cardFile('a'), 'utf8')).toContain('title: A')
+    expect(existsSync(join(root, '.rclaude/project/views'))).toBe(false)
   })
 })

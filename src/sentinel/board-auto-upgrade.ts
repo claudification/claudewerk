@@ -48,7 +48,6 @@ export function autoUpgradeBoard(projectRoot: string, log: LogFn, nowMs = Date.n
       `[board-upgrade] ${projectRoot}: moved ${r.moved.length}/${r.legacy.length} card(s) into cards/` +
         `, backup=${r.backupDir ?? '(none)'}` +
         `, lanesRemoved=[${r.lanesRemoved.join(',')}]` +
-        `, views=+${r.views?.created ?? 0}/-${r.views?.pruned ?? 0}` +
         `, collisions=${r.collisions.length}` +
         `, failures=${r.failures.length}`,
     )

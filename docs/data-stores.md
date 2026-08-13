@@ -3,13 +3,12 @@
 ## Project Board (markdown on disk)
 
 Kanban cards, owned by the SENTINEL (so the board works with no live agent host).
-Code: `src/shared/project-{paths,card-file,card-read,card-write,views,legacy,upgrade}.ts`,
+Code: `src/shared/project-{paths,card-file,card-read,card-write,legacy,upgrade}.ts`,
 re-exported through `project-store.ts`.
 
 ```
 .rclaude/project/
-  cards/<id>.md                              CANONICAL. never moves.
-  views/<status>/<id>.md -> ../../cards/<id>.md   generated symlinks, disposable
+  cards/<id>.md                              CANONICAL. never moves. the only place a card lives.
   quests/<petname>/                          quest manifests (docs/quest-guide.md)
   priority.md  gate.conf                     board-level config
 ```
@@ -18,18 +17,30 @@ re-exported through `project-store.ts`.
 key, so changing lanes rewrites one line in a file that never moves. That is what
 makes a link written a year ago still open the right card.
 
+**ONE DIRECTORY, NO MIRRORS.** There used to be a generated `views/<status>/<id>.md`
+symlink farm. It was deleted 2026-08-13: nothing in the codebase read it, the
+watcher had to explicitly exclude it to avoid firing twice per change, every write
+paid to maintain it, and it drifted anyway -- one live board had 43 of 301 cards
+with no link at all, which reads to a human as "these cards don't exist". A lane is
+one line inside one file; filter the cards instead. Reading a whole 355-card board,
+bodies included, is ~20ms, which is also why there is no index/cache file.
+
+Links written when the farm existed still resolve: `canonicalizeCardPath` keeps
+accepting `views/<lane>/<id>.md` forever. `board:doctor` reports a leftover farm
+(`views-leftover`) but never deletes it.
+
 | Invariant | Why |
 |---|---|
 | The path is fixed from create to delete | links, transcripts and docs can name a card forever |
 | `id` is deduped once, at create, then immutable | a lane change used to be able to *rename* the card |
 | Only `setProjectTaskStatus()` writes `status:` | one writer, so the lane can't drift |
 | Every write preserves unknown frontmatter | the DONE-gate's `evidence_*`, plus `gate:`, `test_cmd:`, `base:` |
-| `views/` is derived; nothing reads it | `rm -rf views/` is harmless and rebuildable |
+| No derived copy of the lane structure exists | a second thing to keep true is a second thing to get wrong |
 | Legacy `<status>/` lane dirs are read-only | drained by the upgrade, or lazily on the next write |
 
 Shape of the model: notmuch (files never move, state is an index), Maildir (the
-unique filename *is* the identity), systemd/Nix (one store, generated symlink
-views), Jekyll/Hugo (flat dir, frontmatter is the taxonomy).
+unique filename *is* the identity), Jekyll/Hugo (flat dir, frontmatter is the
+whole taxonomy).
 
 ### Checking a board's health
 
@@ -48,11 +59,11 @@ it works as a CI gate. Big groups collapse to one line (`-v` to list them all).
 | `card-status-{missing,invalid}` | a lane the board silently coerces to `inbox` |
 | `card-{unreadable,no-frontmatter,title-missing,empty-body}` | cards that are not really cards |
 | `link-rot` | a card link whose target id does not exist -- clicking it does nothing |
-| `view-{dangling,duplicate,wrong-lane,wrong-target,missing,not-a-symlink}` | the `views/` farm drifting from the cards |
+| `views-leftover` | a pre-2026-08-13 symlink farm still on disk, now unmaintained |
 | `legacy-{lane-cards,collision}` | undrained lane dirs, same id in two lanes |
 | `stray-{card-file,entry}`, `cards-{nested-dir,non-card-file}` | files nothing will ever read |
 
-Code: `src/shared/project-doctor{,-cards,-links,-views,-layout,-types,-cli}.ts`,
+Code: `src/shared/project-doctor{,-cards,-links,-layout,-types,-cli}.ts`,
 entry `scripts/board-doctor.ts`. The checks are pure fs + string work, so the
 same module can back a sentinel RPC or MCP tool later without moving.
 
@@ -63,7 +74,7 @@ and any write migrates that card in place. To sweep a whole project at once:
 
 ```
 bun run board:upgrade --root <project> --dry-run   # report only
-bun run board:upgrade --root <project>             # move, back up, rebuild views
+bun run board:upgrade --root <project>             # move + back up
 ```
 
 Idempotent. Backs every lane file up to `.rclaude/project/.upgrade-backup-<ts>/`

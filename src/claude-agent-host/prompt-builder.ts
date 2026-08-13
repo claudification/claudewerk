@@ -45,7 +45,7 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     'Use `mcp__rclaude__project_list` to list project tasks from the board.',
     'Every card is a markdown file at `.rclaude/project/cards/{card-id}.md` with YAML frontmatter.',
     'A card NEVER moves: its lane is the `status:` frontmatter key, one of `inbox`, `open`, `in-progress`, `in-review`, `done`, `archived`.',
-    '(`.rclaude/project/views/{status}/` holds generated symlinks for browsing -- never edit those.)',
+    'There are NO lane folders and no symlinks -- `cards/` is the only place a card lives. To find cards in a lane, filter on `status:`.',
     'To change status: `mcp__rclaude__project_set_status` with id (filename without .md) and target status.',
     'To edit: read and write the .md file directly (update frontmatter + body).',
     'Frontmatter: title, priority (high/medium/low), tags [...], refs [...], created (ISO).',

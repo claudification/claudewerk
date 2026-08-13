@@ -16,7 +16,12 @@ import { TASK_STATUS_PATTERN } from './task-statuses'
 
 /** Canonical card directory, relative to the board root. */
 export const CARDS_DIR = 'cards'
-/** Generated symlink-view directory, relative to the board root. */
+/**
+ * The old generated symlink-view directory. The farm itself is GONE (deleted
+ * 2026-08-13, see project-paths.ts) -- this constant survives for exactly one
+ * reason: links written while it existed must keep opening their card forever.
+ * Nothing creates this directory any more.
+ */
 export const VIEWS_DIR = 'views'
 
 /** Board-relative path of one card -- the form agents are told to link. */
@@ -28,7 +33,7 @@ export function cardRelPath(id: string): string {
  * Every historical shape a card path has taken:
  *   `.rclaude/project/cards/<id>.md`          canonical
  *   `.rclaude/project/<lane>/<id>.md`         legacy lane (pre-migration links)
- *   `.rclaude/project/views/<lane>/<id>.md`   a generated view symlink
+ *   `.rclaude/project/views/<lane>/<id>.md`   the deleted symlink farm
  * optionally prefixed by `./` or a repo path, optionally suffixed `#frag`/`?q`.
  */
 const BOARD_CARD_PATH = new RegExp(

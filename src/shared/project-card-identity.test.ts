@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -23,10 +23,8 @@ import {
   listProjectTasks,
   moveProjectTask,
   readProjectFile,
-  rebuildProjectViews,
   setProjectTaskStatus,
   updateProjectTask,
-  viewsSupported,
 } from './project-store'
 import type { TaskStatus } from './task-statuses'
 
@@ -191,44 +189,39 @@ describe('old links keep resolving', () => {
   })
 })
 
-describe('views symlink farm', () => {
-  const viewLink = (status: string, id: string) => join(root, '.rclaude/project/views', status, `${id}.md`)
+describe('no symlink farm', () => {
+  const viewsRoot = () => join(root, '.rclaude/project/views')
 
-  test('a card is linked from its current lane only', () => {
-    if (!viewsSupported()) return
+  test('creating a card creates NO views tree -- one directory, no mirrors', () => {
+    createProjectTask(root, { title: 'v', body: '' }, 1000)
+    expect(existsSync(viewsRoot())).toBe(false)
+  })
+
+  test('a lane change rewrites one key and touches nothing else', () => {
     const { slug } = createProjectTask(root, { title: 'v', body: '' }, 1000)
-    expect(lstatSync(viewLink('inbox', slug)).isSymbolicLink()).toBe(true)
+    setProjectTaskStatus(root, slug, 'done', 2000)
+    expect(existsSync(viewsRoot())).toBe(false)
+    expect(getProjectTask(root, slug)?.status).toBe('done')
+  })
+
+  test('deleting a card needs no cleanup anywhere else', () => {
+    const { slug } = createProjectTask(root, { title: 'gone', body: '' }, 1000)
+    expect(deleteProjectTask(root, slug)).toBe(true)
+    expect(getProjectTask(root, slug)).toBeNull()
+    expect(existsSync(viewsRoot())).toBe(false)
+  })
+
+  test('a board that still HAS an old farm is left strictly alone', () => {
+    // The store no longer owns this directory, so it must neither update nor
+    // delete it -- the doctor reports it (`views-leftover`) and the user rms it.
+    const { slug } = createProjectTask(root, { title: 'legacyfarm', body: '' }, 1000)
+    const lane = join(viewsRoot(), 'inbox')
+    mkdirSync(lane, { recursive: true })
+    writeFileSync(join(lane, `${slug}.md`), 'stale mirror')
 
     setProjectTaskStatus(root, slug, 'done', 2000)
-    expect(existsSync(viewLink('inbox', slug))).toBe(false)
-    expect(readFileSync(viewLink('done', slug), 'utf8')).toContain('title: v')
-  })
 
-  test('deleting a card drops its views', () => {
-    if (!viewsSupported()) return
-    const { slug } = createProjectTask(root, { title: 'gone', body: '' }, 1000)
-    deleteProjectTask(root, slug)
-    expect(existsSync(viewLink('inbox', slug))).toBe(false)
-  })
-
-  test('rebuild is idempotent and prunes strays', () => {
-    if (!viewsSupported()) return
-    createProjectTask(root, { title: 'a', body: '' }, 1000)
-    createProjectTask(root, { title: 'b', body: '' }, 1001)
-    const cards = listProjectManifest(root).map(m => ({ slug: m.slug, status: m.status }))
-
-    expect(rebuildProjectViews(root, cards)).toMatchObject({ created: 0, pruned: 0 })
-
-    mkdirSync(join(root, '.rclaude/project/views/done'), { recursive: true })
-    writeFileSync(viewLink('done', 'ghost'), 'not even a link')
-    expect(rebuildProjectViews(root, cards).pruned).toBe(1)
-    expect(existsSync(viewLink('done', 'ghost'))).toBe(false)
-  })
-
-  test('the board still works when the farm is nuked', () => {
-    const { slug } = createProjectTask(root, { title: 'resilient', body: '' }, 1000)
-    rmSync(join(root, '.rclaude/project/views'), { recursive: true, force: true })
-    expect(getProjectTask(root, slug)?.title).toBe('resilient')
-    expect(setProjectTaskStatus(root, slug, 'done', 2000)).toBe('inbox')
+    expect(readFileSync(join(lane, `${slug}.md`), 'utf8')).toBe('stale mirror')
+    expect(getProjectTask(root, slug)?.status).toBe('done')
   })
 })

@@ -8,20 +8,24 @@
  *
  *   - `id` is the whole primary key. No `(status, slug)` tuple, ever.
  *   - a link written today resolves forever, whatever lane the card ends up in.
- *   - `views/<status>/<id>.md` is a GENERATED symlink farm (project-views.ts):
- *     disposable, rebuildable, never read by code. `rm -rf views/` is harmless.
+ *   - ONE DIRECTORY, no mirrors. There is no generated `views/` symlink farm
+ *     any more (deleted 2026-08-13). A second copy of the lane structure was a
+ *     second thing to keep true, and it did not stay true: nothing read it, the
+ *     watcher had to exclude it to avoid double-firing, every write paid to
+ *     maintain it, and it still drifted -- one live board had 43 of 301 cards
+ *     with no link at all. A lane is one line inside one file. Filter the cards.
  *   - the old `<status>/<id>.md` lane dirs are read-only legacy, drained by
  *     `scripts/board-upgrade.ts` and by lazy per-card migration on write
  *     (project-legacy.ts). Nothing is ever written into them again.
  *
  * Prior art for the shape: notmuch (files never move, state is an index),
- * Maildir (the unique filename IS the identity), systemd/Nix (one canonical
- * store + generated symlink views).
+ * Maildir (the unique filename IS the identity), Jekyll/Hugo (a flat dir where
+ * frontmatter is the whole taxonomy).
  */
 
 import { existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { CARDS_DIR, VIEWS_DIR } from './card-path'
+import { CARDS_DIR } from './card-path'
 
 // The pure path SHAPE (and the legacy-path resolver every link depends on)
 // lives in card-path.ts so the browser bundle can import it too.
@@ -41,9 +45,9 @@ export class ProjectPathError extends Error {
  * already exists so a symlink can't smuggle the target outside the root --
  * the deepest existing ancestor is realpath'd and re-checked.
  *
- * NOTE: an IN-root symlink (the `views/` farm) resolves to an in-root target
- * and therefore passes. That is deliberate -- the farm is addressable, it just
- * isn't authoritative.
+ * NOTE: an IN-root symlink resolves to an in-root target and therefore passes.
+ * That is deliberate: the jail's job is keeping paths inside the root, not
+ * banning symlinks a user made themselves.
  *
  * Returns the absolute resolved path. Throws ProjectPathError on violation.
  */
@@ -92,13 +96,6 @@ export function cardsDir(root: string, create = true): string {
 /** Absolute path of one card. The only place `<id>.md` is spelled out. */
 export function cardPath(root: string, id: string, create = true): string {
   return join(cardsDir(root, create), `${id}.md`)
-}
-
-/** `<root>/.rclaude/project/views[/<status>]`. Not created unless asked. */
-export function viewsDir(root: string, status?: string, create = false): string {
-  const dir = status ? join(boardRoot(root), VIEWS_DIR, status) : join(boardRoot(root), VIEWS_DIR)
-  if (create) mkdirSync(dir, { recursive: true })
-  return dir
 }
 
 /** A legacy lane directory (`<root>/.rclaude/project/<status>`). READ ONLY. */

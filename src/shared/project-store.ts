@@ -8,8 +8,10 @@
  *       project-card-file.ts   one card: parse / project / serialize
  *       project-card-read.ts   queries, keyed by id
  *       project-card-write.ts  mutations, keyed by id
- *       project-views.ts       the generated `views/` symlink farm
  *       project-legacy.ts      draining the old `<status>/` lane dirs
+ *
+ * There is no `views/` symlink farm any more -- one directory, no mirrors.
+ * See project-paths.ts for why it was deleted.
  *
  * Every function takes the project root (an absolute host path -- the same path
  * the project URI's path segment resolves to) and a project-RELATIVE target.
@@ -48,7 +50,6 @@ export {
   ProjectPathError,
   resolveInRoot,
 } from './project-paths'
-export { rebuildProjectViews, viewsSupported } from './project-views'
 
 // ---------------------------------------------------------------------------
 // Raw project-relative file I/O (markdown viewer + general safe access)

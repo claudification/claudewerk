@@ -27,17 +27,13 @@ import {
 import { join } from 'node:path'
 import { parseFrontmatter } from './frontmatter'
 import { serializeCard } from './project-card-file'
-import { listCardLanes } from './project-card-read'
 import { type LegacyCard, listLegacyCards, listLegacyCollisions } from './project-legacy'
 import { boardRoot, cardPath, cardsDir, legacyLaneDir } from './project-paths'
-import { rebuildProjectViews, type ViewsReport } from './project-views'
 import { TASK_STATUSES } from './task-statuses'
 
 export interface UpgradeOptions {
   /** Report only -- touch nothing. */
   dryRun?: boolean
-  /** Rebuild the `views/` symlink farm afterwards (default true). */
-  views?: boolean
   /** Copy every lane file aside before moving anything (default true). */
   backup?: boolean
   /** Injected so the caller owns the clock (and tests stay deterministic). */
@@ -58,7 +54,6 @@ export interface UpgradeReport {
   moved: string[]
   failures: { slug: string; from: string; error: string }[]
   lanesRemoved: string[]
-  views?: ViewsReport
 }
 
 /** `.upgrade-backup-2026-08-12T00-45-00` next to the lanes. */
@@ -161,9 +156,9 @@ export function findProjectBoards(parent: string): string[] {
     .sort()
 }
 
-/** Run the sweep. Idempotent: on a migrated board it only rebuilds views. */
+/** Run the sweep. Idempotent: on an already-migrated board it does nothing. */
 export function upgradeProjectBoard(root: string, opts: UpgradeOptions = {}): UpgradeReport {
-  const { dryRun = false, views = true, backup = true, nowMs = Date.now() } = opts
+  const { dryRun = false, backup = true, nowMs = Date.now() } = opts
   const board = boardRoot(root)
   const report: UpgradeReport = {
     board,
@@ -194,6 +189,5 @@ export function upgradeProjectBoard(root: string, opts: UpgradeOptions = {}): Up
     report.lanesRemoved = pruneEmptyLanes(root)
   }
 
-  if (views && !dryRun) report.views = rebuildProjectViews(root, listCardLanes(root))
   return report
 }

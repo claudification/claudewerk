@@ -15,7 +15,6 @@ import { getProjectTask, locateCard, readFileOrNull } from './project-card-read'
 import { findLegacyCard, relocateLegacyCard } from './project-legacy'
 import { cardPath } from './project-paths'
 import type { ProjectTask, ProjectTaskMeta } from './project-task-types'
-import { relinkCard, removeCardViews } from './project-views'
 import type { TaskStatus } from './task-statuses'
 
 export interface ProjectTaskInput {
@@ -78,7 +77,6 @@ export function createProjectTask(root: string, input: ProjectTaskInput, nowMs: 
     created,
   }
   writeFileSync(cardPath(root, id), serializeCard(meta, input.body), 'utf8')
-  relinkCard(root, id, status)
   return {
     slug: id,
     status,
@@ -118,7 +116,6 @@ export function updateProjectTask(root: string, id: string, patch: Partial<Proje
   meta.status = status
 
   writeFileSync(target.abs, serializeCard(meta, patch.body ?? raw.body), 'utf8')
-  relinkCard(root, id, status)
   return getProjectTask(root, id)
 }
 
@@ -141,7 +138,6 @@ export function setProjectTaskStatus(root: string, id: string, toStatus: TaskSta
   } catch {
     /* mtime is a sort hint, not correctness */
   }
-  relinkCard(root, id, toStatus)
   return prev
 }
 
@@ -153,7 +149,6 @@ export function deleteProjectTask(root: string, id: string): boolean {
   } catch {
     return false
   }
-  removeCardViews(root, id)
   return true
 }
 

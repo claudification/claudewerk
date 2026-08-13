@@ -117,8 +117,3 @@ export function getProjectTasksBatch(root: string, refs: ProjectTaskRef[]): Proj
   }
   return out
 }
-
-/** Identity + lane for every card -- what `rebuildProjectViews` consumes. */
-export function listCardLanes(root: string): { slug: string; status: TaskStatus }[] {
-  return listProjectManifest(root).map(e => ({ slug: e.slug, status: e.status }))
-}

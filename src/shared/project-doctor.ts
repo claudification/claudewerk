@@ -23,7 +23,6 @@ import { checkCard } from './project-doctor-cards'
 import { checkLayout } from './project-doctor-layout'
 import { checkLinks } from './project-doctor-links'
 import { type DoctorFinding, type DoctorReport, sortFindings } from './project-doctor-types'
-import { checkViews } from './project-doctor-views'
 import { listLegacyCards } from './project-legacy'
 import { boardRoot } from './project-paths'
 import { listProjectManifest, locateCard } from './project-store'
@@ -77,11 +76,9 @@ export function runProjectDoctor(root: string): DoctorReport {
   const legacy = listLegacyCards(root)
   const cards = loadCards(root, new Set(legacy.map(c => c.slug)))
   const existingIds = new Set(cards.map(c => c.id))
-  const cardLanes = new Map<string, TaskStatus>(cards.map(c => [c.id, c.status]))
 
   const findings: DoctorFinding[] = []
   for (const card of cards) findings.push(...cardFindings(card, existingIds))
-  findings.push(...checkViews(root, cardLanes))
   findings.push(...checkLayout(root, legacy.length))
 
   return { board, noBoard: false, cards: cards.length, findings: sortFindings(findings) }

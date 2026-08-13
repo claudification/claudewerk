@@ -51,8 +51,9 @@ function diffManifest(prev: Map<ManifestKey, ProjectTaskManifestEntry>, next: Pr
 
 /**
  * Canonical cards, plus legacy lane cards on a board that hasn't been upgraded.
- * `views/` is deliberately EXCLUDED: it is a generated symlink farm mirroring
- * the cards, so watching it would fire a second event for every single change.
+ * Nothing else matches -- notably not a leftover `views/` farm from before the
+ * symlink farm was deleted, which would otherwise fire a second event for every
+ * single change.
  */
 const PROJECT_TASK_PATTERN = new RegExp(`\\.rclaude/project/(?:${CARDS_DIR}|${TASK_STATUS_PATTERN})/[^/]+\\.md$`)
 
