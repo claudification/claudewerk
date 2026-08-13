@@ -42,6 +42,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/control-panel-prefs'
 import { defaultOpenApplied, expandedState } from '@/lib/expanded-state'
+import { remoteToolStyle } from './remote-tool-style'
 
 // ANSI to HTML converter - vibrant colors for dark backgrounds
 const ansiConverter = new AnsiToHtml({
@@ -288,6 +289,8 @@ export function getToolStyle(name: string) {
   // ACP agents send lowercase tool names; normalize for style lookup
   const normalized = name.charAt(0).toUpperCase() + name.slice(1)
   if (TOOL_STYLES[normalized]) return TOOL_STYLES[normalized]
+  const remote = remoteToolStyle(name)
+  if (remote) return remote
   if (name.startsWith('mcp__gmail__')) return GMAIL_TOOL_STYLE
   if (name.startsWith('mcp__claude_ai_Google_Calendar__')) return CALENDAR_TOOL_STYLE
   if (name.startsWith('mcp__')) return MCP_TOOL_STYLE

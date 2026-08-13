@@ -39,6 +39,7 @@ import {
 } from './tool-cases-misc'
 import { renderGlobGrep, renderWebFetch, renderWebSearch } from './tool-cases-search'
 import { renderTaskCreate, renderTaskMisc, renderTaskUpdate, renderTodoWrite } from './tool-cases-tasks'
+import { WEB_REMOTE_HANDLERS } from './web-remote-handlers'
 
 type ToolHandler = (ctx: ToolCaseInput) => ToolCaseResult
 type ToolHandlerWithName = (name: string, ctx: ToolCaseInput) => ToolCaseResult
@@ -76,6 +77,7 @@ const kindHandlersWithName: Record<string, ToolHandlerWithName> = {
 }
 
 const toolHandlers: Record<string, ToolHandler> = {
+  ...WEB_REMOTE_HANDLERS,
   Bash: renderBash,
   REPL: renderRepl,
   Read: renderRead,
