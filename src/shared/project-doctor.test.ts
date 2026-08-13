@@ -195,3 +195,31 @@ describe('ordering', () => {
     expect(severities.indexOf('warning')).toBeLessThan(severities.indexOf('info'))
   })
 })
+
+describe('illustration is not link rot', () => {
+  test('a card path inside backticks or a fence is an EXAMPLE, not a link', () => {
+    writeCard(
+      'explains-the-board',
+      'title: Docs\nstatus: open',
+      [
+        'Create one with `.rclaude/project/cards/my-task.md`.',
+        '',
+        '```',
+        'Write .rclaude/project/cards/another-example.md',
+        '```',
+      ].join('\n'),
+    )
+    expect(forCheck(runProjectDoctor(root).findings, 'link-rot')).toHaveLength(0)
+  })
+
+  test('a real markdown link is still caught right next to an example', () => {
+    writeCard(
+      'mixed',
+      'title: Mixed\nstatus: open',
+      'example `.rclaude/project/cards/fake.md` but [this](.rclaude/project/cards/really-gone.md) is a link',
+    )
+    const found = forCheck(runProjectDoctor(root).findings, 'link-rot')
+    expect(found).toHaveLength(1)
+    expect(found[0].problem).toContain('really-gone')
+  })
+})

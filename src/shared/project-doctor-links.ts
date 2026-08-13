@@ -15,8 +15,18 @@
 import { canonicalizeCardPath } from './card-path'
 import type { DoctorFinding } from './project-doctor-types'
 
-/** Any board-card path in prose: markdown link target, inline code, or bare. */
+/** Any board-card path in prose: markdown link target, or bare. */
 const CARD_PATH_IN_TEXT = /(?:\.\/)?(?:[\w.-]+\/)*\.rclaude\/project\/[\w./-]+\.md/g
+
+/**
+ * Code spans and fenced blocks are ILLUSTRATION, not links. A card explaining
+ * the board quotes `.rclaude/project/cards/my-task.md` as an example, and
+ * reporting that as rot trains people to ignore the check -- which matters far
+ * more now the same finding is handed to an agent on every write.
+ */
+function stripCode(text: string): string {
+  return text.replace(/```[\s\S]*?```/g, ' ').replace(/`[^`\n]*`/g, ' ')
+}
 
 export interface LinkSource {
   id: string
@@ -28,7 +38,7 @@ export interface LinkSource {
 /** Every distinct card id referenced by one card's body and refs. */
 export function referencedCardIds(source: LinkSource): string[] {
   const found = new Set<string>()
-  for (const text of [source.body, ...source.refs]) {
+  for (const text of [stripCode(source.body), ...source.refs]) {
     for (const match of text.matchAll(CARD_PATH_IN_TEXT)) {
       const ref = canonicalizeCardPath(match[0])
       if (ref) found.add(ref.id)

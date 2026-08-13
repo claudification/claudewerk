@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { HookEvent } from '../shared/protocol'
 import type { AgentHostContext } from './agent-host-context'
+import { computeCardNudge } from './card-nudge'
 import { debug as _debug } from './debug'
 import { forwardOrQueueHookEvent } from './hook-forward'
 import { emitLaunchEvent } from './launch-events'
@@ -202,6 +203,12 @@ export function processHookEvent(ctx: AgentHostContext, event: HookEvent): HookD
   // queue). Attribution is computed inside, at observation time, so the broker
   // can keep subagent side effects off the parent (see hook-forward.ts).
   forwardOrQueueHookEvent(ctx, event)
+
+  // A PostToolUse that wrote a broken board card answers with the problems.
+  // Disjoint from the status nudge by event type (PostToolUse vs Stop), so the
+  // two can never contend for the single decision slot.
+  const cardNudge = computeCardNudge(event)
+  if (cardNudge) return cardNudge
 
   // THE STATUS — a Stop with work-but-no-status returns a one-shot nudge.
   return computeStatusNudge(ctx, event)

@@ -27,17 +27,25 @@ export interface HookRunResult {
 const QUIET: HookRunResult = { exitCode: 0, stderr: [] }
 
 export function runCardWriteHook(rawStdin: string): HookRunResult {
-  let payload: Record<string, unknown>
   try {
     if (!rawStdin.trim()) return QUIET
-    payload = JSON.parse(rawStdin)
+    return checkCardWritePayload(JSON.parse(rawStdin))
   } catch {
     return QUIET
   }
+}
 
+/**
+ * The same check against an ALREADY-PARSED payload. The agent host takes this
+ * route: its local hook server receives every PostToolUse in-process, so it can
+ * answer without spawning anything.
+ */
+export function checkCardWritePayload(payload: unknown): HookRunResult {
+  if (!payload || typeof payload !== 'object') return QUIET
   try {
-    const toolInput = (payload.tool_input ?? {}) as Record<string, unknown>
-    const target = cardWriteTarget(String(payload.tool_name ?? ''), String(toolInput.file_path ?? ''))
+    const p = payload as Record<string, unknown>
+    const toolInput = (p.tool_input ?? {}) as Record<string, unknown>
+    const target = cardWriteTarget(String(p.tool_name ?? ''), String(toolInput.file_path ?? ''))
     if (!target) return QUIET
 
     const findings = checkWrittenCard(target, {

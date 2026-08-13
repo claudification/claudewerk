@@ -70,30 +70,28 @@ same module can back a sentinel RPC or MCP tool later without moving.
 ### Catching a bad card at write time
 
 The doctor finds rot after the fact, which means somebody has to remember to run
-it. `rclaude --rclaude-validate-card` runs the same card checks on the PostToolUse
-edge and hands the findings straight back to the agent that just wrote the file,
-while it still has the context to fix them. Wire it up per-machine in
-`.claude/settings.json` (never committed):
+it. So the same card checks also run on the PostToolUse edge and hand the
+findings straight back to the agent that just wrote the file, while it still has
+the context to fix them.
 
-```json
-"PostToolUse": [{
-  "matcher": "Write|Edit|MultiEdit",
-  "hooks": [{ "type": "command", "command": "rclaude --rclaude-validate-card" }]
-}]
-```
+**NOTHING TO CONFIGURE.** The settings file rclaude generates for every session
+already routes every PostToolUse to the agent host's local hook server, and that
+route already answers with a `{decision:'block', reason}` body when it has
+something to say (the set_status Stop nudge got there first). The card check
+rides that same wire, in-process: `card-nudge.ts` -> `processHookEvent`. So every
+rclaude session in every project gets it, with no `.claude/settings.json` entry,
+no per-machine wiring, and no second process per write.
 
-**A hook may only assume the AGENT HOST is installed** -- no source checkout, no
-repo, no `bun run path/to/script`. That is why the validator is a flag on the
-`rclaude` binary rather than a script: a claudewerk machine has the agent host
-and (optionally) the sentinel, and nothing else. `scripts/hooks/validate-card.ts`
-is the same module behind a second entry point, for THIS repo only, where the
-source is newer than whatever frozen bundle is installed.
+Two secondary entry points exist for running it by hand:
 
-Wire it at the USER level (`~/.claude/settings.json`) to cover every project on
-the machine, or per-project to scope it. The validator itself is project-agnostic
-either way -- it derives the board root from the written file's path, so a
-session in one project that writes a card into another project's board still
-gets checked.
+| Entry point | For |
+|---|---|
+| `rclaude --rclaude-validate-card` | a stdin hook payload, on any machine -- needs only the agent host, no checkout |
+| `bun run scripts/hooks/validate-card.ts` | THIS repo, where the source outruns the installed frozen bundle |
+
+The check is project-agnostic: it derives the board root from the written file's
+path, so a session in one project that writes a card into another project's
+board still gets checked.
 
 Exit 2 is what feeds stderr back to the model. Nothing is blocked -- the write
 already happened, this is feedback. It reports a bad/missing `status:`, a card
