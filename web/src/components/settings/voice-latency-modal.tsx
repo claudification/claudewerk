@@ -84,9 +84,9 @@ export function VoiceLatencyModal({ open, onClose }: { open: boolean; onClose: (
 
   return (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogTitle>Speech transport latency</DialogTitle>
-        <p className="text-[10px] text-muted-foreground/70 -mt-2">
+      <DialogContent className="max-w-md p-5 gap-2 overflow-y-auto">
+        <DialogTitle className="pr-8">Speech transport latency</DialogTitle>
+        <p className="text-[10px] text-muted-foreground/70 pr-8">
           {ROUNDS} round trips each, measured from THIS browser, sequentially. This is how far away each option is, not
           how fast it transcribes.
         </p>

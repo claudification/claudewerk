@@ -35,7 +35,16 @@ import { acceptBinary, dialUpstream, type Env, UpstreamError } from './upstream'
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (url.pathname === '/health') return new Response('ok\n')
+    // CORS on purpose: the control panel is a DIFFERENT origin, and its latency
+    // probe could not read this at all without it -- the browser blocked the
+    // response and the probe honestly reported the Worker "unreachable" while
+    // dictation through it was working fine. The body is the string "ok"; there
+    // is nothing here to protect.
+    if (url.pathname === '/health') {
+      return new Response('ok\n', {
+        headers: { 'access-control-allow-origin': '*', 'cache-control': 'no-store' },
+      })
+    }
     if (url.pathname !== '/listen') return new Response('not found\n', { status: 404 })
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('expected a websocket upgrade\n', { status: 426 })
