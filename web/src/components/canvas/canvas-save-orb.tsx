@@ -38,7 +38,11 @@ function ErrorOrb({ detail }: { detail: string }) {
 function RestingOrb({ saving }: { saving: boolean }) {
   const pulse = saving ? 'animate-pulse border-muted-foreground/80' : ''
   return (
+    // role="img" is what makes aria-label valid on a span: a generic element
+    // carries no role, and an aria-label on a roleless element is dropped by
+    // screen readers rather than announced.
     <span
+      role="img"
       title={saving ? 'saving...' : 'saved'}
       aria-label={saving ? 'saving' : 'saved'}
       className={`${DOT} shrink-0 border border-muted-foreground/50 ${pulse}`}

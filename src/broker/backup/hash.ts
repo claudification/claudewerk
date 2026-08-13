@@ -10,8 +10,9 @@ export function sha256File(path: string): string {
   const buf = Buffer.allocUnsafe(1024 * 1024)
   const fd = openSync(path, 'r')
   try {
-    let bytesRead: number
-    while ((bytesRead = readSync(fd, buf, 0, buf.length, null)) > 0) {
+    for (;;) {
+      const bytesRead = readSync(fd, buf, 0, buf.length, null)
+      if (bytesRead <= 0) break
       hash.update(bytesRead === buf.length ? buf : buf.subarray(0, bytesRead))
     }
   } finally {

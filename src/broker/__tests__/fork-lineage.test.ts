@@ -25,8 +25,9 @@ type Row = { id: string; rootConversationId?: string }
 /** Minimal ConversationStore stand-in -- lineage only reads getConversation. */
 function storeOf(...rows: Row[]) {
   const byId = new Map(rows.map(r => [r.id, r]))
-  // biome-ignore lint/suspicious/noExplicitAny: lineage only touches getConversation
-  return { getConversation: (id: string) => byId.get(id) } as any
+  // Typed off the function under test rather than `any`, so a change to the
+  // store shape it needs shows up here instead of being cast away.
+  return { getConversation: (id: string) => byId.get(id) } as unknown as Parameters<typeof computeSpawnLineage>[0]
 }
 
 const SOURCE = 'src-conversation-id'
