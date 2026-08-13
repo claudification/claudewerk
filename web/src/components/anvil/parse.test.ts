@@ -205,6 +205,50 @@ describe('renderAnvilFence', () => {
     expect(html).toContain('M12 22a1 1 0 0 1 0-20')
   })
 
+  test('secret renders masked, not as a plain text input', () => {
+    const html = renderAnvilFence('@input id=i\n_ token | secret | Token', true)
+    expect(html).toContain('type="password"')
+  })
+
+  test('every field type gets its own control', () => {
+    const src =
+      '@input id=i\n_ a | text | A\n_ b | number | B\n_ c | secret | C\n_ d | url | D\n_ e | date | E\n_ f | longtext | F\n_ g | bool | G'
+    const html = renderAnvilFence(src, true)
+    for (const t of ['text', 'number', 'password', 'url', 'date']) {
+      expect(html).toContain(`type="${t}"`)
+    }
+    expect(html).toContain('<textarea')
+    expect(html).toContain('anvil-switch')
+  })
+
+  test('single-select never gets a submit button; multi always does', () => {
+    const one = '@choice id=x\n? Q\n- a | A'
+    const many = '@choice id=x select=many\n? Q\n- a | A'
+    const galleryOne = '@gallery id=g\n? Q\n- a | A'
+    const galleryMany = '@gallery id=g select=many\n? Q\n- a | A'
+    expect(renderAnvilFence(one, true)).not.toContain('anvil-submit')
+    expect(renderAnvilFence(galleryOne, true)).not.toContain('anvil-submit')
+    expect(renderAnvilFence(many, true)).toContain('anvil-submit')
+    expect(renderAnvilFence(galleryMany, true)).toContain('anvil-submit')
+    // input and scale always submit: there is no click that could stand in.
+    expect(renderAnvilFence('@input id=i\n_ a | text | A', true)).toContain('anvil-submit')
+    expect(renderAnvilFence('@scale id=s\n% a | Lo | Hi', true)).toContain('anvil-submit')
+  })
+
+  test('a note keeps its warnings inside the tinted box', () => {
+    const html = renderAnvilFence('@wormhole id=x\n? hi', true)
+    // The warning must sit within the note div, not trail after it as loose text.
+    const noteEnd = html.lastIndexOf('</div></div>')
+    const warnAt = html.indexOf('anvil-warn')
+    expect(warnAt).toBeGreaterThan(-1)
+    expect(warnAt).toBeLessThan(noteEnd)
+  })
+
+  test('warnings render above the action, not orphaned below it', () => {
+    const html = renderAnvilFence('@input id=i\n_ x | nonsense | X', true)
+    expect(html.indexOf('anvil-warn')).toBeLessThan(html.indexOf('anvil-submit'))
+  })
+
   test('prompt text is escaped', () => {
     const html = renderAnvilFence('@choice id=x\n? <img src=x onerror=alert(1)>\n- a | A', true)
     expect(html).not.toContain('<img src=x')

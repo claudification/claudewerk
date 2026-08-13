@@ -7,7 +7,7 @@
  * root lifecycle entirely. When stamping lands, only this file is replaced --
  * parse.ts and types.ts survive as-is.
  */
-import { esc, renderChoice, renderGallery, renderInput, renderNote, renderScale } from './blocks'
+import { esc, renderChoice, renderGallery, renderInput, renderNote, renderScale, submitBar, warnings } from './blocks'
 import { type IconName, icon, resolveIcon } from './icons'
 import { parseAnvil } from './parse'
 import { type AnvilBlock, type AnvilKind, type GalleryRender, galleryRender } from './types'
@@ -48,17 +48,12 @@ function blockIcon(block: AnvilBlock): IconName {
   return resolveIcon(block.attrs.icon, base)
 }
 
-function warnings(block: AnvilBlock): string {
-  if (!block.warnings.length) return ''
-  const items = block.warnings.map(w => esc(w)).join(' · ')
-  return `<div class="anvil-warn">${items}</div>`
-}
-
 function shell(block: AnvilBlock, partial: boolean): string {
   const body = (BODIES[block.kind] ?? renderNote)(block)
 
-  // A note is chrome-less: it is prose, not a question.
-  if (block.kind === 'note') return `${body}${warnings(block)}`
+  // A note is chrome-less: it is prose, not a question. It also renders its own
+  // warnings, since it has no frame to hang them off.
+  if (block.kind === 'note') return body
 
   const head = block.prompt
     ? `<div class="anvil-prompt"><span class="anvil-icon">${icon(blockIcon(block))}</span>${esc(block.prompt)}</div>`
@@ -66,8 +61,10 @@ function shell(block: AnvilBlock, partial: boolean): string {
   const sub = block.subtext ? `<div class="anvil-subtext">${esc(block.subtext)}</div>` : ''
   const state = partial ? 'streaming' : 'preview'
 
+  // Order matters: warnings explain the body, so they belong ABOVE the action
+  // rather than orphaned underneath it.
   return `<section class="anvil-block" data-anvil-id="${esc(block.id)}" data-anvil-kind="${esc(block.kind)}">
-    ${head}${sub}${body}${warnings(block)}
+    ${head}${sub}${body}${warnings(block)}${submitBar(block)}
     <footer class="anvil-foot"><span>${state}</span></footer>
   </section>`
 }

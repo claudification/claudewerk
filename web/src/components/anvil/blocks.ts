@@ -12,9 +12,12 @@
 import { type IconName, icon, resolveIcon } from './icons'
 import {
   type AnvilBlock,
+  type AnvilField,
+  type AnvilKind,
   type AnvilOption,
   attrNumber,
   attrString,
+  type FieldType,
   type GalleryRender,
   galleryRender,
   isMulti,
@@ -64,7 +67,7 @@ export function renderChoice(b: AnvilBlock): string {
       </button>`
     })
     .join('')
-  return `<div class="anvil-rows" role="group">${rows}</div>${multi ? submitBar(b) : ''}`
+  return `<div class="anvil-rows" role="group">${rows}</div>`
 }
 
 /** One face per render mode. Strategy map: a new mode is one entry. */
@@ -110,29 +113,52 @@ export function renderGallery(b: AnvilBlock): string {
       </button>`
     })
     .join('')
-  return `<div class="anvil-grid anvil-grid-${mode}">${cards}</div>${submitBar(b)}`
+  // Same rule as @choice: single select locks on the click itself, so a submit
+  // button would be a second, meaningless step.
+  return `<div class="anvil-grid anvil-grid-${mode}">${cards}</div>`
 }
+
+function textControl(type: string, f: AnvilField): string {
+  const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : ''
+  return `<input class="anvil-input" type="${type}" disabled${ph}>`
+}
+
+/**
+ * One control per field type. This was a ternary chain that collapsed every
+ * type except `number` to a plain text input, so `secret` -- the one type whose
+ * whole purpose is masking -- rendered its value in the clear, and `date`/`url`
+ * silently lost their native controls.
+ */
+const CONTROLS: Record<FieldType, (f: AnvilField) => string> = {
+  text: f => textControl('text', f),
+  number: f => textControl('number', f),
+  secret: f => textControl('password', f),
+  url: f => textControl('url', f),
+  date: f => textControl('date', f),
+  path: f => textControl('text', f),
+  longtext: f => {
+    const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : ''
+    return `<textarea class="anvil-input" rows="3" disabled${ph}></textarea>`
+  },
+  bool: () => '<span class="anvil-switch" aria-hidden="true"></span>',
+}
+
+const MONO_FIELDS = new Set<FieldType>(['path', 'url', 'secret'])
 
 export function renderInput(b: AnvilBlock): string {
   if (!b.fields.length) return '<p class="anvil-empty">No fields.</p>'
   const rows = b.fields
     .map(f => {
-      const ph = f.placeholder ? ` placeholder="${esc(f.placeholder)}"` : ''
       const opt = f.required ? '' : '<span class="anvil-optional">optional</span>'
-      const control =
-        f.type === 'longtext'
-          ? `<textarea class="anvil-input" rows="3" disabled${ph}></textarea>`
-          : f.type === 'bool'
-            ? '<span class="anvil-switch" aria-hidden="true"></span>'
-            : `<input class="anvil-input" type="${f.type === 'number' ? 'number' : 'text'}" disabled${ph}>`
-      const mono = f.type === 'path' || f.type === 'url' ? ' anvil-field-mono' : ''
+      const control = (CONTROLS[f.type] ?? CONTROLS.text)(f)
+      const mono = MONO_FIELDS.has(f.type) ? ' anvil-field-mono' : ''
       return `<div class="anvil-field${mono}">
         <label class="anvil-field-label">${esc(f.label)}${opt}</label>
         ${control}
       </div>`
     })
     .join('')
-  return `<div class="anvil-fields">${rows}</div>${submitBar(b)}`
+  return `<div class="anvil-fields">${rows}</div>`
 }
 
 export function renderScale(b: AnvilBlock): string {
@@ -148,7 +174,7 @@ export function renderScale(b: AnvilBlock): string {
       </div>`
     })
     .join('')
-  return `<div class="anvil-dials">${rows}</div>${submitBar(b)}`
+  return `<div class="anvil-dials">${rows}</div>`
 }
 
 const NOTE_CLASS: Record<NoteTone, string> = {
@@ -163,6 +189,12 @@ const NOTE_ICON: Record<NoteTone, IconName> = {
   danger: 'octagon-alert',
 }
 
+/** Non-fatal parse complaints. Always rendered next to what they describe. */
+export function warnings(b: AnvilBlock): string {
+  if (!b.warnings.length) return ''
+  return `<div class="anvil-warn">${b.warnings.map(w => esc(w)).join(' · ')}</div>`
+}
+
 export function renderNote(b: AnvilBlock): string {
   const tone = attrString(b, 'tone', 'info') as NoteTone
   const cls = NOTE_CLASS[tone] ?? NOTE_CLASS.info
@@ -174,10 +206,26 @@ export function renderNote(b: AnvilBlock): string {
     .map(l => `<p>${esc(l)}</p>`)
     .join('')
   const mark = icon(resolveIcon(b.attrs.icon, NOTE_ICON[tone] ?? 'info'))
-  return `<div class="anvil-note ${cls}"><span class="anvil-icon">${mark}</span><div class="anvil-note-body">${paras}</div></div>`
+  // A note carries its own warnings INSIDE the tinted box. The shell cannot
+  // append them, because a note has no frame to append them to and they would
+  // float naked in the transcript.
+  return `<div class="anvil-note ${cls}"><span class="anvil-icon">${mark}</span><div class="anvil-note-body">${paras}${warnings(b)}</div></div>`
 }
 
-function submitBar(b: AnvilBlock): string {
+/**
+ * Which kinds need an explicit submit. Single-select locks on the click itself,
+ * so a button there would be a second, meaningless step.
+ */
+const NEEDS_SUBMIT: Record<AnvilKind, (b: AnvilBlock) => boolean> = {
+  choice: isMulti,
+  gallery: isMulti,
+  input: () => true,
+  scale: () => true,
+  note: () => false,
+}
+
+export function submitBar(b: AnvilBlock): string {
+  if (!(NEEDS_SUBMIT[b.kind] ?? (() => false))(b)) return ''
   const label = attrString(b, 'submit', 'Confirm')
   return `<div class="anvil-actions"><button type="button" class="anvil-submit" disabled>${esc(label)}</button></div>`
 }
