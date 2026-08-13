@@ -22,6 +22,7 @@ import { record } from '@/lib/perf-metrics'
 import type { TranscriptEntry } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { labSummary, resolveVirtualizerLab } from '@/lib/virtualizer-lab'
+import { FOLLOW_DEBUG, followDebug } from './follow-debug'
 import { TranscriptEmptyState } from './ghost-peek'
 import { AnimatedGroupContent, stableGroupKey } from './group-content'
 import { estimateGroupSize, getConvSizeCache, trimConvSizeCache } from './group-sizing'
@@ -555,20 +556,25 @@ export const TranscriptView = memo(function TranscriptView({
     setFillSpacerActive(false)
     pinToBottom()
     onReachedBottom?.()
-    console.debug(`[follow] switch-pin cacheKey=${cacheKey?.slice(0, 8) ?? '-'} groups=${renderGroups.length}`)
+    followDebug(`[follow] switch-pin cacheKey=${cacheKey?.slice(0, 8) ?? '-'} groups=${renderGroups.length}`)
     // Did the entry actually land at the bottom? (Issue: "entering a conversation
     // doesn't always get to the bottom".) Measure a frame later, after the
     // scrollToEnd + first layout. DID-NOT-REACH means the pin undershot the
     // still-measuring content -- the growth effect below should converge it iff
     // `follow` is true by then.
-    const raf = requestAnimationFrame(() => {
-      const el = parentRef.current
-      if (!el) return
-      const drift = el.scrollHeight - el.scrollTop - el.clientHeight
-      console.debug(
-        `[follow] switch-pin settled drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'} follow=${follow ? 1 : 0}`,
-      )
-    })
+    // Pure probe: it only reports, never corrects -- so it is gated on
+    // FOLLOW_DEBUG (see follow-debug.ts) rather than forcing a layout read every
+    // conversation switch for a line nobody is reading.
+    const raf = FOLLOW_DEBUG
+      ? requestAnimationFrame(() => {
+          const el = parentRef.current
+          if (!el) return
+          const drift = el.scrollHeight - el.scrollTop - el.clientHeight
+          followDebug(
+            `[follow] switch-pin settled drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'} follow=${follow ? 1 : 0}`,
+          )
+        })
+      : 0
     const id = setTimeout(() => {
       followSmoothRef.current = true
     }, 350)
@@ -582,7 +588,7 @@ export const TranscriptView = memo(function TranscriptView({
   // authoritative engaged/disengaged transition at the PROP level.
   // biome-ignore lint/correctness/useExhaustiveDependencies: virtualizer is stable
   useLayoutEffect(() => {
-    console.debug(`[follow] follow-prop=${follow ? 'ON (engaged)' : 'OFF (disengaged)'}`)
+    followDebug(`[follow] follow-prop=${follow ? 'ON (engaged)' : 'OFF (disengaged)'}`)
     if (follow) pinToBottom()
   }, [follow])
 
@@ -616,7 +622,7 @@ export const TranscriptView = memo(function TranscriptView({
       // follow badly -> reverted; keep the effect, just drop the smooth animation.)
       // Lab: manualGrowthPin=false runs native wasAtEnd as the SOLE driver.
       pinToBottom({ behavior: 'auto' })
-    } else if (grew && !follow && delta > 24) {
+    } else if (FOLLOW_DEBUG && grew && !follow && delta > 24) {
       // Content arrived (new group, async recap, finished turn) while follow was
       // already OFF, so nothing pins -- the "recap scrolls below / anchor lost"
       // symptom. The preceding DISENGAGE line tells you WHY follow was off.
@@ -624,7 +630,7 @@ export const TranscriptView = memo(function TranscriptView({
       const now = performance.now()
       if (now - lastGrewLogRef.current > 800) {
         lastGrewLogRef.current = now
-        console.debug(
+        followDebug(
           `[follow] grew-but-not-following Δ=${delta.toFixed(0)} total=${totalSize.toFixed(0)} -- content arrived while follow OFF (won't pin)`,
         )
       }

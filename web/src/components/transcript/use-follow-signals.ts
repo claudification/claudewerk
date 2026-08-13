@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef } from 'react'
+import { followDebug } from './follow-debug'
 
 type Ref<T> = { current: T }
 
@@ -71,7 +72,7 @@ function logTransition(
   if (t === 'engage') reason = 'reached-bottom'
   else if (t === 'disengage') reason = 'user-scroll-up'
   else if (info.backfilling) reason = 'backfill-in-flight'
-  console.debug(
+  followDebug(
     `[follow] ${towardEngage ? 'ENGAGE' : 'DISENGAGE'}${t.endsWith('suppressed') ? '-suppressed' : ''} reason=${reason} drift=${info.drift.toFixed(0)} shDelta=${info.shDelta} userScrolling=${info.userScrolling} cacheKey=${info.cacheKey?.slice(0, 8) ?? '-'}`,
   )
 }

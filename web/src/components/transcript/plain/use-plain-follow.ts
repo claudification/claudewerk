@@ -14,7 +14,8 @@
  *
  * The parent still owns the `follow` prop (shared with the events view + the
  * scroll-to-bottom button); this hook keeps engine state and parent state in
- * sync via onUserScroll/onReachedBottom, logging `[follow]` transitions.
+ * sync via onUserScroll/onReachedBottom, tracing `[follow]` transitions through
+ * `followDebug` (OFF by default -- flip FOLLOW_DEBUG in ../follow-debug.ts).
  *
  * TWO ENGINE QUIRKS WE COMPENSATE FOR (both browser-verified, v1.1.6):
  *
@@ -42,6 +43,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useStickToBottom } from 'use-stick-to-bottom'
+import { followDebug } from '../follow-debug'
 
 // Settle bound for the switch-pin: cap frames so a conversation whose content
 // never stabilizes (pathological) can't spin the rAF loop forever, and require
@@ -76,10 +78,10 @@ export function usePlainFollow(opts: {
   // scroll-to-bottom button and the shared follow prop stay correct.
   useEffect(() => {
     if (isAtBottom && !followRef.current) {
-      console.debug('[follow] ENGAGE reason=reached-bottom (plain)')
+      followDebug('[follow] ENGAGE reason=reached-bottom (plain)')
       onReachedBottomRef.current?.()
     } else if (!isAtBottom && followRef.current) {
-      console.debug('[follow] DISENGAGE reason=user-scroll-up (plain)')
+      followDebug('[follow] DISENGAGE reason=user-scroll-up (plain)')
       onUserScrollRef.current?.()
     }
   }, [isAtBottom])
@@ -95,10 +97,10 @@ export function usePlainFollow(opts: {
     if (opts.follow === was) return
     const engineAtBottom = state.isAtBottom || state.isNearBottom
     if (opts.follow && !engineAtBottom) {
-      console.debug('[follow] follow-prop=ON (plain) -> pin')
+      followDebug('[follow] follow-prop=ON (plain) -> pin')
       scrollToBottom({ animation: 'instant' })
     } else if (!opts.follow && engineAtBottom) {
-      console.debug('[follow] follow-prop=OFF (plain) -> escape lock')
+      followDebug('[follow] follow-prop=OFF (plain) -> escape lock')
       stopScroll()
     }
   }, [opts.follow])
@@ -116,7 +118,7 @@ export function usePlainFollow(opts: {
   useLayoutEffect(() => {
     prevTailRef.current = tailSignalRef.current
     onReachedBottomRef.current?.()
-    console.debug(`[follow] switch-pin (plain) cacheKey=${opts.cacheKey?.slice(0, 8) ?? '-'}`)
+    followDebug(`[follow] switch-pin (plain) cacheKey=${opts.cacheKey?.slice(0, 8) ?? '-'}`)
     let raf = 0
     let frames = 0
     let stable = 0
@@ -130,7 +132,7 @@ export function usePlainFollow(opts: {
       lastHeight = height
       frames += 1
       if (stable >= SETTLE_STABLE_FRAMES || frames >= SETTLE_MAX_FRAMES) {
-        console.debug(
+        followDebug(
           `[follow] switch-pin settled (plain) frames=${frames} drift=${drift.toFixed(0)} ${drift < 40 ? 'OK' : 'DID-NOT-REACH-BOTTOM'}`,
         )
         return
@@ -152,7 +154,7 @@ export function usePlainFollow(opts: {
     if (opts.tailSignal === prevTailRef.current) return
     prevTailRef.current = opts.tailSignal
     if (!followRef.current) return
-    console.debug('[follow] append re-pin (plain) -> follow tail')
+    followDebug('[follow] append re-pin (plain) -> follow tail')
     scrollToBottom({ animation: 'instant' })
   }, [opts.tailSignal])
 

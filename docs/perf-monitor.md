@@ -102,7 +102,7 @@ sits next to the thing that caused it. The log lines you'll see and what they me
 | `[grouping]` | `N new entries -> M groups (X.Xms)` -- the incremental grouping pass. |
 | `[sync]` | Transcript sync: `FETCH`/`GOT`/`REFETCH`, cache hits, seq tracking. |
 | `[chunk]` | Lazy-chunk load timings (code-split bundles). A cold switch that also loads a chunk pays both -- don't blame the switch for the chunk's ms. |
-| `[follow]` | Transcript follow/anchor state (switch-pin, settle, drift). |
+| `[follow]` | Transcript follow/anchor state (switch-pin, settle, drift). **OFF by default** -- the anchor engine is stable, so the firehose is gated behind `FOLLOW_DEBUG` in `web/src/components/transcript/follow-debug.ts`. Flip it to `true` and rebuild the web bundle to get these lines back. |
 | `[transcript-prune]` | Live-cap eviction into the page cache. |
 
 ### The rAF-suspension caveat
