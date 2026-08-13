@@ -76,6 +76,30 @@ REQUIRED on every `ChatRequest`, so a new caller cannot add untracked spend. To
 later persist spend to a DB, add the write inside `recordOpenRouterSpend` -- every
 call site is already covered.
 
+**Slow SQLite queries:** `bun:sqlite` is SYNCHRONOUS, so a 300ms query blocks the
+broker's whole event loop for 300ms -- every other HTTP request, WebSocket frame
+and timer waits behind it. The store driver wraps its single `Database` handle
+(`src/broker/store/sqlite/slow-query-log.ts`), so every store is covered without
+touching a call site. Startup migrations, schema creation and `VACUUM` run on the
+RAW handle and are deliberately NOT logged: they are legitimately slow and would
+bury the steady-state queries.
+
+```bash
+docker compose logs broker | grep '\[slow-query\]'   # individual offenders
+docker compose logs broker | grep -A11 '\[query-stats\]'  # periodic top-10
+```
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `CLAUDWERK_SLOW_QUERY_MS` | `50` | Log any SQLite call at or above this. `0` disables instrumentation entirely (the Database is returned unwrapped). |
+| `CLAUDWERK_QUERY_STATS_INTERVAL_MS` | `0` (off) | Dump the aggregate top-10 by TOTAL time this often, then reset the window. |
+
+Reach for the aggregate when the individual log looks clean: it ranks by total
+time, so it catches a 2ms query run 2,000 times per request, which is the shape
+that never trips a per-call threshold. A malformed value for either var keeps the
+default rather than becoming `0` -- a typo must never silently switch
+observability off during an incident.
+
 ## Diag Mnemonics
 
 Paste `diag:{sessionId}` -> fetch and analyze:
