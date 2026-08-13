@@ -15,16 +15,7 @@ import { checkBunVersion } from '../shared/bun-version'
 checkBunVersion()
 
 import { createHash, randomBytes } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { hostname as osHostname } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
@@ -100,6 +91,13 @@ import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
+import {
+  AdoptedChildren,
+  isPidAlive,
+  mergeRegistryEntries,
+  type PidRegistryEntry,
+  reconcileRegistry,
+} from './pid-registry'
 import { type PreflightIssue, preflightSpawn } from './preflight'
 import { runProfileCli } from './profile-cli'
 import {
@@ -284,13 +282,6 @@ function saveCcVersionState(next: LastSeenCcVersion): void {
   }
 }
 
-interface PidRegistryEntry {
-  conversationId: string
-  pid: number
-  cwd: string
-  startedAt: string
-}
-
 interface TrackedChild {
   proc: Subprocess
   conversationId: string
@@ -304,6 +295,28 @@ interface TrackedChild {
 
 /** Live headless children spawned by this sentinel instance */
 const trackedChildren = new Map<string, TrackedChild>()
+
+/**
+ * Agent hosts inherited from a PREVIOUS sentinel instance (PID-only -- the
+ * `Subprocess` handle died with the old parent). They are deliberately left
+ * running across a restart; this map is what keeps them from being forgotten.
+ * See src/sentinel/pid-registry.ts for the leak this closes.
+ */
+const adoptedChildren = new AdoptedChildren()
+
+/** How often surviving hosts are probed so their death still reaches the broker. */
+const ADOPTED_REAP_INTERVAL_MS = 60_000
+
+/**
+ * Register a child this sentinel owns. Always use this instead of a bare
+ * `trackedChildren.set` -- re-spawning a conversation must drop any adopted
+ * PID-only record for it, or the stale PID would shadow the live one and a
+ * later reap would report the wrong process as dead.
+ */
+function trackChild(conversationId: string, child: TrackedChild): void {
+  adoptedChildren.release(conversationId)
+  trackedChildren.set(conversationId, child)
+}
 
 /**
  * Per-profile live-load tracker (sentinel-side). Maps profile NAME -> count
@@ -390,12 +403,18 @@ function buildPickerUsageSource(config: SentinelConfig): {
 const deadPidsToReport: PidRegistryEntry[] = []
 
 function writePidRegistry() {
-  const entries: PidRegistryEntry[] = [...trackedChildren.values()].map(c => ({
-    conversationId: c.conversationId,
-    pid: c.pid,
-    cwd: c.cwd,
-    startedAt: c.startedAt,
-  }))
+  // Adopted survivors MUST be serialised alongside this instance's own children.
+  // Writing only `trackedChildren` is what used to erase a whole generation of
+  // agent hosts on every restart. See src/sentinel/pid-registry.ts.
+  const entries = mergeRegistryEntries(
+    [...trackedChildren.values()].map(c => ({
+      conversationId: c.conversationId,
+      pid: c.pid,
+      cwd: c.cwd,
+      startedAt: c.startedAt,
+    })),
+    adoptedChildren.values(),
+  )
   try {
     mkdirSync(PID_REGISTRY_DIR, { recursive: true })
     writeFileSync(PID_REGISTRY_PATH, JSON.stringify(entries, null, 2))
@@ -408,21 +427,50 @@ function loadAndCheckPidRegistry() {
   if (!existsSync(PID_REGISTRY_PATH)) return
   try {
     const entries: PidRegistryEntry[] = JSON.parse(readFileSync(PID_REGISTRY_PATH, 'utf8'))
-    for (const entry of entries) {
-      try {
-        process.kill(entry.pid, 0) // check if alive (signal 0 = no-op)
-        log(`PID ${entry.pid} still alive (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd})`)
-        // Can't re-attach Bun.spawn to existing PID - just note it's alive.
-        // The rclaude process manages its own WS connection to the broker.
-      } catch {
-        log(`PID ${entry.pid} dead (wrapper ${entry.conversationId.slice(0, 8)})`)
-        deadPidsToReport.push(entry)
-      }
+    const { alive, dead } = reconcileRegistry(entries, isPidAlive)
+
+    // Survivors are ADOPTED, not merely logged. A raw PID cannot be re-attached
+    // as a Subprocess, but it is enough to persist, probe and report -- which is
+    // all the previous code needed and none of what it did.
+    adoptedChildren.adopt(alive)
+    for (const entry of alive) {
+      log(
+        `Adopted surviving PID ${entry.pid} (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd}, startedAt=${entry.startedAt})`,
+      )
     }
-    unlinkSync(PID_REGISTRY_PATH)
+    for (const entry of dead) {
+      log(`PID ${entry.pid} dead (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd})`)
+      deadPidsToReport.push(entry)
+    }
+    log(`PID registry: ${entries.length} entries -> ${alive.length} adopted, ${dead.length} dead`)
+
+    // Rewrite rather than unlink: an unlink followed by a SIGKILL (no SIGTERM,
+    // so no shutdown write) would strand every survivor exactly as before.
+    writePidRegistry()
   } catch (e) {
     log(`Failed to read PID registry: ${e}`)
   }
+}
+
+/**
+ * Probe adopted survivors and report any that have exited.
+ *
+ * Without this a survivor's death is invisible: it has no `exited` handler on
+ * this instance (we never owned its Subprocess), so the broker would keep the
+ * conversation marked alive forever -- a phantom.
+ */
+function reapAdoptedChildren(ws: WebSocket) {
+  const reaped = adoptedChildren.prune(isPidAlive)
+  if (reaped.length === 0) return
+  for (const entry of reaped) {
+    log(
+      `Adopted PID ${entry.pid} exited (wrapper ${entry.conversationId.slice(0, 8)}, cwd=${entry.cwd}) -- reporting to broker`,
+    )
+    deadPidsToReport.push(entry)
+  }
+  log(`Reaped ${reaped.length} adopted children, ${adoptedChildren.size} still alive`)
+  reportDeadPids(ws)
+  writePidRegistry()
 }
 
 /** Report dead PIDs from a previous sentinel run (called after WS connects) */
@@ -818,7 +866,7 @@ function spawnHeadlessDirect(
     startedAt: new Date().toISOString(),
     stderrRing: new RingBuffer<string>(30),
   }
-  trackedChildren.set(conversationId, child)
+  trackChild(conversationId, child)
   writePidRegistry()
 
   // Capture stderr for diagnostics
@@ -953,7 +1001,7 @@ function spawnOpenCodeHostDirect(opts: {
     startedAt: new Date().toISOString(),
     stderrRing: new RingBuffer<string>(30),
   }
-  trackedChildren.set(opts.conversationId, child)
+  trackChild(opts.conversationId, child)
   writePidRegistry()
   captureChildStderr(proc, opts.conversationId)
 
@@ -1104,7 +1152,7 @@ function spawnAcpHostDirect(opts: {
     startedAt: new Date().toISOString(),
     stderrRing: new RingBuffer<string>(30),
   }
-  trackedChildren.set(opts.conversationId, child)
+  trackChild(opts.conversationId, child)
   writePidRegistry()
   captureChildStderr(proc, opts.conversationId)
 
@@ -1358,7 +1406,7 @@ function spawnDaemonHostDirect(opts: {
     startedAt: new Date().toISOString(),
     stderrRing: new RingBuffer<string>(30),
   }
-  trackedChildren.set(opts.conversationId, child)
+  trackChild(opts.conversationId, child)
   writePidRegistry()
   captureChildStderr(proc, opts.conversationId)
 
@@ -2806,6 +2854,7 @@ function connect(
 ) {
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let adoptedReapTimer: ReturnType<typeof setInterval> | null = null
   let shouldReconnect = true
 
   log(`Connecting to ${url}...`)
@@ -2822,6 +2871,11 @@ function connect(
 
     // Report any dead PIDs from previous sentinel run
     reportDeadPids(ws)
+
+    // Keep probing the survivors we adopted at boot. They have no `exited`
+    // handler on this instance, so this timer is the ONLY thing that turns a
+    // survivor's death into a broker-visible event instead of a phantom.
+    adoptedReapTimer ??= setInterval(() => reapAdoptedChildren(ws), ADOPTED_REAP_INTERVAL_MS)
 
     // Re-announce live host shells so they survive a broker restart. The PTYs
     // are FLOATING (sentinel-owned) -- this resync is the ONLY thing that tells
@@ -4201,6 +4255,12 @@ function connect(
   ws.onclose = (event: CloseEvent) => {
     activeWs = null
     if (heartbeatTimer) clearInterval(heartbeatTimer)
+    // Must be cleared: `connect()` re-runs on reconnect, so leaving this armed
+    // would stack one reaper per reconnect, each firing at a dead socket.
+    if (adoptedReapTimer) {
+      clearInterval(adoptedReapTimer)
+      adoptedReapTimer = null
+    }
     stopUsagePolling()
     stopDaemonRosterWatch()
     stopAllWatches(l => log(l))
@@ -4302,7 +4362,9 @@ loadAndCheckPidRegistry()
 let controlSocket: { close: () => void } | null = null
 
 process.on('SIGTERM', () => {
-  log(`SIGTERM received. ${trackedChildren.size} tracked children, ${shellRegistry.count} host shells.`)
+  log(
+    `SIGTERM received. ${trackedChildren.size} tracked children, ${adoptedChildren.size} adopted survivors, ${shellRegistry.count} host shells.`,
+  )
   controlSocket?.close()
   // Host shells are NOT unref'd -- they are the sentinel's own children and die
   // with it (floating across conversation churn, not across sentinel restart).
@@ -4323,7 +4385,9 @@ process.on('SIGTERM', () => {
 
 // Also handle SIGINT for graceful Ctrl-C shutdown
 process.on('SIGINT', () => {
-  log(`SIGINT received. ${trackedChildren.size} tracked children, ${shellRegistry.count} host shells.`)
+  log(
+    `SIGINT received. ${trackedChildren.size} tracked children, ${adoptedChildren.size} adopted survivors, ${shellRegistry.count} host shells.`,
+  )
   controlSocket?.close()
   shellRegistry.killAll()
   for (const child of trackedChildren.values()) {
