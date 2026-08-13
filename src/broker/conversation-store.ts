@@ -3152,7 +3152,12 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     pendingForkSources.set(conversationId, sourceConversationId)
     // Same 5 min ceiling as the launch config -- a fork that never boots must
     // not pin its source id in memory forever.
-    setTimeout(() => pendingForkSources.delete(conversationId), 5 * 60 * 1000)
+    //
+    // unref'd: an eviction timer must never be a reason to stay alive. Without
+    // it a single spawn in a test run holds the event loop for five minutes and
+    // the whole runner hangs with no output -- which is exactly what happened
+    // the first time this shipped.
+    setTimeout(() => pendingForkSources.delete(conversationId), 5 * 60 * 1000).unref?.()
   }
 
   function consumePendingForkSource(conversationId: string): string | undefined {
