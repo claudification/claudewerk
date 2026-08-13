@@ -43,15 +43,36 @@ const UPSTREAM_PROBES: Record<string, string> = {
   cloudflare: 'https://stt.frst.dev/health',
 }
 
-/** Round trip in ms, or -1 when the host could not be reached at all. */
+/** Rounds per upstream. The FIRST is discarded: a cold DNS + TCP + TLS handshake
+ *  measured 665ms against a 220ms steady state, and a user who clicks Measure
+ *  once would have seen only the cold number. */
+const UPSTREAM_ROUNDS = 4
+
+/**
+ * Median round trip in ms, or -1 when the host could not be reached at all.
+ *
+ * Mirrors what the BROWSER half of this probe does (10 rounds, median): a single
+ * sample of a network path is not a measurement, and the two halves of one
+ * comparison must be measured the same way or the comparison is meaningless.
+ *
+ * NOTE what this is: a full HTTP round trip including TLS. Streaming audio runs
+ * over an ESTABLISHED socket and pays only the network RTT, so treat these as an
+ * upper bound on the per-frame cost, not the cost itself.
+ */
 async function timedReach(url: string): Promise<number> {
-  const t0 = Date.now()
-  try {
-    await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
-    return Date.now() - t0
-  } catch {
-    return -1
+  const samples: number[] = []
+  for (let i = 0; i < UPSTREAM_ROUNDS; i++) {
+    const t0 = Date.now()
+    try {
+      await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
+    } catch {
+      return -1
+    }
+    // Discard the handshake round; every later one reuses the connection.
+    if (i > 0) samples.push(Date.now() - t0)
   }
+  samples.sort((a, b) => a - b)
+  return samples[Math.floor(samples.length / 2)] ?? -1
 }
 
 /** Max wait for the sentinel to return artifact bytes before the route 504s. */
