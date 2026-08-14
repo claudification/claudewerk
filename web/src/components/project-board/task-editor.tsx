@@ -68,6 +68,16 @@ export function TaskEditor({
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(!body.trim())
   const editorViewRef = useRef<EditorView | null>(null)
+  /**
+   * A card with content is OPENED TO BE READ. Radix focuses the first focusable
+   * child (the title input) on open, and a focused text input auto-blocks every
+   * bare-key shortcut -- so L/W/A silently did nothing on the card you just
+   * opened. Captured once on mount so it does not flip while you type.
+   *
+   * A blank card is the opposite intent: you are creating it, so the cursor
+   * belongs in the title.
+   */
+  const openedForReading = useRef(!!task.body.trim())
   const canWork = status === 'inbox' || status === 'open' || status === 'in-progress' || status === 'in-review'
 
   useKeyLayer(
@@ -158,7 +168,12 @@ export function TaskEditor({
 
   return (
     <Dialog open={true} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col p-0">
+      <DialogContent
+        className="max-w-2xl max-h-[80vh] flex flex-col p-0"
+        onOpenAutoFocus={e => {
+          if (openedForReading.current) e.preventDefault()
+        }}
+      >
         <DialogTitle className="sr-only">Edit task: {title}</DialogTitle>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20 shrink-0">
@@ -281,10 +296,15 @@ export function TaskEditor({
             <div
               role="button"
               tabIndex={0}
+              title="Double-click to edit"
               className="text-sm text-foreground prose prose-invert prose-sm max-w-none cursor-text"
-              onClick={() => setEditing(true)}
+              // DOUBLE-click, not single: an open card is for READING. Single
+              // click flipped you into the editor the moment you tried to select
+              // a line of text, which is also how you lost the bare-key
+              // shortcuts (a focused editor blocks them).
+              onDoubleClick={() => setEditing(true)}
               onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') setEditing(true)
+                if (e.key === 'Enter') setEditing(true)
               }}
             >
               <Markdown>{body}</Markdown>

@@ -47,6 +47,8 @@ export function useReviveLaunch(conversationId: string | undefined, onClosed: ()
     timeoutMs: 30_000,
     autoConnectedStep: true,
     enabled: phase === 'launching',
+    // Revive's target IS this agent host -- it exists before the launch does.
+    trackExisting: true,
     onTimeout: () => {
       progress.setSteps(prev =>
         prev.map(s => (s.status === 'active' ? { ...s, status: 'error' as const, detail: 'timed out' } : s)),
