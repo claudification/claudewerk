@@ -74,7 +74,11 @@ describe('Markdown project-board card links', () => {
     const { container } = render(<Markdown>{`${CARD}\n\n[ops](docs/ops.md)`}</Markdown>)
     const card = container.querySelector('a.file-link-card')
     expect(card?.getAttribute('data-file-path')).toBe('.rclaude/project/open/fix-thing.md')
-    expect(card?.getAttribute('title')).toBe('Open card fix-thing')
+    expect(card?.getAttribute('data-card-id')).toBe('fix-thing')
+    // No `title`: the OS tooltip would race the hover card. The status glyph is
+    // the affordance, painted once the provider answers.
+    expect(card?.getAttribute('title')).toBeNull()
+    expect(card?.querySelector('.card-glyph')).toBeTruthy()
     const plain = container.querySelector('a.file-link:not(.file-link-card)')
     expect(plain?.getAttribute('data-file-path')).toBe('docs/ops.md')
   })

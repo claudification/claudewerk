@@ -1,16 +1,19 @@
 import { Marked } from 'marked'
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef } from 'react'
 import { openCanvasWindow } from '@/components/canvas/open-canvas-window'
+import { useCardGlyphs } from '@/hooks/use-card-glyphs'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useMarkdownViewer } from '@/hooks/use-markdown-viewer'
 import { calloutInlineExtension } from '@/lib/callout-marked'
 import { matchLeadingCanvasRef } from '@/lib/canvas-refs'
+import { matchCardHref } from '@/lib/cards'
 import { matchLeadingConversationRef } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import { parseProjectCardPath } from '@/lib/project-card-link'
 import { isMobileViewport } from '@/lib/utils'
 import { renderAnvilFence } from './anvil/render'
 import { playAudio } from './audio-player-bus'
+import { closeCardHover, openCardHover } from './card-hover/card-hover-bus'
 import { openProjectCard } from './conversation-detail/open-project-card'
 import { CopyMenu } from './copy-menu'
 import { openLinkPreview } from './link-preview-bus'
@@ -131,7 +134,10 @@ renderer.link = ({ href, text }) => {
     const safe = escapeAttr(href)
     const card = parseProjectCardPath(href)
     if (card) {
-      return `<a href="#" class="file-link file-link-card" data-file-path="${safe}" title="Open card ${escapeAttr(card.id)}">${text}</a>`
+      // No `title` attr: the OS tooltip would race (and then sit on top of) the
+      // hover card. The glyph starts empty and `paintCardGlyphs` fills it in
+      // once the provider answers -- see lib/cards/paint-glyphs.ts.
+      return `<a href="#" class="file-link file-link-card" data-file-path="${safe}" data-card-id="${escapeAttr(card.id)}" data-card-state="resolving" data-card-kind="card"><span class="card-glyph" aria-hidden="true">◜</span>${text}</a>`
     }
     return `<a href="#" class="file-link" data-file-path="${safe}" title="View ${safe}">${text}</a>`
   }
@@ -659,6 +665,8 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     renderMermaidBlocks(el)
   }, [html])
 
+  useCardGlyphs(ref, html)
+
   const handleMarkdownClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
 
@@ -779,11 +787,27 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     })
   }, [])
 
+  // Hovering (or tabbing to) a card link arms the (lazy) hover card. Landing on
+  // anything that is not a card link cancels a queued open, so dragging the
+  // pointer across a paragraph of links never queues a stack of panels.
+  // Keyboard parity is free here: focus bubbles, so the same handler serves it.
+  const handleCardHover = useCallback((e: React.SyntheticEvent) => {
+    const link = (e.target as HTMLElement).closest?.('a.file-link-card') as HTMLElement | null
+    const path = link?.getAttribute('data-file-path')
+    const cardRef = path ? matchCardHref(path) : null
+    if (link && cardRef) openCardHover(cardRef, link)
+    else closeCardHover()
+  }, [])
+
   const inner = (
     <div
       ref={ref}
       role="document"
       className="prose-hacker [overflow-wrap:break-word]"
+      onMouseOver={handleCardHover}
+      onMouseLeave={closeCardHover}
+      onFocus={handleCardHover}
+      onBlur={closeCardHover}
       // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- marked-rendered markdown from trusted CC transcript
       // biome-ignore lint/security/noDangerouslySetInnerHtml: marked-rendered markdown from trusted CC transcript
       dangerouslySetInnerHTML={{ __html: html }}

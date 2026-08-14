@@ -5,6 +5,7 @@ import { AudioPlayerHost } from '@/components/audio-player-host'
 import { LoginHintBanner } from '@/components/auth/login-hint-banner'
 import { AuthExpiredModal } from '@/components/auth-expired-modal'
 import { AuthGate } from '@/components/auth-gate'
+import { useCardHover } from '@/components/card-hover/card-hover-bus'
 import { checklistAddNotesBus, checklistArchiveBus, checklistBulkEditBus } from '@/components/checklist/checklist-bus'
 import { ChordOverlay } from '@/components/chord-overlay'
 import { CommandPalette } from '@/components/command-palette'
@@ -230,6 +231,12 @@ const MermaidLightbox = lazyModule(
   named(() => import('@/components/mermaid-lightbox'), 'MermaidLightbox'),
   () => useMermaidLightbox(s => s.open),
 )
+// Card-link hover card -- the chunk lands the first time a card link is hovered,
+// and never in a session that hovers none.
+const CardHoverLayer = lazyModule(
+  named(() => import('@/components/card-hover/card-hover-layer'), 'CardHoverLayer'),
+  () => useCardHover(s => s.armed),
+)
 // The per-user dispatch cockpit -- chunk loads only when first summoned.
 const DispatchOverlay = lazyModule(() => import('@/components/dispatch-overlay/dispatch-overlay'), dispatchBus.useArmed)
 // Off-screen agent-attached (debug) shell host -- pulls in @xterm (~458KB), so it
@@ -423,6 +430,7 @@ function Dashboard() {
       </PanelBoundary>
       <MediaLightbox />
       <MermaidLightbox />
+      <CardHoverLayer />
       {canAdmin && <DispatchOverlay />}
       <LinkPreviewPane />
       <AudioPlayerHost />
