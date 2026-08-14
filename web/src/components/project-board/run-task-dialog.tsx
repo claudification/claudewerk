@@ -150,6 +150,10 @@ export function RunTaskDialog({
   // (rekey-follow may have moved the viewport there) and the user hasn't
   // navigated away mid-launch.
   useEffect(() => {
+    // `phase` is the second lock: you cannot be DONE before you have STARTED.
+    // Without it this fired on mount (the tracker reported the conversation the
+    // user was viewing as "connected") and closed the dialog before it painted.
+    if (phase !== 'launching') return
     if (!progress.isConnected || progress.hasError || closedOnDoneRef.current) return
     closedOnDoneRef.current = true
     focusLaunchTargetAndClose({
@@ -159,7 +163,14 @@ export function RunTaskDialog({
       reason: 'project-board-launch-done',
       close: onClose,
     })
-  }, [progress.isConnected, progress.hasError, progress.launch.conversationId, progress.spawnedConversation, onClose])
+  }, [
+    phase,
+    progress.isConnected,
+    progress.hasError,
+    progress.launch.conversationId,
+    progress.spawnedConversation,
+    onClose,
+  ])
 
   // fallow-ignore-next-line complexity
   async function handleRun() {

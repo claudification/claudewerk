@@ -40,6 +40,18 @@ interface UseLaunchProgressOptions {
   autoConnectedStep?: boolean
   /** Whether monitoring is active (default true) */
   enabled?: boolean
+  /**
+   * Treat `conversationId` as the conversation being TRACKED, not merely the
+   * one we launched from (default false).
+   *
+   * The two callers mean different things by that id. Spawn and run-task pass
+   * the conversation the user is sitting in -- pure context; their real target
+   * only exists once the launch channel names it. Revive passes the agent host
+   * it is bringing back, which IS the target from the start. Conflating them is
+   * what made a fresh dialog report "connected" against the user's own
+   * conversation.
+   */
+  trackExisting?: boolean
   /** Called when timeout fires (after setting error state) */
   onTimeout?: () => void
 }
@@ -51,6 +63,7 @@ export function useLaunchProgress({
   autoInsertEvents = true,
   autoConnectedStep = false,
   enabled = true,
+  trackExisting = false,
   onTimeout,
 }: UseLaunchProgressOptions) {
   const [steps, setSteps] = useState<LaunchProgressStep[]>([])
@@ -64,7 +77,23 @@ export function useLaunchProgress({
   onTimeoutRef.current = onTimeout
 
   const launch = useLaunchChannel(jobId)
-  const effectiveWrapperId = launch.conversationId || externalWrapperId
+  /**
+   * ARMED = the owner says it is launching AND there is a real job behind it.
+   *
+   * This guard is the whole reason the derived flags can be trusted. Before a
+   * launch, `externalWrapperId` is still the conversation the user is LOOKING
+   * AT (every caller passes it), so the lookup below would find that live
+   * conversation and report `isConnected` -- "the spawned conversation
+   * connected!" about a conversation nobody spawned. RunTaskDialog acts on that
+   * by closing itself on mount, which is why Launch appeared to do nothing.
+   *
+   * `enabled` alone is not enough: it is `phase === 'launching'` for every
+   * caller, and the job id lands in the same batch, so requiring both keeps
+   * revive (which legitimately tracks a pre-existing agent host id) working.
+   */
+  const armed = enabled && (jobId != null || launch.conversationId != null)
+  const fallbackId = trackExisting ? externalWrapperId : null
+  const effectiveWrapperId = armed ? launch.conversationId || fallbackId : null
 
   /** Initialize monitoring. Call when launching begins. */
   function start(initialSteps?: LaunchProgressStep[]) {
@@ -109,9 +138,10 @@ export function useLaunchProgress({
     ),
   )
 
-  const isConnected = launch.completed || (spawnedConversation != null && spawnedConversation.status !== 'ended')
+  const isConnected =
+    armed && (launch.completed || (spawnedConversation != null && spawnedConversation.status !== 'ended'))
   const isRunning = spawnedConversation != null && spawnedConversation.status !== 'ended'
-  const isComplete = spawnedConversation?.status === 'ended'
+  const isComplete = armed && spawnedConversation?.status === 'ended'
   const hasError = !!error || launch.failed
 
   // Elapsed timer - only runs when startTime is set
