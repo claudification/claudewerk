@@ -13,30 +13,21 @@
 
 import { statSync } from 'node:fs'
 import { normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
+import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
 import { TASK_STATUSES, type TaskStatus } from './task-statuses'
 
 /** Keys the store owns and renders in a stable order. Everything else is
- *  preserved verbatim, after these. */
-const ORDERED_KEYS = [
-  'title',
-  'status',
-  'priority',
-  'tags',
-  'refs',
-  'quest',
-  'epic',
-  'depends_on',
-  'relates_to',
-  'created',
-] as const
+ *  preserved verbatim, after these. DERIVED, not declared: the order lives in
+ *  card-schema-keys.ts with the rest of what a key is, so the two can no longer
+ *  drift (card-schema.test.ts pins it against the literal list it replaced). */
+const ORDERED_KEYS = ORDERED_CARD_KEYS
 
-const PRIORITIES = ['low', 'medium', 'high'] as const
-type Priority = (typeof PRIORITIES)[number]
+type Priority = (typeof CARD_PRIORITIES)[number]
 
 function asPriority(v: unknown): Priority | undefined {
-  return (PRIORITIES as readonly string[]).includes(String(v)) ? (String(v) as Priority) : undefined
+  return (CARD_PRIORITIES as readonly string[]).includes(String(v)) ? (String(v) as Priority) : undefined
 }
 
 export function asStatus(v: unknown): TaskStatus | undefined {

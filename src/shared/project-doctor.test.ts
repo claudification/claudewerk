@@ -233,8 +233,25 @@ describe('linkage verbs reach the report', () => {
   })
 
   test('the gate machinery keeps its open frontmatter bag', () => {
-    writeCard('a', 'title: A\nstatus: open\nevidence_commits: [abc123]\ngate: green\ntest_cmd: bun test')
+    writeCard('a', 'title: A\nstatus: open\nevidence_commits: 4\ngate: tier2\ntest_cmd: bun test')
     expect(runProjectDoctor(root).findings).toEqual([])
+  })
+
+  test('a key NOBODY declares is preserved and reported by nobody -- OPEN, not closed', () => {
+    // The whole promise: the registry says what is KNOWN, never what is ALLOWED.
+    // A gate that failed here would teach people to stop writing keys, which is
+    // how the old fixed-key store came to destroy the evidence bag.
+    writeCard('a', 'title: A\nstatus: open\nevidence_invented_tomorrow: whatever\nsome_field: [x, y]')
+    expect(runProjectDoctor(root).findings).toEqual([])
+  })
+
+  test('a gate key holding a value the gate cannot use is NOT silence', () => {
+    // `gate: green` falls through to the project default, so the card's stated
+    // intent is dropped without a word. That is the mute-value class.
+    writeCard('a', 'title: A\nstatus: open\ngate: green')
+    const found = forCheck(runProjectDoctor(root).findings, 'card-key-type')
+    expect(found).toHaveLength(1)
+    expect(found[0].problem).toContain('off | tier2 | full')
   })
 })
 

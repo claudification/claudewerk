@@ -35,6 +35,7 @@ import { checkEpics, type EpicCardView } from './project-doctor-epics'
 import { checkLayout } from './project-doctor-layout'
 import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
+import { fsShapeRepairDeps, repairCardShape } from './project-doctor-shape'
 import { type DoctorFinding, type DoctorReport, sortFindings } from './project-doctor-types'
 import { listLegacyCards } from './project-legacy'
 import { boardRoot } from './project-paths'
@@ -47,7 +48,9 @@ interface LoadedCard {
   /** Where the file actually lies -- the repair pass writes back to it. Null
    *  when the board lists a card that is no longer on disk. */
   abs: string | null
-  /** Raw file contents -- null when the file could not be read. */
+  /** Raw file contents -- null when the file could not be read. The repair pass
+   *  updates this to whatever it wrote, so every check reads the card as it now
+   *  is rather than as it arrived. */
   raw: string | null
   /** Set only for a card still living in a legacy lane directory. */
   laneStatus?: string
@@ -117,15 +120,32 @@ function epicViews(cards: LoadedCard[]): EpicCardView[] {
 
 /**
  * The one pass that WRITES, kept in its own function so the boundary is visible
- * at a glance: every check above this line only reads. `off` short-circuits
- * before the deps are even built, so the default path touches nothing.
+ * at a glance: every check is read-only and every write is here. `off`
+ * short-circuits before the deps are even built, so the default path touches
+ * nothing.
+ *
+ * IT RUNS FIRST, and updates each card's in-memory `raw` to what it wrote. A
+ * doctor that repairs a value and then reports that same value as broken is
+ * filing one fact twice; the checks below must see the card as it now IS.
+ * `preview` patches memory without touching disk, so `--dry-run` previews the
+ * exact report a real run would leave behind.
+ *
+ * Shape first, then the `created:` stamp -- the stamp is fed the reshaped
+ * content so a card needing both ends up with both.
  */
 function repairPass(cards: LoadedCard[], mode: RepairMode): DoctorFinding[] {
   if (mode === 'off') return []
-  const deps = fsStampDeps(Date.now())
-  return cards.flatMap(card =>
-    card.abs === null ? [] : stampMissingCreated({ id: card.id, abs: card.abs, content: card.raw }, mode, deps),
-  )
+  const stampDeps = fsStampDeps(Date.now())
+  const shapeDeps = fsShapeRepairDeps()
+  const findings: DoctorFinding[] = []
+  for (const card of cards) {
+    if (card.abs === null) continue
+    const shape = repairCardShape({ id: card.id, abs: card.abs, content: card.raw }, mode, shapeDeps)
+    card.raw = shape.content
+    findings.push(...shape.findings)
+    findings.push(...stampMissingCreated({ id: card.id, abs: card.abs, content: card.raw }, mode, stampDeps))
+  }
+  return findings
 }
 
 export interface DoctorOptions {
@@ -146,11 +166,11 @@ export function runProjectDoctor(root: string, opts: DoctorOptions = {}): Doctor
   const cards = loadCards(root, new Set(legacy.map(c => c.slug)))
   const existingIds = new Set(cards.map(c => c.id))
 
-  const findings: DoctorFinding[] = []
+  // Repair BEFORE checking, so nothing is reported that has just been fixed.
+  const findings: DoctorFinding[] = repairPass(cards, opts.repair ?? 'off')
   for (const card of cards) findings.push(...cardFindings(card, existingIds))
   findings.push(...checkEpics(epicViews(cards)))
   findings.push(...checkLayout(root, legacy.length))
-  findings.push(...repairPass(cards, opts.repair ?? 'off'))
 
   return { board, noBoard: false, cards: cards.length, findings: sortFindings(findings) }
 }
