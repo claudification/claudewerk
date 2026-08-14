@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import {
-  buildEpicIndex,
-  epicBucket,
-  isEpicCard,
-  notStartedChildren,
-  unparentedCards,
-} from './epic-cards'
+import { buildEpicIndex, epicBucket, isEpicCard, notStartedChildren, unparentedCards } from './epic-cards'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
 
@@ -61,7 +55,12 @@ describe('buildEpicIndex', () => {
       card('b', { epic: 'e' }),
       card('loose'),
     ])
-    expect(index.get('e')?.children.map(c => c.card.slug).toSorted()).toEqual(['a', 'b'])
+    expect(
+      index
+        .get('e')
+        ?.children.map(c => c.card.slug)
+        .toSorted(),
+    ).toEqual(['a', 'b'])
   })
 
   it('counts each bucket and computes pct over non-dropped children', () => {
@@ -177,6 +176,11 @@ describe('notStartedChildren', () => {
       card('d', { epic: 'e', status: 'done' }),
     ])
     const rollup = index.get('e')
-    expect(rollup && notStartedChildren(rollup).map(c => c.slug).toSorted()).toEqual(['a', 'b'])
+    expect(
+      rollup &&
+        notStartedChildren(rollup)
+          .map(c => c.slug)
+          .toSorted(),
+    ).toEqual(['a', 'b'])
   })
 })

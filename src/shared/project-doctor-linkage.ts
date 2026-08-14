@@ -17,8 +17,8 @@
  */
 
 import { LINKAGE_VERBS, type LinkageVerb, linkageVerb } from './card-linkage'
-import type { DoctorFinding } from './project-doctor-types'
 import { firstWord, nearestVerb, RELATIONAL_WORDS, STORE_KEYS } from './project-doctor-linkage-match'
+import type { DoctorFinding } from './project-doctor-types'
 
 export interface LinkageKeySource {
   id: string

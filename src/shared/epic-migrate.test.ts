@@ -44,10 +44,7 @@ describe('planEpicMigration', () => {
   })
 
   it('never overwrites a human answer with a different epic', () => {
-    const plan = planEpicMigration(
-      [epic('e1'), epic('e2'), card('a', { epic: 'e2' })],
-      new Map([['e1', ['a']]]),
-    )
+    const plan = planEpicMigration([epic('e1'), epic('e2'), card('a', { epic: 'e2' })], new Map([['e1', ['a']]]))
     expect(plan.assignments).toEqual([])
   })
 
