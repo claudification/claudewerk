@@ -10,9 +10,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import type { ProjectBoardOp } from '../../shared/protocol'
 import { formatTranscriptWindow } from '../../shared/transcript-window-format'
 import { BUILD_VERSION } from '../../shared/version'
 import { resolveAuth } from '../auth-routes'
+import { callBoard, callerProject } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
 import { deliverDispatcherReport } from '../desk/async-impulse'
 import { deliverToCanvasSink, parseCanvasTarget } from '../desk/canvas-channel'
@@ -543,10 +545,20 @@ export function createMcpServer(
     "List tasks on the user's kanban-style project board. Status columns: inbox, open, in-progress, in-review, done, archived. Each task has id, title, priority, tags, refs.",
     { status: z.string().optional().describe('Filter by column. Omit for all tasks.') },
     async ({ status }) => {
-      // Read from project board files
-      const tasks = store.kv.get<Record<string, unknown>[]>('project:tasks') || []
-      const filtered = status ? tasks.filter(t => t.status === status) : tasks
-      return { content: [{ type: 'text', text: JSON.stringify(filtered, null, 2) }] }
+      const project = callerProject(conversationStore, callerConversationId)
+      if (!project) return toolText('No project for this conversation -- cannot resolve a board.', true)
+      // Sentinel-backed: the SAME source the control panel reads. Filtering is
+      // pushed down so the sentinel never serialises cards we would discard.
+      const result = await callBoard(conversationStore, project, {
+        op: 'list',
+        filterStatus: status as ProjectBoardOp['filterStatus'],
+      })
+      if (!result.ok) return toolText(`Board read failed: ${result.error ?? 'unknown error'}`, true)
+      const tasks = result.tasks ?? []
+      if (tasks.length === 0) {
+        return toolText(status ? `No tasks with status "${status}".` : 'No tasks on the board.')
+      }
+      return toolText(JSON.stringify(tasks, null, 2))
     },
   )
 
@@ -559,15 +571,18 @@ export function createMcpServer(
       status: z.string().describe('Target status (inbox, open, in-progress, in-review, done, archived)'),
     },
     async ({ id, status: newStatus }) => {
-      // Update task status in KV store
-      const tasks = store.kv.get<Record<string, unknown>[]>('project:tasks') || []
-      const task = tasks.find(t => t.id === id)
-      if (!task) {
-        return { content: [{ type: 'text', text: `Task "${id}" not found` }], isError: true }
-      }
-      task.status = newStatus
-      store.kv.set('project:tasks', tasks)
-      return { content: [{ type: 'text', text: `Task "${id}" moved to ${newStatus}` }] }
+      const project = callerProject(conversationStore, callerConversationId)
+      if (!project) return toolText('No project for this conversation -- cannot resolve a board.', true)
+      // A card NEVER moves on disk: `move` rewrites its `status:` frontmatter.
+      const result = await callBoard(conversationStore, project, {
+        op: 'move',
+        slug: id,
+        toStatus: newStatus as ProjectBoardOp['toStatus'],
+      })
+      if (!result.ok) return toolText(`Move failed: ${result.error ?? 'unknown error'}`, true)
+      // The sentinel reports a null slug when no card carries that id.
+      if (result.slug === null) return toolText(`Task "${id}" not found on the board.`, true)
+      return toolText(`Task "${id}" moved to ${newStatus}`)
     },
   )
 
