@@ -6,6 +6,7 @@
  *   bun run board:doctor                          # this project
  *   bun run board:doctor --root ~/projects/foo    # another one
  *   bun run board:doctor --all ~/projects -q      # every board under a dir
+ *   bun run board:doctor --dry-run                # preview the auto-repairs
  *
  * Checks: unreadable cards, missing/invalid `status:`, missing titles, empty
  * cards, ROTTEN CARD LINKS (a link to an id the board does not have), the
@@ -14,8 +15,11 @@
  * lane directories, same-id-in-two-lanes collisions, and stray files the board
  * will never read.
  *
- * READ ONLY. It never writes, moves or deletes -- every finding tells you what
- * to run or edit instead. Exit 1 on errors, or on warnings too with --strict.
+ * It never moves or deletes anything, and nearly every finding just tells you
+ * what to run or edit. The one exception is a missing `created:`, which is
+ * STAMPED from the filesystem and logged as INFO -- unambiguous, idempotent,
+ * and it can only add a key that was not saying anything. `--dry-run` previews
+ * it. Exit 1 on errors, or on warnings too with --strict.
  *
  * The parsing and the report live in `src/shared/project-doctor-cli.ts` (pure,
  * tested); this file is only the shell that talks to the process.
@@ -23,6 +27,7 @@
 
 import { runProjectDoctor } from '../src/shared/project-doctor'
 import { DOCTOR_USAGE, parseDoctorArgs, runDoctor } from '../src/shared/project-doctor-cli'
+import type { RepairMode } from '../src/shared/project-doctor-created'
 import { findProjectBoards } from '../src/shared/project-upgrade'
 
 function emit(lines: string[], sink: (line: string) => void): void {
@@ -40,7 +45,8 @@ function main(): number {
     return 2
   }
 
-  const { out, err, exitCode } = runDoctor(parsed.args, runProjectDoctor, findProjectBoards)
+  const runOne = (root: string, repair: RepairMode) => runProjectDoctor(root, { repair })
+  const { out, err, exitCode } = runDoctor(parsed.args, runOne, findProjectBoards)
   emit(out, console.log)
   emit(err, console.error)
   return exitCode

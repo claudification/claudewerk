@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { formatDoctorReport, parseDoctorArgs, runDoctor } from './project-doctor-cli'
+import { type DoctorArgs, formatDoctorReport, parseDoctorArgs, runDoctor } from './project-doctor-cli'
+import type { RepairMode } from './project-doctor-created'
 import type { DoctorFinding, DoctorReport } from './project-doctor-types'
 
 const finding = (over: Partial<DoctorFinding> = {}): DoctorFinding => ({
@@ -31,7 +32,7 @@ describe('parseDoctorArgs', () => {
     const parsed = parseDoctorArgs([], '/here')
     expect(parsed).toEqual({
       kind: 'run',
-      args: { root: '/here', all: false, quiet: false, verbose: false, strict: false },
+      args: { root: '/here', all: false, dryRun: false, quiet: false, verbose: false, strict: false },
     })
   })
 
@@ -41,6 +42,11 @@ describe('parseDoctorArgs', () => {
     expect(parseDoctorArgs(['-q', '-v', '--strict'], '/here')).toMatchObject({
       args: { quiet: true, verbose: true, strict: true },
     })
+  })
+
+  test('--dry-run and -n both preview', () => {
+    expect(parseDoctorArgs(['--dry-run'], '/here')).toMatchObject({ args: { dryRun: true } })
+    expect(parseDoctorArgs(['-n'], '/here')).toMatchObject({ args: { dryRun: true } })
   })
 
   test('help and unknown arguments', () => {
@@ -113,9 +119,19 @@ describe('formatDoctorReport', () => {
 })
 
 describe('runDoctor', () => {
+  const cliArgs = (over: Partial<DoctorArgs> = {}): DoctorArgs => ({
+    root: '/p',
+    all: false,
+    dryRun: false,
+    quiet: false,
+    verbose: false,
+    strict: false,
+    ...over,
+  })
+
   test('one board', () => {
     const out = runDoctor(
-      { root: '/p', all: false, quiet: false, verbose: false, strict: false },
+      cliArgs(),
       () => report([]),
       () => [],
     )
@@ -126,11 +142,37 @@ describe('runDoctor', () => {
   test('--all sweeps every board, and the WORST exit code wins', () => {
     const roots = ['/a', '/b']
     const out = runDoctor(
-      { root: '/parent', all: true, quiet: false, verbose: false, strict: false },
+      cliArgs({ root: '/parent', all: true }),
       root => report(root === '/b' ? [finding({ severity: 'error' })] : []),
       () => roots,
     )
     expect(out.out.join('\n')).toContain('checking 2 board(s)')
     expect(out.exitCode).toBe(1)
+  })
+
+  test('the CLI repairs by DEFAULT -- a human typing board:doctor wants it fixed', () => {
+    const seen: RepairMode[] = []
+    runDoctor(
+      cliArgs(),
+      (_root, repair) => {
+        seen.push(repair)
+        return report([])
+      },
+      () => [],
+    )
+    expect(seen).toEqual(['write'])
+  })
+
+  test('--dry-run downgrades every board in the sweep to preview', () => {
+    const seen: RepairMode[] = []
+    runDoctor(
+      cliArgs({ root: '/parent', all: true, dryRun: true }),
+      (_root, repair) => {
+        seen.push(repair)
+        return report([])
+      },
+      () => ['/a', '/b'],
+    )
+    expect(seen).toEqual(['preview', 'preview'])
   })
 })

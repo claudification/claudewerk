@@ -2,11 +2,20 @@
  * PROJECT DOCTOR -- read the whole board, report everything wrong with it, and
  * say what to do about each one.
  *
- * READ ONLY, ALWAYS. The doctor never writes, moves or deletes anything: the
- * board is the user's data and a health check that "helpfully" repairs things
- * is how you lose a card you were about to look at. Every finding names its
- * remedy instead, and the remedies are existing commands (`board:upgrade`
- * rebuilds the views farm and drains legacy lanes) or a one-line hand edit.
+ * READ ONLY BY DEFAULT. The doctor does not move or delete anything, ever: the
+ * board is the user's data and a health check that "helpfully" reorganises
+ * things is how you lose a card you were about to look at. Every finding names
+ * its remedy instead, and the remedies are existing commands (`board:upgrade`
+ * drains legacy lanes) or a one-line hand edit.
+ *
+ * The ONE exception is `opts.repair`, which is `off` unless a caller asks --
+ * so this function keeps its read-only contract for every library caller, and
+ * only the CLI opts in. It gates a single auto-repair (stamping an absent
+ * `created:` from the filesystem, see project-doctor-created.ts) chosen because
+ * it can only ADD a key that was not saying anything. The general rule: if the
+ * fix is unambiguous and the data is already on disk, REPAIRING beats
+ * REPORTING -- a doctor that nags about what it could have fixed itself trains
+ * people to ignore the doctor. Anything requiring a judgement stays a finding.
  *
  * The checks read the RAW card file, not a projected `ProjectTask` -- projection
  * has already applied the defaults (missing lane -> `inbox`, missing title ->
@@ -21,6 +30,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { readLinkage, readOne } from './card-linkage-read'
 import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
+import { fsStampDeps, type RepairMode, stampMissingCreated } from './project-doctor-created'
 import { checkEpics, type EpicCardView } from './project-doctor-epics'
 import { checkLayout } from './project-doctor-layout'
 import { checkLinkageKeys } from './project-doctor-linkage'
@@ -34,19 +44,22 @@ import type { TaskStatus } from './task-statuses'
 interface LoadedCard {
   id: string
   status: TaskStatus
+  /** Where the file actually lies -- the repair pass writes back to it. Null
+   *  when the board lists a card that is no longer on disk. */
+  abs: string | null
   /** Raw file contents -- null when the file could not be read. */
   raw: string | null
   /** Set only for a card still living in a legacy lane directory. */
   laneStatus?: string
 }
 
-function readRaw(root: string, id: string): string | null {
+function readRaw(root: string, id: string): { abs: string | null; raw: string | null } {
   const found = locateCard(root, id)
-  if (!found) return null
+  if (!found) return { abs: null, raw: null }
   try {
-    return readFileSync(found.abs, 'utf8')
+    return { abs: found.abs, raw: readFileSync(found.abs, 'utf8') }
   } catch {
-    return null
+    return { abs: found.abs, raw: null }
   }
 }
 
@@ -59,7 +72,7 @@ function loadCards(root: string, legacyIds: Set<string>): LoadedCard[] {
   return listProjectManifest(root).map(entry => ({
     id: entry.slug,
     status: entry.status,
-    raw: readRaw(root, entry.slug),
+    ...readRaw(root, entry.slug),
     laneStatus: legacyIds.has(entry.slug) ? entry.status : undefined,
   }))
 }
@@ -102,7 +115,30 @@ function epicViews(cards: LoadedCard[]): EpicCardView[] {
   return out
 }
 
-export function runProjectDoctor(root: string): DoctorReport {
+/**
+ * The one pass that WRITES, kept in its own function so the boundary is visible
+ * at a glance: every check above this line only reads. `off` short-circuits
+ * before the deps are even built, so the default path touches nothing.
+ */
+function repairPass(cards: LoadedCard[], mode: RepairMode): DoctorFinding[] {
+  if (mode === 'off') return []
+  const deps = fsStampDeps(Date.now())
+  return cards.flatMap(card =>
+    card.abs === null ? [] : stampMissingCreated({ id: card.id, abs: card.abs, content: card.raw }, mode, deps),
+  )
+}
+
+export interface DoctorOptions {
+  /**
+   * Auto-repair mode. `off` (the default) keeps this function strictly
+   * read-only, which is what any library caller -- a sentinel RPC, an MCP tool
+   * -- should get without having to know it asked for anything. `write` stamps,
+   * `preview` reports what `write` would have done.
+   */
+  repair?: RepairMode
+}
+
+export function runProjectDoctor(root: string, opts: DoctorOptions = {}): DoctorReport {
   const board = boardRoot(root)
   if (!existsSync(board)) return { board, noBoard: true, cards: 0, findings: [] }
 
@@ -114,6 +150,7 @@ export function runProjectDoctor(root: string): DoctorReport {
   for (const card of cards) findings.push(...cardFindings(card, existingIds))
   findings.push(...checkEpics(epicViews(cards)))
   findings.push(...checkLayout(root, legacy.length))
+  findings.push(...repairPass(cards, opts.repair ?? 'off'))
 
   return { board, noBoard: false, cards: cards.length, findings: sortFindings(findings) }
 }

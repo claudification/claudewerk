@@ -5,23 +5,32 @@
  * file stays a thin shell -- same split as project-upgrade-cli.ts.
  */
 
+import type { RepairMode } from './project-doctor-created'
 import { countBySeverity, type DoctorFinding, type DoctorReport, type DoctorSeverity } from './project-doctor-types'
 
-export const DOCTOR_USAGE = `usage: bun run board:doctor [--root <path> | --all <dir>] [--quiet] [--verbose] [--strict]
+export const DOCTOR_USAGE = `usage: bun run board:doctor [--root <path> | --all <dir>] [--dry-run] [--quiet] [--verbose] [--strict]
 
   --root <path>   project root holding .rclaude/project (default: cwd)
   --all <dir>     check every immediate subdirectory of <dir> that has a board
+  --dry-run, -n   report the auto-repairs instead of applying them
   --quiet, -q     errors and warnings only (drop the info findings)
   --verbose, -v   list every finding instead of collapsing big groups
   --strict        exit non-zero on warnings too, not just errors
 
-Reports what is wrong with a board and what to do about each one. It NEVER
-writes: every remedy is a command you run or a line you edit yourself.`
+Reports what is wrong with a board and what to do about each one. Nearly every
+remedy is a command you run or a line you edit yourself.
+
+The one thing it repairs on its own is a missing \`created:\`, stamped from the
+file's birthtime (or ctime, or mtime -- the INFO line says which). That is safe
+to leave on because it can only ADD a key that was not saying anything, and it
+is idempotent: run it twice and the second run is silent. --dry-run previews it.`
 
 export interface DoctorArgs {
   root: string
   /** Treat `root` as a PARENT of many project roots, not a project itself. */
   all: boolean
+  /** Report the auto-repairs without applying them. */
+  dryRun: boolean
   quiet: boolean
   verbose: boolean
   strict: boolean
@@ -52,6 +61,12 @@ const ARGS: Record<string, ArgHandler> = {
   '--strict': a => {
     a.strict = true
   },
+  '--dry-run': a => {
+    a.dryRun = true
+  },
+  '-n': a => {
+    a.dryRun = true
+  },
   '--root': (a, next) => {
     a.root = next()
   },
@@ -64,7 +79,7 @@ const ARGS: Record<string, ArgHandler> = {
 }
 
 export function parseDoctorArgs(argv: string[], cwd: string): ParseResult {
-  const args: DoctorArgs = { root: cwd, all: false, quiet: false, verbose: false, strict: false }
+  const args: DoctorArgs = { root: cwd, all: false, dryRun: false, quiet: false, verbose: false, strict: false }
   for (let i = 0; i < argv.length; i++) {
     const handler = ARGS[argv[i]]
     if (!handler) return { kind: 'error', message: `unknown argument: ${argv[i]}` }
@@ -137,20 +152,32 @@ export function formatDoctorReport(
 }
 
 /** Runs one board. Injected so the whole CLI is testable without a filesystem. */
-export type DoctorRunner = (root: string) => DoctorReport
+export type DoctorRunner = (root: string, repair: RepairMode) => DoctorReport
 /** Resolves `--all <dir>` to the project roots under it. Injected likewise. */
 export type BoardFinder = (parent: string) => string[]
+
+/**
+ * The CLI is the ONE caller that repairs by default, and it is a deliberate
+ * inversion of the library default: a human typing `board:doctor` wants the
+ * board fixed, while a program calling `runProjectDoctor` wants a report. The
+ * only auto-repair is information-preserving and idempotent, so defaulting it
+ * on costs nothing and spares everyone a permanent info line nobody actions.
+ */
+function repairMode(args: Pick<DoctorArgs, 'dryRun'>): RepairMode {
+  return args.dryRun ? 'preview' : 'write'
+}
 
 /** The whole run: one board, or every board under `--all`. Worst exit code wins. */
 export function runDoctor(args: DoctorArgs, run: DoctorRunner, find: BoardFinder): FormattedReport {
   const roots = args.all ? find(args.root) : [args.root]
+  const repair = repairMode(args)
   const result: FormattedReport = {
     out: args.all ? [`checking ${roots.length} board(s) under ${args.root}`, ''] : [],
     err: [],
     exitCode: 0,
   }
   for (const root of roots) {
-    const one = formatDoctorReport(run(root), args)
+    const one = formatDoctorReport(run(root, repair), args)
     result.out.push(...one.out, ...(args.all ? [''] : []))
     result.err.push(...one.err)
     result.exitCode = Math.max(result.exitCode, one.exitCode)

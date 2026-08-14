@@ -21,7 +21,8 @@ import {
   isGateMode,
   resolveGateMode,
 } from '../../../shared/board-gate'
-import { parseFrontmatter, serializeFrontmatter } from '../../../shared/frontmatter'
+import { parseFrontmatter } from '../../../shared/frontmatter'
+import { serializeCard } from '../../../shared/project-card-file'
 import type { TaskStatus } from '../../../shared/task-statuses'
 
 function decode(buf: Uint8Array | null | undefined): string {
@@ -105,11 +106,37 @@ export function gateTransition(t: GateTransition): GateOutcome {
   )
 
   if (outcome.decision === 'allow' && Object.keys(outcome.evidence).length > 0) {
-    try {
-      writeFileSync(t.cardPath, serializeFrontmatter({ ...meta, ...outcome.evidence }, body), 'utf-8')
-    } catch {
-      /* best-effort evidence stamp -- the move still proceeds */
-    }
+    writeGateEvidence(t.cardPath, meta, body, outcome.evidence)
   }
   return outcome
+}
+
+/**
+ * Stamp the gate's machine-authored evidence into the card.
+ *
+ * Goes through `serializeCard` -- the board's ONE card writer -- and never bare
+ * `serializeFrontmatter`. Writing frontmatter directly here made the gate the
+ * board's SECOND card writer, and the two disagreed: `serializeCard` collapses
+ * linkage ALIASES onto their stored key (`blocked_by:` -> `depends_on:`,
+ * `see_also:` -> `relates_to:`) and holds ORDERED_KEYS. A gate stamp used to
+ * leave `blocked_by:` sitting next to the `depends_on:` it is supposed to BE --
+ * one fact, two spellings, which is the exact thing the closed linkage
+ * vocabulary exists to prevent.
+ *
+ * Takes the meta the gate actually EVALUATED rather than re-reading the file,
+ * so a concurrent edit cannot make the stamp describe state that was never
+ * checked. Best-effort: a card that cannot be written must not block a move the
+ * gate has already allowed.
+ */
+export function writeGateEvidence(
+  cardPath: string,
+  meta: Record<string, unknown>,
+  body: string,
+  evidence: Record<string, unknown>,
+): void {
+  try {
+    writeFileSync(cardPath, serializeCard({ ...meta, ...evidence }, body), 'utf-8')
+  } catch {
+    /* the move still proceeds */
+  }
 }
