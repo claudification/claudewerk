@@ -106,6 +106,20 @@ export function useTranscriptWindow(opts: {
   }
   // Derived-state reset (the documented "adjust state on prop change in render"
   // pattern -- re-renders before commit, no flash):
+  //
+  // STRATEGY MAPS OVER CHAINS -- deliberately exempt. The covenant carves out
+  // "short-circuit ordering" as the last-resort case for an if-else chain, and
+  // this is exactly that. The four branches do NOT dispatch on a shared key, so
+  // there is nothing to key a Record<> on: each tests a different predicate
+  // (cacheKey identity / init flag / anchor-past-end / follow+drift), and the
+  // ORDER is the semantics -- at most one reset may run per render, and an
+  // earlier branch winning is the point. A conversation switch must claim the
+  // render even when the cold-open and drift conditions are also true, because
+  // only it resets the head-hold latch and clears the backfill boundary; run
+  // that as a map entry and a switch would silently re-anchor with stale
+  // visit-scoped state. Rewriting it as a map would mean encoding the
+  // precedence back in by hand, i.e. the same chain with more ceremony.
+  // ast-grep-ignore: no-long-if-chain
   if (cacheKey !== prevCacheKeyRef.current) {
     // Conversation switch -- snap to the last-N default for whatever is loaded.
     prevCacheKeyRef.current = cacheKey
