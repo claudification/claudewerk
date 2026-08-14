@@ -475,22 +475,56 @@ body {
 
 	/* A `.rclaude/project/<lane>/<slug>.md` link opens the KANBAN CARD, not the
 	   raw file -- so it must not read as a plain file link. Small card glyph,
-	   violet to stay clear of the teal conversation pill and the accent. */
+	   violet to stay clear of the teal conversation pill and the accent.
+
+	   The GLYPH is written by paint-glyphs.ts (a square for a card, a diamond
+	   for an epic, a spinner while resolving, `?` for an id nobody claims) and
+	   takes its colour from the canonical card state below. The link text stays
+	   violet in every state: the status is the glyph's job, not the text's. */
 	a.file-link-card {
 		color: var(--color-violet-300, #c4b5fd);
 		text-decoration-style: dotted;
 		text-decoration-color: color-mix(in oklch, var(--color-violet-300, #c4b5fd) 55%, transparent);
 	}
 
-	a.file-link-card::before {
-		content: "▤";
-		margin-right: 0.3em;
-		font-size: 0.85em;
-		opacity: 0.75;
-	}
-
 	a.file-link-card:hover {
 		color: var(--color-violet-200, #ddd6fe);
+	}
+
+	a.file-link-card .card-glyph {
+		display: inline-block;
+		margin-right: 0.3em;
+		font-size: 0.85em;
+		opacity: 0.9;
+		color: var(--muted-foreground);
+	}
+
+	a.file-link-card[data-card-kind="epic"] .card-glyph {
+		font-size: 0.9em;
+	}
+
+	a.file-link-card[data-card-state="triage"] .card-glyph { color: var(--event-prompt); }
+	a.file-link-card[data-card-state="todo"] .card-glyph { color: var(--primary); }
+	a.file-link-card[data-card-state="active"] .card-glyph { color: var(--accent); }
+	a.file-link-card[data-card-state="review"] .card-glyph { color: var(--info); }
+	a.file-link-card[data-card-state="done"] .card-glyph { color: var(--active); }
+	a.file-link-card[data-card-state="dropped"] .card-glyph { opacity: 0.55; }
+
+	a.file-link-card[data-card-state="resolving"] .card-glyph,
+	.card-glyph-spin {
+		animation: card-glyph-spin 900ms linear infinite;
+		opacity: 0.6;
+	}
+
+	@keyframes card-glyph-spin {
+		to { transform: rotate(360deg); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		a.file-link-card[data-card-state="resolving"] .card-glyph,
+		.card-glyph-spin {
+			animation: none;
+		}
 	}
 
 	ul, ol {
