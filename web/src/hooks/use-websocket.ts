@@ -19,7 +19,9 @@ import { buildWsUrl, isShareView } from '@/lib/share-mode'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 import { handleWebControlRequest } from '@/lib/web-control-dispatch'
 import { buildWebControlAdvertise } from '@/lib/web-control-grant'
+import { recordWireIn } from '@/lib/wire-stats'
 import { resubscribeAgentScopes, subscribeAgentScope, unsubscribeAgentScope } from './agent-scope-subscription'
+import { buildSyncCheck, describeSyncCheck } from './sync-check'
 import { refetchStaleTranscripts } from './transcript-refetch'
 import { handleBgTaskOutputMessage, resolveConfigResponse, useConversationsStore } from './use-conversations'
 import { dispatchShellData } from './use-shells'
@@ -255,22 +257,13 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
           // sync_check sends the last applied transcript seq per conversation, not
           // entry counts. Server compares against its own lastAssignedSeq per
           // conversation and replies with a delta list if we're behind.
-          const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useConversationsStore.getState()
-          const transcriptSeqs: Record<string, number> = {}
-          for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {
-            if (seq > 0) transcriptSeqs[sid] = seq
-          }
-          if (Object.keys(transcriptSeqs).length > 0) {
-            const summary = Object.entries(transcriptSeqs)
-              .map(([sid, s]) => `${sid.slice(0, 8)}@${s}`)
-              .join(' ')
-            console.log(
-              `[sync] -> sync_check (reconnect) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcriptSeqs=[${summary}]`,
-            )
-            send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
-          } else {
+          const check = buildSyncCheck()
+          if (!check) {
             console.log(`[sync] -> sync_check SKIP (reconnect): no tracked transcript seqs to compare`)
+            return
           }
+          console.log(describeSyncCheck('reconnect', check))
+          send({ type: 'sync_check', ...check })
         }, 500)
       }
 
@@ -578,7 +571,11 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
         } finally {
           if (wsT0) {
             const t = (msg as { type?: string } | undefined)?.type ?? 'parse-error'
-            perfRecord('ws', 'onmessage', performance.now() - wsT0, `${(raw.length / 1024).toFixed(1)}KB ${t}`)
+            const cpuMs = performance.now() - wsT0
+            perfRecord('ws', 'onmessage', cpuMs, `${(raw.length / 1024).toFixed(1)}KB ${t}`)
+            // Same span, keyed on type, with the parsed payload so a fat message
+            // can be broken down field-by-field (see wire-stats/payload-anatomy).
+            recordWireIn(t, raw.length, cpuMs, msg)
           }
         }
       }
@@ -668,20 +665,10 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
       // full reconnect cycle x N). The visibility-restore handler sends
       // its own sync_check, so nothing is lost.
       if (document.hidden) return
-      const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useConversationsStore.getState()
-      const transcriptSeqs: Record<string, number> = {}
-      for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {
-        if (seq > 0) transcriptSeqs[sid] = seq
-      }
-      if (Object.keys(transcriptSeqs).length > 0) {
-        const summary = Object.entries(transcriptSeqs)
-          .map(([sid, s]) => `${sid.slice(0, 8)}@${s}`)
-          .join(' ')
-        console.log(
-          `[sync] -> sync_check (periodic) epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcriptSeqs=[${summary}]`,
-        )
-        send({ type: 'sync_check', epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
-      }
+      const check = buildSyncCheck()
+      if (!check) return
+      console.log(describeSyncCheck('periodic', check))
+      send({ type: 'sync_check', ...check })
     }, 60_000)
 
     return () => {

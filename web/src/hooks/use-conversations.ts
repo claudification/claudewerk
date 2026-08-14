@@ -17,6 +17,7 @@ import {
 } from '@/lib/control-panel-prefs'
 import { referencedConversationIds } from '@/lib/conversation-refs'
 import { clearExpandedState } from '@/lib/expanded-state'
+import { fetchJsonTimed } from '@/lib/net-timing'
 import { enqueueOutbox, useOutboxStore } from '@/lib/outbox'
 import { discardPendingSend, newRequestId, registerPendingSend } from '@/lib/pending-sends'
 import { setPerfEnabled } from '@/lib/perf-metrics'
@@ -1624,10 +1625,10 @@ export async function fetchTranscript(
     // unaffected either way.
     const qs =
       sinceSeq !== undefined ? `?sinceSeq=${sinceSeq}&limit=1000` : `?limit=${INITIAL_TRANSCRIPT_LIMIT}&filter=display`
-    const res = await fetch(appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript${qs}`))
-    if (!res.ok) return null
-    const body = await res.json()
-    return body as TranscriptFetchResult
+    return await fetchJsonTimed<TranscriptFetchResult>(
+      sinceSeq !== undefined ? 'transcript.delta' : 'transcript.cold',
+      appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript${qs}`),
+    )
   } catch {
     return null
   }
@@ -1672,33 +1673,26 @@ export async function fetchTranscriptBefore(
     // the remaining shortfall will be filled on the next scroll-up tick.
     return { entries: cached.entries, oldestSeq: cached.oldestSeq, hasMore: true }
   }
-  // Miss (or partial hit at the cache floor) -> broker.
+  // Miss (or partial hit at the cache floor) -> broker. Timing + payload size
+  // land in the `net` perf category; the debug line keeps the cache narrative.
   const t0 = performance.now()
-  try {
-    const res = await fetch(
-      appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript?before=${beforeSeq}&limit=${limit}`),
-    )
-    if (!res.ok) {
-      console.debug(
-        `[transcript-cache] fetch ${conversationId.slice(0, 8)} before=${beforeSeq} FAILED status=${res.status} (${(performance.now() - t0).toFixed(0)}ms)`,
-      )
-      return null
-    }
-    const body = (await res.json()) as TranscriptBeforeResult
-    const elapsed = performance.now() - t0
-    console.debug(
-      `[transcript-cache] fetch ${conversationId.slice(0, 8)} before=${beforeSeq} -> ${body.entries.length} entries (hasMore=${body.hasMore}, ${elapsed.toFixed(0)}ms)`,
-    )
-    // Write-through: feed the fetched page into the cache so the next
-    // scroll-up over this range is local.
-    if (body.entries.length > 0) cachePushEntries(conversationId, body.entries)
-    return body
-  } catch {
-    console.debug(
-      `[transcript-cache] fetch ${conversationId.slice(0, 8)} before=${beforeSeq} EXCEPTION (${(performance.now() - t0).toFixed(0)}ms)`,
-    )
+  const body = await fetchJsonTimed<TranscriptBeforeResult>(
+    'transcript.page',
+    appendShareParam(`${API_BASE}/conversations/${conversationId}/transcript?before=${beforeSeq}&limit=${limit}`),
+  )
+  const elapsed = performance.now() - t0
+  const who = `${conversationId.slice(0, 8)} before=${beforeSeq}`
+  if (!body) {
+    console.debug(`[transcript-cache] fetch ${who} FAILED (${elapsed.toFixed(0)}ms)`)
     return null
   }
+  console.debug(
+    `[transcript-cache] fetch ${who} -> ${body.entries.length} entries (hasMore=${body.hasMore}, ${elapsed.toFixed(0)}ms)`,
+  )
+  // Write-through: feed the fetched page into the cache so the next
+  // scroll-up over this range is local.
+  if (body.entries.length > 0) cachePushEntries(conversationId, body.entries)
+  return body
 }
 
 export async function fetchSubagents(conversationId: string): Promise<SubagentInfo[]> {

@@ -12,9 +12,19 @@
 
 import { getLogEntries } from './debug-log'
 import { categoryStats, getEntries, type PerfCategory, type PerfEntry } from './perf-metrics'
+import { buildWireSection } from './perf-report-wire'
 import { messageImpactStats } from './perf-rollup'
 
-export const PERF_CATEGORIES: PerfCategory[] = ['render', 'grouping', 'ws', 'scroll', 'transcript', 'message', 'other']
+export const PERF_CATEGORIES: PerfCategory[] = [
+  'render',
+  'grouping',
+  'ws',
+  'scroll',
+  'transcript',
+  'message',
+  'net',
+  'other',
+]
 
 /** Entries below this are noise; the report (and HUD) can filter to "significant only". */
 export const SIGNIFICANT_THRESHOLD_MS = 2.5
@@ -44,6 +54,10 @@ export function buildPerfReport(opts: PerfReportOptions = {}): string {
     }
     lines.push('')
   }
+
+  // Bytes before CPU: a message type that dominates the download is worth
+  // seeing before the rollup of what it then cost to apply.
+  lines.push(...buildWireSection())
 
   const impact = messageImpactStats(visibleEntries)
   if (impact.length > 0) {

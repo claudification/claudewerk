@@ -26,6 +26,7 @@ import { formatStoreReport, humanBytes, measureStore, type StoreReport } from '@
 import { extractProjectLabel } from '@/lib/types'
 import { clearCacheAndReload, cn } from '@/lib/utils'
 import { MessageImpactTable } from './nerd-modal-message-impact'
+import { WirePayloadTable } from './nerd-modal-wire-payload'
 
 interface ServerStats {
   uptime: number
@@ -392,6 +393,7 @@ const CAT_COLORS: Record<PerfCategory, string> = {
   scroll: 'text-success',
   transcript: 'text-warning',
   message: 'text-event-prompt',
+  net: 'text-accent',
   other: 'text-muted-foreground',
 }
 
@@ -441,6 +443,9 @@ function PerfTab() {
           ))}
         </div>
       )}
+
+      {/* What we downloaded, before what it cost to apply */}
+      <WirePayloadTable />
 
       {/* Per-message impact rollup */}
       <MessageImpactTable entries={entries} />

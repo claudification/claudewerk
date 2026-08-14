@@ -5,7 +5,7 @@
 
 import { currentMessageTag } from './perf-message-context'
 
-export type PerfCategory = 'render' | 'grouping' | 'ws' | 'scroll' | 'transcript' | 'message' | 'other'
+export type PerfCategory = 'render' | 'grouping' | 'ws' | 'scroll' | 'transcript' | 'message' | 'net' | 'other'
 
 export interface PerfEntry {
   t: number // timestamp ms
@@ -23,12 +23,30 @@ const buffer: PerfEntry[] = []
 let enabled = false
 const listeners = new Set<() => void>()
 
+/**
+ * Reset hooks for satellite recorders (per-type wire accounting, and anything
+ * else that accumulates alongside the ring buffer). They register HERE rather
+ * than this module importing them, so the dependency stays one-way: satellites
+ * import perf-metrics, never the reverse.
+ */
+const resetHooks = new Set<() => void>()
+
+export function onPerfReset(fn: () => void): () => void {
+  resetHooks.add(fn)
+  return () => resetHooks.delete(fn)
+}
+
+function runResetHooks() {
+  for (const fn of resetHooks) fn()
+}
+
 export function setPerfEnabled(on: boolean) {
   enabled = on
   if (on) {
     bindVisibilityMarker()
   } else {
     buffer.length = 0
+    runResetHooks()
     notify()
   }
 }
@@ -109,6 +127,7 @@ export function getEntries(): readonly PerfEntry[] {
 
 export function clearEntries() {
   buffer.length = 0
+  runResetHooks()
   notify()
 }
 

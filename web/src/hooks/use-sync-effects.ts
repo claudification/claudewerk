@@ -13,6 +13,7 @@ import { useWebSocket } from '@/hooks/use-websocket'
 import { setChordTimeout } from '@/lib/key-layers'
 import { fetchModelDb } from '@/lib/model-db'
 import { flattenProjectOrderTree, projectOrderTreesEqual } from '@/lib/types'
+import { buildSyncCheck, describeSyncCheck } from './sync-check'
 
 // Fetch sidebar metadata (project settings, capabilities, global settings, conversation order).
 // Called on mount AND on reconnect/visibility-restore to catch renames, reorders, etc.
@@ -93,15 +94,11 @@ function useVisibilitySync(fetchSidebarMetadata: () => Promise<void>) {
       } else if (hiddenAt) {
         const elapsed = Date.now() - hiddenAt
         hiddenAt = 0
-        const { syncEpoch, syncSeq, lastAppliedTranscriptSeq } = useConversationsStore.getState()
-        const transcriptSeqs: Record<string, number> = {}
-        for (const [sid, seq] of Object.entries(lastAppliedTranscriptSeq)) {
-          if (seq > 0) transcriptSeqs[sid] = seq
+        const check = buildSyncCheck()
+        if (check) {
+          console.log(`[sync] restored after ${(elapsed / 1000).toFixed(1)}s -- ${describeSyncCheck('restore', check)}`)
+          wsSend('sync_check', { ...check })
         }
-        console.log(
-          `[sync] restored after ${(elapsed / 1000).toFixed(1)}s - sending sync_check (epoch=${syncEpoch.slice(0, 8)} seq=${syncSeq} transcripts=${Object.keys(transcriptSeqs).length})`,
-        )
-        wsSend('sync_check', { epoch: syncEpoch, lastSeq: syncSeq, transcripts: transcriptSeqs })
         if (elapsed > 10_000) {
           useConversationsStore.setState({ syncCatchingUp: true })
         }

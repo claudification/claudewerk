@@ -6,6 +6,7 @@
  */
 
 import type { CommitRow } from '@shared/commit-ledger'
+import { fetchJsonTimed } from '@/lib/net-timing'
 import { appendShareParam } from '@/lib/share-mode'
 
 export type { CommitRow } from '@shared/commit-ledger'
@@ -36,10 +37,10 @@ export async function fetchCommits(params: CommitListParams, signal?: AbortSigna
   if (params.path) url.searchParams.set('path', params.path)
   url.searchParams.set('limit', String(params.limit ?? 100))
 
-  const res = await fetch(appendShareParam(url.pathname + url.search), { signal })
-  if (!res.ok) return { commits: [], total: 0 }
-  const body = (await res.json()) as ListResponse
-  return { commits: body.commits ?? [], total: body.total ?? 0 }
+  const body = await fetchJsonTimed<ListResponse>('commits.list', appendShareParam(url.pathname + url.search), {
+    signal,
+  })
+  return { commits: body?.commits ?? [], total: body?.total ?? 0 }
 }
 
 export interface CommitTranscriptLink {

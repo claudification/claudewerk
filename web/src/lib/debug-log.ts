@@ -4,7 +4,11 @@
  * Import this module once (e.g. in main.tsx) to start capturing.
  */
 
-type LogLevel = 'log' | 'warn' | 'error' | 'debug'
+import { getLogLevelFilter, LOG_LEVELS, type LogLevel } from './debug-log-filter'
+
+const LOG_LEVEL_COUNT = LOG_LEVELS.length
+
+export type { LogLevel } from './debug-log-filter'
 
 export interface LogEntry {
   t: number
@@ -12,7 +16,17 @@ export interface LogEntry {
   args: string
 }
 
-const MAX_ENTRIES = 500
+const MAX_ENTRIES = 1000
+
+/**
+ * Per-entry character cap. The entry COUNT was always bounded; the per-entry
+ * SIZE was not, and that is where the memory actually goes -- one
+ * `console.log(hugeObject)` stringifies at indent 2 into hundreds of KB, and a
+ * loop doing it pins that much per slot. 1000 x 8k caps the buffer at ~8 MB
+ * worst case instead of unbounded.
+ */
+const MAX_ARG_CHARS = 8_000
+
 const entries: LogEntry[] = []
 const listeners = new Set<() => void>()
 
@@ -37,10 +51,19 @@ function formatArgs(args: unknown[]): string {
     .join(' ')
 }
 
+/** Truncate a formatted line to the per-entry cap, saying so in-band -- a
+ *  silently shortened log line is worse than a long one. */
+function capArgs(text: string): string {
+  if (text.length <= MAX_ARG_CHARS) return text
+  return `${text.slice(0, MAX_ARG_CHARS)}... [truncated ${text.length - MAX_ARG_CHARS} chars]`
+}
+
 function capture(level: LogLevel, args: unknown[]) {
-  const entry: LogEntry = { t: Date.now(), level, args: formatArgs(args) }
+  const entry: LogEntry = { t: Date.now(), level, args: capArgs(formatArgs(args)) }
   entries.push(entry)
-  if (entries.length > MAX_ENTRIES) entries.shift()
+  // Capture is level-blind on purpose: the view filter decides what is SHOWN,
+  // so switching it on later still reveals history that was already recorded.
+  if (entries.length > MAX_ENTRIES) entries.splice(0, entries.length - MAX_ENTRIES)
   for (const fn of listeners) fn()
 }
 
@@ -80,6 +103,13 @@ export function getLogEntries(): LogEntry[] {
   return entries
 }
 
+/** Entries the active level filter admits -- what the console renders. */
+export function getVisibleLogEntries(): LogEntry[] {
+  const levels = getLogLevelFilter()
+  if (levels.size === LOG_LEVEL_COUNT) return entries
+  return entries.filter(e => levels.has(e.level))
+}
+
 export function clearLog() {
   entries.length = 0
   for (const fn of listeners) fn()
@@ -90,8 +120,13 @@ export function subscribeLog(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
+/**
+ * The copied log honours the VIEW filter -- copying is how these lines leave the
+ * browser, and pasting the full firehose when the console was filtered down to
+ * warn+error buries the signal the reader had already isolated.
+ */
 export function copyLogText(maxLines = 200): string {
-  const slice = entries.slice(-maxLines)
+  const slice = getVisibleLogEntries().slice(-maxLines)
   return slice
     .map(e => {
       const ts = new Date(e.t).toISOString().slice(11, 23)

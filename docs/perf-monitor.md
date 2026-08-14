@@ -52,6 +52,7 @@ Each sample has a `category`, a `label`, a `durationMs`, and (when known) a
 | `grouping` | Transcript incremental grouping (entries -> display groups). | sync | `useIncrementalGroups` |
 | `scroll` | Scroll re-pin / settle work on conversation switch + follow. | sync/async | transcript scroll logic |
 | `transcript` | Transcript maintenance: live-cap prune, page-cache push. | sync | `use-websocket.ts` prune |
+| `net` | One HTTP JSON fetch: `wait` (server + transfer) + `parse` (client `JSON.parse`), with the decoded payload size and the broker's `Server-Timing` total when present. Labels are the load being measured: `transcript.cold`, `transcript.delta`, `transcript.page`, `commits.list`. | async | `fetchJsonTimed` (`net-timing.ts`) |
 | `other` | Zero-duration **markers**, not costs: `list.rerender` (per-frame row/group re-render tally) and `visibility` (tab hidden/shown). Never pollutes the timing stats. | n/a | `tallyListRender`, visibility marker |
 
 ### `actualDuration` vs `baseDuration` (the `base=` in render details)
@@ -62,6 +63,36 @@ this render **actually cost**, given memoization. `baseDuration` (shown as
 all** -- i.e. the headroom your `memo`/`useMemo` is buying. A render with
 `actualDuration` 4ms / `base=25ms` means memoization saved ~21ms; if those two
 numbers converge, your memoization has stopped working.
+
+## The "Wire payload" rollup -- is it SQL, or is it SIZE?
+
+The categories above all measure **CPU**. They cannot tell you that a cold panel
+boot spent its time downloading 696 KB, nor which field inside that payload was
+responsible. `wire-stats` closes that gap: every inbound WS message is keyed on
+type with its decoded byte count, and any type whose largest instance crosses
+32 KB gets a **field-level anatomy** of that worst case.
+
+| Column | Meaning |
+|--------|---------|
+| `n` / `KB` / `max KB` | messages of this type, total decoded bytes, largest single instance |
+| `cpu ms` | `onmessage` cost (parse + routing) attributed to the type -- the same span the `ws` sample records |
+
+The anatomy lines under a fat type read
+`costTimeline 221.4KB 32% over 55 rows`. For a payload dominated by one array of
+objects (any bulk list) the breakdown is **per row field summed across rows**,
+because that is the unit you can act on. A field marked **DUPLICATED** carried a
+byte-identical value on every row -- those bytes belong somewhere sent once, not
+per row.
+
+This exists because it was once a hand-written probe script: on 2026-08-14 the
+boot snapshot measured 696 KB for 55 conversations, and 77% of it was three
+detail-only fields (`costTimeline`, `monitors`, `spinnerVerbs` -- the last being
+ONE identical 116-verb array shipped 55 times). Nothing in the panel could have
+told you that.
+
+Pair it with the `net` category for the HTTP half: `net` splits each fetch into
+server+transfer (`wait`) versus client (`parse`), so "the search is slow" resolves
+to a specific owner instead of a guess.
 
 ## The "By message" rollup
 
@@ -133,7 +164,12 @@ to cut sub-2.5ms noise.
 
 | File | Owns |
 |------|------|
-| `web/src/lib/perf-metrics.ts` | ring buffer, `record()`, `categoryStats`, `messageImpactStats`, `PerfCategory` |
+| `web/src/lib/perf-metrics.ts` | ring buffer, `record()`, `categoryStats`, `messageImpactStats`, `PerfCategory`, `onPerfReset` |
+| `web/src/lib/wire-stats.ts` | per-message-type byte accounting + the anatomy trigger |
+| `web/src/lib/payload-anatomy.ts` | `analysePayload` -- heaviest fields, duplication detection |
+| `web/src/lib/net-timing.ts` | `fetchJsonTimed` -- the `net` category, `Server-Timing` capture |
+| `web/src/lib/perf-report-wire.ts` | the "Wire payload" report section |
+| `web/src/components/nerd-modal-wire-payload.tsx` | the Wire payload table in the Perf tab |
 | `web/src/lib/perf-message-context.ts` | per-message + flush-batch attribution tags |
 | `web/src/lib/perf-report.ts` | `buildPerfReport()` (shared by Copy button + MCP) |
 | `web/src/components/perf-profiler.tsx` | `MaybeProfiler` -- commit + commit->paint timing |
