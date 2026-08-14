@@ -21,7 +21,9 @@ import type { TaskStatus } from './task-statuses'
 export type { CmdResult, CmdRunner, GateCheck, GateInput, GitResult, GitRunner } from './board-gate-checks'
 
 export type GateMode = 'off' | 'tier2' | 'full'
-const GATE_MODES: readonly GateMode[] = ['off', 'tier2', 'full']
+/** Exported so `card-schema-keys.ts` declares the `gate:` key's enum from THIS
+ *  list rather than a second copy of it. */
+export const GATE_MODES: readonly GateMode[] = ['off', 'tier2', 'full']
 const GATED_TARGETS: readonly TaskStatus[] = ['in-review', 'done']
 
 export interface GateOutcome {

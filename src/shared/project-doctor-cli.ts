@@ -20,10 +20,16 @@ export const DOCTOR_USAGE = `usage: bun run board:doctor [--root <path> | --all 
 Reports what is wrong with a board and what to do about each one. Nearly every
 remedy is a command you run or a line you edit yourself.
 
-The one thing it repairs on its own is a missing \`created:\`, stamped from the
-file's birthtime (or ctime, or mtime -- the INFO line says which). That is safe
-to leave on because it can only ADD a key that was not saying anything, and it
-is idempotent: run it twice and the second run is silent. --dry-run previews it.`
+The two things it repairs on its own, both idempotent and both only able to
+recover a value that was already there and being read as nothing:
+
+  - a missing \`created:\`, stamped from the file's birthtime (or ctime, or
+    mtime -- the INFO line says which);
+  - a known key holding the wrong SHAPE, where there is exactly one reading of
+    it (\`tags: a, b\` is read as NO tags until it is written \`[a, b]\`).
+
+Anything needing a judgement -- a misspelled lane, an unparseable date -- stays
+a finding and is never rewritten. --dry-run previews both.`
 
 export interface DoctorArgs {
   root: string

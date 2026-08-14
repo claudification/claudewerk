@@ -16,10 +16,16 @@
  * will never read.
  *
  * It never moves or deletes anything, and nearly every finding just tells you
- * what to run or edit. The one exception is a missing `created:`, which is
- * STAMPED from the filesystem and logged as INFO -- unambiguous, idempotent,
- * and it can only add a key that was not saying anything. `--dry-run` previews
- * it. Exit 1 on errors, or on warnings too with --strict.
+ * what to run or edit. The two exceptions are a missing `created:` (STAMPED
+ * from the filesystem) and a known key in the wrong SHAPE (`tags: a, b` reads
+ * as no tags at all until it is written `[a, b]`) -- both unambiguous, both
+ * idempotent, and both only able to recover a value that was already on the
+ * card. `--dry-run` previews them. Exit 1 on errors, or on warnings too with
+ * --strict.
+ *
+ * What a card's frontmatter may contain is declared in one place,
+ * `src/shared/card-schema-keys.ts`, and the registry is OPEN: a key it does not
+ * know is preserved verbatim and reported by nobody.
  *
  * The parsing and the report live in `src/shared/project-doctor-cli.ts` (pure,
  * tested); this file is only the shell that talks to the process.

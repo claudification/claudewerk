@@ -13,9 +13,16 @@
  */
 
 import { LINKAGE_VERBS } from './card-linkage'
+import { KNOWN_NON_LINKAGE_KEYS } from './card-schema'
 
-/** Keys the store owns that are not linkage -- never candidates for anything. */
-export const STORE_KEYS = new Set(['title', 'status', 'priority', 'tags', 'created'])
+/**
+ * Known keys that are not linkage -- never candidates for anything. DERIVED from
+ * the key registry now, which widens it from five hand-written names to every
+ * declared key: the gate's `test_cmd`, `base` and `evidence_*` used to stay
+ * quiet only because no verb happened to land one edit away from them. Silence
+ * by DECLARATION beats silence by luck.
+ */
+export const STORE_KEYS: ReadonlySet<string> = new Set(KNOWN_NON_LINKAGE_KEYS)
 
 /** First word of a key that reads as a relationship. Whole words only, so
  *  `created_by` (authorship, not linkage) stays quiet while `blocked_by`,
