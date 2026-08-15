@@ -42,8 +42,14 @@ interface ProjectDiff {
 const projectCaches = new Map<string, ProjectCache>()
 const cacheVersions = new WeakMap<ProjectCache, number>()
 
-export function refKey(ref: { slug: string; status: string }): string {
-  return `${ref.status}/${ref.slug}`
+/**
+ * A card's key is its SLUG. Status is card CONTENT, never identity: the sentinel
+ * keys its diff by slug, so a lane move is one `modified` entry -- under the old
+ * `<status>/<slug>` key that wrote the new lane and orphaned the old one, and the
+ * card sat in BOTH lanes until the next full manifest fetch.
+ */
+export function refKey(ref: { slug: string }): string {
+  return ref.slug
 }
 
 export function getProjectCache(projectUri: string): ProjectCache {

@@ -3,9 +3,10 @@
  * nothing else -- a `[card-id](.rclaude/project/cards/card-id.md)` link in a
  * transcript knows the id but not the lane.
  *
- * The cache is keyed by `<status>/<slug>` (a lane move changes the key), so this
- * keeps a slug index derived from the manifest and memoized on the cache
- * version -- no extra bookkeeping in the three places that mutate the manifest.
+ * The cache is keyed by slug, so the manifest IS the slug index -- a lookup here
+ * is a plain `Map.get`. (It used to be keyed by `<status>/<slug>`, which needed a
+ * separate index memoized on the cache version; that key also duplicated a card
+ * across two lanes on every move, so it is gone.)
  */
 
 import type { ProjectTaskManifestEntry as ManifestEntry, ProjectTaskMeta } from '@shared/project-task-types'
@@ -19,18 +20,6 @@ import {
   refKey,
 } from './project-task-cache'
 
-const slugIndexes = new WeakMap<ProjectCache, { version: number; bySlug: Map<string, ManifestEntry> }>()
-
-function slugIndex(cache: ProjectCache): Map<string, ManifestEntry> {
-  const version = cacheVersion(cache)
-  const cached = slugIndexes.get(cache)
-  if (cached && cached.version === version) return cached.bySlug
-  const bySlug = new Map<string, ManifestEntry>()
-  for (const entry of cache.manifest.values()) bySlug.set(entry.slug, entry)
-  slugIndexes.set(cache, { version, bySlug })
-  return bySlug
-}
-
 export interface ProjectCardLookup {
   /** False while the first manifest fetch is still out -- "not found" is not yet true. */
   manifestFetched: boolean
@@ -40,7 +29,7 @@ export interface ProjectCardLookup {
 
 export function peekProjectCard(projectUri: string, slug: string): ProjectCardLookup {
   const cache = getProjectCache(projectUri)
-  const entry = slugIndex(cache).get(slug)
+  const entry = cache.manifest.get(slug)
   return {
     manifestFetched: cache.manifestFetched,
     entry,
@@ -60,8 +49,7 @@ export function ensureProjectCard(projectUri: string, slug: string): void {
 }
 
 function queueHydrationForSlug(cache: ProjectCache, slug: string): void {
-  const entry = slugIndex(cache).get(slug)
-  if (entry) queueHydration(cache, [refKey(entry)])
+  if (cache.manifest.has(slug)) queueHydration(cache, [slug])
 }
 
 /**
