@@ -61,8 +61,8 @@ export function EpicsView({
   if (rollups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-1">
-        <div className="text-xs font-mono text-muted-foreground/50">No epics on this board</div>
-        <div className="text-[10px] font-mono text-muted-foreground/35">
+        <div className="text-xs font-mono text-muted-foreground/80">No epics on this board</div>
+        <div className="text-[10px] font-mono text-muted-foreground/60">
           tag a card `epic`, then put `epic: &lt;that-id&gt;` on its children
         </div>
       </div>
@@ -95,7 +95,7 @@ export function EpicsView({
           />
         ))}
         {visible.length === 0 && (
-          <div className="px-3 py-6 text-center text-[11px] font-mono text-muted-foreground/40">
+          <div className="px-3 py-6 text-center text-[11px] font-mono text-muted-foreground/60">
             every epic is finished -- turn on `show finished` to see them
           </div>
         )}
@@ -109,7 +109,7 @@ export function EpicsView({
         >
           <span className="text-[10px] font-mono text-event-prompt/70">⚠</span>
           <span className="text-[10px] font-mono text-muted-foreground/70">{unparentedCount} cards</span>
-          <span className="text-[10px] font-mono text-muted-foreground/45">belong to no epic</span>
+          <span className="text-[10px] font-mono text-muted-foreground/60">belong to no epic</span>
         </button>
       )}
     </div>

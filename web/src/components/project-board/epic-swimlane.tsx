@@ -43,7 +43,7 @@ export function EpicSwimlane({
       <EpicSwimlaneHeader rollup={rollup} expanded={expanded} onToggle={toggle} onWorkOnEpic={onWorkOnEpic} />
 
       {!expanded && rollup.children.length === 0 && (
-        <div className="px-3 pb-2 pl-10 text-[10px] font-mono text-muted-foreground/40">
+        <div className="px-3 pb-2 pl-10 text-[10px] font-mono text-muted-foreground/60">
           no children yet -- tagged `epic`, nothing points at it
         </div>
       )}
@@ -52,12 +52,12 @@ export function EpicSwimlane({
         <div className="px-3 pb-3 pl-10 space-y-2">
           <EpicChildTable rows={rollup.children} onOpenCard={onOpenCard} />
           {rollup.children.length === 0 && (
-            <div className="text-[10px] font-mono text-muted-foreground/40">
+            <div className="text-[10px] font-mono text-muted-foreground/60">
               no children yet -- put `epic: {rollup.epicId}` on a card to adopt it
             </div>
           )}
           {rollup.dropped > 0 && (
-            <div className="text-[10px] font-mono text-muted-foreground/40">
+            <div className="text-[10px] font-mono text-muted-foreground/60">
               ⊘ {rollup.dropped} dropped -- excluded from the percentage
             </div>
           )}

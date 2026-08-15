@@ -15,8 +15,8 @@ import { EpicWorkButton } from './epic-work-button'
 
 const PRIORITY_CLASS: Record<string, string> = {
   high: 'text-event-prompt',
-  medium: 'text-muted-foreground/50',
-  low: 'text-muted-foreground/35',
+  medium: 'text-muted-foreground/60',
+  low: 'text-muted-foreground/60',
 }
 
 function excerpt(text: string | undefined, limit = 180): string {
@@ -50,13 +50,13 @@ export function EpicSwimlaneHeader({
           onClick={() => onToggle(rollup.epicId)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
         >
-          <Chevron className="size-3.5 text-muted-foreground/50 shrink-0" />
+          <Chevron className="size-3.5 text-muted-foreground/60 shrink-0" />
           <span className="text-[color:var(--epic-solid)] text-sm shrink-0">◈</span>
           <span className="text-[13px] font-mono text-foreground truncate">{title}</span>
           {card?.priority && (
             <span className={cn('text-[10px] font-mono shrink-0', PRIORITY_CLASS[card.priority])}>{card.priority}</span>
           )}
-          <span className="text-[10px] font-mono text-muted-foreground/35 shrink-0 hidden md:inline">
+          <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0 hidden md:inline">
             {rollup.epicId}
           </span>
         </button>
@@ -74,14 +74,14 @@ export function EpicSwimlaneHeader({
       {(tags.length > 0 || (card?.refs?.length ?? 0) > 0) && (
         <div className="pl-7 flex items-center gap-x-3 gap-y-1 flex-wrap">
           {tags.length > 0 && (
-            <span className="text-[10px] font-mono text-muted-foreground/40">
-              <span className="text-muted-foreground/25">tags </span>
+            <span className="text-[10px] font-mono text-muted-foreground/80">
+              <span className="text-muted-foreground/60">tags </span>
               {tags.join(' ')}
             </span>
           )}
           {(card?.refs?.length ?? 0) > 0 && (
-            <span className="text-[10px] font-mono text-muted-foreground/40 truncate">
-              <span className="text-muted-foreground/25">refs </span>
+            <span className="text-[10px] font-mono text-muted-foreground/80 truncate">
+              <span className="text-muted-foreground/60">refs </span>
               {card?.refs.join(' · ')}
             </span>
           )}

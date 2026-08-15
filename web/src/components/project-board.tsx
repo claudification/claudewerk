@@ -60,6 +60,7 @@ import {
 import { CardActions } from './project-board/card-actions'
 import { EpicBadge } from './project-board/epic-badge'
 import { EpicsView } from './project-board/epics-view'
+import { InlineAdd } from './project-board/inline-add'
 import { RunTaskDialog } from './project-board/run-task-dialog'
 import { TaskEditor } from './project-board/task-editor'
 import { openTaskBatch } from './task-batch-trigger'
@@ -186,7 +187,7 @@ function ProjectCard({
         </div>
         <button
           type="button"
-          className="shrink-0 p-0.5 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          className="shrink-0 p-0.5 text-muted-foreground/60 hover:text-foreground transition-colors"
           onClick={e => {
             e.stopPropagation()
             haptic('tap')
@@ -206,72 +207,6 @@ function ProjectCard({
           onDone={() => setShowActions(false)}
         />
       )}
-    </div>
-  )
-}
-
-function InlineAdd({ onAdd }: { onAdd: (text: string) => void }) {
-  const [adding, setAdding] = useState(false)
-  const [text, setText] = useState('')
-
-  if (!adding) {
-    return (
-      <button
-        type="button"
-        className="w-full px-3 py-1.5 text-[10px] text-muted-foreground/40 hover:text-muted-foreground hover:bg-surface-inset/50 transition-colors font-mono text-left"
-        onClick={() => {
-          haptic('tap')
-          setAdding(true)
-        }}
-      >
-        + Add…
-      </button>
-    )
-  }
-
-  return (
-    <div className="px-2 py-1.5 border-t border-border/60">
-      <InputEditor
-        value={text}
-        onChange={setText}
-        onSubmit={() => {
-          if (text.trim()) {
-            haptic('success')
-            onAdd(text.trim())
-            setText('')
-            setAdding(false)
-          }
-        }}
-        placeholder="Description..."
-        autoFocus
-        inline
-      />
-      <div className="flex items-center gap-2 mt-1">
-        <button
-          type="button"
-          className="text-[10px] text-accent font-mono hover:text-accent/80"
-          onClick={() => {
-            if (text.trim()) {
-              haptic('success')
-              onAdd(text.trim())
-              setText('')
-              setAdding(false)
-            }
-          }}
-        >
-          Add
-        </button>
-        <button
-          type="button"
-          className="text-[10px] text-muted-foreground font-mono hover:text-foreground"
-          onClick={() => {
-            setAdding(false)
-            setText('')
-          }}
-        >
-          Cancel
-        </button>
-      </div>
     </div>
   )
 }
@@ -585,7 +520,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
 
   if (loading && tasks.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground/40 text-xs font-mono">Loading…</div>
+      <div className="flex items-center justify-center h-32 text-muted-foreground/80 text-xs font-mono">Loading…</div>
     )
   }
 
@@ -607,7 +542,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                   }}
                   className={cn(
                     'px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider transition-colors',
-                    view.mode === m ? 'bg-accent/15 text-accent' : 'text-muted-foreground/40 hover:text-foreground',
+                    view.mode === m ? 'bg-accent/15 text-accent' : 'text-muted-foreground/80 hover:text-foreground',
                   )}
                 >
                   {m}
@@ -617,7 +552,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
             <button
               type="button"
               title="Batch select tasks"
-              className="p-0.5 text-muted-foreground/40 hover:text-accent transition-colors"
+              className="p-0.5 text-muted-foreground/60 hover:text-accent transition-colors"
               onClick={() => {
                 haptic('tap')
                 openTaskBatch()
@@ -629,7 +564,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
               type="button"
               className={cn(
                 'p-0.5 transition-colors',
-                searchOpen ? 'text-accent' : 'text-muted-foreground/40 hover:text-muted-foreground',
+                searchOpen ? 'text-accent' : 'text-muted-foreground/60 hover:text-foreground',
               )}
               onClick={() => {
                 haptic('tap')
@@ -650,7 +585,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
               title="View settings"
               className={cn(
                 'p-0.5 transition-colors',
-                configOpen ? 'text-accent' : 'text-muted-foreground/40 hover:text-muted-foreground',
+                configOpen ? 'text-accent' : 'text-muted-foreground/60 hover:text-foreground',
               )}
               onClick={() => {
                 haptic('tap')
@@ -680,7 +615,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                 onChange={e => setSearchQuery(e.target.value)}
                 onFocus={() => haptic('tap')}
                 placeholder="Filter by title..."
-                className="flex-1 bg-surface-inset border border-border/70 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30 focus:border-accent/50"
+                className="flex-1 bg-surface-inset border border-border/70 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-accent/50"
               />
               {hasActiveFilters && (
                 <button

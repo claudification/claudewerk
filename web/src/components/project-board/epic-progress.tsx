@@ -13,14 +13,14 @@ import { cn } from '@/lib/utils'
 const SEGMENTS = [
   { key: 'done', className: 'bg-active' },
   { key: 'inProgress', className: 'bg-accent' },
-  { key: 'notStarted', className: 'bg-muted-foreground/25' },
+  { key: 'notStarted', className: 'bg-muted-foreground/35' },
 ] as const
 
 export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; className?: string }) {
   const denom = rollup.total || 1
   return (
     <div
-      className={cn('flex h-1.5 w-full overflow-hidden bg-muted-foreground/10', className)}
+      className={cn('flex h-1.5 w-full overflow-hidden bg-muted-foreground/20', className)}
       role="progressbar"
       aria-valuenow={rollup.pct ?? 0}
       aria-valuemin={0}
@@ -40,14 +40,14 @@ export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; cla
 export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   if (rollup.total === 0) {
     return (
-      <span className="text-[9px] font-mono text-muted-foreground/40">
+      <span className="text-[9px] font-mono text-muted-foreground/60">
         {rollup.dropped > 0 ? `0/0 -- all ${rollup.dropped} dropped` : 'no cards yet'}
       </span>
     )
   }
   return (
     <span className="text-[9px] font-mono text-muted-foreground/60">
-      {rollup.done}/{rollup.total} done <span className="text-muted-foreground/40">{rollup.pct}%</span>
+      {rollup.done}/{rollup.total} done <span className="text-muted-foreground/80">{rollup.pct}%</span>
     </span>
   )
 }
@@ -56,7 +56,7 @@ const COUNTS = [
   { key: 'done', glyph: '●', label: 'done', className: 'text-active' },
   { key: 'inProgress', glyph: '◐', label: 'moving', className: 'text-accent' },
   { key: 'notStarted', glyph: '○', label: 'open', className: 'text-muted-foreground/75' },
-  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/45' },
+  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/60' },
 ] as const
 
 export function EpicBucketCounts({ rollup }: { rollup: EpicRollup }) {

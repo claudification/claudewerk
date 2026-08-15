@@ -44,7 +44,7 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
       </span>
 
       <div className="flex items-center gap-1 ml-auto">
-        <span className="text-[9px] font-mono text-muted-foreground/40 tracking-wider">SORT</span>
+        <span className="text-[9px] font-mono text-muted-foreground/60 tracking-wider">SORT</span>
         {EPIC_SORTS.map(s => (
           <button
             key={s.key}
@@ -56,7 +56,7 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
             }}
             className={cn(
               'px-1.5 py-0.5 text-[10px] font-mono transition-colors',
-              props.sort === s.key ? 'bg-accent/20 text-accent' : 'text-muted-foreground/50 hover:text-foreground',
+              props.sort === s.key ? 'bg-accent/20 text-accent' : 'text-muted-foreground/80 hover:text-foreground',
             )}
           >
             {s.label}
@@ -90,7 +90,7 @@ function ToolbarToggle({ active, label, onClick }: { active: boolean; label: str
         'px-1.5 py-0.5 text-[10px] font-mono border transition-colors',
         active
           ? 'border-accent/40 text-accent bg-accent/10'
-          : 'border-border/40 text-muted-foreground/50 hover:text-foreground',
+          : 'border-border/60 text-muted-foreground/80 hover:text-foreground',
       )}
     >
       {label}

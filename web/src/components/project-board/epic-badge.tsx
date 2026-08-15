@@ -40,7 +40,7 @@ export function EpicBadge({
       <span className="shrink-0">◈</span>
       <span className="truncate">{epicId}</span>
       {rollup && rollup.total > 0 && (
-        <span className="shrink-0 text-muted-foreground/50">
+        <span className="shrink-0 text-muted-foreground/60">
           {rollup.done}/{rollup.total}
         </span>
       )}

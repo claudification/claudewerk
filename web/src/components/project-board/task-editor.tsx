@@ -182,7 +182,7 @@ export function TaskEditor({
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            className="flex-1 bg-transparent text-sm font-mono text-foreground outline-none placeholder:text-muted-foreground/30"
+            className="flex-1 bg-transparent text-sm font-mono text-foreground outline-none placeholder:text-muted-foreground/60"
             placeholder="Title..."
           />
           <select
@@ -222,7 +222,7 @@ export function TaskEditor({
             <option value="medium">medium</option>
             <option value="high">high</option>
           </select>
-          <span className="text-[9px] text-muted-foreground/40 font-mono">{taskAge(task.created)}</span>
+          <span className="text-[9px] text-muted-foreground/60 font-mono">{taskAge(task.created)}</span>
         </div>
 
         {/* Tags */}
@@ -253,7 +253,7 @@ export function TaskEditor({
               }
             }}
             placeholder="add tag..."
-            className="text-[10px] bg-transparent text-muted-foreground outline-none w-16 font-mono placeholder:text-muted-foreground/20"
+            className="text-[10px] bg-transparent text-muted-foreground outline-none w-16 font-mono placeholder:text-muted-foreground/60"
           />
         </div>
 
@@ -312,7 +312,7 @@ export function TaskEditor({
           ) : (
             <button
               type="button"
-              className="text-sm text-muted-foreground/30 font-mono cursor-text min-h-[200px] text-left w-full appearance-none bg-transparent border-0 p-0"
+              className="text-sm text-muted-foreground/60 font-mono cursor-text min-h-[200px] text-left w-full appearance-none bg-transparent border-0 p-0"
               onClick={() => setEditing(true)}
             >
               Click to add content…
@@ -438,7 +438,7 @@ export function TaskEditor({
             </div>
           </div>
           <div className="flex items-center justify-between px-4 pb-1.5">
-            <span className="text-[10px] text-muted-foreground/30 font-mono">{task.slug}.md</span>
+            <span className="text-[10px] text-muted-foreground/60 font-mono">{task.slug}.md</span>
             <div className="flex items-center gap-3 text-[9px] text-comment font-mono">
               {PREV_STATUS[status] && (
                 <span>

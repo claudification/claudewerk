@@ -15,13 +15,13 @@ const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string; label
   done: { glyph: '●', className: 'text-active', label: 'done' },
   inProgress: { glyph: '◐', className: 'text-accent', label: 'in progress' },
   notStarted: { glyph: '○', className: 'text-muted-foreground/70', label: 'not started' },
-  dropped: { glyph: '⊘', className: 'text-muted-foreground/40', label: 'dropped' },
+  dropped: { glyph: '⊘', className: 'text-muted-foreground/60', label: 'dropped' },
 }
 
 const PRIORITY_STYLE: Record<string, { short: string; className: string }> = {
   high: { short: 'hi', className: 'text-event-prompt' },
   medium: { short: 'md', className: 'text-muted-foreground/60' },
-  low: { short: 'lo', className: 'text-muted-foreground/35' },
+  low: { short: 'lo', className: 'text-muted-foreground/60' },
 }
 
 export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (slug: string) => void }) {
@@ -48,7 +48,7 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
       <span
         className={cn(
           'text-[11px] font-mono truncate',
-          child.bucket === 'dropped' ? 'text-muted-foreground/35 line-through' : 'text-foreground/85',
+          child.bucket === 'dropped' ? 'text-muted-foreground/60 line-through' : 'text-foreground/85',
         )}
       >
         {child.card.title}
@@ -65,7 +65,8 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
           ⛒ {child.waitingOn.length === 1 ? child.waitingOn[0] : `${child.waitingOn.length} cards`}
         </span>
       ) : (
-        <span className="text-[10px] font-mono text-muted-foreground/25">--</span>
+        // contrast-decor-next-line: filler punctuation for "nothing to say", not a word to read
+        <span className="text-[10px] font-mono text-muted-foreground/35">--</span>
       )}
     </button>
   )

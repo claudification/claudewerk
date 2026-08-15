@@ -10,6 +10,7 @@
  */
 
 import { existsSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { makeBodyPreview } from './body-preview'
 import { asStatus, readRawCard, serializeCard } from './project-card-file'
 import { getProjectTask, locateCard, readFileOrNull } from './project-card-read'
 import { findLegacyCard, relocateLegacyCard } from './project-legacy'
@@ -83,7 +84,7 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     relatesTo: input.relatesTo,
     created,
     mtime: nowMs,
-    bodyPreview: input.body.split('\n').filter(Boolean).join(' ').slice(0, 600),
+    bodyPreview: makeBodyPreview(input.body),
   }
 }
 

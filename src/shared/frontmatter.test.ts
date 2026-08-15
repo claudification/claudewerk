@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'bun:test'
+import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
+
+describe('parseFrontmatter quoting', () => {
+  it('strips double quotes', () => {
+    // The bug: every board card whose title contains a colon must be quoted for
+    // YAML, and every one of them rendered in the panel wrapped in literal ".
+    const { meta } = parseFrontmatter('---\ntitle: "EPIC: Unify spawn surface"\n---\nbody')
+    expect(meta.title).toBe('EPIC: Unify spawn surface')
+  })
+
+  it('strips single quotes', () => {
+    const { meta } = parseFrontmatter("---\ntitle: 'ANVIL epic: inline language'\n---\nbody")
+    expect(meta.title).toBe('ANVIL epic: inline language')
+  })
+
+  it('leaves an unquoted scalar alone', () => {
+    const { meta } = parseFrontmatter('---\nstatus: open\n---\nbody')
+    expect(meta.status).toBe('open')
+  })
+
+  it('does not strip a quote that is only on one side', () => {
+    const { meta } = parseFrontmatter('---\ntitle: "unbalanced\n---\nbody')
+    expect(meta.title).toBe('"unbalanced')
+  })
+
+  it('does not strip quotes that merely appear inside the value', () => {
+    const { meta } = parseFrontmatter('---\ntitle: he said "hi" loudly\n---\nbody')
+    expect(meta.title).toBe('he said "hi" loudly')
+  })
+
+  it('unescapes \\" inside a double-quoted scalar', () => {
+    const { meta } = parseFrontmatter('---\ntitle: "the \\"good\\" parts"\n---\nbody')
+    expect(meta.title).toBe('the "good" parts')
+  })
+
+  it('handles an empty quoted string', () => {
+    const { meta } = parseFrontmatter('---\ntitle: ""\n---\nbody')
+    expect(meta.title).toBe('')
+  })
+
+  it('still parses inline arrays', () => {
+    const { meta } = parseFrontmatter('---\ntags: [a, b, c]\n---\nbody')
+    expect(meta.tags).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('serializeFrontmatter quoting', () => {
+  it('quotes a value containing a colon so it survives a re-read', () => {
+    const out = serializeFrontmatter({ title: 'EPIC: Unify spawn surface' }, 'body')
+    expect(out).toContain('title: "EPIC: Unify spawn surface"')
+  })
+
+  it('leaves a plain value bare', () => {
+    expect(serializeFrontmatter({ status: 'open' }, 'body')).toContain('status: open')
+  })
+
+  it('leaves an ISO timestamp bare -- a colon is only ambiguous before a space', () => {
+    // Over-quoting here would rewrite the `created:` line of all 385 cards on
+    // the next touch, for a value YAML was always happy with.
+    const out = serializeFrontmatter({ created: '2026-08-15T06:08:44.054Z' }, 'body')
+    expect(out).toContain('created: 2026-08-15T06:08:44.054Z')
+  })
+
+  it('quotes a trailing colon', () => {
+    expect(serializeFrontmatter({ note: 'see also:' }, 'body')).toContain('note: "see also:"')
+  })
+
+  it('leaves a bare url alone', () => {
+    expect(serializeFrontmatter({ ref: 'claude://sentinel/path' }, 'body')).toContain('ref: claude://sentinel/path')
+  })
+
+  it('escapes embedded double quotes when it quotes', () => {
+    const out = serializeFrontmatter({ title: 'the "good": parts' }, 'body')
+    expect(out).toContain('title: "the \\"good\\": parts"')
+  })
+
+  it('quotes a value that would otherwise read as an array', () => {
+    expect(serializeFrontmatter({ note: '[not an array' }, 'body')).toContain('note: "[not an array"')
+  })
+
+  it('quotes a value with significant whitespace', () => {
+    expect(serializeFrontmatter({ note: ' padded ' }, 'body')).toContain('note: " padded "')
+  })
+})
+
+describe('frontmatter round-trip', () => {
+  // The half that actually protects the cards: strip on read WITHOUT quoting on
+  // write would make the next card update emit `title: EPIC: Unify ...`, and the
+  // file would drift a little further from YAML on every edit.
+  const CASES: Array<Record<string, unknown>> = [
+    { title: 'EPIC: Unify spawn surface', status: 'open' },
+    { title: 'plain title', tags: ['a', 'b'] },
+    { title: 'the "good": parts' },
+    { title: '' },
+    { note: '[not an array' },
+  ]
+
+  for (const meta of CASES) {
+    it(`survives ${JSON.stringify(meta)}`, () => {
+      const text = serializeFrontmatter(meta, 'the body')
+      const back = parseFrontmatter(text)
+      expect(back.meta).toEqual(meta)
+      expect(back.body).toBe('the body')
+    })
+  }
+})

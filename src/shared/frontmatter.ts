@@ -19,7 +19,7 @@ export interface Frontmatter {
  * Files with no frontmatter block return `{ meta: {}, body: content }`.
  *
  * Values: bare scalars are kept as strings (callers coerce). `[a, b]` becomes
- * a string array. No nesting, no multi-line values, no quoting rules.
+ * a string array. Quoted scalars are unwrapped. No nesting, no multi-line values.
  */
 export function parseFrontmatter(content: string): Frontmatter {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
@@ -30,24 +30,80 @@ export function parseFrontmatter(content: string): Frontmatter {
     const idx = line.indexOf(':')
     if (idx === -1) continue
     const key = line.slice(0, idx).trim()
-    let val: unknown = line.slice(idx + 1).trim()
-    if (typeof val === 'string' && val.startsWith('[') && val.endsWith(']')) {
-      val = val
-        .slice(1, -1)
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean)
-    }
-    meta[key] = val
+    const raw = line.slice(idx + 1).trim()
+    meta[key] = raw.startsWith('[') && raw.endsWith(']') ? parseInlineArray(raw) : unquote(raw)
   }
   return { meta, body: match[2].trim() }
 }
 
+function parseInlineArray(raw: string): string[] {
+  return raw
+    .slice(1, -1)
+    .split(',')
+    .map(s => unquote(s.trim()))
+    .filter(Boolean)
+}
+
+/**
+ * Unwrap a quoted scalar. A title containing a colon MUST be quoted to be valid
+ * YAML, so every board card named `EPIC: ...` arrived here quoted and reached
+ * the panel with the quotes still on it.
+ *
+ * Only a matched pair at both ends counts -- `he said "hi" loudly` is a bare
+ * scalar that happens to contain quotes, and an unbalanced `"unbalanced` is
+ * malformed rather than quoted. Both are returned untouched, because guessing
+ * is how a parser starts eating characters that were part of the value.
+ */
+function unquote(raw: string): string {
+  if (raw.length < 2) return raw
+  const q = raw[0]
+  if ((q !== '"' && q !== "'") || raw[raw.length - 1] !== q) return raw
+  const inner = raw.slice(1, -1)
+  return q === '"' ? inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\') : inner
+}
+
+/**
+ * Does this string need quoting to survive `parseFrontmatter` unchanged?
+ *
+ * This is the other half of unquoting. Stripping on read without quoting on
+ * write would make the next card update emit `title: EPIC: Unify ...`, and the
+ * file would drift a little further from YAML on every edit.
+ */
+/**
+ * Each way a bare scalar would come back as something else.
+ *
+ * A BARE colon is not one of them: `2026-08-15T06:08:44.054Z` is a perfectly
+ * good YAML scalar, and quoting it would churn the `created:` line of every
+ * card on the board for nothing. What breaks YAML is a colon FOLLOWED BY SPACE
+ * (that starts a mapping) or a trailing one. Same for `#` -- only ` #` opens a
+ * comment.
+ */
+const AMBIGUOUS: Array<(s: string) => boolean> = [
+  s => s === '',
+  s => s !== s.trim(),
+  s => s.includes(': '),
+  s => s.endsWith(':'),
+  s => s.includes(' #'),
+  s => /^[[{"'#]/.test(s),
+]
+
+function needsQuoting(s: string): boolean {
+  return AMBIGUOUS.some(is => is(s))
+}
+
+function quote(s: string): string {
+  return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
+
 function serializeValue(val: unknown): string | null {
   if (val === undefined || val === null) return null
-  if (Array.isArray(val)) return `[${val.map(v => String(v)).join(', ')}]`
+  if (Array.isArray(val)) return `[${val.map(v => serializeScalar(String(v))).join(', ')}]`
   if (typeof val === 'boolean' || typeof val === 'number') return String(val)
-  return String(val)
+  return serializeScalar(String(val))
+}
+
+function serializeScalar(s: string): string {
+  return needsQuoting(s) ? quote(s) : s
 }
 
 /**

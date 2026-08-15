@@ -12,6 +12,7 @@
  */
 
 import { statSync } from 'node:fs'
+import { makeBodyPreview } from './body-preview'
 import { normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
 import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
@@ -81,7 +82,7 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,
-    bodyPreview: body.split('\n').filter(Boolean).join(' ').slice(0, 600),
+    bodyPreview: makeBodyPreview(body),
   }
 }
 

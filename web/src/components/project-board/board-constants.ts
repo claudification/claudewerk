@@ -73,9 +73,28 @@ export const PRIORITY_COLORS: Record<string, string> = {
   low: 'bg-info/15 text-info/80 border-info/40',
 }
 
+/**
+ * THE BOARD'S CONTRAST FLOOR IS `text-muted-foreground/55`. Enforced by
+ * `scripts/lint-patterns.ts`; that rule's message carries the ladder.
+ *
+ * MEASURED, not eyeballed. Panel background is `oklch(0.15 0.02 260)` and
+ * `--muted-foreground` is `oklch(0.7 0.02 260)`:
+ *
+ *   /25 -> 2.59   /35 -> 3.23   /40 -> 3.55   /50 -> 4.18
+ *   /55 -> 4.50 (AA)   /60 -> 4.82   /70 -> 5.46   /85 -> 6.41
+ *
+ * Every string on this board is 9-13px, so it is SMALL text and owes 4.5:1 --
+ * the 3:1 large-text allowance never applies here. The audit that produced this
+ * found 44 of 63 usages below the floor, 19 of them `/40`, which is why the
+ * board read as grey-on-grey no matter how many individual spots got nudged.
+ *
+ * Below the floor is legal ONLY for things that are not text -- rules, the
+ * empty progress track, filler punctuation. Those are UI components under WCAG
+ * 1.4.11 and owe 3:1, which is where `/35` comes from.
+ */
 /** The unselected state of a filter chip. One definition, because priority and
  *  tag chips drifting apart is how a filter row stops reading as one control. */
-export const CHIP_IDLE = 'border-border/60 text-muted-foreground/75 hover:text-foreground hover:border-border'
+export const CHIP_IDLE = 'border-border/60 text-muted-foreground/80 hover:text-foreground hover:border-border'
 
 /** Column template for the epic child listing. Lives here rather than in either
  *  component because the header and the rows must agree, and having the row
