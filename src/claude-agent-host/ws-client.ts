@@ -20,6 +20,7 @@ import type {
   DialogEventMessage,
   FileResponse,
   HookEvent,
+  InputSource,
   InterConversationDelivery,
   InterConversationListResponse,
   LaunchConfig,
@@ -68,7 +69,7 @@ export interface WsClientOptions {
   onDisconnected?: () => void
   onError?: (error: Error) => void
   capabilities?: AgentHostCapability[]
-  onInput?: (input: string, crDelay?: number) => void
+  onInput?: (input: string, crDelay?: number, source?: InputSource) => void
   onTerminalAttach?: (cols: number, rows: number) => void
   onTerminalDetach?: () => void
   onTerminalInput?: (data: string) => void
@@ -370,7 +371,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
         break
       case 'input':
         // Forward input to PTY
-        onInput?.(message.input, message.crDelay)
+        onInput?.(message.input, message.crDelay, message.source)
         break
       case 'terminal_attach':
         onTerminalAttach?.(message.cols, message.rows)

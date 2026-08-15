@@ -1365,11 +1365,25 @@ export interface AgentHostOutdated {
   reason: string
 }
 
+/**
+ * How the user PRODUCED this input. Absent means typed, which is every input
+ * that existed before this field, so absence must always stay the safe default.
+ *
+ * This is provenance, not content -- deliberately a structured field rather than
+ * a marker spliced into the text. A wrapper string would be indistinguishable
+ * from the user literally typing that wrapper, would have to be parsed back off
+ * for display, and would follow the text into every quote and copy of it.
+ */
+export type InputSource = 'voice'
+
 export interface SendInput {
   type: 'input'
   conversationId: string
   input: string
   crDelay?: number // carriage return delay in ms (dashboard setting, optional)
+  /** Dictated, not typed. The agent host turns this into a reading hint and the
+   *  control panel renders the bubble as speech. See InputSource. */
+  source?: InputSource
 }
 
 /**

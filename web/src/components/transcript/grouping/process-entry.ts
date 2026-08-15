@@ -9,6 +9,7 @@
  * callers (one `processEntry(entry, state)` per loop iteration).
  */
 import { isHiddenEvent, kindOf, visibilityOf } from '@shared/system-events'
+import { VOICE_HINT_ATTR } from '@shared/voice-hint'
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptUserEntry } from '@/lib/types'
 import { hasForkProvenance, parseForkProvenance } from '../fork-provenance-parse'
 import {
@@ -208,7 +209,11 @@ function handleUser(entry: TranscriptEntry, state: GroupingState): boolean {
     }
   }
 
-  if (textContent.includes('<system-reminder>')) return true
+  // A DICTATED message is a real user turn that merely CARRIES a system-reminder
+  // (the agent host's reading hint, prepended before send). It must survive the
+  // drop below or the user's own voice message disappears from the transcript --
+  // the renderer lifts the hint off again in parseGroupEntries.
+  if (!textContent.includes(VOICE_HINT_ATTR) && textContent.includes('<system-reminder>')) return true
   if (textContent.includes('Your previous response had no visible output')) return true
   if (
     textContent.includes('<command-name>') ||

@@ -86,6 +86,7 @@ describe('VoiceKey submit target', () => {
     const { VoiceKey } = await import('./voice-key')
     render(<VoiceKey />)
     expect(sendInputMock).toHaveBeenCalledTimes(1)
-    expect(sendInputMock).toHaveBeenCalledWith('recorded-in-this-conversation', 'hello world')
+    // Third arg is the provenance flag: everything this hook submits was spoken.
+    expect(sendInputMock).toHaveBeenCalledWith('recorded-in-this-conversation', 'hello world', { source: 'voice' })
   })
 })

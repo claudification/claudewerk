@@ -36,7 +36,10 @@ export type ResultLookup = (
 ) => { result: string; extra?: Record<string, unknown>; isError?: boolean } | undefined
 
 export type RenderItem =
-  | { kind: 'text'; text: string }
+  /** `voice` = the user DICTATED this. Set by parseGroupEntries when it strips the
+   *  agent host's reading hint back off (shared/voice-hint.ts); the bubble renders
+   *  italic behind a mic glyph so speech never reads as a written spec. */
+  | { kind: 'text'; text: string; voice?: boolean }
   | { kind: 'thinking'; text: string; encryptedBytes?: number; rawBlock?: TranscriptContentBlock }
   | {
       kind: 'project-task'

@@ -65,6 +65,21 @@ export const VOICE_ENGINE_ITEMS: SettingItem[] = [
   },
   {
     tab: 'voice',
+    group: 'Capture',
+    label: 'Strip filler words',
+    description:
+      'Remove "uh", "um" and "erm" from a finished dictation before it is sent. Applied once at submit, never to the live transcript, and repeated words are always left alone.',
+    keywords: 'voice filler uh um erm disfluency clean transcript sanitize',
+    render: (ctx, ariaLabel) => (
+      <SettingCheckbox
+        ariaLabel={ariaLabel}
+        checked={ctx.prefs.voiceStripFillers !== false}
+        onChange={v => ctx.updatePrefs({ voiceStripFillers: v })}
+      />
+    ),
+  },
+  {
+    tab: 'voice',
     group: 'Speech model',
     label: 'Model (broker relay)',
     // The relay path's own model. Dead when audio goes direct to the edge.

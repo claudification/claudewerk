@@ -86,7 +86,8 @@ describe('VoiceFab submit target', () => {
     const { VoiceFab } = await import('./voice-fab')
     render(<VoiceFab />)
     expect(sendInputMock).toHaveBeenCalledTimes(1)
-    expect(sendInputMock).toHaveBeenCalledWith('recorded-in-this-conversation', 'hello world')
+    // Third arg is the provenance flag: everything this hook submits was spoken.
+    expect(sendInputMock).toHaveBeenCalledWith('recorded-in-this-conversation', 'hello world', { source: 'voice' })
   })
 
   test('does not submit when no target was pinned', async () => {

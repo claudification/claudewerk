@@ -1,3 +1,4 @@
+import { Mic } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
@@ -27,11 +28,33 @@ export function ChatBubble({
     .filter((item): item is Extract<RenderItem, { kind: 'text' }> => item.kind === 'text')
     .map(item => item.text)
     .join('\n\n')
+  // Dictated, not typed. Speech read as a written spec gets taken far too
+  // literally, so the bubble says so before it is read: mic glyph, italic body.
+  const isVoice = items.some(item => item.kind === 'text' && item.voice)
 
   return (
     <div className="mb-3 flex justify-end">
       <div className={cn('group/bubble max-w-[85%] sm:max-w-[75%]', queued && 'opacity-50')}>
-        <div className={cn('rounded-2xl rounded-br-sm px-4 py-2.5 text-white', bubbleBg, sizeClass)}>
+        <div
+          className={cn(
+            'rounded-2xl rounded-br-sm px-4 py-2.5 text-white',
+            bubbleBg,
+            sizeClass,
+            // Code keeps its upright face -- a slanted identifier is harder to
+            // read and an italic path is easy to misread as emphasis.
+            isVoice && 'italic [&_code]:not-italic',
+          )}
+        >
+          {isVoice && (
+            <Mic
+              aria-label="Dictated"
+              // FLOATED, not inline: the first line wraps around the glyph and
+              // every following line runs the full width, which is what a spoken
+              // paragraph should look like. An inline icon inside a Markdown
+              // block would be pushed onto a line of its own.
+              className="float-left mt-[3px] mr-1.5 h-3 w-3 shrink-0 opacity-70"
+            />
+          )}
           {items.map((item, i) => {
             if (item.kind === 'text') {
               const hasBlocks = /^```/m.test(item.text) || /^\|.*\|.*\|/m.test(item.text)

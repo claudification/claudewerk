@@ -1,6 +1,7 @@
 import type { TranscriptContentBlock } from '@/lib/types'
 import { canvasIdFromChannelAddress, parseCanvasMessage } from './canvas-selected-parse'
 import type { RenderableTranscriptEntry, RenderItem, ResultLookup } from './group-view-types'
+import { liftInputSourceHint, markDictated } from './voice-entry'
 
 const PROJECT_TASK_RE = /^<project-task\s+([^>]*)>([\s\S]*?)<\/project-task>$/
 
@@ -242,12 +243,16 @@ export function parseGroupEntries(entries: unknown[], getResult: ResultLookup): 
       items.push({ kind: 'images', images: entry.images })
     }
 
-    const content = entry.message?.content
+    const { content, source } = liftInputSourceHint(entry.message?.content)
+    // Marked after the fact rather than threaded through parseStringContent /
+    // parseArrayContent / every channel pusher.
+    const first = items.length
     if (typeof content === 'string') {
       parseStringContent(content, items)
     } else if (Array.isArray(content)) {
       parseArrayContent(content, items, getResult)
     }
+    if (source === 'voice') markDictated(items, first)
   }
 
   return items

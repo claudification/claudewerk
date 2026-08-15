@@ -9,7 +9,7 @@
 import type { ServerWebSocket } from 'bun'
 import { generateConversationName } from '../../shared/conversation-names'
 import { extractProjectLabel } from '../../shared/project-uri'
-import type { SendInput, SubscriptionChannel } from '../../shared/protocol'
+import type { InputSource, SendInput, SubscriptionChannel } from '../../shared/protocol'
 import { resolveBackend } from '../backends'
 import { buildReviveMessage } from '../build-revive'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
@@ -39,6 +39,11 @@ const sendInput: MessageHandler = (ctx, data) => {
   if (!conversationId || !input || typeof input !== 'string') {
     throw new GuardError('Missing conversationId or input')
   }
+  // NARROWED, never passed through raw: this is client-supplied and it decides
+  // what the agent host prepends to the prompt. An unchecked string here would
+  // let a caller pick the reading hint. Anything unrecognised is simply absent,
+  // which is the pre-existing "typed" behaviour.
+  const source: InputSource | undefined = data.source === 'voice' ? 'voice' : undefined
 
   const conversation = ctx.conversations.getConversation(conversationId)
   if (!conversation) throw new GuardError('Conversation not found')
@@ -80,6 +85,7 @@ const sendInput: MessageHandler = (ctx, data) => {
     conversationId,
     input,
     ...(crDelay && { crDelay }),
+    ...(source && { source }),
   }
   ws.send(JSON.stringify(inputMsg))
   ctx.log.debug(`send_input: ${conversationId.slice(0, 8)} "${input.slice(0, 50)}"`)

@@ -24,10 +24,12 @@ import { renderSelectionBlock } from '../shared/canvas-selection'
 import type { DialogResult } from '../shared/dialog-schema'
 import type {
   AgentHostMessage,
+  InputSource,
   InterConversationDelivery,
   RclaudePermissionConfig,
   SystemChannelDelivery,
 } from '../shared/protocol'
+import { applyInputSourceHint } from '../shared/voice-hint'
 import type { AgentHostContext } from './agent-host-context'
 import { debug } from './debug'
 import { dispatchDebugControl } from './debug-dispatch'
@@ -140,8 +142,8 @@ export function connectToBroker(ctx: AgentHostContext, deps: BrokerConnectionDep
     onError(error) {
       debug(`Broker error: ${error.message}`)
     },
-    onInput(input, crDelay) {
-      handleInput(ctx, deps, input, crDelay)
+    onInput(input, crDelay, source) {
+      handleInput(ctx, deps, input, crDelay, source)
     },
     onTerminalInput(data) {
       if (ctx.ptyProcess) {
@@ -360,7 +362,13 @@ function handleConnected(ctx: AgentHostContext, deps: BrokerConnectionDeps, ccSe
   startTaskWatching(ctx)
 }
 
-function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: string, crDelay?: number) {
+function handleInput(
+  ctx: AgentHostContext,
+  deps: BrokerConnectionDeps,
+  input: string,
+  crDelay?: number,
+  source?: InputSource,
+) {
   if (deps.headless) {
     if (!ctx.streamProc || !input) return
     const trimmed = input.trimEnd()
@@ -401,23 +409,26 @@ function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: s
       prefixed.run(trimmed.slice(prefixed.prefix.length).trim())
       return
     }
-    ctx.streamProc.sendUserMessage(input)
+    // Past every control verb, so a dictated "/clear" still clears rather than
+    // arriving at the model wrapped in a reading hint.
+    ctx.streamProc.sendUserMessage(applyInputSourceHint(input, source))
     return
   }
 
   if (!ctx.ptyProcess) return
 
   const isSlashCommand = input.trimStart().startsWith('/')
+  const prompt = isSlashCommand ? input : applyInputSourceHint(input, source)
 
   if (deps.channelEnabled && isMcpChannelReady() && !isSlashCommand) {
-    pushChannelMessage(input)
+    pushChannelMessage(prompt)
       .then(sent => {
         if (sent) {
-          ctx.diag('channel', `Input via MCP (${input.length} chars)`)
+          ctx.diag('channel', `Input via MCP (${prompt.length} chars${source ? `, source=${source}` : ''})`)
         } else {
           ctx.diag('channel', 'MCP push failed, falling back to PTY')
           if (ctx.ptyProcess) {
-            const trimmed = input.replace(/[\r\n]+$/, '')
+            const trimmed = prompt.replace(/[\r\n]+$/, '')
             ctx.ptyProcess.write(trimmed)
             setTimeout(() => ctx.ptyProcess?.write('\r'), 150)
           }
@@ -429,7 +440,9 @@ function handleInput(ctx: AgentHostContext, deps: BrokerConnectionDeps, input: s
     return
   }
 
-  writeToPty(ctx, input, crDelay)
+  // Safe multi-line: writeToPty brackets anything with a newline in it as a
+  // paste (\x1b[200~), so the hint's own line breaks cannot submit early.
+  writeToPty(ctx, prompt, crDelay)
 }
 
 function writeToPty(ctx: AgentHostContext, input: string, crDelay?: number) {
