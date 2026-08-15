@@ -8,10 +8,12 @@
 import type { EpicRollup } from '@shared/epic-cards'
 import { cn } from '@/lib/utils'
 
+// Semantic tokens, not raw tailwind colours: `bg-green-400` is a different
+// green from the board's `--active`, and the two sat side by side on the card.
 const SEGMENTS = [
-  { key: 'done', className: 'bg-green-400/70' },
-  { key: 'inProgress', className: 'bg-amber-400/70' },
-  { key: 'notStarted', className: 'bg-muted-foreground/15' },
+  { key: 'done', className: 'bg-active' },
+  { key: 'inProgress', className: 'bg-accent' },
+  { key: 'notStarted', className: 'bg-muted-foreground/25' },
 ] as const
 
 export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; className?: string }) {
@@ -51,10 +53,10 @@ export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
 }
 
 const COUNTS = [
-  { key: 'done', glyph: '●', label: 'done', className: 'text-green-400/70' },
-  { key: 'inProgress', glyph: '◐', label: 'moving', className: 'text-amber-400/70' },
-  { key: 'notStarted', glyph: '○', label: 'open', className: 'text-muted-foreground/50' },
-  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/30' },
+  { key: 'done', glyph: '●', label: 'done', className: 'text-active' },
+  { key: 'inProgress', glyph: '◐', label: 'moving', className: 'text-accent' },
+  { key: 'notStarted', glyph: '○', label: 'open', className: 'text-muted-foreground/75' },
+  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/45' },
 ] as const
 
 export function EpicBucketCounts({ rollup }: { rollup: EpicRollup }) {

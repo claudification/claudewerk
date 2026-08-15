@@ -47,12 +47,12 @@ export const PREV_STATUS: Record<string, TaskStatus> = {
 }
 
 const TAG_COLORS = [
-  'bg-primary/20 text-primary border-primary/30',
-  'bg-event-prompt/20 text-event-prompt border-event-prompt/30',
-  'bg-info/20 text-info border-info/30',
-  'bg-active/20 text-active border-active/30',
-  'bg-accent/20 text-accent border-accent/30',
-  'bg-destructive/20 text-destructive border-destructive/30',
+  'bg-primary/20 text-primary border-primary/45',
+  'bg-event-prompt/20 text-event-prompt border-event-prompt/45',
+  'bg-info/20 text-info border-info/45',
+  'bg-active/20 text-active border-active/45',
+  'bg-accent/20 text-accent border-accent/45',
+  'bg-destructive/20 text-destructive border-destructive/45',
 ]
 
 /** Stable per-tag colour -- same tag is the same colour on every surface. */
@@ -62,8 +62,22 @@ export function tagColor(tag: string): string {
   return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length]
 }
 
+/**
+ * Semantic tokens, not raw tailwind. `red-500`/`amber-500`/`blue-500` are not
+ * the board's red, amber or blue -- they sat a few degrees off every other
+ * colour on the same card, which is most of why the board read as muddy.
+ */
 export const PRIORITY_COLORS: Record<string, string> = {
-  high: 'bg-red-500/20 text-red-400 border-red-500/30',
-  medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-  low: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  high: 'bg-destructive/20 text-destructive border-destructive/50',
+  medium: 'bg-accent/20 text-accent border-accent/50',
+  low: 'bg-info/15 text-info/80 border-info/40',
 }
+
+/** The unselected state of a filter chip. One definition, because priority and
+ *  tag chips drifting apart is how a filter row stops reading as one control. */
+export const CHIP_IDLE = 'border-border/60 text-muted-foreground/75 hover:text-foreground hover:border-border'
+
+/** Column template for the epic child listing. Lives here rather than in either
+ *  component because the header and the rows must agree, and having the row
+ *  import it from the table made the two mutually circular. */
+export const EPIC_CHILD_GRID = 'grid gap-2 grid-cols-[minmax(0,11rem)_minmax(0,1fr)_1rem_1.5rem_minmax(0,7rem)]'

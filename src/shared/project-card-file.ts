@@ -75,6 +75,7 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     refs: linkage.refs ?? [],
     quest: readOne(linkage, 'quest'),
     epic: readOne(linkage, 'epic'),
+    color: raw.meta.color === undefined ? undefined : String(raw.meta.color),
     dependsOn: linkage.depends_on,
     relatesTo: linkage.relates_to,
     created: String(raw.meta.created || ''),

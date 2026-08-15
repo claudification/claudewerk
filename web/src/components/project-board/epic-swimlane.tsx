@@ -1,27 +1,19 @@
 /**
- * One epic as a row in the EPICS view: header always, three bucket columns when
- * expanded.
+ * One epic in the EPICS view: a colour rail, a header, and its children as a
+ * listing when expanded.
  *
- * The WORK button is the point of the whole view -- it hands the launcher this
- * epic's not-started children, pre-selected, instead of making someone
- * rediscover them one card at a time.
+ * The epic's hue is set HERE, once, as CSS custom properties on the root. Every
+ * descendant reads `var(--epic-solid)` and inherits it, so a child row never has
+ * to know which epic it belongs to in order to paint like it does.
  */
 
-import type { EpicBucket, EpicChild, EpicRollup } from '@shared/epic-cards'
-import { ChevronDown, ChevronRight, Play } from 'lucide-react'
-import { cn, haptic } from '@/lib/utils'
-import { EpicChildRow } from './epic-child-row'
-import { EpicBucketCounts, EpicProgressBar, EpicProgressLabel } from './epic-progress'
-
-const COLUMNS: Array<{ bucket: EpicBucket; label: string }> = [
-  { bucket: 'notStarted', label: 'NOT STARTED' },
-  { bucket: 'inProgress', label: 'IN PROGRESS' },
-  { bucket: 'done', label: 'DONE' },
-]
-
-function bucketChildren(children: EpicChild[], bucket: EpicBucket): EpicChild[] {
-  return children.filter(c => c.bucket === bucket)
-}
+import type { EpicRollup } from '@shared/epic-cards'
+import { epicHue } from '@shared/epic-color'
+import { useMemo } from 'react'
+import { epicColorVars } from '@/lib/cards/epic-color-vars'
+import { haptic } from '@/lib/utils'
+import { EpicChildTable } from './epic-child-table'
+import { EpicSwimlaneHeader } from './epic-swimlane-header'
 
 export function EpicSwimlane({
   rollup,
@@ -36,79 +28,36 @@ export function EpicSwimlane({
   onOpenCard: (slug: string) => void
   onWorkOnEpic: (epicId: string) => void
 }) {
-  const title = rollup.card?.title ?? rollup.epicId
-  const Chevron = expanded ? ChevronDown : ChevronRight
-  const startable = rollup.notStarted > 0
+  const style = useMemo(
+    () => epicColorVars(epicHue(rollup.epicId, rollup.card?.color)),
+    [rollup.epicId, rollup.card?.color],
+  )
+
+  function toggle(epicId: string) {
+    haptic('tap')
+    onToggle(epicId)
+  }
 
   return (
-    <div className="border-b border-primary/8">
-      <div className="flex items-center gap-2 px-3 py-2">
-        <button
-          type="button"
-          onClick={() => {
-            haptic('tap')
-            onToggle(rollup.epicId)
-          }}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
-        >
-          <Chevron className="size-3.5 text-muted-foreground/40 shrink-0" />
-          <span className="text-accent/70 text-xs shrink-0">◈</span>
-          <span className="text-xs font-mono text-foreground truncate">{title}</span>
-        </button>
-        <div className="w-32 shrink-0 hidden sm:block">
-          <EpicProgressBar rollup={rollup} />
-        </div>
-        <div className="shrink-0">
-          <EpicProgressLabel rollup={rollup} />
-        </div>
-        <button
-          type="button"
-          disabled={!startable}
-          title={startable ? `Work on the ${rollup.notStarted} not-started card(s)` : 'Nothing left to start'}
-          onClick={() => {
-            haptic('tap')
-            onWorkOnEpic(rollup.epicId)
-          }}
-          className={cn(
-            'shrink-0 flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-mono border transition-colors',
-            startable
-              ? 'border-accent/40 text-accent hover:bg-accent/10'
-              : 'border-border/20 text-muted-foreground/25 cursor-not-allowed',
-          )}
-        >
-          <Play className="size-2.5" />
-          work
-        </button>
-      </div>
+    <div style={style} className="border-b border-border/50 border-l-2 border-l-[color:var(--epic-solid)]">
+      <EpicSwimlaneHeader rollup={rollup} expanded={expanded} onToggle={toggle} onWorkOnEpic={onWorkOnEpic} />
 
       {!expanded && rollup.children.length === 0 && (
-        <div className="px-3 pb-2 text-[10px] font-mono text-muted-foreground/30">
+        <div className="px-3 pb-2 pl-10 text-[10px] font-mono text-muted-foreground/40">
           no children yet -- tagged `epic`, nothing points at it
         </div>
       )}
 
       {expanded && (
-        <div className="px-3 pb-3 space-y-2">
-          <EpicBucketCounts rollup={rollup} />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {COLUMNS.map(col => {
-              const items = bucketChildren(rollup.children, col.bucket)
-              return (
-                <div key={col.bucket} className="border border-primary/10 p-1.5 min-w-0">
-                  <div className="text-[9px] font-mono text-muted-foreground/40 mb-1">
-                    {col.label} {items.length}
-                  </div>
-                  {items.length === 0 ? (
-                    <div className="text-[9px] font-mono text-muted-foreground/20">--</div>
-                  ) : (
-                    items.map(child => <EpicChildRow key={child.card.slug} child={child} onOpen={onOpenCard} />)
-                  )}
-                </div>
-              )
-            })}
-          </div>
+        <div className="px-3 pb-3 pl-10 space-y-2">
+          <EpicChildTable rows={rollup.children} onOpenCard={onOpenCard} />
+          {rollup.children.length === 0 && (
+            <div className="text-[10px] font-mono text-muted-foreground/40">
+              no children yet -- put `epic: {rollup.epicId}` on a card to adopt it
+            </div>
+          )}
           {rollup.dropped > 0 && (
-            <div className="text-[9px] font-mono text-muted-foreground/30">
+            <div className="text-[10px] font-mono text-muted-foreground/40">
               ⊘ {rollup.dropped} dropped -- excluded from the percentage
             </div>
           )}

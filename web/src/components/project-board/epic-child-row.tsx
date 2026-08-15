@@ -1,24 +1,33 @@
 /**
- * One child line under an epic: state glyph, title, and what it waits on.
+ * One child of an epic, as a row in the child table.
  *
- * `waitingOn` is the whole reason `depends_on` was worth wiring: a card can be
- * `open` and still not be startable, and a board that does not say so sends
- * someone at work that cannot begin.
+ * `waitingOn` gets its own column rather than a badge, because it is the one
+ * fact that changes what someone does next: a card can be `open` and still not
+ * be startable, and a board that does not say so sends people at work that
+ * cannot begin.
  */
 
 import type { EpicBucket, EpicChild } from '@shared/epic-cards'
 import { cn } from '@/lib/utils'
+import { EPIC_CHILD_GRID } from './board-constants'
 
-const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string }> = {
-  done: { glyph: '●', className: 'text-green-400/70' },
-  inProgress: { glyph: '◐', className: 'text-amber-400/70' },
-  notStarted: { glyph: '○', className: 'text-muted-foreground/50' },
-  dropped: { glyph: '⊘', className: 'text-muted-foreground/25' },
+const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string; label: string }> = {
+  done: { glyph: '●', className: 'text-active', label: 'done' },
+  inProgress: { glyph: '◐', className: 'text-accent', label: 'in progress' },
+  notStarted: { glyph: '○', className: 'text-muted-foreground/70', label: 'not started' },
+  dropped: { glyph: '⊘', className: 'text-muted-foreground/40', label: 'dropped' },
+}
+
+const PRIORITY_STYLE: Record<string, { short: string; className: string }> = {
+  high: { short: 'hi', className: 'text-event-prompt' },
+  medium: { short: 'md', className: 'text-muted-foreground/60' },
+  low: { short: 'lo', className: 'text-muted-foreground/35' },
 }
 
 export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (slug: string) => void }) {
-  const { glyph, className } = BUCKET_GLYPH[child.bucket]
-  const blocked = child.waitingOn.length > 0 && child.bucket === 'notStarted'
+  const { glyph, className, label } = BUCKET_GLYPH[child.bucket]
+  const priority = PRIORITY_STYLE[child.card.priority ?? 'medium'] ?? PRIORITY_STYLE.medium
+  const blocked = child.waitingOn.length > 0 && child.bucket !== 'done'
 
   return (
     <button
@@ -27,27 +36,36 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
         e.stopPropagation()
         onOpen?.(child.card.slug)
       }}
-      className="flex items-baseline gap-1.5 w-full text-left hover:bg-accent/5 px-0.5 py-px transition-colors"
+      className={cn(
+        EPIC_CHILD_GRID,
+        'w-full items-baseline text-left px-2 py-1 border-l-2 border-transparent',
+        'hover:border-l-[color:var(--epic-solid)] hover:bg-[color:var(--epic-tint)] transition-colors',
+      )}
     >
-      <span className={cn('text-[9px] font-mono shrink-0', className)}>{glyph}</span>
+      <span className="text-[10px] font-mono text-muted-foreground/55 truncate" title={child.card.slug}>
+        {child.card.slug}
+      </span>
       <span
         className={cn(
-          'text-[10px] font-mono truncate',
-          child.bucket === 'dropped' ? 'text-muted-foreground/30 line-through' : 'text-foreground/70',
+          'text-[11px] font-mono truncate',
+          child.bucket === 'dropped' ? 'text-muted-foreground/35 line-through' : 'text-foreground/85',
         )}
       >
         {child.card.title}
       </span>
-      {blocked && (
+      <span className={cn('text-[10px] font-mono', className)} title={label}>
+        {glyph}
+      </span>
+      <span className={cn('text-[10px] font-mono', priority.className)}>{priority.short}</span>
+      {blocked ? (
         <span
-          className="text-[9px] font-mono text-amber-400/50 shrink-0"
+          className="text-[10px] font-mono text-event-prompt/80 truncate"
           title={`waits on ${child.waitingOn.join(', ')}`}
         >
-          ⛒ {child.waitingOn.length}
+          ⛒ {child.waitingOn.length === 1 ? child.waitingOn[0] : `${child.waitingOn.length} cards`}
         </span>
-      )}
-      {child.card.priority === 'high' && (
-        <span className="ml-auto text-[9px] font-mono text-red-400/50 shrink-0">high</span>
+      ) : (
+        <span className="text-[10px] font-mono text-muted-foreground/25">--</span>
       )}
     </button>
   )

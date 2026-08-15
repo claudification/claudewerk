@@ -16,6 +16,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { buildEpicIndex, type EpicRollup, notStartedChildren } from '@shared/epic-cards'
+import { epicHue } from '@shared/epic-color'
 import {
   Archive,
   ArrowLeft,
@@ -43,10 +44,12 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
 import type { ProjectTask } from '@/hooks/use-project'
 import { type ProjectTaskMeta, type TaskStatus, useProject } from '@/hooks/use-project'
+import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { extractProjectLabel } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
 import {
+  CHIP_IDLE,
   NEXT_STATUS,
   PREV_STATUS,
   PRIORITY_COLORS,
@@ -54,6 +57,7 @@ import {
   tagColor,
   taskAge,
 } from './project-board/board-constants'
+import { CardActions } from './project-board/card-actions'
 import { EpicBadge } from './project-board/epic-badge'
 import { EpicsView } from './project-board/epics-view'
 import { RunTaskDialog } from './project-board/run-task-dialog'
@@ -114,15 +118,18 @@ function ProjectCard({
   onOpenSlug: (slug: string) => void
 }) {
   const [showActions, setShowActions] = useState(false)
-  const canMoveRight = task.status in NEXT_STATUS
-  const canMoveLeft = task.status in PREV_STATUS
-
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `${task.status}/${task.slug}`,
     data: { slug: task.slug, status: task.status },
   })
 
-  const style = transform ? { transform: `translate(${transform.x}px, ${transform.y}px)` } : undefined
+  // A card wears its epic's colour as a left rail, so LANES mode says which
+  // epic a card belongs to without opening anything. Unparented cards get no
+  // rail at all -- absence is the signal, a grey rail would just be noise.
+  const style = {
+    ...(transform ? { transform: `translate(${transform.x}px, ${transform.y}px)` } : {}),
+    ...(task.epic ? epicColorVars(epicHue(task.epic, epicRollup?.card?.color)) : {}),
+  }
 
   return (
     // task card carries dnd-kit drag handlers + nested action buttons; semantic <button> would nest buttons
@@ -131,7 +138,8 @@ function ProjectCard({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group bg-surface-inset border border-primary/12 hover:border-primary/25 transition-colors cursor-pointer',
+        'group bg-surface-inset border border-border/70 hover:border-primary/45 transition-colors cursor-pointer',
+        task.epic && 'border-l-2 border-l-[color:var(--epic-solid)]',
         DENSITY_PADDING[view.density],
         isDragging && 'opacity-50 z-50',
       )}
@@ -154,7 +162,7 @@ function ProjectCard({
           >
             <span className="truncate">{task.title}</span>
             {task.created && (
-              <span className="text-[9px] text-muted-foreground/40 shrink-0">{taskAge(task.created)}</span>
+              <span className="text-[9px] text-muted-foreground/65 shrink-0">{taskAge(task.created)}</span>
             )}
           </div>
           {task.bodyPreview && view.bodyLines > 0 && (
@@ -190,69 +198,13 @@ function ProjectCard({
       </div>
 
       {showActions && (
-        <div
-          role="toolbar"
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: roving-tabindex toolbar, focus is intentional
-          tabIndex={0}
-          className="flex items-center gap-0.5 mt-2 pt-2 border-t border-primary/8"
-          onClick={e => e.stopPropagation()}
-          onKeyDown={e => e.stopPropagation()}
-        >
-          {canMoveLeft && (
-            <button
-              type="button"
-              title={`Move to ${PREV_STATUS[task.status]}`}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => {
-                haptic('tap')
-                onMove(task.slug, PREV_STATUS[task.status])
-                setShowActions(false)
-              }}
-            >
-              <ArrowLeft className="size-3.5" />
-            </button>
-          )}
-          {canMoveRight && (
-            <button
-              type="button"
-              title={`Move to ${NEXT_STATUS[task.status]}`}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => {
-                haptic('tap')
-                onMove(task.slug, NEXT_STATUS[task.status])
-                setShowActions(false)
-              }}
-            >
-              <ArrowRight className="size-3.5" />
-            </button>
-          )}
-          {task.status !== 'archived' && (
-            <button
-              type="button"
-              title="Archive"
-              className="p-1 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-              onClick={() => {
-                haptic('tap')
-                onArchive(task.slug)
-                setShowActions(false)
-              }}
-            >
-              <Archive className="size-3.5" />
-            </button>
-          )}
-          <button
-            type="button"
-            title="Delete"
-            className="ml-auto p-1 text-red-400/60 hover:text-red-400 transition-colors"
-            onClick={() => {
-              haptic('error')
-              onDelete(task.slug)
-              setShowActions(false)
-            }}
-          >
-            <Trash2 className="size-3.5" />
-          </button>
-        </div>
+        <CardActions
+          task={task}
+          onMove={onMove}
+          onArchive={onArchive}
+          onDelete={onDelete}
+          onDone={() => setShowActions(false)}
+        />
       )}
     </div>
   )
@@ -278,7 +230,7 @@ function InlineAdd({ onAdd }: { onAdd: (text: string) => void }) {
   }
 
   return (
-    <div className="px-2 py-1.5 border-t border-primary/8">
+    <div className="px-2 py-1.5 border-t border-border/60">
       <InputEditor
         value={text}
         onChange={setText}
@@ -358,7 +310,7 @@ function ViewConfigPanel({
   reset: () => void
 }) {
   return (
-    <div className="border border-primary/15 bg-surface-inset/60 px-3 py-2 space-y-2">
+    <div className="border border-border/70 bg-surface-inset/60 px-3 py-2 space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/60">View</span>
         <button
@@ -415,9 +367,7 @@ function ViewConfigPanel({
               onClick={() => update('density', d)}
               className={cn(
                 'flex-1 px-2 py-0.5 text-[9px] font-mono border rounded transition-colors',
-                view.density === d
-                  ? 'border-accent/60 text-accent bg-accent/10'
-                  : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
+                view.density === d ? 'border-accent/60 text-accent bg-accent/10' : CHIP_IDLE,
               )}
             >
               {d}
@@ -436,9 +386,7 @@ function ViewConfigPanel({
               onClick={() => update('titleSize', s)}
               className={cn(
                 'flex-1 px-2 py-0.5 text-[9px] font-mono border rounded transition-colors',
-                view.titleSize === s
-                  ? 'border-accent/60 text-accent bg-accent/10'
-                  : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
+                view.titleSize === s ? 'border-accent/60 text-accent bg-accent/10' : CHIP_IDLE,
               )}
             >
               {s}
@@ -648,7 +596,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         <div className="flex items-center justify-between px-3 py-2">
           <BoardHeaderLabel conversationId={conversationId} />
           <div className="flex items-center gap-2">
-            <div className="flex items-center border border-primary/15">
+            <div className="flex items-center border border-border/70">
               {BOARD_MODES.map(m => (
                 <button
                   key={m}
@@ -732,7 +680,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                 onChange={e => setSearchQuery(e.target.value)}
                 onFocus={() => haptic('tap')}
                 placeholder="Filter by title..."
-                className="flex-1 bg-surface-inset border border-primary/15 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30 focus:border-accent/50"
+                className="flex-1 bg-surface-inset border border-border/70 px-2 py-1 text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30 focus:border-accent/50"
               />
               {hasActiveFilters && (
                 <button
@@ -757,9 +705,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                 onClick={() => togglePriority(p)}
                 className={cn(
                   'px-1.5 py-0.5 text-[9px] font-mono border rounded transition-colors',
-                  selectedPriority === p
-                    ? PRIORITY_COLORS[p]
-                    : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
+                  selectedPriority === p ? PRIORITY_COLORS[p] : CHIP_IDLE,
                 )}
               >
                 {p}
@@ -775,9 +721,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                   onClick={() => toggleTag(tag)}
                   className={cn(
                     'px-1.5 py-0.5 text-[9px] font-mono border rounded whitespace-nowrap shrink-0 transition-colors',
-                    selectedTags.has(tag)
-                      ? tagColor(tag)
-                      : 'border-border/40 text-muted-foreground/60 hover:text-muted-foreground',
+                    selectedTags.has(tag) ? tagColor(tag) : CHIP_IDLE,
                   )}
                 >
                   {tag}
@@ -807,7 +751,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
                       <span className={cn('text-[11px] font-bold font-mono uppercase tracking-wider', col.color)}>
                         {col.label}
                       </span>
-                      <span className="text-[10px] text-muted-foreground/40 font-mono">{colTasks.length}</span>
+                      <span className="text-[10px] text-muted-foreground/75 font-mono">{colTasks.length}</span>
                     </div>
 
                     {/* Cards */}

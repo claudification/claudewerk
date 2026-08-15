@@ -25,6 +25,11 @@ export interface ProjectTaskMeta {
    *  the CHILD (like `quest`) so no parent-side list can drift. See
    *  `epic-cards.ts` for the rollup this feeds. */
   epic?: string
+  /** Colour OVERRIDE for an epic card: a name (`teal`) or a hue (`178`). Absent
+   *  is the normal case -- `epic-color.ts` derives a stable hue from the id, so
+   *  an epic is never colourless and this key only ever means "not that one".
+   *  Meaningless on a non-epic card; a child paints in its parent's hue. */
+  color?: string
   /** Sibling ids that must reach `done` before this card is ready. SEQUENCING
    *  only -- never parenthood, which is what the old `blocks:` key conflated.
    *  Stored as `depends_on:`; `blocked_by:` is an accepted spelling that folds

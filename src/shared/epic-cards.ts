@@ -131,8 +131,18 @@ export function buildEpicIndex(cards: readonly ProjectTaskMeta[]): Map<string, E
 
 const BUCKET_ORDER: EpicBucket[] = ['notStarted', 'inProgress', 'done', 'dropped']
 
+/** Within a bucket, the card someone should pick up first sorts first. A flat
+ *  mtime order buries the high-priority card under whatever was touched last. */
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
+
+function priorityRank(child: EpicChild): number {
+  return PRIORITY_ORDER[child.card.priority ?? 'medium'] ?? 1
+}
+
 function byBucketOrder(a: EpicChild, b: EpicChild): number {
-  return BUCKET_ORDER.indexOf(a.bucket) - BUCKET_ORDER.indexOf(b.bucket)
+  const bucket = BUCKET_ORDER.indexOf(a.bucket) - BUCKET_ORDER.indexOf(b.bucket)
+  if (bucket !== 0) return bucket
+  return priorityRank(a) - priorityRank(b)
 }
 
 /** Cards belonging to no epic. On a board mid-adoption this is most of them,
