@@ -94,7 +94,7 @@ test('Launch closes the editor and opens the run dialog', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
 
   await waitFor(() => {
-    expect(screen.getByText('Run Task')).toBeTruthy()
+    expect(screen.getByText('Work Card')).toBeTruthy()
   })
 })
 
@@ -103,7 +103,7 @@ test('the run dialog names the task it is about to launch', async () => {
   render(<Harness TaskEditor={mod.TaskEditor as never} RunTaskDialog={mod.RunTaskDialog as never} />)
 
   fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
-  await waitFor(() => expect(screen.getByText('Run Task')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('Work Card')).toBeTruthy())
   expect(screen.getAllByText('ANVIL @code block').length).toBeGreaterThan(0)
 })
 
@@ -112,6 +112,51 @@ test('the editor is gone once the run dialog is up', async () => {
   render(<Harness TaskEditor={mod.TaskEditor as never} RunTaskDialog={mod.RunTaskDialog as never} />)
 
   fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
-  await waitFor(() => expect(screen.getByText('Run Task')).toBeTruthy())
+  await waitFor(() => expect(screen.getByText('Work Card')).toBeTruthy())
   expect(screen.queryByRole('button', { name: /Work on this/i })).toBeNull()
+})
+
+test('the run dialog offers refine and analyze, not just work', async () => {
+  const mod = await import('../project-board')
+  render(<Harness TaskEditor={mod.TaskEditor as never} RunTaskDialog={mod.RunTaskDialog as never} />)
+
+  fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
+  await waitFor(() => expect(screen.getByText('Work Card')).toBeTruthy())
+
+  for (const label of ['Work', 'Refine', 'Analyze']) {
+    expect(screen.getByRole('radio', { name: label })).toBeTruthy()
+  }
+})
+
+// The failure this pins: picking ANALYZE and getting a dialog that still says
+// "Work", so you cannot tell which prompt you are about to send.
+test('picking a mode retitles the dialog and the run button', async () => {
+  const mod = await import('../project-board')
+  render(<Harness TaskEditor={mod.TaskEditor as never} RunTaskDialog={mod.RunTaskDialog as never} />)
+
+  fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
+  await waitFor(() => expect(screen.getByText('Work Card')).toBeTruthy())
+
+  fireEvent.click(screen.getByRole('radio', { name: 'Analyze' }))
+  await waitFor(() => expect(screen.getByText('Analyze Card')).toBeTruthy())
+  expect(screen.getByRole('radio', { name: 'Analyze' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.queryByText('Work Card')).toBeNull()
+})
+
+test('the read-only modes say out loud that they will not move the card', async () => {
+  const mod = await import('../project-board')
+  render(<Harness TaskEditor={mod.TaskEditor as never} RunTaskDialog={mod.RunTaskDialog as never} />)
+
+  fireEvent.click(screen.getByRole('button', { name: /Launch/i }))
+  await waitFor(() => expect(screen.getByText('Work Card')).toBeTruthy())
+
+  fireEvent.click(screen.getByRole('radio', { name: 'Refine' }))
+  await waitFor(() => expect(screen.getByText(/does not implement it/)).toBeTruthy())
+
+  fireEvent.click(screen.getByRole('radio', { name: 'Analyze' }))
+  await waitFor(() => expect(screen.getByText(/changes nothing on disk/)).toBeTruthy())
+
+  // Work is the one mode that DOES move it -- no disclaimer.
+  fireEvent.click(screen.getByRole('radio', { name: 'Work' }))
+  await waitFor(() => expect(screen.queryByText(/status unchanged/)).toBeNull())
 })

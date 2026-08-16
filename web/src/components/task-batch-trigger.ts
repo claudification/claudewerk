@@ -1,3 +1,4 @@
+import type { TaskMode } from '@shared/task-modes'
 import { createEventBus } from '@/lib/lazy-event-bus'
 
 /**
@@ -15,6 +16,12 @@ export interface TaskBatchOpen {
   scope?: string[]
   /** Shown in the header so it is obvious the list is not the whole board. */
   scopeLabel?: string
+  /**
+   * Which prompt template to open on. Omit for `work`. An epic's REFINE action
+   * arrives here already meaning refine -- making you re-pick the radio button
+   * you just clicked is how the wrong template gets submitted.
+   */
+  mode?: TaskMode
 }
 
 /** Buffering bus bridging the `open-batch-selector` window event so the

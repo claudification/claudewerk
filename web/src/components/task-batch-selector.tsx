@@ -12,6 +12,7 @@
  */
 
 import { cardRelPath } from '@shared/card-path'
+import { TASK_MODES, type TaskMode, taskMode } from '@shared/task-modes'
 import { Fzf } from 'fzf'
 import { CheckSquare, Copy, Info, ListChecks, Search, Send, X } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -85,54 +86,6 @@ function priorityWeight(p?: string): number {
       return 0
   }
 }
-
-// --- Prompt Templates ---
-
-type TemplateId = 'work' | 'refine' | 'analyze'
-
-interface PromptTemplate {
-  id: TemplateId
-  label: string
-  instructions: string
-}
-
-const TEMPLATES: PromptTemplate[] = [
-  {
-    id: 'work',
-    label: 'Work',
-    instructions: `Work through the following tasks systematically, one at a time.
-
-For each task:
-1. Read the task file for full context
-2. Move it to in-progress (project_set_status)
-3. Do the work
-4. Commit comprehensively after completing each task
-5. Move it to in-review when done
-6. Proceed to the next task`,
-  },
-  {
-    id: 'refine',
-    label: 'Refine',
-    instructions: `Refine the following tasks. For each one:
-1. Read the task file for full context
-2. Improve the description -- be specific about what needs to happen
-3. Add missing tags and set appropriate priority
-4. Break down large tasks into smaller, actionable sub-tasks
-5. Identify dependencies between tasks`,
-  },
-  {
-    id: 'analyze',
-    label: 'Analyze',
-    instructions: `Analyze the following tasks as a group:
-1. Read each task file for full context
-2. Identify dependencies and optimal ordering
-3. Estimate relative complexity (S/M/L/XL)
-4. Flag any tasks that overlap, conflict, or should be merged
-5. Suggest which to tackle first and why
-
-Report your analysis, don't start any work.`,
-  },
-]
 
 // --- Search Logic ---
 
@@ -287,8 +240,8 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     }
     return out
   })
-  const [templateId, setTemplateId] = useState<TemplateId>('work')
-  const [customInstructions, setCustomInstructions] = useState(TEMPLATES[0].instructions)
+  const [templateId, setTemplateId] = useState<TaskMode>('work')
+  const [customInstructions, setCustomInstructions] = useState(TASK_MODES[0].instructions)
   const [showSelected, setShowSelected] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -360,9 +313,17 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     if (!open) clearHoverPreview()
   }, [open, clearHoverPreview])
 
-  // Listen for open event. A caller may hand us a scope + a preselection --
-  // that is how "work on this epic" arrives with its not-started cards already
-  // ticked instead of making you find them again.
+  // Template switching
+  const switchTemplate = useCallback((id: TaskMode) => {
+    const spec = taskMode(id)
+    setTemplateId(spec.id)
+    setCustomInstructions(spec.instructions)
+  }, [])
+
+  // Listen for open event. A caller may hand us a scope + a preselection + a
+  // mode -- that is how "work on this epic" arrives with its not-started cards
+  // already ticked instead of making you find them again, and how an epic's
+  // REFINE lands on the refine template instead of silently on work.
   useEffect(() => {
     function handleOpen(detail?: TaskBatchOpen) {
       const next = batchOpenState(detail)
@@ -371,11 +332,12 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
       setShowSelected(false)
       setScope(next.scope)
       setSelected(next.selected)
+      switchTemplate(next.mode)
       requestAnimationFrame(() => searchRef.current?.focus())
     }
     taskBatchBus.setHandler(handleOpen)
     return () => taskBatchBus.setHandler(null)
-  }, [])
+  }, [switchTemplate])
 
   // Filter tasks by scope, then active status chips, then score
   const visibleTasks = useMemo(() => {
@@ -423,15 +385,6 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
       return next
     })
   }, [])
-
-  // Template switching
-  function switchTemplate(id: TemplateId) {
-    haptic('tap')
-    const template = TEMPLATES.find(t => t.id === id)
-    if (!template) return
-    setTemplateId(id)
-    setCustomInstructions(template.instructions)
-  }
 
   // Build final prompt
   const finalPrompt = useMemo(
@@ -678,13 +631,16 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
             <div className="px-4 py-2 space-y-2">
               {/* Template radio buttons */}
               <div className="flex items-center gap-3">
-                {TEMPLATES.map(tmpl => (
+                {TASK_MODES.map(tmpl => (
                   <label key={tmpl.id} className="flex items-center gap-1.5 cursor-pointer">
                     <input
                       type="radio"
                       name="batch-template"
                       checked={templateId === tmpl.id}
-                      onChange={() => switchTemplate(tmpl.id)}
+                      onChange={() => {
+                        haptic('tap')
+                        switchTemplate(tmpl.id)
+                      }}
                       className="size-3 accent-accent"
                     />
                     <span

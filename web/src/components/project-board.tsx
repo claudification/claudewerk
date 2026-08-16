@@ -15,8 +15,10 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { buildEpicIndex, type EpicRollup, notStartedChildren } from '@shared/epic-cards'
+import { epicBatchPayload } from '@shared/epic-batch'
+import { buildEpicIndex, type EpicRollup } from '@shared/epic-cards'
 import { epicHue } from '@shared/epic-color'
+import type { TaskMode } from '@shared/task-modes'
 import {
   Archive,
   ArrowLeft,
@@ -381,19 +383,21 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     [readTask],
   )
 
-  /** Hand the EXISTING batch selector this epic's not-started children, ticked. */
-  const handleWorkOnEpic = useCallback(
-    (epicId: string) => {
+  /**
+   * Hand the EXISTING batch selector this epic's cards, ticked and on the right
+   * template. WORK ticks the not-started ones; REFINE and ANALYZE tick
+   * everything still live -- `epicBatchPayload` owns that decision.
+   */
+  const handleEpicMode = useCallback(
+    (epicId: string, mode: TaskMode) => {
       const rollup = epicIndex.get(epicId)
       if (!rollup) return
-      openTaskBatch({
-        scope: rollup.children.map(c => c.card.slug),
-        preselect: notStartedChildren(rollup).map(c => c.slug),
-        scopeLabel: rollup.card?.title ?? epicId,
-      })
+      openTaskBatch(epicBatchPayload(rollup, mode))
     },
     [epicIndex],
   )
+
+  const handleWorkOnEpic = useCallback((epicId: string) => handleEpicMode(epicId, 'work'), [handleEpicMode])
 
   const tagFreqs = useMemo(() => getTagFrequencies(tasks), [tasks])
   const hasActiveFilters = searchQuery.trim() || selectedTags.size > 0 || selectedPriority
@@ -669,7 +673,12 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
       </div>
 
       {view.mode === 'epics' && (
-        <EpicsView tasks={filteredTasks} onOpenCard={openCardBySlug} onWorkOnEpic={handleWorkOnEpic} />
+        <EpicsView
+          tasks={filteredTasks}
+          onOpenCard={openCardBySlug}
+          onWorkOnEpic={handleWorkOnEpic}
+          onEpicMode={handleEpicMode}
+        />
       )}
 
       {/* Kanban columns */}

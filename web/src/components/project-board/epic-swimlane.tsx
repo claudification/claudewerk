@@ -9,6 +9,7 @@
 
 import type { EpicRollup } from '@shared/epic-cards'
 import { epicHue } from '@shared/epic-color'
+import type { TaskMode } from '@shared/task-modes'
 import { useMemo } from 'react'
 import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { haptic } from '@/lib/utils'
@@ -21,12 +22,14 @@ export function EpicSwimlane({
   onToggle,
   onOpenCard,
   onWorkOnEpic,
+  onEpicMode,
 }: {
   rollup: EpicRollup
   expanded: boolean
   onToggle: (epicId: string) => void
   onOpenCard: (slug: string) => void
   onWorkOnEpic: (epicId: string) => void
+  onEpicMode: (epicId: string, mode: TaskMode) => void
 }) {
   const style = useMemo(
     () => epicColorVars(epicHue(rollup.epicId, rollup.card?.color)),
@@ -40,7 +43,13 @@ export function EpicSwimlane({
 
   return (
     <div style={style} className="border-b border-border/50 border-l-2 border-l-[color:var(--epic-solid)]">
-      <EpicSwimlaneHeader rollup={rollup} expanded={expanded} onToggle={toggle} onWorkOnEpic={onWorkOnEpic} />
+      <EpicSwimlaneHeader
+        rollup={rollup}
+        expanded={expanded}
+        onToggle={toggle}
+        onWorkOnEpic={onWorkOnEpic}
+        onEpicMode={onEpicMode}
+      />
 
       {!expanded && rollup.children.length === 0 && (
         <div className="px-3 pb-2 pl-10 text-[10px] font-mono text-muted-foreground/60">

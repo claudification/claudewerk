@@ -123,3 +123,52 @@ describe('buildTaskPrompt', () => {
     expect(out).toContain('id="my-task"')
   })
 })
+
+describe('prompt modes', () => {
+  it('defaults to work -- byte-identical to the pre-modes output', () => {
+    expect(buildTaskPrompt(baseTask, undefined, undefined, 'work')).toBe(buildTaskPrompt(baseTask))
+  })
+
+  // The bug this exists to prevent: an ANALYZE run that marks every card it
+  // read as in-review, so the board claims work that never happened.
+  it('never asks refine or analyze to move the card', () => {
+    for (const mode of ['refine', 'analyze'] as const) {
+      const out = buildTaskPrompt(baseTask, undefined, undefined, mode)
+      expect(out).not.toContain('mcp__rclaude__project_set_status')
+      expect(out).not.toContain('in-review')
+    }
+  })
+
+  it('tells refine to edit the card and not implement it', () => {
+    const out = buildTaskPrompt(baseTask, undefined, undefined, 'refine')
+    expect(out).toContain('REFINE this card')
+    expect(out).toContain('do not implement it')
+  })
+
+  it('tells analyze to change nothing', () => {
+    const out = buildTaskPrompt(baseTask, undefined, undefined, 'analyze')
+    expect(out).toContain('ANALYZE this card')
+    expect(out).toContain('Do NOT edit any file')
+  })
+
+  it('still wraps the card body and attrs in every mode', () => {
+    for (const mode of ['work', 'refine', 'analyze'] as const) {
+      const out = buildTaskPrompt(baseTask, undefined, undefined, mode)
+      expect(out).toContain('id="my-task"')
+      expect(out).toContain('the full task body')
+      expect(out).toContain('</project-task>')
+    }
+  })
+
+  it('threads the mode through composeSpawnPrompt', () => {
+    const out = composeSpawnPrompt('', { taskWrapper: baseTask, mode: 'analyze' })
+    expect(out).toContain('ANALYZE this card')
+    expect(out).not.toContain('mcp__rclaude__project_set_status')
+  })
+
+  it('keeps lifecycle suffixes independent of the mode', () => {
+    const out = composeSpawnPrompt('', { taskWrapper: baseTask, mode: 'refine', autoCommit: true })
+    expect(out).toContain(AUTO_COMMIT_INSTRUCTIONS.trim())
+    expect(out.indexOf('commit all changes')).toBeLessThan(out.indexOf('</project-task>'))
+  })
+})

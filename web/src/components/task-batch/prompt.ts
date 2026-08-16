@@ -10,6 +10,7 @@
  */
 
 import { cardRelPath } from '@shared/card-path'
+import { type TaskMode, taskMode } from '@shared/task-modes'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 
 /** One card as a prompt bullet: title, priority, and a path that resolves. */
@@ -26,6 +27,8 @@ export function buildBatchPrompt(instructions: string, tasks: ProjectTaskMeta[])
 export interface BatchOpenState {
   scope: { ids: Set<string>; label?: string } | null
   selected: Set<string>
+  /** Template to open on. `work` unless the caller said otherwise. */
+  mode: TaskMode
 }
 
 /**
@@ -37,9 +40,11 @@ export function batchOpenState(detail?: {
   scope?: string[]
   scopeLabel?: string
   preselect?: string[]
+  mode?: TaskMode
 }): BatchOpenState {
   return {
     scope: detail?.scope ? { ids: new Set(detail.scope), label: detail.scopeLabel } : null,
     selected: new Set(detail?.preselect ?? []),
+    mode: taskMode(detail?.mode).id,
   }
 }

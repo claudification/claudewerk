@@ -8,6 +8,7 @@
  */
 
 import { buildEpicIndex, unparentedCards } from '@shared/epic-cards'
+import type { TaskMode } from '@shared/task-modes'
 import { useMemo, useState } from 'react'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 import { haptic } from '@/lib/utils'
@@ -19,10 +20,12 @@ export function EpicsView({
   tasks,
   onOpenCard,
   onWorkOnEpic,
+  onEpicMode,
 }: {
   tasks: ProjectTaskMeta[]
   onOpenCard: (slug: string) => void
   onWorkOnEpic: (epicId: string) => void
+  onEpicMode: (epicId: string, mode: TaskMode) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [sort, setSort] = useState<EpicSort>('urgency')
@@ -92,6 +95,7 @@ export function EpicsView({
             onToggle={toggle}
             onOpenCard={onOpenCard}
             onWorkOnEpic={onWorkOnEpic}
+            onEpicMode={onEpicMode}
           />
         ))}
         {visible.length === 0 && (

@@ -9,6 +9,7 @@ import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import { deriveConversationName } from '@shared/spawn-naming'
 import { composeSpawnPrompt } from '@shared/spawn-prompt'
 import type { SpawnRequest } from '@shared/spawn-schema'
+import { type TaskMode, taskMode } from '@shared/task-modes'
 import { Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -24,6 +25,8 @@ import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { LaunchConfigFields, type LaunchFieldsValue } from '../launch-config-fields'
 import { LaunchErrorBanner, LaunchFooterActions, LaunchStepList } from '../launch-monitor'
+import { modeDefaults, persistsDefaults, RunModeHint, RunModeTabs } from './run-task-mode'
+import { useLaunchSteps } from './use-launch-steps'
 
 // PRE-EXISTING complexity, not new: unchanged from project-board.tsx, where it
 // was already cognitive 38 across 13 useState + 4 useEffect. The gate reads the
@@ -55,6 +58,16 @@ export function RunTaskDialog({
   const [maxSubagentSpawnDepth, setMaxSubagentSpawnDepth] = useState('')
   const [includePartialMessages, setIncludePartialMessages] = useState(savedDefaults.includePartialMessages)
   const [timeout, setTimeout_] = useState(savedDefaults.timeout)
+  const [mode, setMode] = useState<TaskMode>('work')
+  const modeSpec = taskMode(mode)
+
+  /** Switching mode re-picks the lifecycle switches it implies. See run-task-mode. */
+  function switchMode(next: TaskMode) {
+    setMode(next)
+    const d = modeDefaults(next, { useWorktree: savedDefaults.useWorktree, autoCommit: savedDefaults.autoCommit })
+    setUseWorktree(d.useWorktree)
+    setAutoCommit(d.autoCommit)
+  }
 
   // Launch state
   const [phase, setPhase] = useState<'config' | 'launching'>('config')
@@ -77,72 +90,9 @@ export function RunTaskDialog({
     },
   })
 
-  // Task lifecycle tracking: add steps after conversation connects
-  const connectedStepRef = useRef(false)
   // Guards the close-on-done effect so it fires exactly once per run.
   const closedOnDoneRef = useRef(false)
-  useEffect(() => {
-    if (!progress.isConnected || connectedStepRef.current || !progress.spawnedConversation) return
-    connectedStepRef.current = true
-    progress.setSteps(prev => [
-      ...prev,
-      {
-        label: 'Conversation connected',
-        status: 'done' as const,
-        ts: Date.now(),
-        detail: progress.spawnedConversation?.id.slice(0, 8),
-      },
-      { label: 'Waiting for prompt submission...', status: 'active' as const, ts: Date.now() },
-    ])
-  }, [progress.isConnected, progress.spawnedConversation, progress.setSteps])
-
-  // Detect conversation becoming active (prompt submitted) -> add "Running..." step
-  const promptDoneRef = useRef(false)
-  useEffect(() => {
-    if (!progress.spawnedConversation || promptDoneRef.current) return
-    const status = progress.spawnedConversation.status
-    if (status !== 'active' && status !== 'idle') return
-    promptDoneRef.current = true
-    progress.setSteps(prev => {
-      const updated = prev.map(s =>
-        s.label === 'Waiting for prompt submission...' && s.status === 'active'
-          ? { ...s, status: 'done' as const, detail: progress.spawnedConversation?.lastEvent?.hookEvent || 'active' }
-          : s,
-      )
-      updated.push({
-        label: 'Running...',
-        status: 'active' as const,
-        ts: Date.now(),
-        detail: `${progress.spawnedConversation?.eventCount || 0} events`,
-      })
-      return updated
-    })
-  }, [progress.spawnedConversation, progress.setSteps])
-
-  // Update running step event count + detect completion
-  useEffect(() => {
-    if (!progress.spawnedConversation || !promptDoneRef.current) return
-    if (progress.isComplete) {
-      progress.setSteps(prev =>
-        prev.map(s =>
-          s.label === 'Running...' && s.status === 'active'
-            ? {
-                ...s,
-                status: 'done' as const,
-                label: 'Task complete',
-                detail: `${progress.elapsed}s, ${progress.spawnedConversation?.eventCount || 0} events`,
-              }
-            : s,
-        ),
-      )
-    } else {
-      progress.setSteps(prev =>
-        prev.map(s =>
-          s.label === 'Running...' ? { ...s, detail: `${progress.spawnedConversation?.eventCount || 0} events` } : s,
-        ),
-      )
-    }
-  }, [progress.spawnedConversation, progress.isComplete, progress.elapsed, progress.setSteps])
+  useLaunchSteps(progress)
 
   // Done is done: the instant the conversation connects, focus it and close.
   // No countdown, no lingering timer to yank the user back if they tabbed away.
@@ -175,16 +125,20 @@ export function RunTaskDialog({
   // fallow-ignore-next-line complexity
   async function handleRun() {
     if (phase !== 'config' || !spawnPath) return
-    saveRunTaskDefaults({
-      model,
-      effort,
-      useWorktree,
-      autoCommit,
-      leaveRunning,
-      includePartialMessages,
-      maxBudgetUsd,
-      timeout,
-    })
+    // An analyze run's "no commit, no worktree" must not become the next real
+    // launch's remembered default.
+    if (persistsDefaults(mode)) {
+      saveRunTaskDefaults({
+        model,
+        effort,
+        useWorktree,
+        autoCommit,
+        leaveRunning,
+        includePartialMessages,
+        maxBudgetUsd,
+        timeout,
+      })
+    }
     setPhase('launching')
     conversationAtLaunchRef.current = useConversationsStore.getState().selectedConversationId
     closedOnDoneRef.current = false
@@ -198,6 +152,7 @@ export function RunTaskDialog({
       taskWrapper: task,
       autoCommit,
       worktreeMergeBack: useWorktree,
+      mode,
     })
 
     const spawnReq: SpawnRequest = {
@@ -210,9 +165,11 @@ export function RunTaskDialog({
       effort: (effort !== 'default' ? effort : undefined) as SpawnRequest['effort'],
       worktree: useWorktree ? branchName : undefined,
       leaveRunning: leaveRunning || undefined,
+      // Prefixed for the read-only modes so three runs of the same card do not
+      // sit in the conversation list under three identical names.
       name:
         deriveConversationName(
-          {},
+          { name: mode === 'work' ? undefined : `${modeSpec.action}: ${task.title}` },
           { slug: task.slug, title: task.title, status: task.status, priority: task.priority, tags: task.tags },
         ) ?? undefined,
       includePartialMessages: includePartialMessages || undefined,
@@ -290,7 +247,7 @@ export function RunTaskDialog({
           <Zap className="size-4 text-amber-400" />
           <span className="text-sm font-mono font-bold text-amber-400">
             {phase === 'config'
-              ? 'Run Task'
+              ? `${modeSpec.action} Card`
               : progress.isComplete
                 ? 'Task Complete'
                 : progress.hasError
@@ -305,7 +262,13 @@ export function RunTaskDialog({
         </div>
 
         {/* Task title */}
-        <div className="px-4 py-3 border-b border-primary/12">
+        <div className="px-4 py-3 border-b border-primary/12 space-y-2">
+          {phase === 'config' && (
+            <>
+              <RunModeTabs mode={mode} onChange={switchMode} />
+              <RunModeHint mode={mode} />
+            </>
+          )}
           <div className="text-xs font-mono text-foreground truncate">{task.title}</div>
           {phase === 'config' && task.body && (
             <div className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{task.body.slice(0, 200)}</div>
@@ -377,7 +340,7 @@ export function RunTaskDialog({
                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold font-mono bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
               >
                 <Zap className="size-3" />
-                Run
+                {modeSpec.action}
                 <Kbd className="bg-amber-500/20 text-amber-400/70">↵</Kbd>
               </button>
             </div>

@@ -8,8 +8,10 @@
  */
 
 import type { EpicRollup } from '@shared/epic-cards'
+import type { TaskMode } from '@shared/task-modes'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EpicModeButtons } from './epic-mode-buttons'
 import { EpicBucketCounts, EpicProgressBar, EpicProgressLabel } from './epic-progress'
 import { EpicWorkButton } from './epic-work-button'
 
@@ -30,11 +32,13 @@ export function EpicSwimlaneHeader({
   expanded,
   onToggle,
   onWorkOnEpic,
+  onEpicMode,
 }: {
   rollup: EpicRollup
   expanded: boolean
   onToggle: (epicId: string) => void
   onWorkOnEpic: (epicId: string) => void
+  onEpicMode: (epicId: string, mode: TaskMode) => void
 }) {
   const card = rollup.card
   const title = card?.title ?? rollup.epicId
@@ -60,6 +64,7 @@ export function EpicSwimlaneHeader({
             {rollup.epicId}
           </span>
         </button>
+        <EpicModeButtons rollup={rollup} onMode={onEpicMode} />
         <EpicWorkButton rollup={rollup} onWork={onWorkOnEpic} />
       </div>
 
