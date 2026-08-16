@@ -6,6 +6,7 @@
 import { diffWords } from 'diff'
 import { memo, useEffect, useMemo, useState } from 'react'
 import JsonHighlight from '@/components/json-highlight'
+import { CopyIconButton } from '@/components/ui/copy-icon-button'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { resolveToolDisplay, type ToolDisplayKey } from '@/lib/control-panel-prefs'
 import { cn } from '@/lib/utils'
@@ -318,7 +319,9 @@ function stripLeadingComment(cmd: string): string {
   return m ? cmd.slice(m[0].length) : cmd
 }
 
-// Syntax-highlighted shell command block (max 10 lines by default)
+// Syntax-highlighted shell command block (max 10 lines by default).
+// What is rendered is shortened for reading (see sanitize-paths); the copy
+// button hands back the ORIGINAL command, which is the one that actually runs.
 export function ShellCommand({ command, maxLines = 10 }: { command: string; maxLines?: number }) {
   const root = useConversationPath()
   const stripped = stripLeadingComment(command)
@@ -329,19 +332,22 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
   const html = useBlockHighlight('shellscript', display)
 
   return (
-    <pre className="text-[10px] bg-black/30 p-2 overflow-auto whitespace-pre-wrap font-mono border-l-2 border-green-500/40">
-      <span className="text-green-500/60 select-none">$ </span>
-      {html ? (
-        <code
-          // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
-      ) : (
-        <span className="text-foreground/80">{display}</span>
-      )}
-      {truncated && <span className="text-muted-foreground/40">{`\n... ${lines.length - maxLines} more lines`}</span>}
-    </pre>
+    <div className="group relative">
+      <pre className="text-[10px] bg-black/30 p-2 pr-7 overflow-auto whitespace-pre-wrap font-mono border-l-2 border-green-500/40">
+        <span className="text-green-500/60 select-none">$ </span>
+        {html ? (
+          <code
+            // react-doctor-disable-next-line react-doctor/no-danger, react-doctor/dangerous-html-sink -- shiki syntax-highlighter output (trusted)
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki syntax-highlighter output (trusted)
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        ) : (
+          <span className="text-foreground/80">{display}</span>
+        )}
+        {truncated && <span className="text-muted-foreground/40">{`\n... ${lines.length - maxLines} more lines`}</span>}
+      </pre>
+      <CopyIconButton text={command} title="Copy the raw command" className="absolute top-1 right-1" />
+    </div>
   )
 }
 

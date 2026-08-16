@@ -183,62 +183,10 @@ function _extractMcpJson<T>(result?: string, extra?: unknown): T | null {
   }
 }
 
-// Strip common home/project prefixes to show a useful relative-ish path
-export function shortPath(fullPath: string): string {
-  if (!fullPath) return fullPath
-  const stripped = fullPath.replace(/^\/(?:Users|home)\/[^/]+\/(?:projects\/[^/]+\/)?/, '')
-  if (stripped === fullPath && fullPath.startsWith('/')) {
-    const parts = fullPath.split('/')
-    return parts.length > 3 ? parts.slice(-3).join('/') : fullPath
-  }
-  return stripped
-}
-
-// Compute relative path from `from` to `to` (pure string, no fs)
-function relativePath(from: string, to: string): string {
-  const fromParts = from.replace(/\/$/, '').split('/')
-  const toParts = to.replace(/\/$/, '').split('/')
-  let common = 0
-  while (common < fromParts.length && common < toParts.length && fromParts[common] === toParts[common]) common++
-  const ups = fromParts.length - common
-  const rest = toParts.slice(common)
-  return [...Array(ups).fill('..'), ...rest].join('/')
-}
-
-// Strip or shorten `cd <path> && ` prefix from a shell command for display.
-// - Exact CWD match: strip entirely (it's a no-op)
-// - Child/parent of CWD: replace with relative path
-// - Unrelated: leave as-is
-const CD_PREFIX_RE = /^cd\s+(?:(['"])(.+?)\1|(\S+))\s*(?:&&|;)\s*/
-export function cleanCdPrefix(text: string, root: string): string {
-  const m = text.match(CD_PREFIX_RE)
-  if (!m) return text
-  const cdPath = (m[2] || m[3]).replace(/\/$/, '')
-  const normRoot = root.replace(/\/$/, '')
-  const rest = text.slice(m[0].length)
-  if (cdPath === normRoot) return rest
-  const rel = relativePath(normRoot, cdPath)
-  if (rel && !rel.startsWith('/') && rel.length < cdPath.length) {
-    return `cd ${rel} && ${rest}`
-  }
-  return text
-}
-
-// Clean `sh('cd <path> && ...')` inside REPL JavaScript code
-const SH_CD_RE = /sh\((['"`])(cd\s+(?:['"]?.+?['"]?\s*(?:&&|;)\s*))/g
-// Strip `chdir('<path>')` / `chdir("<path>")` / `chdir(`<path>`)` lines that are no-ops
-const CHDIR_LINE_RE = /^[ \t]*chdir\(\s*(['"`])(.+?)\1\s*\)\s*;?[ \t]*(\r?\n|$)/gm
-export function cleanReplShCalls(code: string, root: string): string {
-  const normRoot = root.replace(/\/$/, '')
-  const withoutChdir = code.replace(CHDIR_LINE_RE, (full, _q, path) => {
-    return path.replace(/\/$/, '') === normRoot ? '' : full
-  })
-  return withoutChdir.replace(SH_CD_RE, (full, quote, cdPart) => {
-    const cleaned = cleanCdPrefix(cdPart, root)
-    if (cleaned !== cdPart) return `sh(${quote}${cleaned}`
-    return full
-  })
-}
+// Path shortening lives in its own pure module (no React) so it is testable
+// standalone -- re-exported here because the whole transcript imports it from
+// `./shared`.
+export { cleanCdPrefix, cleanReplShCalls, shortPath } from './sanitize-paths'
 
 // Tool-specific styling - terminal aesthetic with Lucide icons
 const TOOL_STYLES: Record<string, { color: string; Icon: LucideIcon }> = {

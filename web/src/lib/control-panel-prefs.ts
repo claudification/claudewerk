@@ -114,7 +114,11 @@ export interface ControlPanelPrefs {
   thinkingIndicator: 'detailed' | 'compact' | 'off'
   toolDisplay: Partial<Record<ToolDisplayKey, Partial<ToolDisplayPrefs>>>
   chordTimeoutMs: number // how long to wait for second chord key before dismissing (ms)
-  sanitizePaths: boolean // strip redundant `cd <project-path> &&` prefixes from displayed commands
+  /** Collapse the conversation's project root to `.` wherever it appears in a
+   *  displayed command -- arguments, assignments, redirects, later lines -- and
+   *  drop the `cd <project-path> &&` that becomes a no-op. DISPLAY ONLY: the
+   *  copy button on a shell command always yields the untouched original. */
+  sanitizePaths: boolean
   inputBackend: 'legacy' | 'codemirror' // editor backend for InputEditor (default legacy)
   settingsTab: SettingsTab // last active settings tab (per-device)
   theme: string // UI theme id (see lib/themes.ts)
