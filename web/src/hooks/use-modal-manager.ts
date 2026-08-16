@@ -2,17 +2,20 @@
  * Unified minimizable modals — the manager store.
  *
  * One record per live modal instance, keyed by a stable id. Components stay
- * mounted at the app shell and read their `presentation` from here; because they
- * never unmount, in-progress state survives EVERY transition for free — park,
- * detach, reattach just re-target where the body portals (Dialog <-> dock <-> OS
- * window). restore = warp to owner, then reopen (see plan-unified-modals.md).
+ * mounted at the app shell and read their `presentation` from here; park, detach
+ * and reattach only re-target WHERE the body's canvas is appended (Dialog <->
+ * stash <-> OS window), so in-progress state survives every transition. The
+ * mechanism that makes that true is the surface canvas, NOT this store -- see
+ * components/surface/surface-canvas.ts. restore = warp to owner, then reopen.
  *
- * A detached modal's live `Window` is non-serializable, so it is held in a
- * module-scoped Map (NOT on the future-persistable record); `getDetachedWindow()`
- * reads it on the render the presentation flip triggers.
+ * A detached modal's live `Window` and a surface's canvas are both
+ * non-serializable, so they live in module-scoped Maps (NOT on the
+ * future-persistable record); `getDetachedWindow()` reads the window on the
+ * render the presentation flip triggers.
  */
 
 import { create } from 'zustand'
+import { disposeSurfaceCanvas } from '@/components/surface/surface-canvas'
 import type { ManagedModalOpts, ModalPresentation, ModalRecord, ModalScope } from './modal-manager-types'
 import { useConversationsStore } from './use-conversations'
 
@@ -148,6 +151,9 @@ export const useModalManagerStore = create<ModalManagerState>((set, get) => ({
     set(state => {
       if (!state.records[id]) return state
       closeWindowSafe(id)
+      // Closed is not parked: drop the canvas so a re-open starts on a genuinely
+      // fresh body instead of resurrecting the one the user just dismissed.
+      disposeSurfaceCanvas(id)
       const { [id]: _gone, ...records } = state.records
       return { records }
     }),

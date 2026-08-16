@@ -18,7 +18,8 @@ export type ModalScope = { type: 'global' } | { type: 'project'; uri: string } |
 /**
  * Where the modal renders. A record absent from the store means CLOSED.
  * - `inline`   — Radix Dialog in the main tab (+ optional maximized).
- * - `docked`   — parked tile in the global dock; body stays mounted (state survives).
+ * - `docked`   — parked tile in the global dock; the body's canvas moves to the
+ *                offscreen stash and keeps running (state survives).
  * - `detached` — portaled into its own OS window (window held in the manager's registry).
  */
 export type ModalPresentation = 'inline' | 'docked' | 'detached'
