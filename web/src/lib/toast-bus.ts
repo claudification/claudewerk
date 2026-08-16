@@ -12,8 +12,10 @@ export interface ToastInput {
   title: string
   body: string
   variant?: ToastVariant
+  /** Managed-surface id -- clicking the toast restores that surface. */
+  surfaceId?: string
 }
 
-export function showToast({ title, body, variant = 'warning' }: ToastInput): void {
-  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: { title, body, variant } }))
+export function showToast({ title, body, variant = 'warning', surfaceId }: ToastInput): void {
+  window.dispatchEvent(new CustomEvent('rclaude-toast', { detail: { title, body, variant, surfaceId } }))
 }

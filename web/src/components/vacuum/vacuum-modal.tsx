@@ -9,31 +9,30 @@
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useManagedModal } from '@/hooks/use-modal-manager'
+import { useSurfaceActivity } from '@/hooks/use-surface-activity'
 import { ModalSurface } from '../modal-surface'
 import { ApplyConfirm } from './apply-confirm'
 import { RunLog } from './run-log'
-import { runVacuumApply, runVacuumPlan, useVacuumEstimate, useVacuumSteps } from './use-vacuum'
+import { useVacuumEstimate } from './use-vacuum'
+import { vacuumActivity } from './vacuum-activity'
 import { VacuumFooter } from './vacuum-footer'
 import { VacuumRows } from './vacuum-rows'
+import { startVacuumRun, useVacuumRunStore, type VacuumRunMode } from './vacuum-run-store'
 import { VACUUM_MODAL } from './vacuum-state'
 import { DEFAULT_SELECTION, type VacuumSelection } from './vacuum-types'
 
 function VacuumBody() {
   const [selection, setSelection] = useState<VacuumSelection>(DEFAULT_SELECTION)
   const [confirming, setConfirming] = useState(false)
-  const [busy, setBusy] = useState(false)
   const { data, error, loading, measuringBytes, refresh, measureBytes } = useVacuumEstimate(selection.hotDays, true)
-  const { steps, clear } = useVacuumSteps()
+  const work = useVacuumRunStore()
 
-  const run = async (apply: boolean) => {
-    clear()
-    setBusy(true)
-    try {
-      await (apply ? runVacuumApply(selection) : runVacuumPlan(selection))
-      refresh(selection.hotDays)
-    } finally {
-      setBusy(false)
-    }
+  // Say what we are doing, so the dock tile can say it while we are parked.
+  useSurfaceActivity(VACUUM_MODAL.id, vacuumActivity({ ...work, error: work.error ?? error, loading, measuringBytes }))
+
+  const run = async (mode: VacuumRunMode) => {
+    await startVacuumRun(mode, selection)
+    refresh(selection.hotDays)
   }
 
   if (error) {
@@ -58,14 +57,14 @@ function VacuumBody() {
         <VacuumRows estimate={data} selection={selection} onChange={setSelection} />
       </div>
 
-      <RunLog steps={steps} />
+      <RunLog steps={work.steps} />
 
       <VacuumFooter
         estimate={data}
-        busy={busy}
+        busy={work.running}
         measuringBytes={measuringBytes}
         onMeasureBytes={() => measureBytes(selection.hotDays)}
-        onPlan={() => void run(false)}
+        onPlan={() => void run('plan')}
         onApply={() => setConfirming(true)}
       />
 
@@ -76,7 +75,7 @@ function VacuumBody() {
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false)
-          void run(true)
+          void run('apply')
         }}
       />
     </div>

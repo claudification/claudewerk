@@ -39,6 +39,40 @@ export interface ModalRecord {
   maximized: boolean
   /** Wall-clock open time, for dock ordering. */
   openedAt: number
+  /** What the surface is DOING, when it chooses to say. Undefined = never
+   *  reported, and the dock tile renders exactly as it always did. */
+  activity?: SurfaceActivity
+  /** Announce an off-screen finish with a toast. Opt-in, default false. */
+  notifyOnComplete?: boolean
+}
+
+/** What a surface reports about its own work. `idle` is "open, nothing running". */
+export type SurfaceStatus = 'idle' | 'running' | 'done' | 'error'
+
+/**
+ * What a surface TELLS the manager. Deliberately small: a status, something
+ * human to read, and a value that advances when there is fresh output.
+ *
+ * The surface never stamps clocks or decides what counts as unread -- that is
+ * the manager's job (see surface-activity.ts), because only the manager knows
+ * whether anyone was looking at the time.
+ */
+export interface SurfaceActivityInput {
+  status: SurfaceStatus
+  /** Short and concrete: "measuring", "3/7 months", "verifying archive". */
+  label?: string
+  /** 0..1 for a determinate bar. Omit when you genuinely don't know. */
+  progress?: number
+  /** Any value that advances on fresh output (a step count, a byte total). */
+  tick?: number | string
+}
+
+export interface SurfaceActivity extends SurfaceActivityInput {
+  /** Advances whenever `tick` changes -- drives the blink. */
+  pulseAt?: number
+  finishedAt?: number
+  /** Finished while nobody was looking. Cleared by restore(). */
+  unseen: boolean
 }
 
 export interface ManagedModalOpts {
@@ -47,4 +81,6 @@ export interface ManagedModalOpts {
   title: string
   /** Default true. Pass false for blocking modals. */
   minimizable?: boolean
+  /** Announce a finish that happened off-screen. Opt-in, default false. */
+  notifyOnComplete?: boolean
 }

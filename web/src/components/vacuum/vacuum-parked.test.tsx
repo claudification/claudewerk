@@ -11,12 +11,14 @@
  * a timer, so it must not happen via a park either.
  */
 
+import type { VacuumStepMessage } from '@shared/protocol'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { vacuumEstimate } from './vacuum-estimate.fixture'
 import { VacuumModal } from './vacuum-modal'
+import { useVacuumRunStore } from './vacuum-run-store'
 import { openVacuum } from './vacuum-state'
 
 const store = () => useModalManagerStore.getState()
@@ -28,6 +30,7 @@ function estimateCalls(mock: ReturnType<typeof vi.fn>): number {
 
 beforeEach(() => {
   useModalManagerStore.setState({ records: {} })
+  useVacuumRunStore.setState({ mode: null, running: false, steps: [], error: null })
 })
 afterEach(() => {
   cleanup()
@@ -79,3 +82,45 @@ test('a selection made before parking is still there after restore', async () =>
 
   expect(box().checked).toBe(false)
 })
+
+test('steps that arrive while parked are still there on restore', async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify(vacuumEstimate()), { status: 200 }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  openVacuum()
+  render(<VacuumModal />)
+  await waitFor(() => expect(screen.getByRole('button', { name: /Dry run/ })).toBeTruthy())
+
+  // Start a run, then walk away from it.
+  fireEvent.click(screen.getByRole('button', { name: /Dry run/ }))
+  act(() => {
+    store().minimize('vacuum')
+  })
+
+  // The broker keeps going and keeps talking. Nobody is rendering the log.
+  act(() => {
+    window.dispatchEvent(new CustomEvent<VacuumStepMessage>('vacuum-step', { detail: parkedStep() }))
+  })
+
+  act(() => {
+    store().restore('vacuum')
+  })
+  await waitFor(() => expect(screen.getByText('archive:2026-05')).toBeTruthy())
+})
+
+function parkedStep(): VacuumStepMessage {
+  return {
+    type: 'vacuum_step',
+    runId: 'ab12cd34',
+    step: 'archive:2026-05',
+    status: 'ok',
+    detail: 'exported and verified',
+    rowsBefore: 10,
+    rowsAfter: 10,
+    dbBytesBefore: 1,
+    dbBytesAfter: 1,
+    initiator: 'user:jonas',
+    dryRun: true,
+    ts: 1,
+  }
+}

@@ -12,6 +12,7 @@ import type { ModalRecord } from '@/hooks/modal-manager-types'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { useShellExpansion } from '@/hooks/use-shell-expansion'
 import { useShellRoster } from '@/hooks/use-shells'
+import { useSurfaceCompletionToast } from '@/hooks/use-surface-completion-toast'
 import { ModalDockTile } from './modal-dock-tile'
 import { ShellDockTile } from './shell-dock-tile'
 
@@ -99,6 +100,10 @@ function useDockContents() {
 export function Dock() {
   const { roster, parked, shellIds, hasParked, hasShells, empty } = useDockContents()
   const [expandedId, setExpandedId] = useShellExpansion(roster)
+  // The dock is the home of parked work, so it owns the escalation for a finish
+  // that happened while the dock itself was not being looked at. Above the
+  // early return: an empty dock still has surfaces finishing off-screen.
+  useSurfaceCompletionToast()
   if (empty) return null
 
   return (

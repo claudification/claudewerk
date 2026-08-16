@@ -1,6 +1,7 @@
 /**
- * Data plumbing for the vacuum panel: the estimate, the byte pass, the run, and
- * the live step stream.
+ * Data plumbing for the vacuum panel: the estimate, the byte pass, and the two
+ * run calls. The live step stream lives in vacuum-run-store.ts -- a run outlives
+ * the view that started it, so it cannot hang off a component's lifetime.
  *
  * The estimate is deliberately NOT auto-refreshed on a timer. It is the input
  * to a destructive decision, so it changes only when the user asks -- a number
@@ -8,7 +9,6 @@
  * this whole feature is trying to avoid.
  */
 
-import type { VacuumStepMessage } from '@shared/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import type { VacuumEstimate, VacuumSelection } from './vacuum-types'
 
@@ -80,22 +80,4 @@ export async function runVacuumPlan(selection: VacuumSelection): Promise<unknown
 
 export async function runVacuumApply(selection: VacuumSelection): Promise<unknown> {
   return getJson('/api/vacuum/apply', body(selection))
-}
-
-/** The live step stream. Steps arrive as `vacuum_step` broadcasts, which the
- *  websocket layer re-emits as a window event so this hook stays transport
- *  agnostic and needs no store of its own. */
-export function useVacuumSteps(): { steps: VacuumStepMessage[]; clear: () => void } {
-  const [steps, setSteps] = useState<VacuumStepMessage[]>([])
-
-  useEffect(() => {
-    const onStep = (e: Event) => {
-      const detail = (e as CustomEvent<VacuumStepMessage>).detail
-      setSteps(prev => [...prev, detail])
-    }
-    window.addEventListener('vacuum-step', onStep)
-    return () => window.removeEventListener('vacuum-step', onStep)
-  }, [])
-
-  return { steps, clear: () => setSteps([]) }
 }

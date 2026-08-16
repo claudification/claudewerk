@@ -36,6 +36,7 @@ export function ModalDockTile({ record }: { record: ModalRecord }) {
       owner={ownerLabel(scope, convTitle)}
       onRestore={() => restore(record.id)}
       onClose={() => close(record.id)}
+      {...(record.activity && { activity: record.activity })}
     />
   )
 }

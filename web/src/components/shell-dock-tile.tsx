@@ -6,7 +6,7 @@
  * ShellOverlay). Split out of the dock so the tray composition stays small.
  */
 import { ExternalLink, SquareTerminal, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useActivityFlash } from '@/hooks/use-activity-flash'
 import { useIsShellSubscribed, useShellActivityTs, useShellRoster } from '@/hooks/use-shells'
 import { closeShell, popoutShell, shellLightClass, shellTitle } from '@/lib/shell-commands'
 import { cn } from '@/lib/utils'
@@ -17,21 +17,7 @@ import { cn } from '@/lib/utils'
 function ShellActivityLight({ shellId }: { shellId: string }) {
   const ts = useShellActivityTs(shellId)
   const subscribed = useIsShellSubscribed(shellId)
-  const [flash, setFlash] = useState(false)
-
-  // Inline render-time adjustment: flash on immediately when ts changes (no stale
-  // unlit frame). The timeout to clear the flash stays in the effect.
-  const [prevTs, setPrevTs] = useState(ts)
-  if (ts !== undefined && ts !== prevTs) {
-    setPrevTs(ts)
-    setFlash(true)
-  }
-
-  useEffect(() => {
-    if (!flash) return
-    const t = setTimeout(() => setFlash(false), 600)
-    return () => clearTimeout(t)
-  }, [flash])
+  const flash = useActivityFlash(ts)
 
   return (
     <span

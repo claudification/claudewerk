@@ -15,7 +15,10 @@
 
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 
-export const VACUUM_MODAL = { id: 'vacuum', kind: 'vacuum', title: 'Vacuum' }
+/** notifyOnComplete: an apply runs for minutes and you are meant to walk away
+ *  from it -- a finish nobody is shown is the same as a finish that never
+ *  happened. */
+export const VACUUM_MODAL = { id: 'vacuum', kind: 'vacuum', title: 'Vacuum', notifyOnComplete: true }
 
 export function openVacuum(): void {
   useModalManagerStore.getState().open(VACUUM_MODAL, { type: 'global' })

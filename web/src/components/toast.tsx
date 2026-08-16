@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { haptic } from '@/lib/utils'
 import { ToastCard } from './toast-card'
 
@@ -11,6 +12,8 @@ export interface Toast {
   body: string
   conversationId?: string
   taskId?: string
+  /** Managed surface to restore when the toast is clicked. */
+  surfaceId?: string
   toastId?: string
   variant?: string
   /** When true, the toast does not auto-dismiss -- the user must close it. */
@@ -21,6 +24,13 @@ export interface Toast {
 
 let nextId = 0
 const AUTO_DISMISS_MS = 8000
+
+/** Where a click takes you, in priority order -- the first field the toast carries wins. */
+const CLICK_ROUTES: Array<[keyof Toast, (target: string) => void]> = [
+  ['taskId', taskId => window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId } }))],
+  ['conversationId', id => useConversationsStore.getState().selectConversation(id)],
+  ['surfaceId', id => useModalManagerStore.getState().restore(id)],
+]
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -50,8 +60,9 @@ export function ToastContainer() {
     }
 
     function handleToast(e: Event) {
-      const { title, meta, body, conversationId, taskId, toastId, variant, persistent, copyText } = (e as CustomEvent)
-        .detail
+      const { title, meta, body, conversationId, taskId, surfaceId, toastId, variant, persistent, copyText } = (
+        e as CustomEvent
+      ).detail
 
       setToasts(prev => {
         // Dedup by toastId: if an existing toast carries the same toastId,
@@ -65,7 +76,7 @@ export function ToastContainer() {
             else scheduleAutoDismiss(existing.id)
             return prev.map(t =>
               t.id === existing.id
-                ? { ...t, title, meta, body, conversationId, taskId, variant, persistent, copyText }
+                ? { ...t, title, meta, body, conversationId, taskId, surfaceId, variant, persistent, copyText }
                 : t,
             )
           }
@@ -73,7 +84,10 @@ export function ToastContainer() {
         const id = nextId++
         haptic('double')
         if (!persistent) scheduleAutoDismiss(id)
-        return [...prev, { id, title, meta, body, conversationId, taskId, toastId, variant, persistent, copyText }]
+        return [
+          ...prev,
+          { id, title, meta, body, conversationId, taskId, surfaceId, toastId, variant, persistent, copyText },
+        ]
       })
     }
 
@@ -98,10 +112,12 @@ export function ToastContainer() {
   }
 
   function handleClick(toast: Toast) {
-    if (toast.taskId) {
-      window.dispatchEvent(new CustomEvent('open-project-task', { detail: { taskId: toast.taskId } }))
-    } else if (toast.conversationId) {
-      useConversationsStore.getState().selectConversation(toast.conversationId)
+    for (const [key, go] of CLICK_ROUTES) {
+      const target = toast[key]
+      if (typeof target === 'string' && target) {
+        go(target)
+        break
+      }
     }
     dismiss(toast.id, toast.toastId)
   }
