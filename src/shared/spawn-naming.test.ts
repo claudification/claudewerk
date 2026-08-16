@@ -25,6 +25,69 @@ describe('sanitizeSessionName', () => {
   })
 })
 
+// Every input below is a REAL title off this project's board. Launching one of
+// these put its raw markdown straight into the conversation list.
+describe('sanitizing a card title into a conversation name', () => {
+  it('unwraps inline code but keeps the flag it wrapped', () => {
+    expect(sanitizeConversationName('add launch/run/revive support of `--agent <name>`')).toBe(
+      'add launch/run/revive support of --agent name',
+    )
+  })
+
+  it('drops a lonely fence delimiter', () => {
+    expect(sanitizeConversationName('ANVIL @code block (the ~~~ literal delimiter)')).toBe(
+      'ANVIL @code block (the literal delimiter)',
+    )
+  })
+
+  it('keeps the words inside emphasis', () => {
+    expect(sanitizeConversationName('**A**gent-**N**ative **V**isual')).toBe('Agent-Native Visual')
+    expect(sanitizeConversationName('the **spawn request shape** is duplicated')).toBe(
+      'the spawn request shape is duplicated',
+    )
+  })
+
+  it('drops a heading marker a pasted title carried along', () => {
+    expect(sanitizeConversationName('## Symptom: the EPICS view')).toBe('Symptom: the EPICS view')
+  })
+
+  it('keeps a colon, which is how half these cards are titled', () => {
+    expect(sanitizeConversationName('"EPIC: inline interaction language"')).toBe('EPIC: inline interaction language')
+    expect(sanitizeConversationName('"feat: agent direct-spawns headless sessions (no tmux)"')).toBe(
+      'feat: agent direct-spawns headless sessions (no tmux)',
+    )
+  })
+
+  it('keeps slashes, plus, at-signs and parens -- none of them are unsafe here', () => {
+    expect(sanitizeConversationName('Add CTRL+K command to reload the SW :-)')).toBe(
+      'Add CTRL+K command to reload the SW :-)',
+    )
+  })
+
+  it('unwraps a link to its text', () => {
+    expect(sanitizeConversationName('see [the plan](.claude/docs/plan-fabric.md)')).toBe('see the plan')
+  })
+
+  it('strips control characters and newlines from a pasted title', () => {
+    expect(sanitizeConversationName('first line\nsecondline')).toBe('first line second line')
+  })
+
+  it('leaves nothing dangling when truncation lands mid-punctuation', () => {
+    const out = sanitizeConversationName(`${'x'.repeat(58)} -- tail`)
+    expect(out.length).toBeLessThanOrEqual(60)
+    expect(out).toBe('x'.repeat(58))
+  })
+
+  it('survives a title that is nothing but syntax', () => {
+    expect(sanitizeConversationName('***')).toBe('')
+    expect(sanitizeConversationName('`` ``')).toBe('')
+  })
+
+  it('does not eat a lone asterisk or an underscore mid-word', () => {
+    expect(sanitizeConversationName('2 * 3 and snake_case')).toBe('2 * 3 and snake_case')
+  })
+})
+
 describe('deriveSessionName', () => {
   it('uses explicit name when provided', () => {
     expect(deriveConversationName({ name: 'my session' })).toBe('my session')
