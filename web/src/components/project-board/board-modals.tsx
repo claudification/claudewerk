@@ -70,6 +70,9 @@ export function BoardModals({
             setRunTask(task)
           }}
           onPromote={promote}
+          // The epic strip navigates by swapping the open editor's card, so
+          // walking child -> epic never costs you the dialog.
+          onOpenTask={setEditingTask}
           onClose={() => setEditingTask(null)}
         />
       )}

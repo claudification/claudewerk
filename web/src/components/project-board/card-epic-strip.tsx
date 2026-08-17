@@ -1,0 +1,140 @@
+/**
+ * The epic a card belongs to, at the TOP of the card editor.
+ *
+ * Opening a child card told you nothing about the larger thing it was part of.
+ * The board rail says it in 2px of colour and the editor dropped even that, so
+ * the one surface where you actually READ a card was the one surface that
+ * hid its parent. Worse, there was no way to get from a child to its epic
+ * without closing the editor and hunting the board.
+ *
+ * Self-contained on purpose: it reads the project cache itself rather than
+ * being handed an index. `useProject` is a shim over a PROJECT-KEYED cache, so
+ * this costs no extra fetch, and it means the strip works identically at both
+ * mount sites (the board, and the overlay beside the transcript) without either
+ * one threading an epic index through.
+ */
+
+import { buildEpicIndex } from '@shared/epic-cards'
+import { epicHue } from '@shared/epic-color'
+import { useMemo } from 'react'
+import { type ProjectTask, useProject } from '@/hooks/use-project'
+import { epicColorVars } from '@/lib/cards/epic-color-vars'
+import { cn, haptic } from '@/lib/utils'
+import { cardEpicRole } from './card-epic-role'
+import { EpicProgressBar } from './epic-progress'
+import { EpicMarkBadge } from './epic-mark-badge'
+
+function Shell({
+  epicId,
+  children,
+  onClick,
+  title,
+}: {
+  epicId: string | null
+  children: React.ReactNode
+  onClick?: () => void
+  title?: string
+}) {
+  const style = epicId ? epicColorVars(epicHue(epicId)) : undefined
+  const className = cn(
+    'w-full flex items-center gap-2.5 px-4 py-1.5 shrink-0 text-left border-b border-border/40 border-l-[3px]',
+    epicId ? 'border-l-[color:var(--epic-solid)] bg-[color:var(--epic-tint)]' : 'border-l-destructive/50',
+    onClick && 'hover:bg-[color:var(--epic-solid)]/15 transition-colors cursor-pointer',
+  )
+  if (!onClick) {
+    return (
+      <div style={style} className={className}>
+        {children}
+      </div>
+    )
+  }
+  return (
+    <button type="button" title={title} style={style} className={className} onClick={onClick}>
+      {children}
+    </button>
+  )
+}
+
+export function CardEpicStrip({
+  task,
+  conversationId,
+  onOpenTask,
+}: {
+  task: ProjectTask
+  conversationId: string
+  /** Swap the editor onto another card. Absent => the strip is not clickable. */
+  onOpenTask?: (task: ProjectTask) => void
+}) {
+  const { tasks, readTask } = useProject(conversationId)
+  const role = useMemo(() => cardEpicRole(task, buildEpicIndex(tasks)), [task, tasks])
+
+  if (role.kind === 'none') return null
+
+  async function open(slug: string) {
+    if (!onOpenTask) return
+    haptic('tap')
+    const full = await readTask(slug)
+    if (full) onOpenTask(full)
+  }
+
+  // This card IS an epic. Nowhere to navigate to -- it says what it is and how
+  // its children stand, and that is the whole job.
+  if (role.kind === 'epic') {
+    const r = role.rollup
+    return (
+      <Shell epicId={task.slug}>
+        <EpicMarkBadge epicId={task.slug} variant="solid" />
+        <span className="text-chrome font-mono text-[color:var(--epic-solid)]">EPIC</span>
+        <EpicProgressBar rollup={r} className="w-16 shrink-0" />
+        <span className="font-mono text-meta tabular-nums text-muted-foreground/85">
+          {r.done}/{r.total} done
+        </span>
+        <span className="ml-auto font-mono text-chrome text-muted-foreground/60">
+          {r.children.length === 0 ? 'no cards point at it yet' : `${r.children.length} cards`}
+        </span>
+      </Shell>
+    )
+  }
+
+  // A child pointing at an epic that is not on this board. Say so rather than
+  // drawing a confident chip for something that does not exist.
+  //
+  // The test is `!rollup.card`, NOT `!rollup`: `buildEpicIndex` still creates a
+  // rollup for an id that only children reference -- it just has `card: null`.
+  // Checking the rollup alone renders a real-looking strip titled with the raw
+  // id, which is exactly the "confident about nothing" failure this branch is
+  // here to avoid.
+  if (!role.rollup?.card) {
+    return (
+      <Shell epicId={null}>
+        <span aria-hidden className="text-meta text-destructive/70">
+          ◈
+        </span>
+        <span className="font-mono text-meta text-destructive/80">{role.epicId}</span>
+        <span className="font-mono text-chrome text-muted-foreground/60">is not on this board</span>
+      </Shell>
+    )
+  }
+
+  const r = role.rollup
+  return (
+    // The handler is only attached when there is somewhere to go. Passing an
+    // arrow unconditionally would render a <button> that looks clickable and
+    // does nothing, which is worse than plain text.
+    <Shell
+      epicId={role.epicId}
+      onClick={onOpenTask && (() => void open(role.epicId))}
+      title={`Open ${role.epicId}`}
+    >
+      <EpicMarkBadge epicId={role.epicId} variant="solid" />
+      <span className="font-mono text-read text-foreground truncate">{r.card?.title ?? role.epicId}</span>
+      <EpicProgressBar rollup={r} className="w-16 shrink-0" />
+      <span className="font-mono text-meta tabular-nums text-muted-foreground/85 shrink-0">
+        {r.done}/{r.total}
+      </span>
+      {onOpenTask && (
+        <span className="ml-auto font-mono text-chrome text-muted-foreground/55 shrink-0">open epic →</span>
+      )}
+    </Shell>
+  )
+}

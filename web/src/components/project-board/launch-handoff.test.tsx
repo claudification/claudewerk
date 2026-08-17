@@ -14,6 +14,13 @@ import { useState } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ProjectTask } from '@/hooks/use-project'
 
+// The editor now shows the card's epic at the top, which reads the project
+// cache. These tests are about the LAUNCH handoff, so the board is empty and
+// the strip renders nothing -- but the hook still has to exist.
+vi.mock('@/hooks/use-project', () => ({
+  useProject: () => ({ tasks: [], readTask: async () => null }),
+}))
+
 vi.mock('@/hooks/use-conversations', () => ({
   useConversationsStore: Object.assign(
     (sel: (s: unknown) => unknown) =>

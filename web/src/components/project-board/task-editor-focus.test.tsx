@@ -16,6 +16,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ProjectTask } from '@/hooks/use-project'
 
+// The editor now shows the card's epic at the top, which reads the project
+// cache. These tests are about FOCUS, so the board is empty and the strip
+// renders nothing -- but the hook still has to exist.
+vi.mock('@/hooks/use-project', () => ({
+  useProject: () => ({ tasks: [], readTask: async () => null }),
+}))
+
 vi.mock('@/hooks/use-conversations', () => ({
   useConversationsStore: Object.assign(
     (sel: (s: unknown) => unknown) => sel({ conversationsById: {}, selectedConversationId: 'conv-1' }),

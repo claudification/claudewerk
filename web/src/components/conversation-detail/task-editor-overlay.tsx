@@ -47,6 +47,9 @@ export function TaskEditorOverlay({
             onCloseEditor()
             onRunTask(task)
           }}
+          // Same navigation as on the board: the epic strip swaps the card the
+          // editor is showing rather than closing it.
+          onOpenTask={onSetTaskEditorTask}
           onClose={onCloseEditor}
         />
       )}
