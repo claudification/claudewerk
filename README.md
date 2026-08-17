@@ -57,6 +57,53 @@ in one place.
 
 This fixes that. All of it.
 
+## Claude Code keeps shipping this natively, and we love it
+
+A lot of what CLAUDEWERK does, Claude Code now does natively. We want to say
+that loudly and cheerfully, because it is the best possible outcome.
+
+| We built it as | Claude Code now ships | Since |
+|---|---|---|
+| **Sentinel** -- your own machine hosts the sessions the panel spawns | `claude self-hosted-runner` -- *"turns your own machines or containers into a place Claude Code web, mobile, and desktop sessions can run"* (Team and Enterprise plans) | 2.1.224 |
+| The control panel's conversation list | `claude agents` -- *"a single list of every Claude Code session -- running, blocked on you, or done"* | 2.1.139 |
+| Driving a live session from your phone | `/remote-control` | 2.1.79 |
+| `send_message` between conversations | cross-session `SendMessage`, with `ListAgents` to discover them | 2.1.224 |
+| Link approval before a peer conversation may talk to you | the `crossSessionInbound` setting -- messages into a bypassed-permissions session are held for your approval | 2.1.224 |
+| A worktree per conversation | the `--worktree` flag, surfaced in `claude agents` | 2.1.128+ |
+| Continuing a cloud session on your laptop | `/teleport` and `claude --teleport <session id>` | 2.1.223 |
+| Scheduled and fleet-scale runs | `CronCreate` and dynamic workflows | 2.1.85+ |
+
+Every one of those started here as a workaround for something that did not exist
+yet. Every one of them is better as a first-party feature: supported, documented,
+tested against the real CLI on every release, and available to everybody instead
+of the handful of people who would ever clone this repo.
+
+So the guidance is genuinely: **where upstream ships the thing, use upstream's
+thing.** We would much rather have been right about the shape than be the only
+place you can get it. Watching the official product grow into these ideas is the
+most flattering thing that could happen to a side project, and it means the parts
+we keep maintaining are the parts that still add something.
+
+**What CLAUDEWERK still does differently**, if you want the overlap spelled out:
+
+- **The broker is a server, not a tunnel.** It owns storage, auth, permissions,
+  routing and the conversation registry as a first-class component, with the
+  agent/broker boundary enforced by CI (`bun run lint:boundary`). Most remote-CLI
+  tools are transport; this one is a system of record.
+- **Multi-user from the ground up.** Per-endpoint permission checks, passkey-only
+  auth, and share viewers with role-gated channels and path redaction.
+- **History that outlives the session.** Transcript search, period recaps, and a
+  commit ledger that joins any git hash back to the conversation that produced it,
+  across months and across projects.
+- **More than one backend.** Alongside `claude` (PTY, headless and daemon
+  transports) it hosts `opencode`, ACP agents, and gateway backends behind one
+  registry.
+- **Self-hosted, no plan tier.** Your Docker volume, your machines, your keys.
+
+None of that is a competitive claim. It is just the part of the map that is still
+ours to draw, and we will happily hand any of it over the day it lands upstream
+too.
+
 ## Architecture
 
 ```mermaid
