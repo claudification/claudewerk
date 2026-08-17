@@ -1,5 +1,5 @@
 /**
- * THE MUTE -- "only the overseer may ask a human", enforced rather than asked for.
+ * THE MUTE -- "no worker BLOCKS on a human", enforced rather than asked for.
  *
  * `dontAsk` was already the unattended permission mode, and it is often mistaken
  * for this. It is not: `dontAsk` suppresses CC's own PERMISSION prompts. It does
@@ -7,7 +7,17 @@
  * question, which is exactly what a stuck implementer does. Left prompt-only, the
  * rule holds right up until the moment it matters.
  *
- * So the mute is a PreToolUse hook keyed on tool NAME, layered on the existing
+ * WHAT IS ACTUALLY BEING PREVENTED is an agent PARKING ITSELF on an answer that
+ * will not come -- not an agent emitting information. That distinction decides
+ * the list below, and it is why `notify` and `send_message` stay ALLOWED:
+ *   - `dialog` / `AskUserQuestion` BLOCK. The worker stops until a human replies,
+ *     and no human is watching an unattended run, so the turn is simply lost.
+ *   - `notify` is one-way and fire-and-forget. A worker that finds something
+ *     alarming should be able to say so; it does not stop working to say it.
+ *   - `send_message` is routing between conversations, not an interruption.
+ *     A worker telling the overseer something directly is the system working.
+ *
+ * The mute is a PreToolUse hook keyed on tool NAME, layered on the existing
  * deny-floor (which is keyed on bash command text). Same shape, same jq+grep
  * style, same "block" verdict -- and the blocked message names the escape hatch,
  * because an agent told only "no" invents an answer instead, which is worse than
@@ -18,19 +28,22 @@ import { type EpicRole, mayAskHuman } from './epic-run-types'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from './unattended-permissions'
 
 /**
- * Every route to a human, as an ERE alternation over tool names. Anchored: a
- * tool merely CONTAINING "notify" is not necessarily a way out of the box, and
- * over-blocking is how you break a worker for reasons nobody can diagnose.
+ * Every BLOCKING ask, as an ERE alternation over tool names. Anchored, because a
+ * tool merely containing one of these words is not necessarily a way out of the
+ * box, and over-blocking breaks a worker for reasons nobody can diagnose.
+ *
+ * Deliberately NOT here: `notify`, `send_message`. See the header.
  */
-const MUTED_TOOL_REGEX =
-  '^(AskUserQuestion|mcp__rclaude__(dialog|update_dialog|reopen_dialog|close_dialog|notify|send_message))$'
+const MUTED_TOOL_REGEX = '^(AskUserQuestion|mcp__rclaude__(dialog|update_dialog|reopen_dialog|close_dialog))$'
 
 /** The refusal an implementer sees, and the only place it learns what to do. */
 export const MUTE_REASON =
-  'BLOCKED: you are not the overseer, so you have no route to a human -- this is by design, not a bug. ' +
+  'BLOCKED: you may not park yourself waiting on a human -- nobody is watching this run, so the answer would ' +
+  'never come. This is by design, not a bug. ' +
   'If you are blocked on a DECISION: file a card tagged `needs-overseer` carrying the question (with your ' +
   "recommendation), add its id to your own card's `depends_on`, append a `## Blocked` section to your card, " +
   'set your card back to `open`, push what you have, and STOP. The overseer answers it. ' +
+  'If you only need to TELL someone something, notify and send_message still work -- they do not block. ' +
   'Do NOT retry this call and do NOT guess an answer.'
 
 /**

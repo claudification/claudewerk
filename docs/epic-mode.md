@@ -15,8 +15,8 @@ settings, not a different paragraph in the same prompt.
 
 | Seat | Does | May NOT |
 |---|---|---|
-| **Implementer** | One card, own worktree, own branch. Moves the card to `in-review` when done. | Talk to a human. Approve its own work. Touch another card or branch. |
-| **Verifier** | Re-runs the acceptance command, reads the diff, approves or bounces. | Talk to a human. See the implementer's conversation. |
+| **Implementer** | One card, own worktree, own branch. Moves the card to `in-review` when done. | Block on a human. Approve its own work. Touch another card or branch. |
+| **Verifier** | Re-runs the acceptance command, reads the diff, approves or bounces. | Block on a human. See the implementer's conversation. |
 | **Overseer** | Answers questions, merges verified work, replans the board, decides when to stop. Singleton. | Implement a card itself. Spawn anything. |
 
 The implementer/verifier split is not ceremony. Anthropic's harness work found
@@ -94,13 +94,20 @@ three of the four ways a card settles.
 
 ## 4. The blocked channel — an implementer asks the BOARD
 
-An implementer has no `dialog` and no `notify`. Not by convention: by a
-`PreToolUse` hook keyed on tool name (`epic-worker-permissions.ts`).
+The rule is **no worker BLOCKS on a human** — not "no worker speaks". That
+distinction decides the list, and it is enforced by a `PreToolUse` hook keyed on
+tool name (`epic-worker-permissions.ts`), not by prompt text.
+
+| Tool | Worker | Why |
+|---|---|---|
+| `dialog`, `AskUserQuestion` | **blocked** | They park the worker until a human replies. Nobody is watching an unattended run, so the turn is simply lost. |
+| `notify` | allowed | One-way. A worker that finds something alarming should be able to say so without stopping. |
+| `send_message` | allowed | Routing between conversations. A worker telling the overseer something directly is the system working. |
 
 > **`dontAsk` is not this.** `dontAsk` suppresses CC's own *permission* prompts.
 > It does nothing about an agent deciding to call `dialog` and ask Jonas a
-> question. Left prompt-only, "only the overseer asks" holds right up until the
-> moment it matters.
+> question. Left prompt-only, "no worker blocks on a human" holds right up until
+> the moment it matters.
 
 When blocked, the implementer:
 

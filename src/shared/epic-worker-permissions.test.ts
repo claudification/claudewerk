@@ -8,10 +8,16 @@ describe('isMutedTool', () => {
     'mcp__rclaude__update_dialog',
     'mcp__rclaude__reopen_dialog',
     'mcp__rclaude__close_dialog',
+  ])('%s BLOCKS on a human and is muted', tool => {
+    expect(isMutedTool(tool)).toBe(true)
+  })
+
+  // The line is "does it park the worker", not "does it reach a person".
+  test.each([
     'mcp__rclaude__notify',
     'mcp__rclaude__send_message',
-  ])('%s is a route to a human and is muted', tool => {
-    expect(isMutedTool(tool)).toBe(true)
+  ])('%s is one-way and stays ALLOWED -- telling is not asking', tool => {
+    expect(isMutedTool(tool)).toBe(false)
   })
 
   test.each([
@@ -27,8 +33,8 @@ describe('isMutedTool', () => {
   })
 
   test('the match is anchored -- a name merely containing a muted word is not blocked', () => {
-    expect(isMutedTool('mcp__other__notify_team')).toBe(false)
     expect(isMutedTool('my_dialog')).toBe(false)
+    expect(isMutedTool('mcp__other__dialog_helper')).toBe(false)
   })
 })
 
@@ -67,6 +73,11 @@ describe('muteHookCommand', () => {
     expect(cmd).toContain('block')
     expect(MUTE_REASON).toContain('needs-overseer')
     expect(MUTE_REASON).toContain('depends_on')
+  })
+
+  test('the refusal says which channels DO still work, so the worker stops guessing', () => {
+    expect(MUTE_REASON).toContain('notify')
+    expect(MUTE_REASON).toContain('send_message')
   })
 
   test('the reason carries no bare double quotes -- it round-trips through a shell echo', () => {

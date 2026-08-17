@@ -30,10 +30,14 @@ export interface ImplementerPromptCtx {
 }
 
 const NO_HUMAN = [
-  'THERE IS NO HUMAN IN THIS CONVERSATION. Nobody will read what you write here and nobody will answer you.',
-  'You have NO dialog tool, NO notify tool and NO way to message a person -- the calls are blocked at the hook',
-  'level, so attempting one burns a turn and changes nothing. This is not a restriction to work around; it is',
-  'the design. The OVERSEER talks to the human. You talk to the BOARD.',
+  'THERE IS NO HUMAN WATCHING THIS CONVERSATION. You may not park yourself waiting on an answer, because none',
+  'is coming: `dialog` and `AskUserQuestion` are blocked at the hook level, so attempting one burns a turn and',
+  'changes nothing. This is the design, not an obstacle to route around. The OVERSEER asks the human; you ask',
+  'the BOARD.',
+  '',
+  'You CAN still speak, you just cannot wait for a reply: `notify` and `send_message` are one-way and remain',
+  'available. Use them to REPORT something (an alarming discovery, a heads-up to the overseer) -- never as a',
+  'back door to ask a question and then stall.',
 ].join('\n')
 
 /**
