@@ -129,13 +129,23 @@ fi
 # This catches the case where a previous run's PID file was lost/stale but
 # the process is still alive -- two sentinels with the same identity cause
 # a reconnect death spiral (each connect kicks the other, forever).
+#
+# IDENTITY IS argv[0]+argv[1], NEVER A SUBSTRING (2026-08-17 incident).
+# This used to be `ps aux | grep "[b]un.*sentinel"`, matching the WHOLE command
+# line. An agent host runs `claude --print ... --append-system-prompt <KBs of
+# text>`, and that text said "sentinel bundle stale" and later
+# "fseventsd/sentinel" -- so "bundle" satisfied `[b]un` and the later mention
+# satisfied `.*sentinel`. Six live conversations were killed as orphaned
+# sentinels. Whether a conversation died came down to the word ORDER in its
+# system prompt, which is why it looked arbitrary.
+#
+# find-sentinel-pids.sh matches the runtime and the program and nothing else.
+# Covered by scripts/find-sentinel-pids.test.ts, which pins that exact line.
 ORPHAN_PIDS=()
-while IFS= read -r line; do
-  pid=$(echo "$line" | awk '{print $2}')
-  # Skip our own grep and the current shell
+while IFS= read -r pid; do
   [[ "$pid" == "$$" ]] && continue
   ORPHAN_PIDS+=("$pid")
-done < <(ps aux | grep "[b]un.*sentinel" | grep -v grep)
+done < <(ps -eo pid=,args= | "$(dirname "${BASH_SOURCE[0]}")/find-sentinel-pids.sh")
 
 if [[ ${#ORPHAN_PIDS[@]} -gt 0 ]]; then
   if [[ "$KILL_IF_RUNNING" == true ]]; then
