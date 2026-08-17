@@ -84,4 +84,19 @@ export interface CardKeySpec {
    * reporting one root cause is how a report gets ignored wholesale.
    */
   linkage?: true
+  /**
+   * Set when the key is still PARSED but must not be written any more, carrying
+   * the remedy verbatim from whichever table deprecated it. The registry claims
+   * to describe every key the board knows, and "you may not write this one" is
+   * part of knowing it -- a reader that has to consult `card-linkage.ts` to find
+   * that out is a reader that will not.
+   */
+  deprecated?: string
+  /**
+   * Set on an ALIAS, naming the key its values are actually stored as. Two
+   * entries whose `doc` reads identically (`blocked_by` and `depends_on` say the
+   * same fact) are indistinguishable to a reader without this -- and a reader
+   * who picks the alias by coin-flip is the drift aliases exist to prevent.
+   */
+  storedAs?: string
 }

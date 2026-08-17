@@ -99,6 +99,8 @@ function fromLinkageVerb(verb: LinkageVerb, ordered: boolean): CardKeySpec {
     doc: verb.meaning,
     owner: 'store',
     ...(ordered ? { ordered: true as const } : {}),
+    ...(verb.deprecated ? { deprecated: verb.deprecated } : {}),
+    ...(verb.storedAs ? { storedAs: verb.storedAs } : {}),
     linkage: true,
   }
 }

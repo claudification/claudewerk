@@ -60,7 +60,8 @@ import {
   taskAge,
 } from './project-board/board-constants'
 import { CardActions } from './project-board/card-actions'
-import { EpicBadge } from './project-board/epic-badge'
+import { CardBody } from './project-board/card-body'
+import { cardEpicRole, epicHueSource } from './project-board/card-epic-role'
 import { EpicsView } from './project-board/epics-view'
 import { InlineAdd } from './project-board/inline-add'
 import { RunTaskDialog } from './project-board/run-task-dialog'
@@ -103,7 +104,7 @@ function getTagFrequencies(tasks: ProjectTaskMeta[]): Array<{ tag: string; count
 function ProjectCard({
   task,
   view,
-  epicRollup,
+  epicIndex,
   onMove,
   onDelete,
   onArchive,
@@ -112,8 +113,9 @@ function ProjectCard({
 }: {
   task: ProjectTaskMeta
   view: BoardViewConfig
-  /** The parent epic's rollup, when this card belongs to one. */
-  epicRollup?: EpicRollup
+  /** The whole index: a card needs its PARENT's rollup when it is a child and
+   *  its OWN when it is an epic, and only the index can answer both. */
+  epicIndex: Map<string, EpicRollup>
   onMove: (id: string, to: TaskStatus) => void
   onDelete: (id: string) => void
   onArchive: (id: string) => void
@@ -129,9 +131,13 @@ function ProjectCard({
   // A card wears its epic's colour as a left rail, so LANES mode says which
   // epic a card belongs to without opening anything. Unparented cards get no
   // rail at all -- absence is the signal, a grey rail would just be noise.
+  // An EPIC wears its own colour, which is what puts it at the head of the
+  // group it owns instead of leaving it looking like an unrelated card.
+  const role = cardEpicRole(task, epicIndex)
+  const hueSource = epicHueSource(role, task)
   const style = {
     ...(transform ? { transform: `translate(${transform.x}px, ${transform.y}px)` } : {}),
-    ...(task.epic ? epicColorVars(epicHue(task.epic, epicRollup?.card?.color)) : {}),
+    ...(hueSource ? epicColorVars(epicHue(hueSource, epicIndex.get(hueSource)?.card?.color)) : {}),
   }
 
   return (
@@ -142,7 +148,10 @@ function ProjectCard({
       style={style}
       className={cn(
         'group bg-surface-inset border border-border/70 hover:border-primary/45 transition-colors cursor-pointer',
-        task.epic && 'border-l-2 border-l-[color:var(--epic-solid)]',
+        role.kind === 'child' && 'border-l-2 border-l-[color:var(--epic-solid)]',
+        // Thicker rail on the epic itself: same hue as its children, but it is
+        // the head of the group, not another member of it.
+        role.kind === 'epic' && 'border-l-4 border-l-[color:var(--epic-solid)]',
         DENSITY_PADDING[view.density],
         isDragging && 'opacity-50 z-50',
       )}
@@ -156,37 +165,7 @@ function ProjectCard({
       tabIndex={0}
     >
       <div className="flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <div
-            className={cn(
-              'font-mono text-foreground truncate flex items-center gap-1.5',
-              TITLE_SIZE_CLASS[view.titleSize],
-            )}
-          >
-            <span className="truncate">{task.title}</span>
-            {task.created && (
-              <span className="text-[9px] text-muted-foreground/65 shrink-0">{taskAge(task.created)}</span>
-            )}
-          </div>
-          {task.bodyPreview && view.bodyLines > 0 && (
-            <div className={cn('text-[10px] text-muted-foreground mt-0.5', CLAMP_CLASS[view.bodyLines])}>
-              {task.bodyPreview}
-            </div>
-          )}
-          <div className="flex items-center gap-1 mt-1 flex-wrap">
-            {task.epic && <EpicBadge epicId={task.epic} rollup={epicRollup} onOpen={onOpenSlug} />}
-            {task.priority && (
-              <span className={cn('text-[9px] px-1 py-0.5 border font-mono', PRIORITY_COLORS[task.priority])}>
-                {task.priority}
-              </span>
-            )}
-            {task.tags.map(tag => (
-              <span key={tag} className={cn('text-[9px] px-1 py-0.5 border font-mono', tagColor(tag))}>
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
+        <CardBody task={task} view={view} role={role} onOpenSlug={onOpenSlug} />
         <button
           type="button"
           className="shrink-0 p-0.5 text-muted-foreground/60 hover:text-foreground transition-colors"
@@ -508,7 +487,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         key={task.slug}
         task={task}
         view={view}
-        epicRollup={task.epic ? epicIndex.get(task.epic) : undefined}
+        epicIndex={epicIndex}
         onMove={handleMove}
         onDelete={handleDelete}
         onArchive={handleArchive}

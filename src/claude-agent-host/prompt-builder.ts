@@ -2,7 +2,13 @@
  * System Prompt Builder
  * Generates the system prompt additions for rclaude-specific behavior
  * (attached files, notifications, MCP tools, channel, headless instructions).
+ *
+ * The board's frontmatter is NOT restated here -- it is rendered from the card
+ * schema registry (card-schema-prompt.ts). A hand-copied key list is what let
+ * `epic:` go undocumented long enough for an agent to build a whole epic wrong.
  */
+
+import { renderCardFrontmatterPrompt } from '../shared/card-schema-prompt'
 
 export interface PromptOptions {
   channelEnabled: boolean
@@ -48,7 +54,7 @@ export function buildSystemPrompt(opts: PromptOptions): string {
     'There are NO lane folders and no symlinks -- `cards/` is the only place a card lives. To find cards in a lane, filter on `status:`.',
     'To change status: `mcp__rclaude__project_set_status` with id (filename without .md) and target status.',
     'To edit: read and write the .md file directly (update frontmatter + body).',
-    'Frontmatter: title, priority (high/medium/low), tags [...], refs [...], created (ISO).',
+    ...renderCardFrontmatterPrompt(),
     'Changes are auto-pushed to the dashboard project board via file watcher.',
     'ALWAYS link a card you mention, never write a bare path: `[card-id](.rclaude/project/cards/{card-id}.md)`.',
     'Point at the .md file (not the folder) so the user can click straight through to it.',
