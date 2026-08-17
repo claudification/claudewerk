@@ -17,6 +17,7 @@ import { registerDebugControlHandlers } from './debug-control'
 import { registerDialogHandlers } from './dialog'
 import { registerDialogLiveHandlers } from './dialog-live'
 import { registerDispatchHandlers } from './dispatch-actions'
+import { registerEpicHandlers } from './epic'
 import { registerGatewayHandlers } from './gateway'
 import { registerInterConversationHandlers } from './inter-conversation'
 import { registerJsonStreamHandlers } from './json-stream'
@@ -70,6 +71,7 @@ export function registerAllHandlers(): void {
   registerNightshiftHandlers()
   registerNightshiftWatchdogHandlers()
   registerQuestHandlers()
+  registerEpicHandlers()
   registerRclaudeConfigHandlers()
   registerRecapHandlers()
   registerConversationLifecycleHandlers()

@@ -4482,6 +4482,21 @@ export interface EpicLogAppendInput {
   cardId?: string
 }
 
+/** Dashboard / agent-leg -> Broker: one epic substrate op. */
+export interface EpicRequest {
+  type: 'epic_request'
+  requestId: string
+  /** Canonical project URI; the broker resolves it to projectRoot + sentinel. */
+  project: string
+  op: EpicOpKind
+  epicId: string
+  start?: EpicStartInput
+  patch?: EpicRunPatchInput
+  logAppend?: EpicLogAppendInput
+  lease?: EpicLeaseInput
+  reason?: string
+}
+
 /** Scalars a `patch` may move. Deliberately narrow: everything else about a run
  *  is derived from the board, and a writable copy would only drift from it. */
 export interface EpicRunPatchInput {
@@ -4526,6 +4541,24 @@ export interface EpicResult {
 /** The run as it crosses the wire: run.md frontmatter + its digest body. An
  *  ALIAS, not a copy -- the store and the wire must not be able to disagree. */
 export type EpicRunSnapshot = EpicRunFull
+
+/**
+ * Broker -> Dashboard broadcast (permission-scoped by project URI): one epic
+ * beat, fired after a write op persists. Viewers re-fetch rather than
+ * reconstructing state from the beat (EVERYTHING IS A MESSAGE).
+ *
+ * `detail` is the one human-readable line -- what an andon row renders without
+ * a re-fetch, and what makes a stalled run explicable from the beat stream.
+ */
+export interface EpicEvent {
+  type: 'epic_event'
+  project: string
+  event: 'started' | 'generation' | 'released' | 'paused' | 'aborted' | 'logged'
+  epicId: string
+  gen?: number
+  status?: EpicRunStatus
+  detail?: string
+}
 
 // ===========================================================================
 // NIGHTSHIFT WATCHDOG -- the deterministic control tier (plan-nightshift.md §2.4)

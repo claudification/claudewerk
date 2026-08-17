@@ -28,6 +28,7 @@ import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   BrokerSentinelMessage,
   CcVersionChanged,
+  EpicOp,
   FetchArtifact,
   ForkCcSession,
   ForkCcSessionResult,
@@ -85,6 +86,7 @@ import {
 } from './daemon-dispatch'
 import { writeDaemonMcpConfig } from './daemon-mcp-config'
 import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } from './daemon-roster'
+import { handleEpicOp } from './epic-handlers'
 import { expandPath } from './expand-path'
 import { forkCcSession } from './fork-cc-session'
 import { runGitFabric } from './git-fabric'
@@ -4217,6 +4219,13 @@ function connect(
           const m = msg as QuestOp
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleQuestOp(root, m, Date.now())))
+          break
+        }
+
+        case 'epic_op': {
+          const m = msg as EpicOp
+          const root = expandPath(m.projectRoot, spawnRoot)
+          ws.send(JSON.stringify(handleEpicOp(root, m, Date.now())))
           break
         }
 
