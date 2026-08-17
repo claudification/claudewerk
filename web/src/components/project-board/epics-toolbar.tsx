@@ -1,9 +1,10 @@
 /**
- * The EPICS view's own controls, and the count line that keeps it honest.
+ * The EPICS view's own controls.
  *
- * The summary is not decoration. Mid-adoption most of a board belongs to no
- * epic, and a view that opened on three tidy swimlanes read as "this is the
- * work" when it was 5% of it.
+ * The count line that used to live here is gone -- the allocation strip above
+ * says the same thing to scale, and saying it twice in two formats was how the
+ * old header ended up reading "7 epics · 0 parented · 402 unparented" like an
+ * error message. What is left is sorting and one filter.
  */
 
 import { cn, haptic } from '@/lib/utils'
@@ -20,31 +21,25 @@ const EPIC_SORTS: Array<{ key: EpicSort; label: string; title: string }> = [
 export interface EpicsToolbarProps {
   epicCount: number
   parentedCount: number
-  unparentedCount: number
+  /** LIVE unparented only. The archive is not a backlog. */
+  looseLiveCount: number
   sort: EpicSort
   onSort: (sort: EpicSort) => void
   showComplete: boolean
   onShowComplete: (value: boolean) => void
-  allExpanded: boolean
-  onToggleAll: () => void
 }
 
 export function EpicsToolbar(props: EpicsToolbarProps) {
-  const { epicCount, parentedCount, unparentedCount } = props
-
   return (
     <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-1.5 border-b border-border/60 shrink-0">
-      <span className="text-[10px] font-mono text-muted-foreground/70">
-        <span className="text-foreground/80">{epicCount}</span> epics ·{' '}
-        <span className="text-foreground/80">{parentedCount}</span> parented ·{' '}
-        <span className={cn(unparentedCount > parentedCount ? 'text-event-prompt/80' : 'text-foreground/80')}>
-          {unparentedCount}
-        </span>{' '}
-        unparented
+      <span className="text-meta font-mono text-muted-foreground/70">
+        <span className="text-foreground tabular-nums">{props.epicCount}</span> epics ·{' '}
+        <span className="text-foreground tabular-nums">{props.parentedCount}</span> parented ·{' '}
+        <span className="text-foreground tabular-nums">{props.looseLiveCount}</span> loose &amp; live
       </span>
 
       <div className="flex items-center gap-1 ml-auto">
-        <span className="text-[9px] font-mono text-muted-foreground/60 tracking-wider">SORT</span>
+        <span className="text-chrome font-mono text-muted-foreground/60">SORT</span>
         {EPIC_SORTS.map(s => (
           <button
             key={s.key}
@@ -55,7 +50,7 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
               props.onSort(s.key)
             }}
             className={cn(
-              'px-1.5 py-0.5 text-[10px] font-mono transition-colors',
+              'px-1.5 py-0.5 text-meta font-mono transition-colors',
               props.sort === s.key ? 'bg-accent/20 text-accent' : 'text-muted-foreground/80 hover:text-foreground',
             )}
           >
@@ -64,36 +59,21 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
         ))}
       </div>
 
-      <ToolbarToggle
-        active={props.showComplete}
-        label="show finished"
-        onClick={() => props.onShowComplete(!props.showComplete)}
-      />
-      <ToolbarToggle
-        active={props.allExpanded}
-        label={props.allExpanded ? 'collapse all' : 'expand all'}
-        onClick={props.onToggleAll}
-      />
+      <button
+        type="button"
+        onClick={() => {
+          haptic('tap')
+          props.onShowComplete(!props.showComplete)
+        }}
+        className={cn(
+          'px-1.5 py-0.5 text-meta font-mono border transition-colors',
+          props.showComplete
+            ? 'border-accent/40 text-accent bg-accent/10'
+            : 'border-border/60 text-muted-foreground/80 hover:text-foreground',
+        )}
+      >
+        show finished
+      </button>
     </div>
-  )
-}
-
-function ToolbarToggle({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        haptic('tap')
-        onClick()
-      }}
-      className={cn(
-        'px-1.5 py-0.5 text-[10px] font-mono border transition-colors',
-        active
-          ? 'border-accent/40 text-accent bg-accent/10'
-          : 'border-border/60 text-muted-foreground/80 hover:text-foreground',
-      )}
-    >
-      {label}
-    </button>
   )
 }

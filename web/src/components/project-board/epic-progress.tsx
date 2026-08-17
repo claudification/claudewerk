@@ -59,23 +59,7 @@ export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   )
 }
 
-const COUNTS = [
-  { key: 'done', glyph: '●', label: 'done', className: 'text-active' },
-  { key: 'inProgress', glyph: '◐', label: 'moving', className: 'text-accent' },
-  { key: 'notStarted', glyph: '○', label: 'open', className: 'text-muted-foreground/75' },
-  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/60' },
-] as const
-
-export function EpicBucketCounts({ rollup }: { rollup: EpicRollup }) {
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {COUNTS.map(c =>
-        rollup[c.key] === 0 && c.key === 'dropped' ? null : (
-          <span key={c.key} className={cn('text-chrome font-mono tabular-nums', c.className)}>
-            {c.glyph} {rollup[c.key]} {c.label}
-          </span>
-        ),
-      )}
-    </div>
-  )
-}
+// `EpicBucketCounts` lived here and died with the swimlane that was its only
+// caller. The detail pane states the same four numbers on the `loud` tier
+// instead of as a row of 9px glyph-and-word pairs -- four counts whispered in
+// a line was exactly the "everything is the same size" problem.

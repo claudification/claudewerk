@@ -67,6 +67,17 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     [view, epicIndex, actions],
   )
 
+  /**
+   * TRIAGE hands the loose pile to the board, grouped by tag. The triage tool
+   * IS the board -- an index row cannot move 138 cards, and building a second
+   * bulk-edit surface to do it would be the mode toggle all over again.
+   */
+  function triage() {
+    filters.setSelectedEpic(null)
+    updateView('groupBy', 'tag')
+    updateView('view', 'board')
+  }
+
   const archivedTasks = filters.filtered.filter(n => n.status === 'archived')
   const activeTasks = filters.filtered.filter(n => n.status !== 'archived')
   const onBoard = view.view === 'board'
@@ -116,6 +127,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
           onOpenCard={actions.openCardBySlug}
           onWorkOnEpic={actions.workOnEpic}
           onEpicMode={actions.epicMode}
+          onTriage={triage}
         />
       )}
 
