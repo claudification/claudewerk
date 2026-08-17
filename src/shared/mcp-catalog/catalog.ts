@@ -44,6 +44,7 @@ export interface CatalogTool {
     | 'nightshift'
     | 'schedule'
     | 'quest'
+    | 'epic'
     | 'dispatch'
     | 'canvas'
   /** Sites where this tool is MEANT to be exposed. */
@@ -118,6 +119,12 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
   { name: 'pause_quest', group: 'quest', sites: HOST_ONLY, summary: 'Pause a quest so nothing new dispatches (§13)' },
   { name: 'get_quest', group: 'quest', sites: HOST_ONLY, summary: 'Read one quest manifest' },
   { name: 'quest_status', group: 'quest', sites: HOST_ONLY, summary: 'Computed quest-complete predicate (§4c)' },
+  {
+    name: 'epic_run',
+    group: 'epic',
+    sites: HOST_ONLY,
+    summary: 'Start / inspect / pause / abort an epic run (the engine plans AND executes the epic)',
+  },
   { name: 'list_quests', group: 'quest', sites: HOST_ONLY, summary: 'List quests for a project' },
 
   // ── conversation control ───────────────────────────────────────────

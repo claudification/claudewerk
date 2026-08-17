@@ -14,10 +14,12 @@ import { buildEpicIndex, type EpicRollup, splitUnparented } from '@shared/epic-c
 import type { TaskMode } from '@shared/task-modes'
 import { useMemo, useState } from 'react'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
+import type { EpicRunState } from '@/lib/epic-run-api'
 import { cn } from '@/lib/utils'
 import { AllocationStrip } from './allocation-strip'
 import { EpicDetailPane } from './epic-detail-pane'
 import { EpicIndex } from './epic-index'
+import { EpicRunDialog } from './epic-run-dialog'
 import { sortEpics } from './epic-sorts'
 import { type EpicSort, EpicsToolbar } from './epics-toolbar'
 
@@ -50,6 +52,13 @@ export function EpicsView({
   onTriage: () => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
+  // The RUN dialog lives here rather than in the button so it survives the
+  // button unmounting when the pane re-renders mid-arm.
+  const [runDialog, setRunDialog] = useState<{
+    epicId: string
+    run: EpicRunState | null
+    project: string | null
+  } | null>(null)
   const [sort, setSort] = useState<EpicSort>('urgency')
   const [showComplete, setShowComplete] = useState(true)
 
@@ -121,6 +130,7 @@ export function EpicsView({
               onOpenCard={onOpenCard}
               onWorkOnEpic={onWorkOnEpic}
               onEpicMode={onEpicMode}
+              onRunEpic={(epicId, run, project) => setRunDialog({ epicId, run, project })}
               onBack={() => setSelected(null)}
             />
           ) : (
@@ -132,6 +142,16 @@ export function EpicsView({
           )}
         </div>
       </div>
+
+      {runDialog && (
+        <EpicRunDialog
+          epicId={runDialog.epicId}
+          project={runDialog.project}
+          existing={runDialog.run}
+          onClose={() => setRunDialog(null)}
+          onStarted={() => setRunDialog(null)}
+        />
+      )}
     </div>
   )
 }

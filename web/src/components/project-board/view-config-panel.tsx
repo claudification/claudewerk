@@ -80,15 +80,7 @@ function SliderRow({
   )
 }
 
-export function ViewConfigPanel({
-  view,
-  update,
-  reset,
-}: {
-  view: BoardViewConfig
-  update: Update
-  reset: () => void
-}) {
+export function ViewConfigPanel({ view, update, reset }: { view: BoardViewConfig; update: Update; reset: () => void }) {
   return (
     <div className="border border-border/70 bg-surface-inset/60 px-3 py-2 space-y-2">
       <div className="flex items-center justify-between">

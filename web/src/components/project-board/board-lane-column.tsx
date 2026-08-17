@@ -74,7 +74,9 @@ export function BoardLaneColumn({
       <div className="flex-1 overflow-y-auto pb-4">
         {groups.map(group => (
           <div key={group.key || '__ungrouped__'}>
-            {showBars && <BoardGroupBar group={group} rollup={group.epicId ? epicIndex.get(group.epicId) : undefined} />}
+            {showBars && (
+              <BoardGroupBar group={group} rollup={group.epicId ? epicIndex.get(group.epicId) : undefined} />
+            )}
             {group.cards.map(renderCard)}
           </div>
         ))}

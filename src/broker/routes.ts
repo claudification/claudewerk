@@ -28,6 +28,7 @@ import { createChatApiRouter } from './routes/chat-api'
 import { createCommitsRouter } from './routes/commits'
 import { createConversationsRouter } from './routes/conversations'
 import { createDeskDebugRouter } from './routes/desk-debug'
+import { createEpicRouter } from './routes/epic'
 import { createForkRouter } from './routes/fork'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
@@ -304,6 +305,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createCanvasesRouter(conversationStore, helpers))
   app.route('/', createNightshiftRouter(conversationStore, helpers))
   app.route('/', createQuestRouter(conversationStore, helpers))
+  app.route('/', createEpicRouter(conversationStore, helpers))
   app.route('/', createSpawnRouter(conversationStore, helpers))
   app.route('/', createForkRouter(conversationStore, helpers))
   app.route('/', createChatApiRouter(conversationStore, store.kv, helpers))

@@ -12,7 +12,7 @@
  * in the chrome; everything else that used to wear gold gave it up.
  */
 
-import { type BoardView, BOARD_VIEWS } from '@/hooks/use-board-view-config'
+import { BOARD_VIEWS, type BoardView } from '@/hooks/use-board-view-config'
 import { cn, haptic } from '@/lib/utils'
 
 const TAB_LABEL: Record<BoardView, string> = { board: 'Board', epics: 'Epics' }

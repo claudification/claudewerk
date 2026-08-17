@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { type GroupBy, GROUP_BY_OPTIONS } from '@/components/project-board/board-grouping'
+import { GROUP_BY_OPTIONS, type GroupBy } from '@/components/project-board/board-grouping'
 
 type Density = 'compact' | 'normal' | 'roomy'
 type TitleSize = 'xs' | 'sm'

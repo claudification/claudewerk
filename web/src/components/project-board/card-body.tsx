@@ -33,6 +33,7 @@ const CARD_PRIORITY: Record<string, string> = {
 }
 
 const PRIORITY_MARK: Record<string, string> = { high: 'HI', medium: 'md', low: 'lo' }
+
 import type { CardEpicRole } from './card-epic-role'
 import { EpicBadge } from './epic-badge'
 import { EpicCardProgress, EpicSelfChip } from './epic-card-marker'

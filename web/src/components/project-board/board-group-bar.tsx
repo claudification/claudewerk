@@ -9,8 +9,8 @@
  * lane rather than scrolling out from over its own cards.
  */
 
-import { epicHue } from '@shared/epic-color'
 import type { EpicRollup } from '@shared/epic-cards'
+import { epicHue } from '@shared/epic-color'
 import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { cn } from '@/lib/utils'
 import type { CardGroup } from './board-grouping'

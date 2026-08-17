@@ -124,11 +124,7 @@ export function EpicIndexRow({
       </span>
 
       <span className="col-start-2 col-span-3 font-mono text-meta truncate -mt-0.5">
-        {empty ? (
-          <span className="text-muted-foreground/70">nothing points at it yet</span>
-        ) : (
-          subtitle(rollup)
-        )}
+        {empty ? <span className="text-muted-foreground/70">nothing points at it yet</span> : subtitle(rollup)}
       </span>
     </button>
   )

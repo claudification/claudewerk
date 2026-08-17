@@ -15,7 +15,7 @@ import { epicHue } from '@shared/epic-color'
 import type { TaskMode } from '@shared/task-modes'
 import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { EpicChildTable } from './epic-child-table'
-import { EpicDetailHeader } from './epic-detail-header'
+import { EpicDetailHeader, type EpicRunHandler } from './epic-detail-header'
 
 function excerpt(text: string | undefined, limit = 320): string {
   if (!text) return ''
@@ -58,12 +58,14 @@ export function EpicDetailPane({
   onOpenCard,
   onWorkOnEpic,
   onEpicMode,
+  onRunEpic,
   onBack,
 }: {
   rollup: EpicRollup
   onOpenCard: (slug: string) => void
   onWorkOnEpic: (epicId: string) => void
   onEpicMode: (epicId: string, mode: TaskMode) => void
+  onRunEpic: EpicRunHandler
   /** Mobile only: the index is a separate screen there, so the pane needs a way home. */
   onBack?: () => void
 }) {
@@ -77,6 +79,7 @@ export function EpicDetailPane({
         onOpenCard={onOpenCard}
         onWorkOnEpic={onWorkOnEpic}
         onEpicMode={onEpicMode}
+        onRunEpic={onRunEpic}
         onBack={onBack}
       />
 

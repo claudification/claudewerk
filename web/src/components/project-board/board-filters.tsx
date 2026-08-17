@@ -10,7 +10,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn, haptic } from '@/lib/utils'
 import { CHIP_IDLE, PRIORITY_COLORS, tagColor } from './board-constants'
-import { type GroupBy, GROUP_BY_OPTIONS } from './board-grouping'
+import { GROUP_BY_OPTIONS, type GroupBy } from './board-grouping'
 
 const GROUP_LABEL: Record<GroupBy, string> = {
   none: 'nothing',

@@ -7,9 +7,9 @@
  * lanes, grouping or filters.
  */
 
-import type { ProjectTask, TaskStatus } from '@/hooks/use-project'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
+import type { ProjectTask, TaskStatus } from '@/hooks/use-project'
 import { haptic } from '@/lib/utils'
 import { RunTaskDialog } from './run-task-dialog'
 import { TaskEditor } from './task-editor'

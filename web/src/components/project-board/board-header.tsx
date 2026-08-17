@@ -9,8 +9,8 @@
 
 import { ListChecks, Search, Sliders } from 'lucide-react'
 import type { RefObject } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
 import type { BoardView, BoardViewConfig } from '@/hooks/use-board-view-config'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { extractProjectLabel } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
 import { BoardFilters, type BoardFiltersProps } from './board-filters'
@@ -49,7 +49,10 @@ function IconToggle({
     <button
       type="button"
       title={title}
-      className={cn('p-0.5 transition-colors', active ? 'text-accent' : 'text-muted-foreground/60 hover:text-foreground')}
+      className={cn(
+        'p-0.5 transition-colors',
+        active ? 'text-accent' : 'text-muted-foreground/60 hover:text-foreground',
+      )}
       onClick={() => {
         haptic('tap')
         onClick()

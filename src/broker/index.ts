@@ -53,6 +53,7 @@ import { initUserNotes } from './desk/notes'
 import { initOrbMemory } from './desk/orb-memory'
 import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
+import { buildSweepDeps, startEpicSweep } from './epic-sweep-loop'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
 import { createGatewayRegistry } from './gateway-registry'
 import { initGlobalSettings } from './global-settings'
@@ -1389,6 +1390,13 @@ async function main() {
   // the hint catalog, bounded retries, hard attempt cap), and the mechanical
   // NOTIFY rule on the terminal-error transition. No LLM in the alarm path.
   startNightshiftGuardians(conversationStore)
+
+  // EPIC MODE: the 45s beat. Groups epic-tagged conversations, asks the standing
+  // question ("is there a settled card the baton has not acknowledged?"), and
+  // performs whatever `planBeat` decides -- wake the overseer, dispatch, verify,
+  // park or complete. Inert until an epic run is armed: with no epic-tagged
+  // conversations the sweep returns immediately.
+  startEpicSweep(buildSweepDeps(conversationStore))
 
   // Print status periodically
   if (verbose) {

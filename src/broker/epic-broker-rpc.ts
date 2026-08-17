@@ -1,0 +1,87 @@
+/**
+ * Broker-internal epic RPCs. The executor needs the run, the baton and the board
+ * -- all sentinel-owned files -- plus the lease CAS. Thin over
+ * `broker-sentinel-rpc.ts`; only the epic-shaped helpers live here.
+ */
+
+import type { EpicLogEntry } from '../shared/epic-run-types'
+import type { ProjectTaskMeta } from '../shared/project-task-types'
+import type {
+  EpicLeaseInput,
+  EpicLogAppendInput,
+  EpicOpKind,
+  EpicResult,
+  EpicRunPatchInput,
+  EpicRunSnapshot,
+  ProjectBoardResult,
+} from '../shared/protocol'
+import { type SentinelRpcDeps, sendSentinelOp } from './broker-sentinel-rpc'
+
+const EPIC_SPEC = {
+  opType: 'epic_op',
+  idPrefix: 'epic',
+  fail: (requestId: string, error: string): EpicResult => ({
+    type: 'epic_result',
+    requestId,
+    op: 'get' as EpicOpKind,
+    ok: false,
+    error,
+  }),
+}
+
+const BOARD_SPEC = {
+  opType: 'project_board_op',
+  idPrefix: 'epic-board',
+  fail: (requestId: string, error: string): ProjectBoardResult => ({
+    type: 'project_board_result',
+    requestId,
+    op: 'list',
+    ok: false,
+    error,
+  }),
+}
+
+export interface EpicOpInput {
+  op: EpicOpKind
+  epicId: string
+  start?: Record<string, unknown>
+  patch?: EpicRunPatchInput
+  logAppend?: EpicLogAppendInput
+  lease?: EpicLeaseInput
+  reason?: string
+}
+
+export function sendEpicOp(deps: SentinelRpcDeps, project: string, op: EpicOpInput): Promise<EpicResult> {
+  return sendSentinelOp(EPIC_SPEC, deps, project, op)
+}
+
+/** The board, for `planEpic`. A read the epic engine cannot answer for itself:
+ *  children declare their parent, so the whole card list is the cheapest question. */
+export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): Promise<ProjectTaskMeta[]> {
+  const res = await sendSentinelOp<ProjectBoardResult>(BOARD_SPEC, deps, project, { op: 'list' })
+  return res.ok && res.tasks ? res.tasks : []
+}
+
+export interface EpicRunView {
+  run: EpicRunSnapshot | null
+  baton: EpicLogEntry[]
+  error?: string
+}
+
+/** Run + baton in one call -- what a beat reads before deciding anything. */
+export async function fetchEpicRun(deps: SentinelRpcDeps, project: string, epicId: string): Promise<EpicRunView> {
+  const res = await sendEpicOp(deps, project, { op: 'get', epicId })
+  if (!res.ok) return { run: null, baton: [], error: res.error ?? 'epic get failed' }
+  return { run: res.run ?? null, baton: res.baton ?? [] }
+}
+
+/** Append one baton entry. Failures are logged by the caller, never thrown -- a
+ *  baton write that fails must not take the sweep down with it. */
+export function appendBaton(
+  deps: SentinelRpcDeps,
+  project: string,
+  epicId: string,
+  logAppend: EpicLogAppendInput,
+): Promise<EpicResult> {
+  return sendEpicOp(deps, project, { op: 'log_append', epicId, logAppend })
+}
