@@ -13,7 +13,8 @@ import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type BeatDeps, runEpicBeat } from './epic-executor'
-import { groupEpicConversations, type IsLive } from './epic-sweep'
+import { listArmedEpics } from './epic-registry'
+import { type EpicGroup, groupEpicConversations, type IsLive } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -89,7 +90,28 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
 
 let sweeping = false
 
-/** One tick: group every epic-tagged conversation, run a beat per epic. */
+/**
+ * Every epic worth a beat this tick: the ones with conversations, PLUS the ones
+ * merely armed.
+ *
+ * The second half is not an optimisation. Without it an armed run has no
+ * conversations, so nothing sees it, so it never dispatches, so it never gets
+ * conversations -- the engine could only find epics that were already running.
+ * The first live smoke found exactly that.
+ */
+function epicsToBeat(deps: SweepDeps): EpicGroup[] {
+  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
+  for (const { project, epicId } of listArmedEpics()) {
+    // A conversation-derived group is strictly better -- it knows what is in
+    // flight -- so an armed entry only fills a gap, never overwrites one.
+    if (!groups.has(epicId)) {
+      groups.set(epicId, { epicId, project, inFlight: [], overseerAlive: false, settled: [], maxGenSeen: 0 })
+    }
+  }
+  return [...groups.values()]
+}
+
+/** One tick: a beat for every epic with conversations or an armed run. */
 export async function sweepEpics(deps: SweepDeps): Promise<void> {
   if (sweeping) {
     deps.log('[epic-sweep] previous tick still running; skipping')
@@ -97,9 +119,9 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
   }
   sweeping = true
   try {
-    const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
-    if (groups.size === 0) return
-    for (const group of groups.values()) {
+    const groups = epicsToBeat(deps)
+    if (groups.length === 0) return
+    for (const group of groups) {
       // One epic's failure must never stop the others: a project whose sentinel
       // is down would otherwise freeze every other epic on the box.
       await runEpicBeat(deps, group).catch(err => {

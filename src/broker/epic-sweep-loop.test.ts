@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation, EpicResult } from '../shared/protocol'
 import { configureEpicIo, resetEpicIo } from './epic-executor'
+import { noteArmedEpic, resetArmedEpics } from './epic-registry'
 import { resetSweepGuard, type SweepDeps, sweepEpics } from './epic-sweep-loop'
 
 let beats: string[]
@@ -38,6 +39,7 @@ beforeEach(() => {
   convs = []
   release = null
   resetSweepGuard()
+  resetArmedEpics()
   configureEpicIo({
     fetchEpicRun: async (_d, project) => {
       beats.push(project)
@@ -53,6 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   resetEpicIo()
   resetSweepGuard()
+  resetArmedEpics()
 })
 
 describe('sweepEpics', () => {
@@ -124,5 +127,42 @@ describe('sweepEpics', () => {
     })
     await sweepEpics(deps())
     expect(beats).toHaveLength(1)
+  })
+})
+
+// THE BUG THE FIRST LIVE SMOKE FOUND (2026-08-18): the sweep discovered epics
+// only from conversations, so a freshly armed run -- which has none -- was
+// invisible, never dispatched, and therefore never got any. The engine could
+// only find epics that were already running.
+describe('an ARMED epic with no conversations yet', () => {
+  test('still gets a beat', async () => {
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    await sweepEpics(deps())
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('is beaten with an empty group -- nothing in flight, no overseer', async () => {
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    await sweepEpics(deps())
+    expect(beats).toHaveLength(1)
+  })
+
+  test('does NOT overwrite the conversation-derived group, which knows more', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    noteArmedEpic('claude://s/e1', 'e1')
+    await sweepEpics(deps())
+    // One beat, not two: the armed entry filled no gap.
+    expect(beats).toHaveLength(1)
+    expect(beats[0]).toBe('claude://s/e1')
+  })
+
+  test('several armed epics each get their own beat', async () => {
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    noteArmedEpic('claude://s/e2', 'e2')
+    await sweepEpics(deps())
+    expect(beats).toHaveLength(2)
   })
 })

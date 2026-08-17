@@ -11,6 +11,7 @@ import { Hono } from 'hono'
 import type { EpicOpKind } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { sendEpicOp } from '../epic-broker-rpc'
+import { forgetArmedEpic, noteArmedEpic } from '../epic-registry'
 import type { Permission } from '../permissions'
 import { readJsonBody } from './json-body'
 
@@ -57,6 +58,19 @@ function refuse(
   return null
 }
 
+/**
+ * Keep the sweep's armed-epic set in step with what just happened.
+ *
+ * Called ONLY after a successful op: registering an epic whose sentinel refused
+ * the write would leave the sweep beating on a run that does not exist. Arming
+ * is what lets the sweep find an epic before it has any conversations -- see
+ * epic-registry.ts for the chicken-and-egg this closes.
+ */
+function trackRun(body: EpicHttpBodyReady): void {
+  if (body.op === 'start') noteArmedEpic(body.project, body.epicId)
+  else if (body.op === 'pause' || body.op === 'abort') forgetArmedEpic(body.project, body.epicId)
+}
+
 export function createEpicRouter(conversationStore: ConversationStore, helpers: EpicRouteHelpers): Hono {
   const app = new Hono()
 
@@ -76,6 +90,8 @@ export function createEpicRouter(conversationStore: ConversationStore, helpers: 
       ...(body.reason ? { reason: body.reason } : {}),
     })
     if (!result.ok) return c.json({ ok: false, error: result.error ?? 'epic op failed' }, 502)
+
+    trackRun(body)
     return c.json({ ok: true, run: result.run ?? null, baton: result.baton ?? [] })
   })
 

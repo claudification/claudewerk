@@ -27,6 +27,7 @@ import type { EpicRunSnapshot } from '../shared/protocol'
 import type { SentinelRpcDeps } from './broker-sentinel-rpc'
 import { type EpicAction, type EpicBeat, planBeat } from './epic-beat'
 import { appendBaton, fetchBoardCards, fetchEpicRun, sendEpicOp } from './epic-broker-rpc'
+import { forgetArmedEpic } from './epic-registry'
 import { type EpicSpawnCtx, planImplementerSpawn, planOverseerSpawn, planVerifierSpawn } from './epic-spawn-plan'
 import { type EpicGroup, generationMismatch, unacknowledgedCards } from './epic-sweep'
 import { dispatchSpawn } from './spawn-dispatch'
@@ -184,6 +185,9 @@ async function settleRun(
   await io.sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch: { status } })
   await io.appendBaton(deps, group.project, group.epicId, { kind: 'checkpoint', convId: 'broker', body })
   await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
+  // Stop sweeping it. A parked or complete run that stayed registered would be
+  // beaten on every 45s forever, doing nothing, for the life of the broker.
+  forgetArmedEpic(group.project, group.epicId)
   deps.log(`${tag(group.epicId, gen)} ${status}: ${body}`)
 }
 
