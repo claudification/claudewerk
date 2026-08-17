@@ -190,10 +190,7 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 
 ---
 
-## 9. What is NOT wired yet
-
-Honest status. The substrate and the decisions are built and tested; nothing
-spawns an epic worker yet.
+## 9. Status
 
 | Piece | State |
 |---|---|
@@ -202,16 +199,35 @@ spawns an epic worker yet.
 | `planBeat` (the decision) | **done**, tested |
 | Prompts for all three seats | **done**, tested |
 | The mute | **done**, tested |
-| `launchConfig.epic` tag | **done** (protocol) |
+| `launchConfig.epic` tag | **done** |
 | `EpicOp` / `EpicResult` + sentinel handlers | **done**, tested |
-| Broker request handler + `EpicRequest`/`EpicEvent` | **not built** |
-| Guardian sweep grouping on `epic` | **not built** |
-| MCP verb to start/pause/abort a run | **not built** |
-| A live end-to-end run | **never run** |
+| Broker request handler + `EpicRequest` / `EpicEvent` | **done**, tested |
+| Broker-initiated RPC + the executor | **done**, tested |
+| The 45s sweep, started in `broker/index.ts` | **done**, tested |
+| `POST /api/epic` + `epic_run` MCP verb | **done**, tested |
+| RUN button + dialog | **done**, shipped to `web/dist` |
+| **A live end-to-end run** | **NEVER RUN** |
 
-That last row is the one that matters. Nightshift has **0 completed runs ever**
-and sat at "Phase F FAILED" from 2026-06-26; the blocker (the sentinel's
-`expandPath` mangling a `claude://` URI) has since been fixed and covered by
+That last row is still the only one that matters, and it is now blocked on one
+thing: the executor and the sweep live in the BROKER, so nothing runs until the
+broker image is rebuilt and the container recreated. That drops every live
+WebSocket, so it is not covered by the standing web-deploy licence and needs an
+explicit go.
+
+**Do not treat the rest of this table as proof.** Nightshift has 0 completed runs
+and sat at "Phase F FAILED" from 2026-06-26; its blocker (the sentinel's
+`expandPath` mangling a `claude://` URI) is fixed and covered by
 `src/sentinel/expand-path.test.ts`, but the closed loop has still never been
-demonstrated. **Do not add more substrate before one trivial two-card epic runs
-end to end.**
+demonstrated. Expect the smoke to find bugs -- that is what it is for.
+
+## 10. Running one
+
+```
+epic_run(project="claude://...", epic_id="werk-epic", action="start",
+         cadence="now", concurrency=3)
+```
+
+or the **RUN** button on any epic card in the EPICS view. `action=get` reads the
+run, its digest and the baton tail; `action=pause` releases the lease and stops
+dispatching (a later start RESUMES, it never resets the generation counter);
+`action=abort` is terminal and records the reason in the baton.
