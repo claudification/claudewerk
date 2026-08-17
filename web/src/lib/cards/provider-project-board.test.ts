@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const board = vi.hoisted(() => ({
   cards: [] as ProjectTaskMeta[],
   manifestFetched: true,
+  refetching: false,
   hydrated: true,
   /** False = the manifest knows the card but its detail has not been hydrated. */
   metaVisible: true,
@@ -33,6 +34,7 @@ vi.mock('@/hooks/project-card-lookup', () => ({
     const meta = board.cards.find(c => c.slug === slug)
     return {
       manifestFetched: board.manifestFetched,
+      refetching: board.refetching,
       entry: meta ? { slug: meta.slug, status: meta.status, mtime: meta.mtime } : undefined,
       meta: board.metaVisible ? meta : undefined,
     }
@@ -171,5 +173,27 @@ describe('project board provider -- epics', () => {
     const lookup = peek('e')
     if (lookup.status !== 'ready') throw new Error('expected ready')
     expect(lookup.summary.progress).toMatchObject({ total: 0, pct: null, dropped: 1 })
+  })
+})
+
+describe('an absence claim is only made when nothing could contradict it', () => {
+  beforeEach(() => {
+    board.cards = []
+    board.manifestFetched = true
+    board.refetching = false
+  })
+
+  it('claims unknown when the manifest is current and nothing is in flight', () => {
+    expect(peek('ghost')).toEqual({ status: 'unknown' })
+  })
+
+  it('stays RESOLVING while a stale-miss re-check is in flight', () => {
+    board.refetching = true
+    expect(peek('card-written-a-moment-ago')).toEqual({ status: 'resolving' })
+  })
+
+  it('stays resolving before the first manifest lands', () => {
+    board.manifestFetched = false
+    expect(peek('anything')).toEqual({ status: 'resolving' })
   })
 })

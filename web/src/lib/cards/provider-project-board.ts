@@ -104,8 +104,11 @@ export const projectBoardProvider: CardProvider = {
 
   peek(ref): CardLookup {
     if (!ref.scope) return { status: 'unavailable' }
-    const { manifestFetched, entry, meta } = peekProjectCard(ref.scope, ref.id)
-    if (!entry) return manifestFetched ? { status: 'unknown' } : { status: 'resolving' }
+    const { manifestFetched, refetching, entry, meta } = peekProjectCard(ref.scope, ref.id)
+    // `unknown` is a CLAIM ("this card does not exist"), so it is only made when
+    // nothing is outstanding that could contradict it -- never during the first
+    // fetch, and never while a stale-miss re-check is in flight.
+    if (!entry) return manifestFetched && !refetching ? { status: 'unknown' } : { status: 'resolving' }
     if (meta) return { status: 'ready', summary: fullSummary(ref, ref.scope, meta) }
     return {
       status: 'ready',
