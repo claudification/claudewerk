@@ -59,6 +59,9 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: start-sentinel.sh [--broker <url>] [--spawn-root <path>] [--no-spawn] [--kill-if-running] [-v|--verbose]"
       echo ""
       echo "Validates config and starts sentinel in the background."
+      echo ""
+      echo "--kill-if-running kills EXACTLY ONE process: the PID in .sentinel.pid."
+      echo "Untracked sentinels are reported for you to inspect, never killed."
       echo "Reads RCLAUDE_SECRET and RCLAUDE_SPAWN_ROOT from .env or environment."
       echo ""
       echo "Spawn root priority: --spawn-root flag > \$RCLAUDE_SPAWN_ROOT > \$HOME"
@@ -107,6 +110,10 @@ kill_sentinel_pid() {
   fi
 }
 
+# Empty unless the PID file names a process: `set -u` is on, and the orphan
+# scan below excludes this PID so a sentinel we just killed is never re-reported.
+OLD_PID=""
+
 # Check PID file first
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID=$(cat "$PID_FILE")
@@ -125,39 +132,45 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
-# Safety net: find orphaned sentinel processes not tracked by PID file.
-# This catches the case where a previous run's PID file was lost/stale but
-# the process is still alive -- two sentinels with the same identity cause
-# a reconnect death spiral (each connect kicks the other, forever).
+# ---------------------------------------------------------------------------
+# ORPHAN SCAN -- REPORTS. NEVER KILLS. (2026-08-17)
 #
-# IDENTITY IS argv[0]+argv[1], NEVER A SUBSTRING (2026-08-17 incident).
-# This used to be `ps aux | grep "[b]un.*sentinel"`, matching the WHOLE command
-# line. An agent host runs `claude --print ... --append-system-prompt <KBs of
-# text>`, and that text said "sentinel bundle stale" and later
-# "fseventsd/sentinel" -- so "bundle" satisfied `[b]un` and the later mention
-# satisfied `.*sentinel`. Six live conversations were killed as orphaned
-# sentinels. Whether a conversation died came down to the word ORDER in its
-# system prompt, which is why it looked arbitrary.
+# `--kill-if-running` kills exactly ONE process: the PID in $PID_FILE, written
+# by the sentinel we started. That is the entire contract, and the block above
+# is the only place in this script that kills anything.
 #
-# find-sentinel-pids.sh matches the runtime and the program and nothing else.
-# Covered by scripts/find-sentinel-pids.test.ts, which pins that exact line.
+# It used to also kill whatever this scan turned up, and the scan was
+# `ps aux | grep "[b]un.*sentinel"` -- a substring match over WHOLE command
+# lines. An agent host runs `claude --print ... --append-system-prompt <KBs of
+# text>`, so the entire system prompt sits in `ps` output. For this project that
+# text is the State of the Union, a document ABOUT the sentinel: it said
+# "sentinel bundle stale" and later "fseventsd/sentinel", so "bundle" satisfied
+# `[b]un` and the later mention satisfied `.*sentinel`. Six live conversations
+# were killed as rogue sentinels. Word ORDER decided who died, which is why the
+# damage looked random.
+#
+# The matcher is fixed (find-sentinel-pids.sh: argv[0]+argv[1] only, tested),
+# but a precise matcher is not the lesson. The lesson is that a DISCOVERY LOOP
+# MUST NOT FEED A KILL. Discovery is a guess about identity; the PID file is a
+# fact. So this scan now prints what it found and lets a human decide. Killing
+# the wrong process costs someone hours of work -- printing a line costs
+# nothing.
+# ---------------------------------------------------------------------------
 ORPHAN_PIDS=()
 while IFS= read -r pid; do
-  [[ "$pid" == "$$" ]] && continue
+  [[ "$pid" == "$$" || "$pid" == "$OLD_PID" ]] && continue
   ORPHAN_PIDS+=("$pid")
 done < <(ps -eo pid=,args= | "$(dirname "${BASH_SOURCE[0]}")/find-sentinel-pids.sh")
 
 if [[ ${#ORPHAN_PIDS[@]} -gt 0 ]]; then
-  if [[ "$KILL_IF_RUNNING" == true ]]; then
-    for pid in "${ORPHAN_PIDS[@]}"; do
-      warn "Found orphaned sentinel process (PID $pid) not tracked by PID file"
-      kill_sentinel_pid "$pid"
-    done
-  else
-    warn "Found ${#ORPHAN_PIDS[@]} orphaned sentinel process(es): ${ORPHAN_PIDS[*]}"
-    echo -e "  Use ${YELLOW}--kill-if-running${NC} to clean them up"
-    exit 1
-  fi
+  warn "Found ${#ORPHAN_PIDS[@]} sentinel process(es) not tracked by the PID file:"
+  for pid in "${ORPHAN_PIDS[@]}"; do
+    echo -e "    PID $pid: $(ps -p "$pid" -o args= 2>/dev/null | cut -c1-100)"
+  done
+  echo -e "  Two sentinels with one identity cause a reconnect death spiral."
+  echo -e "  Inspect each, then kill the ones you mean: ${YELLOW}kill <pid>${NC}"
+  echo -e "  This script will NOT kill them for you."
+  exit 1
 fi
 
 ok "RCLAUDE_SECRET is set"
