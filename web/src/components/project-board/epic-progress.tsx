@@ -36,39 +36,30 @@ export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; cla
   )
 }
 
-/** `4/13 done   31%`, or an honest dash when there is nothing to measure. */
+/**
+ * `4/13 done   31%`, or an honest dash when there is nothing to measure.
+ *
+ * The count is the POINT of an epic row, so it sits on the `tally` tier rather
+ * than the 9px grey it used to wear -- at that size it read as a footnote to
+ * the title, which is backwards.
+ */
 export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   if (rollup.total === 0) {
     return (
-      <span className="text-[9px] font-mono text-muted-foreground/60">
+      <span className="text-chrome font-mono text-muted-foreground/60">
         {rollup.dropped > 0 ? `0/0 -- all ${rollup.dropped} dropped` : 'no cards yet'}
       </span>
     )
   }
   return (
-    <span className="text-[9px] font-mono text-muted-foreground/60">
-      {rollup.done}/{rollup.total} done <span className="text-muted-foreground/80">{rollup.pct}%</span>
+    <span className="font-mono text-tally tabular-nums text-foreground">
+      {rollup.done}
+      <span className="text-meta font-normal text-muted-foreground/70">/{rollup.total} done</span>
     </span>
   )
 }
 
-const COUNTS = [
-  { key: 'done', glyph: '●', label: 'done', className: 'text-active' },
-  { key: 'inProgress', glyph: '◐', label: 'moving', className: 'text-accent' },
-  { key: 'notStarted', glyph: '○', label: 'open', className: 'text-muted-foreground/75' },
-  { key: 'dropped', glyph: '⊘', label: 'dropped', className: 'text-muted-foreground/60' },
-] as const
-
-export function EpicBucketCounts({ rollup }: { rollup: EpicRollup }) {
-  return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {COUNTS.map(c =>
-        rollup[c.key] === 0 && c.key === 'dropped' ? null : (
-          <span key={c.key} className={cn('text-[9px] font-mono', c.className)}>
-            {c.glyph} {rollup[c.key]} {c.label}
-          </span>
-        ),
-      )}
-    </div>
-  )
-}
+// `EpicBucketCounts` lived here and died with the swimlane that was its only
+// caller. The detail pane states the same four numbers on the `loud` tier
+// instead of as a row of 9px glyph-and-word pairs -- four counts whispered in
+// a line was exactly the "everything is the same size" problem.

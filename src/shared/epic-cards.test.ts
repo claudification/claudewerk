@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test'
-import { buildEpicIndex, epicBucket, isEpicCard, notStartedChildren, unparentedCards } from './epic-cards'
+import {
+  buildEpicIndex,
+  epicBucket,
+  isEpicCard,
+  notStartedChildren,
+  splitUnparented,
+  unparentedCards,
+} from './epic-cards'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
 
@@ -163,6 +170,38 @@ describe('unparentedCards', () => {
     const cards = [card('e', { tags: ['epic'] }), card('a', { epic: 'e' }), card('loose')]
     const index = buildEpicIndex(cards)
     expect(unparentedCards(cards, index).map(c => c.slug)).toEqual(['loose'])
+  })
+})
+
+describe('splitUnparented', () => {
+  it('puts done and archived in finished, everything still moving in live', () => {
+    const cards = [
+      card('e', { tags: ['epic'] }),
+      card('kid', { epic: 'e' }),
+      card('inbox-loose', { status: 'inbox' }),
+      card('open-loose', { status: 'open' }),
+      card('moving-loose', { status: 'in-progress' }),
+      card('review-loose', { status: 'in-review' }),
+      card('done-loose', { status: 'done' }),
+      card('archived-loose', { status: 'archived' }),
+    ]
+    const split = splitUnparented(cards, buildEpicIndex(cards))
+    expect(split.live.map(c => c.slug)).toEqual(['inbox-loose', 'open-loose', 'moving-loose', 'review-loose'])
+    expect(split.finished.map(c => c.slug)).toEqual(['done-loose', 'archived-loose'])
+  })
+
+  it('excludes children and epics from both halves, exactly as unparentedCards does', () => {
+    const cards = [card('e', { tags: ['epic'] }), card('kid', { epic: 'e', status: 'done' }), card('loose')]
+    const index = buildEpicIndex(cards)
+    const split = splitUnparented(cards, index)
+    expect([...split.live, ...split.finished].map(c => c.slug)).toEqual(unparentedCards(cards, index).map(c => c.slug))
+  })
+
+  it('is all-empty for a board where every card has a home', () => {
+    const cards = [card('e', { tags: ['epic'] }), card('kid', { epic: 'e' })]
+    const split = splitUnparented(cards, buildEpicIndex(cards))
+    expect(split.live).toEqual([])
+    expect(split.finished).toEqual([])
   })
 })
 

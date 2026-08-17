@@ -14,9 +14,23 @@
 
 import type { CSSProperties } from 'react'
 
-/** Lightness/chroma of the board's own accent tokens. Do not free-hand these. */
+/**
+ * Lightness/chroma of the board's own accent tokens. Do not free-hand these.
+ *
+ * CHROMA IS DELIBERATELY HALF the semantic tokens' 0.15. Identity and state
+ * were competing at equal saturation: an epic rail, a green `done`, a gold
+ * `next` and a magenta `blocked` all shouted at 0.15, so the eye could not tell
+ * which colour was telling it something actionable. State must win that fight.
+ * At 0.07 the rails still separate cleanly -- they are the only hue on the
+ * surface -- while `--active`/`--accent`/`--event-prompt` read as louder by a
+ * clear margin.
+ *
+ * Identity is never carried by hue ALONE: every epic also wears a letter mark
+ * (`epicInitials`), which is what makes this safe for colourblind viewers and
+ * what keeps it legible past the 16 hue slots.
+ */
 const L = 0.75
-const C = 0.15
+const C = 0.07
 
 export interface EpicColorVars extends CSSProperties {
   '--epic-hue': string

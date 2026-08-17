@@ -140,6 +140,51 @@
 	--radius: 0.375rem;
 }
 
+/*
+ * THE LADDER -- five type roles, so a surface can say what matters.
+ *
+ * The board had exactly one typographic voice: every string on it was 9-13px
+ * at weight 400, and the ONLY thing separating a card title from a slug from a
+ * ref path was how transparent the grey was. That is a ~2.5:1 luminance spread
+ * carrying an entire information hierarchy. There was a quiet tier, a quieter
+ * tier, and a slightly-less-quiet tier -- and no LOUD tier at all, so the eye
+ * got no entry point and the board read like a log file.
+ *
+ * Each role pairs a size WITH a weight, so the difference survives a glance
+ * instead of needing a contrast measurement. The ratio is 16/12/10/9, not the
+ * old 13/11/10.
+ *
+ *   loud    ONE per group, ever. An epic name, a lane name. Two `loud` things
+ *           on one screen means one of them is wrong.
+ *   tally   Counts. They are the POINT of an epic row, not its footnote, and
+ *           they were 9px grey. Pair with `tabular-nums` at the call site.
+ *   read    Prose you actually read: card titles, child rows.
+ *   meta    Slugs, ages, refs. There when you look for it, silent when not.
+ *   chrome  Column headers, section labels. Furniture. NEVER a fact.
+ *
+ * The contrast floor in `board-constants.ts` still applies on top of this --
+ * these are sizes and weights, not a licence to drop below muted-foreground/55.
+ */
+@theme inline {
+	--text-loud: 1rem;
+	--text-loud--font-weight: 700;
+	--text-loud--line-height: 1.3;
+
+	--text-tally: 0.9375rem;
+	--text-tally--font-weight: 700;
+	--text-tally--line-height: 1.1;
+
+	--text-read: 0.75rem;
+	--text-read--font-weight: 400;
+
+	--text-meta: 0.625rem;
+	--text-meta--font-weight: 400;
+
+	--text-chrome: 0.5625rem;
+	--text-chrome--font-weight: 400;
+	--text-chrome--letter-spacing: 0.11em;
+}
+
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);

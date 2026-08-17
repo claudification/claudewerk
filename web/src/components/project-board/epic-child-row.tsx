@@ -18,8 +18,13 @@ const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string; label
   dropped: { glyph: '⊘', className: 'text-muted-foreground/60', label: 'dropped' },
 }
 
+/**
+ * THE COLOUR LAW: magenta (`--event-prompt`) means BLOCKED and nothing else, so
+ * high priority moved to `--destructive`. Sharing magenta with `waitingOn` made
+ * a high-priority-but-startable card look identical to one that cannot begin.
+ */
 const PRIORITY_STYLE: Record<string, { short: string; className: string }> = {
-  high: { short: 'hi', className: 'text-event-prompt' },
+  high: { short: 'HI', className: 'text-destructive font-bold' },
   medium: { short: 'md', className: 'text-muted-foreground/60' },
   low: { short: 'lo', className: 'text-muted-foreground/60' },
 }
@@ -42,31 +47,31 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
         'hover:border-l-[color:var(--epic-solid)] hover:bg-[color:var(--epic-tint)] transition-colors',
       )}
     >
-      <span className="text-[10px] font-mono text-muted-foreground/55 truncate" title={child.card.slug}>
+      <span className="text-meta font-mono text-muted-foreground/55 truncate" title={child.card.slug}>
         {child.card.slug}
       </span>
       <span
         className={cn(
-          'text-[11px] font-mono truncate',
-          child.bucket === 'dropped' ? 'text-muted-foreground/60 line-through' : 'text-foreground/85',
+          'text-read font-mono truncate',
+          child.bucket === 'dropped' ? 'text-muted-foreground/60 line-through' : 'text-foreground',
         )}
       >
         {child.card.title}
       </span>
-      <span className={cn('text-[10px] font-mono', className)} title={label}>
+      <span className={cn('text-meta font-mono', className)} title={label}>
         {glyph}
       </span>
-      <span className={cn('text-[10px] font-mono', priority.className)}>{priority.short}</span>
+      <span className={cn('text-chrome font-mono', priority.className)}>{priority.short}</span>
       {blocked ? (
         <span
-          className="text-[10px] font-mono text-event-prompt/80 truncate"
+          className="text-chrome font-mono text-event-prompt truncate"
           title={`waits on ${child.waitingOn.join(', ')}`}
         >
           ⛒ {child.waitingOn.length === 1 ? child.waitingOn[0] : `${child.waitingOn.length} cards`}
         </span>
       ) : (
         // contrast-decor-next-line: filler punctuation for "nothing to say", not a word to read
-        <span className="text-[10px] font-mono text-muted-foreground/35">--</span>
+        <span className="text-meta font-mono text-muted-foreground/35">--</span>
       )}
     </button>
   )

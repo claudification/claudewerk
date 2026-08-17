@@ -151,6 +151,38 @@ export function unparentedCards(cards: readonly ProjectTaskMeta[], index: Map<st
   return cards.filter(c => !c.epic && !index.has(c.slug))
 }
 
+/** Unparented cards, live vs finished. */
+export interface UnparentedSplit {
+  /** Still moving: inbox, open, in-progress, in-review. The triage queue. */
+  live: ProjectTaskMeta[]
+  /** Terminal: done or archived. Nobody is ever going to parent these. */
+  finished: ProjectTaskMeta[]
+}
+
+/**
+ * Split the unparented pile in two, because it is two different things.
+ *
+ * A board reading "402 cards belong to no epic" is counting its own archive:
+ * on the board this was written against, 233 of those 371 were `done` or
+ * `archived`. Nobody parents a finished card, so folding them into one warning
+ * turns a fact ("138 live cards have no home") into an accusation about work
+ * that is already over.
+ *
+ * The split reuses `epicBucket`, so "finished" means exactly what it means in
+ * a rollup percentage -- the two can never drift into disagreeing about which
+ * cards are over.
+ */
+export function splitUnparented(cards: readonly ProjectTaskMeta[], index: Map<string, EpicRollup>): UnparentedSplit {
+  const live: ProjectTaskMeta[] = []
+  const finished: ProjectTaskMeta[] = []
+  for (const card of unparentedCards(cards, index)) {
+    const bucket = epicBucket(card.status)
+    if (bucket === 'done' || bucket === 'dropped') finished.push(card)
+    else live.push(card)
+  }
+  return { live, finished }
+}
+
 /** The not-started children of an epic -- what a launch selector pre-selects. */
 export function notStartedChildren(rollup: EpicRollup): ProjectTaskMeta[] {
   return rollup.children.filter(c => c.bucket === 'notStarted').map(c => c.card)
