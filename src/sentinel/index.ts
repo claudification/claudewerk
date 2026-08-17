@@ -847,6 +847,7 @@ function spawnHeadlessDirect(
       env,
       stdout: 'ignore', // headless rclaude communicates via WS, not stdout
       stderr: 'pipe', // capture for diagnostics
+      detached: true, // own process group -- see HOST_DETACH_NOTE
     })
   } catch (e: unknown) {
     const err = `Bun.spawn failed: ${(e as Error).message}`
@@ -984,6 +985,7 @@ function spawnOpenCodeHostDirect(opts: {
       env,
       stdout: 'ignore',
       stderr: 'pipe',
+      detached: true, // own process group -- see HOST_DETACH_NOTE
     })
   } catch (e: unknown) {
     const err = `Bun.spawn failed: ${(e as Error).message}`
@@ -1134,6 +1136,7 @@ function spawnAcpHostDirect(opts: {
       env,
       stdout: 'ignore',
       stderr: 'pipe',
+      detached: true, // own process group -- see HOST_DETACH_NOTE
     })
   } catch (e: unknown) {
     const err = `Bun.spawn failed: ${(e as Error).message}`
@@ -1389,7 +1392,13 @@ function spawnDaemonHostDirect(opts: {
 
   let proc: Subprocess
   try {
-    proc = Bun.spawn([opts.bin], { cwd: opts.cwd, env, stdout: 'ignore', stderr: 'pipe' })
+    proc = Bun.spawn([opts.bin], {
+      cwd: opts.cwd,
+      env,
+      stdout: 'ignore',
+      stderr: 'pipe',
+      detached: true, // own process group -- see HOST_DETACH_NOTE
+    })
   } catch (e: unknown) {
     const err = `Bun.spawn failed: ${(e as Error).message}`
     launchLog(opts.jobId, 'Spawn failed', 'error', err)
@@ -4355,6 +4364,36 @@ if (rclaudeBinCheck) {
 
 // Load PID registry from previous run and check for dead children
 loadAndCheckPidRegistry()
+
+/**
+ * HOST_DETACH_NOTE -- why every host spawn passes `detached: true`.
+ *
+ * MEASURED 2026-08-17, before the change:
+ *
+ *   sentinel  85936  pgid 85594
+ *   child      8559  pgid 85594
+ *   child      8608  pgid 85594   ... and ~50 more
+ *
+ * Every agent host shared ONE process group with the sentinel -- and 85594 was
+ * not even the sentinel's PID, it was the group of whatever shell launched it.
+ * A single `kill -- -85594`, or a Ctrl+C in that terminal, would have taken out
+ * the sentinel AND every live conversation at once.
+ *
+ * The unref below does NOT protect against that, and it is easy to think it
+ * does. `unref()` is bookkeeping that lets the PARENT exit without waiting on
+ * the child; it changes nothing about process groups. It covers exactly one
+ * case: a clean SIGTERM addressed to the sentinel's PID alone. A signal sent to
+ * the GROUP reaches every child directly and no handler here ever runs.
+ *
+ * `detached: true` puts each host in its own process group, so the only way to
+ * stop one is to name it. Hosts have no need to share a group: each owns its
+ * own broker WebSocket and talks to nobody through the sentinel's terminal.
+ *
+ * Raised by Jonas right after start-sentinel.sh killed six conversations it had
+ * mistaken for sentinels -- "is it not disowning those? IT SHOULD!". Detaching
+ * would not have stopped that incident (those kills were per-PID), but the
+ * blast radius it exposed was never six. It was every conversation on the box.
+ */
 
 // SIGTERM handler: unref all children so they survive sentinel restart, write PID registry
 // Host-side control socket (the `sentinel shell` entry point). Bound after the
