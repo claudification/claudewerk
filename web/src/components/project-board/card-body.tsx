@@ -11,7 +11,28 @@
 import type { ProjectTaskMeta } from '@shared/project-task-types'
 import { type BoardViewConfig, CLAMP_CLASS, TITLE_SIZE_CLASS } from '@/hooks/use-board-view-config'
 import { cn } from '@/lib/utils'
-import { PRIORITY_COLORS, tagColor, taskAge } from './board-constants'
+import { taskAge } from './board-constants'
+
+/**
+ * THE COLOUR LAW, on the card.
+ *
+ * Tags used to wear one of six hashed colours and priority a filled bordered
+ * pill, so a card with three tags carried five coloured objects competing with
+ * its own title -- the lowest-contrast thing on it. Tags are a FILTER handle,
+ * not information: they go grey here and light up in the filter row when you
+ * actually select one. Priority becomes two letters, and only `high` is
+ * allowed a colour, because "this one is urgent" is the only priority fact
+ * worth interrupting a scan for.
+ *
+ * The card's STRUCTURE is untouched -- same rows, same order, same rail.
+ */
+const CARD_PRIORITY: Record<string, string> = {
+  high: 'text-destructive font-bold',
+  medium: 'text-muted-foreground/55',
+  low: 'text-muted-foreground/55',
+}
+
+const PRIORITY_MARK: Record<string, string> = { high: 'HI', medium: 'md', low: 'lo' }
 import type { CardEpicRole } from './card-epic-role'
 import { EpicBadge } from './epic-badge'
 import { EpicCardProgress, EpicSelfChip } from './epic-card-marker'
@@ -49,15 +70,18 @@ export function CardBody({
         </div>
       )}
       {role.kind === 'epic' && <EpicCardProgress rollup={role.rollup} />}
-      <div className="flex items-center gap-1 mt-1 flex-wrap">
+      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
         <EpicMarker role={role} onOpenSlug={onOpenSlug} />
         {task.priority && (
-          <span className={cn('text-[9px] px-1 py-0.5 border font-mono', PRIORITY_COLORS[task.priority])}>
-            {task.priority}
+          <span className={cn('text-chrome font-mono', CARD_PRIORITY[task.priority] ?? CARD_PRIORITY.medium)}>
+            {PRIORITY_MARK[task.priority] ?? task.priority}
           </span>
         )}
         {task.tags.map(tag => (
-          <span key={tag} className={cn('text-[9px] px-1 py-0.5 border font-mono', tagColor(tag))}>
+          <span
+            key={tag}
+            className="text-chrome px-1 py-0.5 border border-muted-foreground/28 text-muted-foreground/78 font-mono"
+          >
             {tag}
           </span>
         ))}
