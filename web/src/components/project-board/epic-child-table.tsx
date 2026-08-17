@@ -38,7 +38,7 @@ export function EpicChildTable({ rows, onOpenCard }: { rows: EpicChild[]; onOpen
         )}
       >
         {COLUMNS.map(col => (
-          <span key={col} className="text-[9px] font-mono tracking-wider text-muted-foreground/60">
+          <span key={col} className="text-chrome font-mono text-muted-foreground/60">
             {col}
           </span>
         ))}
@@ -57,7 +57,7 @@ export function EpicChildTable({ rows, onOpenCard }: { rows: EpicChild[]; onOpen
             haptic('tap')
             setShowAll(v => !v)
           }}
-          className="w-full px-2 py-1 text-left text-[10px] font-mono text-muted-foreground/80 hover:text-foreground border-t border-[color:var(--epic-edge)] transition-colors"
+          className="w-full px-2 py-1 text-left text-meta font-mono text-muted-foreground/80 hover:text-foreground border-t border-[color:var(--epic-edge)] transition-colors"
         >
           {folded ? `… ${rows.length - HEAD} more` : 'show fewer'}
         </button>

@@ -36,18 +36,25 @@ export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; cla
   )
 }
 
-/** `4/13 done   31%`, or an honest dash when there is nothing to measure. */
+/**
+ * `4/13 done   31%`, or an honest dash when there is nothing to measure.
+ *
+ * The count is the POINT of an epic row, so it sits on the `tally` tier rather
+ * than the 9px grey it used to wear -- at that size it read as a footnote to
+ * the title, which is backwards.
+ */
 export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   if (rollup.total === 0) {
     return (
-      <span className="text-[9px] font-mono text-muted-foreground/60">
+      <span className="text-chrome font-mono text-muted-foreground/60">
         {rollup.dropped > 0 ? `0/0 -- all ${rollup.dropped} dropped` : 'no cards yet'}
       </span>
     )
   }
   return (
-    <span className="text-[9px] font-mono text-muted-foreground/60">
-      {rollup.done}/{rollup.total} done <span className="text-muted-foreground/80">{rollup.pct}%</span>
+    <span className="font-mono text-tally tabular-nums text-foreground">
+      {rollup.done}
+      <span className="text-meta font-normal text-muted-foreground/70">/{rollup.total} done</span>
     </span>
   )
 }
@@ -64,7 +71,7 @@ export function EpicBucketCounts({ rollup }: { rollup: EpicRollup }) {
     <div className="flex items-center gap-2 flex-wrap">
       {COUNTS.map(c =>
         rollup[c.key] === 0 && c.key === 'dropped' ? null : (
-          <span key={c.key} className={cn('text-[9px] font-mono', c.className)}>
+          <span key={c.key} className={cn('text-chrome font-mono tabular-nums', c.className)}>
             {c.glyph} {rollup[c.key]} {c.label}
           </span>
         ),
