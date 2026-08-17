@@ -8,6 +8,14 @@ import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
 import type {
+  EpicCadence,
+  EpicLaunchTag,
+  EpicLogEntry,
+  EpicLogKind,
+  EpicRunFull,
+  EpicRunStatus,
+} from './epic-run-types'
+import type {
   NightshiftBlocked,
   NightshiftConfig,
   NightshiftEnqueueInput,
@@ -3620,6 +3628,17 @@ export interface LaunchConfig {
    * filter rows. Carries NO capacity numbers -- those come from smart-balance.
    */
   nightshift?: { runId: string; taskId: string }
+  /**
+   * EPIC MODE seat (docs/epic-mode.md). Mirrors `nightshift` exactly -- an
+   * origin tag the broker groups on, never a capability. What a role actually
+   * BUYS (the mute, the merge authority) is enforced by the settings the spawn
+   * carried; nothing re-reads this field to decide what an agent may do.
+   *
+   * `gen` is the overseer generation that dispatched this conversation, which is
+   * what makes a wake idempotent: two guardians seeing the same settle compute
+   * the same generation, and the lease CAS lets exactly one of them through.
+   */
+  epic?: EpicLaunchTag
 }
 
 // ─── Launch Jobs (request-scoped event channels for spawn/revive) ────
@@ -4413,6 +4432,100 @@ export interface QuestEvent {
   petname: string
   status?: QuestStatus
 }
+
+// ===========================================================================
+// EPIC MODE -- running an epic to completion (docs/epic-mode.md)
+//
+// Same substrate shape as QUEST above and for the same reason: the SENTINEL owns
+// the filesystem, so every read and write of the run artifact and its baton
+// crosses as an op envelope. The broker orchestrates and stores nothing -- an
+// epic run is fully re-derivable from the board plus `.rclaude/project/epics/`.
+//
+// The difference from a quest is the SELECTOR, not the machinery: a quest is
+// picked by petname and carries its own contracts, an epic is picked by the
+// board card that already exists and inherits its children.
+// ===========================================================================
+
+export type EpicOpKind =
+  | 'start' // arm (or resume) a run for one epic card
+  | 'get' // run meta + baton tail + the computed plan
+  | 'patch' // merge scalars into run.md (gen, status, digest, dryGens)
+  | 'log_append' // append-only baton entry (NEVER rewrites)
+  | 'lease' // compare-and-swap the overseer singleton on the epic card
+  | 'release' // drop the lease, keeping the generation counter
+  | 'pause'
+  | 'abort'
+
+/** start payload. */
+export interface EpicStartInput {
+  cadence?: EpicCadence
+  target?: 'pr' | 'merged' | 'shipped'
+  concurrency?: number
+  maxGens?: number
+}
+
+/** lease payload -- the CAS. `expectGen` is what makes a double-wake safe. */
+export interface EpicLeaseInput {
+  convId: string
+  expectGen: number
+  /** Broker-supplied: is the current holder's conversation still alive? The
+   *  sentinel cannot know this, and must not guess. */
+  holderAlive: boolean
+  force?: boolean
+}
+
+/** log_append payload. */
+export interface EpicLogAppendInput {
+  kind: EpicLogKind
+  convId: string
+  body: string
+  cardId?: string
+}
+
+/** Scalars a `patch` may move. Deliberately narrow: everything else about a run
+ *  is derived from the board, and a writable copy would only drift from it. */
+export interface EpicRunPatchInput {
+  status?: EpicRunStatus
+  gen?: number
+  dryGens?: number
+  concurrency?: number
+  digest?: string
+}
+
+/** Broker -> Sentinel: the same op with the resolved absolute projectRoot. */
+export interface EpicOp {
+  type: 'epic_op'
+  requestId: string
+  projectRoot: string
+  op: EpicOpKind
+  epicId: string
+  start?: EpicStartInput
+  patch?: EpicRunPatchInput
+  logAppend?: EpicLogAppendInput
+  lease?: EpicLeaseInput
+  reason?: string
+}
+
+/** Sentinel -> Broker: result of one op. Populated field depends on `op`. */
+export interface EpicResult {
+  type: 'epic_result'
+  requestId: string
+  op: EpicOpKind
+  ok: boolean
+  /** start / patch / get / pause / abort -- the run after the write. */
+  run?: EpicRunSnapshot | null
+  /** get -- the baton tail, newest last. */
+  baton?: EpicLogEntry[]
+  /** log_append -- the persisted entry. */
+  logEntry?: EpicLogEntry
+  /** lease -- granted or refused, with the holder either way. */
+  lease?: { granted: boolean; convId: string; gen: number; at: string; reason?: string }
+  error?: string
+}
+
+/** The run as it crosses the wire: run.md frontmatter + its digest body. An
+ *  ALIAS, not a copy -- the store and the wire must not be able to disagree. */
+export type EpicRunSnapshot = EpicRunFull
 
 // ===========================================================================
 // NIGHTSHIFT WATCHDOG -- the deterministic control tier (plan-nightshift.md §2.4)
@@ -5991,6 +6104,10 @@ export interface ConversationSummary extends ConversationTaskFields {
    *  env + appendSystemPrompt). Present => an unattended night-run task; lets the
    *  live Status screen filter night rows without leaking launch internals. */
   nightshift?: { runId: string; taskId: string }
+  /** EPIC MODE seat (mirrors `Conversation.launchConfig.epic`, ids only). Lets
+   *  the guardian sweep group by epic and the panel show which seat a row holds
+   *  without leaking launch internals. */
+  epic?: EpicLaunchTag
 }
 
 // Subscription channels (dashboard <-> broker pub/sub)
