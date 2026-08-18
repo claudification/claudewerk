@@ -365,7 +365,13 @@ function Dashboard() {
   }, [])
 
   return (
-    <div className="h-full flex flex-col p-2 sm:p-4 max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>
+    // FLUSH TO ALL FOUR EDGES. The shell used to sit in `p-2 sm:p-4`, which put a
+    // 16px gutter under the pulse strip -- a bar whose own source says it is
+    // "flush to the bottom edge on EVERY viewport" (pulse-strip-bar.tsx). The
+    // padding was the thing making that comment false. Interior spacing is each
+    // panel's own job (the header's `mb-4`, the sidebar's `lg:mr-4`), so nothing
+    // below loses breathing room by taking it off the window edge.
+    <div className="h-full flex flex-col max-w-[1400px] mx-auto overflow-hidden" {...swipeHandlers}>
       {swUpdate && <UpdateBanner swUpdate={swUpdate} onDismiss={() => setSwUpdate(null)} />}
 
       {/* Header. The hamburger is the ONLY mobile-specific piece of sidebar
