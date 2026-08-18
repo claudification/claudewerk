@@ -12,9 +12,9 @@
 import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
+import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
-import { listArmedEpics } from './epic-registry'
-import { type EpicGroup, groupEpicConversations, type IsLive } from './epic-sweep'
+import { type EpicGroup, epicsToWatch, type IsLive } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -25,6 +25,13 @@ const SWEEP_MS = 45_000
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
   isLive: IsLive
+  /**
+   * Publish the activity feed to the control panel. Optional because every test
+   * in this file builds deps by hand and none of them cares; absent means the
+   * engine simply runs without a UI watching, which is exactly what it did
+   * before this existed.
+   */
+  publishActivity?: () => Promise<void>
 }
 
 /**
@@ -58,6 +65,7 @@ interface SweepStore {
   getSentinelByAlias: SweepDeps['getSentinelByAlias']
   addProjectListener: SweepDeps['addProjectListener']
   removeProjectListener: SweepDeps['removeProjectListener']
+  broadcastConversationScoped: ActivityBroadcaster['broadcastConversationScoped']
 }
 
 /**
@@ -99,30 +107,21 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
     },
     now: Date.now,
   }
-  return { ...base, ...overrides }
+  const deps: SweepDeps = { ...base, ...overrides }
+  // Attached AFTER the merge so the closure captures the FINAL deps -- an
+  // override of `getAllConversations` or `isLive` must be the one the publisher
+  // reads too, or the panel would be told a different story than the engine
+  // acted on.
+  deps.publishActivity ??= () => publishEpicActivity(deps, s as unknown as ActivityBroadcaster)
+  return deps
 }
 
 let sweeping = false
 
-/**
- * Every epic worth a beat this tick: the ones with conversations, PLUS the ones
- * merely armed.
- *
- * The second half is not an optimisation. Without it an armed run has no
- * conversations, so nothing sees it, so it never dispatches, so it never gets
- * conversations -- the engine could only find epics that were already running.
- * The first live smoke found exactly that.
- */
+/** Every epic worth a beat this tick. The SAME set the activity feed reports --
+ *  see `epicsToWatch`, which is shared precisely so the two cannot drift. */
 function epicsToBeat(deps: SweepDeps): EpicGroup[] {
-  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
-  for (const { project, epicId } of listArmedEpics()) {
-    // A conversation-derived group is strictly better -- it knows what is in
-    // flight -- so an armed entry only fills a gap, never overwrites one.
-    if (!groups.has(epicId)) {
-      groups.set(epicId, { epicId, project, inFlight: [], overseerAlive: false, settled: [], maxGenSeen: 0 })
-    }
-  }
-  return [...groups.values()]
+  return epicsToWatch(deps.getAllConversations(), deps.isLive)
 }
 
 /** One tick: a beat for every epic with conversations or an armed run. */
@@ -133,9 +132,7 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
   }
   sweeping = true
   try {
-    const groups = epicsToBeat(deps)
-    if (groups.length === 0) return
-    for (const group of groups) {
+    for (const group of epicsToBeat(deps)) {
       // One epic's failure must never stop the others: a project whose sentinel
       // is down would otherwise freeze every other epic on the box.
       await runEpicBeat(deps, group).catch(err => {
@@ -145,6 +142,11 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
   } finally {
     sweeping = false
   }
+  // AFTER the guard is released, and NOT skipped when there is nothing to beat.
+  // An empty sweep is exactly when a run has just settled, and that is the tick
+  // whose message clears the badge -- returning early on `groups.length === 0`
+  // would leave the panel showing the last pre-settle state forever.
+  await deps.publishActivity?.()
 }
 
 /**
@@ -176,7 +178,12 @@ export async function beatOneEpic(
       settled: [],
       maxGenSeen: 0,
     }
-    return { ok: true, outcome: await runEpicBeat(deps, group) }
+    const outcome = await runEpicBeat(deps, group)
+    // BEAT NOW exists because a human is watching and does not want to wait 45s
+    // for the tick. Making them then wait 45s to SEE what it did would give back
+    // exactly what the verb was for.
+    await deps.publishActivity?.()
+    return { ok: true, outcome }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   } finally {

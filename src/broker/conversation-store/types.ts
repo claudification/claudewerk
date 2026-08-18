@@ -2,6 +2,7 @@ import type {
   ClaudeEfficiencyUpdate,
   ClaudeHealthUpdate,
   ConversationSummary,
+  EpicActivityEntry,
   LaunchProfile,
   ProfileUsageSnapshot,
   SelectionMode,
@@ -71,6 +72,10 @@ export interface ControlPanelMessage {
     // Scoped to the SENDER's project -- chat:read there already exposes the
     // send + target id via the sender's transcript, so this leaks nothing new.
     | 'inter_conversation_activity'
+    // What the epic engine is running, one message per project after every
+    // sweep tick. Powers the header run badge and the overseer window's rail
+    // without either of them polling (WS OVER HTTP).
+    | 'epic_activity'
   conversationId?: string
   previousConversationId?: string
   conversation?: ConversationSummary
@@ -132,4 +137,9 @@ export interface ControlPanelMessage {
   cacheWriteTokens?: number
   cacheWrite5mTokens?: number
   cacheWrite1hTokens?: number
+  // Epic engine activity (epic_activity). One message PER PROJECT, carrying
+  // that project's rows only -- the fan-out is what lets the existing
+  // project-scoped broadcaster do the permission gating, instead of this
+  // message needing a filter of its own.
+  epicActivity?: EpicActivityEntry[]
 }

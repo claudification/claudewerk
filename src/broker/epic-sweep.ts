@@ -18,6 +18,7 @@
 
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
+import { listArmedEpics } from './epic-registry'
 
 /** What one epic's conversations add up to, from the registry alone. */
 export interface EpicGroup {
@@ -127,4 +128,27 @@ export function generationMismatch(group: EpicGroup, runGen: number): string | n
   return group.maxGenSeen > runGen
     ? `conversations tagged gen ${group.maxGenSeen} but run.md says ${runGen} -- spawns may be racing the lease`
     : null
+}
+
+/**
+ * EVERY EPIC WORTH LOOKING AT: the ones with conversations, PLUS the ones merely
+ * armed.
+ *
+ * The second half is not an optimisation. Without it a freshly armed run has no
+ * conversations, so nothing sees it, so it never dispatches, so it never gets
+ * conversations -- the engine could only find epics that were already running.
+ * The first live smoke on 2026-08-18 found exactly that.
+ *
+ * Shared by the sweep (which beats these) and the activity feed (which reports
+ * them). They MUST agree: a badge that counted a different set than the engine
+ * beat would be a UI that lies about the engine by construction.
+ */
+export function epicsToWatch(convs: readonly Conversation[], isLive: IsLive): EpicGroup[] {
+  const groups = groupEpicConversations(convs, isLive)
+  for (const { project, epicId } of listArmedEpics()) {
+    // A conversation-derived group is strictly better -- it knows what is in
+    // flight -- so an armed entry only fills a gap, never overwrites one.
+    if (!groups.has(epicId)) groups.set(epicId, emptyGroup(epicId, project))
+  }
+  return [...groups.values()]
 }

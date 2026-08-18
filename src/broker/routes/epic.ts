@@ -19,6 +19,7 @@
 import { Hono } from 'hono'
 import type { EpicBatonQuery, EpicOpKind } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
+import { listActiveEpicRuns } from '../epic-active'
 import { sendEpicOp } from '../epic-broker-rpc'
 import { forgetArmedEpic, noteArmedEpic } from '../epic-registry'
 import { buildSweepDeps } from '../epic-sweep-loop'
@@ -27,14 +28,22 @@ import { type ActionInput, BROKER_ACTIONS, BROKER_WRITE_ACTIONS } from './epic-a
 import { readJsonBody } from './json-body'
 
 /** Anything the route accepts in `op`: a sentinel op or a broker action. */
-type EpicAction = EpicOpKind | keyof typeof BROKER_ACTIONS
+type EpicAction = EpicOpKind | keyof typeof BROKER_ACTIONS | 'active'
 
 type EpicHttpBodyReady = EpicHttpBody & { project: string; op: EpicAction; epicId: string }
 
-/** `list` is the one action about the PROJECT rather than about one epic, so it
- *  is the one action that does not carry an `epicId`. */
+/**
+ * The two actions that are not about one epic, and the one that is not even
+ * about one project:
+ *   - `list` is about a PROJECT, so it carries no `epicId`.
+ *   - `active` is about the BOX, so it carries neither. It is what the header
+ *     badge asks, and a badge cannot know which project to name before it has
+ *     been told what is running.
+ */
 function validate(b: EpicHttpBody): string | null {
-  if (!b.project || !b.op) return 'project + op required'
+  if (!b.op) return 'op required'
+  if (b.op === 'active') return null
+  if (!b.project) return 'project + op required'
   if (!b.epicId && b.op !== 'list') return 'epicId required for every op except list'
   return null
 }
@@ -59,6 +68,10 @@ const WRITE_OPS = new Set<string>(['start', 'patch', 'log_append', 'lease', 'rel
  *  baton exists to prevent. `release` is not here either -- `break_lease` is its
  *  audited public face, and it refuses a live holder. */
 const PUBLIC_OPS = new Set<string>(['start', 'get', 'pause', 'abort'])
+
+/** Ops that change whether a run is live, and so must reach the badge NOW
+ *  rather than on the next sweep tick. `get` is a read and changes nothing. */
+const PUBLISHING_OPS = new Set<string>(['start', 'pause', 'abort'])
 
 export interface EpicRouteHelpers {
   httpHasPermission: (req: Request, permission: Permission, project: string, conversationId?: string) => boolean
@@ -126,18 +139,42 @@ async function runBrokerAction(store: ConversationStore, body: EpicHttpBodyReady
   return { body: result }
 }
 
-/** A SENTINEL op: forwarded, because the run artifact is a file. */
-async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
-  const result = await sendEpicOp(store, body.project, {
+/**
+ * `active` -- the cross-project feed, gated PER ROW.
+ *
+ * Every other action takes one project and asks one permission question about
+ * it. This one spans the box, so the gate moves inside: compute the whole feed,
+ * then hand back only the rows whose project this caller may read. A share
+ * viewer bound to one project therefore sees a badge that counts only their own
+ * runs, which is the same answer the rest of the panel already gives them.
+ */
+async function runActive(store: ConversationStore, req: Request, helpers: EpicRouteHelpers): Promise<Reply> {
+  const rows = await listActiveEpicRuns(buildSweepDeps(store))
+  return { body: { ok: true, active: rows.filter(r => helpers.httpHasPermission(req, 'files:read', r.project)) } }
+}
+
+/** The wire payload for a sentinel op: the three optional halves, added only
+ *  when present so the sentinel never sees an explicit `undefined`. */
+function toSentinelOp(body: EpicHttpBodyReady): Parameters<typeof sendEpicOp>[2] {
+  return {
     op: body.op as EpicOpKind,
     epicId: body.epicId,
     ...(body.start ? { start: body.start } : {}),
     ...(body.baton ? { baton: body.baton } : {}),
     ...(body.reason ? { reason: body.reason } : {}),
-  })
+  }
+}
+
+/** A SENTINEL op: forwarded, because the run artifact is a file. */
+async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
+  const result = await sendEpicOp(store, body.project, toSentinelOp(body))
   if (!result.ok) return { body: { ok: false, error: result.error ?? 'epic op failed' }, status: 502 }
 
   trackRun(body)
+  // Arming, pausing and aborting are the three moments a human is definitely
+  // looking at the badge, so they do not wait for the next 45s tick to be
+  // reflected. `void` deliberately: the reply must not block on a broadcast.
+  if (PUBLISHING_OPS.has(body.op)) void buildSweepDeps(store).publishActivity?.()
   return {
     body: { ok: true, run: result.run ?? null, baton: result.baton ?? [], lease: result.currentLease ?? null },
   }
@@ -150,6 +187,13 @@ export function createEpicRouter(conversationStore: ConversationStore, helpers: 
     const parsed = await readJsonBody<EpicHttpBody, EpicHttpBodyReady>(c, validate)
     if ('error' in parsed) return c.json({ ok: false, error: parsed.error }, 400)
     const body = parsed.body
+
+    // `active` gates per row rather than up front -- it has no single project
+    // to ask about, so it must be answered before `refuse` can be meaningful.
+    if (body.op === 'active') {
+      const reply = await runActive(conversationStore, c.req.raw, helpers)
+      return c.json(reply.body)
+    }
 
     const refusal = refuse(body, c.req.raw, helpers)
     if (refusal) return c.json({ ok: false, error: refusal.error }, refusal.status)

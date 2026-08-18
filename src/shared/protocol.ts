@@ -4690,6 +4690,34 @@ export interface EpicInspectResult {
   error?: string
 }
 
+/**
+ * One row of the CROSS-PROJECT activity feed -- `action=active` over HTTP, and
+ * the `epic_activity` control-panel broadcast after every sweep tick.
+ *
+ * Distinct from `EpicRunListEntry` on purpose. That one answers "what runs
+ * exist in this project" for a debugging caller; this one answers "is anything
+ * running, anywhere, and is it still moving" for a badge that is on screen
+ * permanently. Hence `maxGens` (a progress bar needs a denominator),
+ * `lastBeatAt` and `stale` -- and hence NO plan, cards or baton, because a
+ * always-on surface must stay cheap.
+ */
+export interface EpicActivityEntry {
+  epicId: string
+  project: string
+  /** `null` when conversations carry the epic but no run artifact is on disk. */
+  status: EpicRunStatus | null
+  gen: number
+  maxGens: number
+  inFlight: number
+  overseerAlive: boolean
+  armed: boolean
+  /** ISO of the last beat the sweep recorded; null if it has never beaten. */
+  lastBeatAt: string | null
+  /** Has the sweep gone quiet (older than two ticks)? Computed broker-side so
+   *  every client agrees on when a run stops looking alive. */
+  stale: boolean
+}
+
 /** One row of `action=list` -- every run the broker can see in a project. */
 export interface EpicRunListEntry {
   epicId: string
