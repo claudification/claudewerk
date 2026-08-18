@@ -19,6 +19,7 @@ import { useEffect, useRef } from 'react'
 import type { MicPermissionResult } from '@/hooks/use-mic-permission'
 import type { UseVoiceRecordingResult } from '@/hooks/use-voice-recording'
 import { prewarmVoice, prewarmVoiceTransport } from '@/hooks/voice-prewarm'
+import { abandonDictation, beginDictation, mark } from '@/hooks/voice-timeline'
 import { haptic } from '@/lib/utils'
 import { CHORD_GRACE_MS, hasForeignModifier } from './push-to-talk-guard'
 
@@ -58,6 +59,8 @@ export function usePushToTalk({ holdKey, keepMicOpen, voice, permission }: PushT
       if (graceTimer === null) return
       clearTimeout(graceTimer)
       graceTimer = null
+      // It was a chord, not speech. Nothing to measure.
+      abandonDictation()
     }
 
     function handleKeyDown(e: KeyboardEvent) {
@@ -86,10 +89,14 @@ export function usePushToTalk({ holdKey, keepMicOpen, voice, permission }: PushT
         return
       }
 
+      // t0 for every timing this dictation reports. It is the KEYDOWN, not the
+      // start of the recording -- the whole question is what happens in between.
+      beginDictation()
       graceTimer = setTimeout(() => {
         graceTimer = null
         activeRef.current = true
         haptic('tap')
+        mark('grace', `chord window elapsed (${CHORD_GRACE_MS}ms)`)
         start()
       }, CHORD_GRACE_MS)
     }

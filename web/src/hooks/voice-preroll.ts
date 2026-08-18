@@ -32,52 +32,18 @@
  * place to start -- which is exactly what a ring needs.
  */
 
-import { useConversationsStore } from '@/hooks/use-conversations'
 import type { CaptureEngine, ChunkHandler } from '@/hooks/voice-capture-contract'
 import { PCM_LABEL, type PcmGraph, startPcmGraph } from '@/hooks/voice-capture-pcm'
-
-interface RingFrame {
-  buf: ArrayBuffer
-  ms: number
-}
+import { clearRing, drainRing, pushRing } from '@/hooks/voice-preroll-ring'
+import { mark, noteDictation } from '@/hooks/voice-timeline'
 
 let graph: PcmGraph | null = null
 /** In-flight build, so a press landing during the warm-up joins it rather than
  *  starting a second AudioContext on the same device. */
 let building: Promise<PcmGraph> | null = null
 let boundStream: MediaStream | null = null
-const ring: RingFrame[] = []
-let ringMs = 0
 /** Set only while a recording is armed. Null means the ring is listening. */
 let liveHandler: ChunkHandler | null = null
-
-function prerollCapMs(): number {
-  return useConversationsStore.getState().controlPanelPrefs.voicePrerollMs ?? 0
-}
-
-function clearRing() {
-  ring.length = 0
-  ringMs = 0
-}
-
-/** Keep the newest `cap` milliseconds, evicting whole frames from the front. */
-function pushRing(buf: ArrayBuffer, ms: number) {
-  const cap = prerollCapMs()
-  if (cap <= 0) {
-    if (ring.length) clearRing()
-    return
-  }
-  ring.push({ buf, ms })
-  ringMs += ms
-  // Evict whole frames while the ring would STILL hold `cap` ms without the
-  // oldest one, so the window is always at least `cap` and never a frame short.
-  while (ring.length > 1) {
-    const oldest = ring[0]
-    if (!oldest || ringMs - oldest.ms < cap) break
-    ring.shift()
-    ringMs -= oldest.ms
-  }
-}
 
 function routeFrame(buf: ArrayBuffer, ms: number) {
   if (liveHandler) liveHandler(buf, PCM_LABEL)
@@ -157,15 +123,20 @@ export function startPreroll(stream: MediaStream) {
 
 /** Hand the ring over, oldest frame first, then go live. */
 function armGraph(g: PcmGraph, onChunk: ChunkHandler): CaptureEngine {
-  const frames = ring.slice()
-  clearRing()
-  // Live BEFORE the drain: the drain itself is synchronous, but going live first
-  // means there is no instant at which a frame could land in a ring that has
-  // already been read and will never be read again.
+  const drained = drainRing()
+  // Live BEFORE the hand-over: the hand-over itself is synchronous, but going
+  // live first means there is no instant at which a frame could land in a ring
+  // that has already been read and will never be read again.
   liveHandler = onChunk
-  for (const frame of frames) onChunk(frame.buf, PCM_LABEL)
-  const rolled = frames.reduce((sum, f) => sum + f.ms, 0)
-  console.log(`[voice] preroll armed: ${frames.length} frames / ${Math.round(rolled)}ms of speech before the press`)
+  for (const frame of drained.frames) onChunk(frame.buf, PCM_LABEL)
+  // Measured, not assumed: a loud pre-roll is proof words were being lost before
+  // the press, a silent one is proof they were not.
+  const peak = drained.peakDb === Number.NEGATIVE_INFINITY ? 'silent' : `${drained.peakDb.toFixed(1)}dBFS`
+  noteDictation({ prerollMs: drained.ms, prerollFrames: drained.frames.length, prerollPeakDb: drained.peakDb })
+  mark('preroll', `${drained.frames.length} frames / ${drained.ms}ms / peak ${peak}`)
+  console.log(
+    `[voice] preroll armed: ${drained.frames.length} frames / ${drained.ms}ms before the press (peak ${peak})`,
+  )
 
   /** Every settle path drops the live handler, the flush timeout included: audio
    *  captured after the key came up is speech the user did not mean to send. */
@@ -189,11 +160,18 @@ function armGraph(g: PcmGraph, onChunk: ChunkHandler): CaptureEngine {
  */
 export function armPreroll(stream: MediaStream, onChunk: ChunkHandler): CaptureEngine | Promise<CaptureEngine> {
   const live = ensureGraph(stream)
-  if (!(live instanceof Promise) && live.isRunning()) return armGraph(live, onChunk)
+  if (!(live instanceof Promise) && live.isRunning()) {
+    noteDictation({ armSync: true })
+    mark('arm', 'warm graph, synchronous')
+    return armGraph(live, onChunk)
+  }
   // Suspended (Safari backgrounds a context) or still building. Either way the
   // answer is to wait for THIS graph and resume it -- never to build another.
+  const building = live instanceof Promise
   return Promise.resolve(live).then(async g => {
     await g.resume()
+    noteDictation({ armSync: false })
+    mark('arm', building ? 'graph built for this press' : 'suspended context resumed')
     return armGraph(g, onChunk)
   })
 }

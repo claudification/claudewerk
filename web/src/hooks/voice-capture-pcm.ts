@@ -41,6 +41,24 @@ function frameMs(buf: ArrayBuffer): number {
   return (buf.byteLength / BYTES_PER_SAMPLE / PCM_SAMPLE_RATE) * 1000
 }
 
+/**
+ * Loudest sample across these frames, in dBFS (0 = clipping, -infinity = digital
+ * silence). It is what turns "the pre-roll recovered 1400ms" into "the pre-roll
+ * recovered 1400ms AND there was speech in it" -- the difference between a
+ * feature that saved words and one that shipped a second of room tone.
+ */
+export function peakDbfs(buffers: ArrayBuffer[]): number {
+  let peak = 0
+  for (const buf of buffers) {
+    const samples = new Int16Array(buf)
+    for (const sample of samples) {
+      const magnitude = Math.abs(sample)
+      if (magnitude > peak) peak = magnitude
+    }
+  }
+  return peak === 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(peak / 32768)
+}
+
 export interface PcmGraph {
   /** True while the context can actually produce samples. */
   isRunning(): boolean

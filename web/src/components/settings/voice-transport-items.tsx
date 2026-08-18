@@ -14,6 +14,7 @@ import type { SettingItem } from './settings-item'
 
 // LAZY: the probe + its modal never ride in the index bundle.
 const VoiceLatencyModal = lazy(() => import('./voice-latency-modal').then(m => ({ default: m.VoiceLatencyModal })))
+const VoiceTimingsModal = lazy(() => import('./voice-timings-modal').then(m => ({ default: m.VoiceTimingsModal })))
 
 /** Button + the modal it opens, as one self-contained control. */
 function MeasureLatency() {
@@ -26,6 +27,23 @@ function MeasureLatency() {
       {open && (
         <Suspense fallback={null}>
           <VoiceLatencyModal open={open} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
+    </>
+  )
+}
+
+/** The per-dictation breakdown, as opposed to the network distance above. */
+function ShowTimings() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Button variant="outline" size="sm" className="text-xs" onClick={() => setOpen(true)}>
+        Show
+      </Button>
+      {open && (
+        <Suspense fallback={null}>
+          <VoiceTimingsModal open={open} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </>
@@ -55,5 +73,14 @@ export const VOICE_TRANSPORT_ITEMS: SettingItem[] = [
     description: 'Ping each transport 10 times from this browser and compare. Distance, not transcription speed.',
     keywords: 'voice latency ping rtt measure probe benchmark deepgram cloudflare broker compare',
     render: () => <MeasureLatency />,
+  },
+  {
+    tab: 'voice',
+    group: 'Transport',
+    label: 'Dictation timings',
+    description:
+      'What the last 10 dictations actually cost, measured at every seam on this device. Says how much speech was lost before capture started, and whether the pre-roll caught it. Copies as a paste-ready tree.',
+    keywords: 'voice timing timings dictation breakdown measure preroll lost first word gap stats copy tree profile',
+    render: () => <ShowTimings />,
   },
 ]

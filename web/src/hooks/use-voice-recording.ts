@@ -26,10 +26,12 @@ import {
 } from '@/hooks/voice-mic-stream'
 import { DEFAULT_STT_MODEL, resolveSttModel } from '@/hooks/voice-stt-models'
 import { getSttToken } from '@/hooks/voice-stt-token'
+import { abandonDictation, endDictation, mark, noteDictation } from '@/hooks/voice-timeline'
 import { describeMicError } from '@/lib/mic-error'
 import { isAbortedDictation } from '@/lib/voice-abort'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 import { requestRefine } from '@/lib/voice-refine-request'
+import { logDictation } from '@/lib/voice-timeline-format'
 
 // TWO TRANSPORTS, TWO CAPTURE STORIES.
 //   broker relay (default)  MediaRecorder only. A real container the broker hands
@@ -449,8 +451,18 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
   /** Transition to the error state with a user-facing message + optional log line. */
   function failVoice(userMsg: string, logMsg?: string) {
     if (logMsg) console.error(`[voice] ${elapsed()} ${logMsg}`)
+    // A failed press is worth measuring too -- it is the one people report.
+    mark('error', logMsg ?? userMsg)
+    closeTiming()
     setErrorMsg(userMsg)
     setState('error')
+  }
+
+  /** Close the timing record and put one line in the console. */
+  function closeTiming(chars = 0) {
+    if (chars) noteDictation({ chars })
+    const record = endDictation()
+    if (record) logDictation(record)
   }
 
   /** Backend guard: if the transcriber never comes up, surface the failure
@@ -625,6 +637,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     // flux fed a container returns no transcript and no error at all.
     const model = useConversationsStore.getState().controlPanelPrefs.voiceSttModel || DEFAULT_STT_MODEL
     const keyterms = sttKeyterms(targetConversationIdRef.current)
+    noteDictation({ transport: 'direct', model })
     console.log(
       `[voice] ${elapsed()} stt model=${model} capture=${resolveSttModel(model).capture} keyterms=${keyterms.length}`,
     )
@@ -811,6 +824,10 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
       const alreadySettled = () => stateRef.current === 'submitting' || stateRef.current === 'idle'
       direct.stop().then(async text => {
         const final = (text || accumulatedTextRef.current || '').trim()
+        // The transcript is complete HERE. The refine round-trip that follows is
+        // a model call, not speech capture, and does not belong in this budget.
+        mark('final', `${final.length} chars`)
+        closeTiming(final.length)
         if (alreadySettled()) return
         if (!final) {
           armStuckReset()
@@ -898,6 +915,7 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: doStop is a stable function
   const stop = useCallback(() => {
+    mark('release', 'key up')
     console.log(`[voice] ${elapsed()} stop() (state=${stateRef.current}, backendReady=${backendReadyRef.current})`)
 
     // 'connecting' = still acquiring mic (brief). Defer until recorder starts.
@@ -926,6 +944,8 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
 
   const cancel = useCallback(() => {
     console.log(`[voice] ${elapsed()} cancel()`)
+    // Dropped on purpose -- there is no dictation to report a timing for.
+    abandonDictation()
     cancelledRef.current = true
     sendWs({ type: 'voice_stop' })
     reset()

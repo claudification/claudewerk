@@ -25,6 +25,7 @@
 
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { disposePreroll, startPreroll } from '@/hooks/voice-preroll'
+import { mark, noteDictation } from '@/hooks/voice-timeline'
 
 const KEEP_MIC_IDLE_TTL = 30 * 60_000
 let warmStream: MediaStream | null = null
@@ -270,10 +271,16 @@ export async function acquireMicStream(): Promise<MediaStream> {
   // Idempotent: a no-op once the graph is up on this stream. It matters on the
   // path where the stream outlived its graph, so the ring starts refilling
   // instead of silently staying empty until the next cold acquire.
-  if (reused) return withPreroll(reused)
+  if (reused) {
+    noteDictation({ micWarm: true })
+    mark('mic', 'warm stream reused')
+    return withPreroll(reused)
+  }
 
   const t0 = performance.now()
   const stream = await openMicStream(wantDevice)
+  noteDictation({ micWarm: false })
+  mark('mic', `cold getUserMedia, ${Math.round(performance.now() - t0)}ms`)
   const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
   console.log(
     `[voice] mic acquired in ${(performance.now() - t0).toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`,
