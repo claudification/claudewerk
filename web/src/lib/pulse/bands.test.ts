@@ -21,11 +21,19 @@ const live = (state: LiveStatusState, over: Partial<LiveStatus> = {}): LiveStatu
   ({ state, seq: 1, updatedAt: NOW - 5_000, ...over }) as LiveStatus
 
 describe('PULSE_BANDS', () => {
-  it('leads with WORKING, then NEEDS YOU', () => {
-    // Reversed 2026-08-18 on real fleet data: `needs_you` is over-reported, so
-    // a needs-first board buried the dozen things actually running under three
-    // dozen that mostly were not blocked. Lead with what is MOVING.
-    expect([...PULSE_BANDS]).toEqual(['working', 'needs', 'done', 'idle', 'expired'])
+  it('leads with WORKING, then JUST DONE, then NEEDS YOU', () => {
+    // Two reorderings, both driven by real fleet data. needs-first buried the
+    // dozen things actually running under three dozen that mostly were not
+    // blocked. Then working -> needs -> done pushed JUST DONE below a 30-row
+    // needs band, i.e. off screen -- and a finished run is the most perishable
+    // row on the board (merge it, ship it, or catch a bad landing).
+    expect([...PULSE_BANDS]).toEqual(['working', 'done', 'needs', 'idle', 'expired'])
+  })
+
+  it('keeps the two perishable bands above the long queue', () => {
+    const order = [...PULSE_BANDS]
+    expect(order.indexOf('done')).toBeLessThan(order.indexOf('needs'))
+    expect(order.indexOf('working')).toBeLessThan(order.indexOf('done'))
   })
 
   it('keeps expired last so it can collapse to a count', () => {

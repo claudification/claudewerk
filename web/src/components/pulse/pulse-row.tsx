@@ -3,6 +3,7 @@ import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
 import type { PulseQuery } from '@/lib/pulse/filter'
 import { highlightRange } from '@/lib/pulse/filter'
 import { cn } from '@/lib/utils'
+import { ProjectTag } from '../project-tag'
 import type { PulseRow as Row } from './use-pulse-fleet'
 
 /** Free-text hit, highlighted in place. Falls back to plain text when the match
@@ -98,7 +99,13 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover }: 
         >
           <Title text={row.title} query={query} />
         </span>
-        <span className="text-[10px] font-mono text-comment shrink-0">{row.project}</span>
+        <ProjectTag
+          name={row.project}
+          icon={row.projectIcon}
+          color={row.projectColor}
+          className={cn('text-[10px] font-mono shrink-0 max-w-[9rem]', !row.projectColor && 'text-comment')}
+          iconClassName="size-[11px]"
+        />
         <span className={cn('text-[11px] truncate', row.band === 'needs' ? style.text : 'text-accent')}>
           {row.action}
         </span>

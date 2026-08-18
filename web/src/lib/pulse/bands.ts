@@ -9,22 +9,33 @@ import type { Conversation } from '@/lib/types'
  * rows collapses but never moves.
  *
  *   working  active and streaming right now
- *   needs    something wants a human — permission, question, dialog, blocked
  *   done     finished inside JUST_DONE_WINDOW_MS, still worth a look
+ *   needs    something wants a human — permission, question, dialog, blocked
  *   idle     alive, quiet, nobody waiting
  *   expired  ended/reaped and past the window — collapsed to a count
  *
- * WORKING LEADS, not NEEDS YOU. That is a deliberate reversal (2026-08-18): in
- * a real fleet `needs_you` is over-reported -- agents raise it for "here is my
- * result, what next?" as readily as for a genuine block -- so a needs-first
- * board buried the twelve things actually running under thirty-two that mostly
- * were not blocked. The surface leads with what is MOVING; attention sits
- * directly beneath it, still above the fold.
+ * WORKING LEADS, then JUST DONE, then NEEDS YOU. Two orderings have been tried
+ * and both lost to real fleet data:
+ *
+ *  - needs-first (original) buried the twelve things actually running under
+ *    thirty-two that mostly were not blocked. `needs_you` is over-reported --
+ *    agents raise it for "here is my result, what next?" as readily as for a
+ *    genuine block.
+ *  - working -> needs -> done (2026-08-18) fixed that but pushed JUST DONE below
+ *    a needs band that routinely runs 30+ rows, i.e. off the screen entirely.
+ *    A finished run is the most perishable thing on the board: it is where you
+ *    merge, ship, or catch a bad landing, and its window is only
+ *    JUST_DONE_WINDOW_MS wide. Missing it costs more than reading a stale ask
+ *    late.
+ *
+ * So the top of the board is what MOVED (working) and what just STOPPED moving
+ * (done) -- both small, both perishable. The long over-reported queue sits
+ * beneath them where its length hurts nobody.
  */
 export type PulseBand = 'needs' | 'working' | 'done' | 'idle' | 'expired'
 
 /** Fixed reading order. Never sort this by count. */
-export const PULSE_BANDS: readonly PulseBand[] = ['working', 'needs', 'done', 'idle', 'expired'] as const
+export const PULSE_BANDS: readonly PulseBand[] = ['working', 'done', 'needs', 'idle', 'expired'] as const
 
 /** How long a finished conversation stays in JUST DONE before falling to expired. */
 export const JUST_DONE_WINDOW_MS = 30 * 60_000
