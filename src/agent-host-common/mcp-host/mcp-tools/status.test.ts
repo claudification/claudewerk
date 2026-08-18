@@ -52,10 +52,32 @@ describe('set_status tool', () => {
       for (const step of opsSteps) expect(description).toContain(step)
     })
 
-    test('the description states a pending deploy is not needs_you', () => {
+    test('the description states shipped-but-not-deployed is not needs_you', () => {
       const { description } = setup()
-      expect(description).toContain('A PENDING DEPLOY IS NOT `needs_you`')
-      expect(description).toMatch(/never in `needs_you` or `pending`|NEVER in `needs_you` or `pending`/i)
+      expect(description).toContain('SHIPPED BUT NOT DEPLOYED IS NOT `needs_you`')
+      expect(description).toMatch(/never `needs_you`, never `pending`/i)
+    })
+
+    test('a NOTE is the default and a caveat is the CEILING — never higher', () => {
+      // Restated by Jonas 2026-08-18: "Something that is shipped, but not
+      // deployed, does NOT sum up to a needs_you status! That's a NOTE, and at
+      // MOST a caveat." The rule already existed but sat three paragraphs below
+      // the definition, so it was not being read with it.
+      const { description } = setup()
+      expect(description).toContain('AT MOST a caveat')
+      const caveatsLine = description.split('\n').find(l => l.trimStart().startsWith('- `caveats`'))
+      expect(caveatsLine).toContain('CEILING')
+    })
+
+    test('the deploy rule sits with the state definitions, not buried below them', () => {
+      // Placement IS the fix: a rule read after the reader has already chosen a
+      // state does not change the choice.
+      const { description } = setup()
+      const blockedDef = description.indexOf('- `blocked`')
+      const deployRule = description.indexOf('SHIPPED BUT NOT DEPLOYED')
+      const fieldDocs = description.indexOf('The text fields are ALL OPTIONAL')
+      expect(deployRule).toBeGreaterThan(blockedDef)
+      expect(deployRule).toBeLessThan(fieldDocs)
     })
 
     test('the notes field claims un-run deploy steps', () => {

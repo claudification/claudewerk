@@ -35,7 +35,9 @@ const STATUS_NUDGE_REASON = `You did real work this turn but never called set_st
 
   set_status({ state: 'working' | 'done' | 'needs_you' | 'blocked', ... })
 
-\`needs_you\` means WORK IS STOPPED and cannot resume until the user acts -- NOT "I have a question". If you finished what was asked and are asking what to do next, that is \`done\` with the question in \`pending\`. Test: if they never answered, would anything be left unfinished? If no, it is \`done\`.
+\`needs_you\` means WORK IS STOPPED and cannot resume until the user acts -- NOT "I have a question". Two things that are \`done\`, not \`needs_you\`:
+  - SHIPPED BUT NOT DEPLOYED (needs a restart / \`build:packages\` / a cache clear). That is a NOTE, at most a caveat. Test: if they ran it tonight without telling you, would the task be complete? If yes -> \`done\` + \`notes\`.
+  - FINISHED, ASKING WHAT NEXT. That is \`done\` with the question in \`pending\`. Test: if they never answered, would anything be left unfinished? If no -> \`done\`.
 
 Keep the text fields sparse -- empty is fine, only fill what matters. But if this was just a small step, a lookup, or routine back-and-forth that does NOT change the conversation's status, you can skip it entirely -- just end your turn, no status needed. This is a one-time reminder; either a single set_status call OR ending your turn satisfies it. Do NOT explain at length.`
 
