@@ -8,16 +8,23 @@ import type { Conversation } from '@/lib/types'
  * muscle memory is the whole point of a glanceable surface, so a band with zero
  * rows collapses but never moves.
  *
- *   needs    something wants a human — permission, question, dialog, blocked
  *   working  active and streaming right now
+ *   needs    something wants a human — permission, question, dialog, blocked
  *   done     finished inside JUST_DONE_WINDOW_MS, still worth a look
  *   idle     alive, quiet, nobody waiting
  *   expired  ended/reaped and past the window — collapsed to a count
+ *
+ * WORKING LEADS, not NEEDS YOU. That is a deliberate reversal (2026-08-18): in
+ * a real fleet `needs_you` is over-reported -- agents raise it for "here is my
+ * result, what next?" as readily as for a genuine block -- so a needs-first
+ * board buried the twelve things actually running under thirty-two that mostly
+ * were not blocked. The surface leads with what is MOVING; attention sits
+ * directly beneath it, still above the fold.
  */
 export type PulseBand = 'needs' | 'working' | 'done' | 'idle' | 'expired'
 
 /** Fixed reading order. Never sort this by count. */
-export const PULSE_BANDS: readonly PulseBand[] = ['needs', 'working', 'done', 'idle', 'expired'] as const
+export const PULSE_BANDS: readonly PulseBand[] = ['working', 'needs', 'done', 'idle', 'expired'] as const
 
 /** How long a finished conversation stays in JUST DONE before falling to expired. */
 export const JUST_DONE_WINDOW_MS = 30 * 60_000

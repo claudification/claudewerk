@@ -51,43 +51,22 @@ interface PulseRowProps {
   active?: boolean
   onSelect: () => void
   onHover?: () => void
-  /** Mobile only: NEEDS YOU renders as a full card, everything else stays one line. */
-  card?: boolean
 }
 
-export function PulseRowItem({ row, query, active = false, onSelect, onHover, card = false }: PulseRowProps) {
+/**
+ * One conversation, one line.
+ *
+ * NEEDS YOU gets a card treatment on NARROW VIEWPORTS ONLY, and that is done
+ * purely in CSS (`max-sm:`) rather than with a prop. It used to be a `card`
+ * boolean, which every caller passed unconditionally -- so the mobile card
+ * rendered on the desktop palette too and blew the layout out of frame. A
+ * viewport concern belongs in a media query, where it cannot be handed the
+ * wrong value.
+ */
+export function PulseRowItem({ row, query, active = false, onSelect, onHover }: PulseRowProps) {
   const style = PULSE_BAND_STYLE[row.band]
   const age = pulseAge(row.ageMs)
-
-  if (card) {
-    return (
-      <button
-        type="button"
-        data-active={active}
-        onClick={onSelect}
-        onMouseEnter={onHover}
-        className={cn(
-          'w-full text-left rounded-lg border px-3 py-2.5 mb-1.5 transition-colors',
-          style.bg,
-          style.border,
-          'border-l-[3px]',
-          active && 'bg-primary/15',
-        )}
-      >
-        <div className="flex items-start gap-2">
-          {row.managedBy && <ManagedChip label={row.managedBy.label} title={managedTitle(row)} />}
-          <span className="text-sm text-foreground flex-1 min-w-0 break-words">
-            <Title text={row.title} query={query} />
-          </span>
-          <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums">{age}</span>
-        </div>
-        <div className="mt-1 flex items-baseline gap-2 min-w-0">
-          <span className="text-[10px] font-mono text-comment truncate">{row.project}</span>
-        </div>
-        <div className={cn('mt-0.5 text-xs truncate', style.text)}>{row.action}</div>
-      </button>
-    )
-  }
+  const asCard = row.band === 'needs'
 
   return (
     <button
@@ -96,24 +75,38 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover, ca
       onClick={onSelect}
       onMouseEnter={onHover}
       className={cn(
-        'w-full px-3 py-1.5 flex items-baseline gap-2.5 text-left transition-colors border-l-2 border-transparent',
+        'w-full text-left transition-colors flex items-baseline gap-2.5 px-3 py-1.5 border-l-2 border-transparent',
         active ? cn('bg-primary/15', style.border) : 'hover:bg-primary/10',
+        asCard && cn('max-sm:block max-sm:rounded-lg max-sm:border max-sm:border-l-[3px]', style.bg, style.border),
+        asCard && 'max-sm:relative max-sm:mx-2 max-sm:mb-1.5 max-sm:px-3 max-sm:py-2.5 max-sm:w-auto',
       )}
     >
-      <span className={cn('text-[11px] font-mono w-3 shrink-0', style.text)}>{style.icon}</span>
-      <span className="flex-1 min-w-0 flex items-baseline gap-2.5">
+      <span className={cn('text-[11px] font-mono w-3 shrink-0 max-sm:hidden', style.text)}>{style.icon}</span>
+
+      {/* One copy of every field, REFLOWED rather than duplicated: wrapping on
+          narrow viewports and giving the title a full basis pushes project +
+          action onto a second line. Rendering a desktop copy and a mobile copy
+          would put the same text in the DOM twice -- invisible to the eye,
+          ambiguous to a screen reader, and to getByText. */}
+      <span className="flex-1 min-w-0 flex items-baseline gap-x-2.5 gap-y-0.5 max-sm:flex-wrap">
         {row.managedBy && <ManagedChip label={row.managedBy.label} title={managedTitle(row)} />}
-        <span className={cn('text-xs truncate', active ? 'text-foreground' : 'text-foreground/90')}>
+        <span
+          className={cn(
+            'text-xs truncate max-sm:text-sm max-sm:basis-full max-sm:whitespace-normal',
+            active ? 'text-foreground' : 'text-foreground/90',
+          )}
+        >
           <Title text={row.title} query={query} />
         </span>
-        <span className="text-[10px] font-mono text-comment shrink-0 hidden sm:inline">{row.project}</span>
-        <span
-          className={cn('text-[11px] truncate hidden sm:inline', row.band === 'needs' ? style.text : 'text-accent')}
-        >
+        <span className="text-[10px] font-mono text-comment shrink-0">{row.project}</span>
+        <span className={cn('text-[11px] truncate', row.band === 'needs' ? style.text : 'text-accent')}>
           {row.action}
         </span>
       </span>
-      <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums">{age}</span>
+
+      <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums max-sm:absolute max-sm:right-3 max-sm:top-2.5">
+        {age}
+      </span>
     </button>
   )
 }

@@ -18,21 +18,11 @@ interface PulseBandsViewProps {
   onHover?: (row: PulseRow) => void
   /** Board mode drops the fold and lays bands out as columns. */
   board?: boolean
-  /** Render NEEDS YOU as full cards (mobile). */
-  cards?: boolean
   /** Types `+over` into the query box. Absent on surfaces with no input. */
   onRevealManaged?: () => void
 }
 
-export function PulseBandsView({
-  fleet,
-  activeId,
-  onSelect,
-  onHover,
-  board,
-  cards,
-  onRevealManaged,
-}: PulseBandsViewProps) {
+export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, onRevealManaged }: PulseBandsViewProps) {
   const [unfolded, setUnfolded] = useState<ReadonlySet<PulseBand>>(() => new Set())
   const [showExpired, setShowExpired] = useState(false)
 
@@ -49,7 +39,6 @@ export function PulseBandsView({
             active={row.id === activeId}
             onSelect={() => onSelect(row)}
             onHover={onHover ? () => onHover(row) : undefined}
-            card={cards && band === 'needs'}
           />
         ))}
         {rows.length > limit && (

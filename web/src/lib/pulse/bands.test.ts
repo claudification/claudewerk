@@ -21,8 +21,15 @@ const live = (state: LiveStatusState, over: Partial<LiveStatus> = {}): LiveStatu
   ({ state, seq: 1, updatedAt: NOW - 5_000, ...over }) as LiveStatus
 
 describe('PULSE_BANDS', () => {
-  it('is a fixed reading order', () => {
-    expect([...PULSE_BANDS]).toEqual(['needs', 'working', 'done', 'idle', 'expired'])
+  it('leads with WORKING, then NEEDS YOU', () => {
+    // Reversed 2026-08-18 on real fleet data: `needs_you` is over-reported, so
+    // a needs-first board buried the dozen things actually running under three
+    // dozen that mostly were not blocked. Lead with what is MOVING.
+    expect([...PULSE_BANDS]).toEqual(['working', 'needs', 'done', 'idle', 'expired'])
+  })
+
+  it('keeps expired last so it can collapse to a count', () => {
+    expect(PULSE_BANDS[PULSE_BANDS.length - 1]).toBe('expired')
   })
 })
 

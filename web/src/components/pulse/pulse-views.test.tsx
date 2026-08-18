@@ -80,7 +80,7 @@ describe('PulseRowItem', () => {
   })
 
   it('renders the card treatment without losing any field', () => {
-    render(<PulseRowItem row={row()} query={parsePulseQuery('')} onSelect={vi.fn()} card />)
+    render(<PulseRowItem row={row()} query={parsePulseQuery('')} onSelect={vi.fn()} />)
     expect(screen.getByText('epic-run ceiling copy')).toBeTruthy()
     expect(screen.getByText('permission: rm -rf')).toBeTruthy()
   })
@@ -183,7 +183,7 @@ describe('PulseRowItem — machine-run marking', () => {
 
   it('marks the card treatment too', () => {
     const r = row({ managedBy: { kind: 'nightshift', label: 'NIGHT', runId: 'run_1' }, managed: true })
-    render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} card />)
+    render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} />)
     expect(screen.getByText('NIGHT')).toBeTruthy()
   })
 })

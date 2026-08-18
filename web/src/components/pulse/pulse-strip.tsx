@@ -104,7 +104,7 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
             />
             <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums">{fleet.flat.length} live</span>
           </div>
-          <PulseBandsView fleet={fleet} activeId={null} onSelect={select} cards />
+          <PulseBandsView fleet={fleet} activeId={null} onSelect={select} />
         </div>
       )}
     </div>
