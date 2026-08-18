@@ -12,11 +12,13 @@
  */
 
 import { VOICE_REFINER_MODELS } from '@shared/voice-refiner-models'
-import { RECOMMENDED_VOICE_PROMPT } from '@shared/voice-refiner-prompt'
+import { RECOMMENDED_VOICE_PROMPT, VOICE_PROMPT_MAX_CHARS } from '@shared/voice-refiner-prompt'
 import { SettingCheckbox } from './settings-inputs'
 import { NUM_INPUT_CLS, SELECT_CLS, type SettingItem, TEXT_INPUT_CLS } from './settings-item'
 
-const PROMPT_MAX = 4000
+/** The SAME constant the broker's Zod schema uses -- imported, never retyped.
+ *  See VOICE_PROMPT_MAX_CHARS for the drift bug that made it shared. */
+const PROMPT_MAX = VOICE_PROMPT_MAX_CHARS
 
 /** Refinement does nothing without a prompt -- an empty one means OFF, on
  *  purpose. Everything below the toggle is noise until both are true. */
@@ -112,17 +114,28 @@ export const VOICE_REFINEMENT_ITEMS: SettingItem[] = [
     keywords: 'speech recognition prompt refine',
     render: (ctx, ariaLabel) => {
       const value = (ctx.server.voiceRefinementPrompt as string) ?? ''
+      // Only reachable from a stale value the server already holds -- maxLength
+      // stops typing and paste dead. Still rendered, because a prompt saved
+      // under an older, larger cap must SAY why it will not save now rather than
+      // vanish on the next Save.
+      const over = value.length > PROMPT_MAX
       return (
         <div className="w-full">
           <textarea
             aria-label={ariaLabel}
             value={value}
+            // The whole point of the 2026-08-18 fix: the browser physically
+            // cannot produce a value the server will reject, so the silent
+            // strip-on-save can never happen again.
+            maxLength={PROMPT_MAX}
             onChange={e => ctx.setServer('voiceRefinementPrompt', e.target.value)}
             placeholder="Empty = refinement is off. Use the button below to start from the tested prompt."
             rows={4}
-            className={`${TEXT_INPUT_CLS} w-full px-3 py-2 placeholder:text-muted-foreground/30 resize-y min-h-[60px]`}
+            className={`${TEXT_INPUT_CLS} w-full px-3 py-2 placeholder:text-muted-foreground/30 resize-y min-h-[60px] ${
+              over ? 'border-red-500' : ''
+            }`}
           />
-          <div className="flex items-center justify-between mt-0.5">
+          <div className="flex items-center justify-between mt-0.5 gap-2">
             <button
               type="button"
               onClick={() => ctx.setServer('voiceRefinementPrompt', RECOMMENDED_VOICE_PROMPT)}
@@ -130,7 +143,12 @@ export const VOICE_REFINEMENT_ITEMS: SettingItem[] = [
             >
               Use recommended prompt
             </button>
-            <span className="text-[9px] text-muted-foreground/50">
+            {over && (
+              <span className="text-[10px] text-red-400 font-medium">
+                Too long by {value.length - PROMPT_MAX} -- this will NOT save
+              </span>
+            )}
+            <span className={`text-[9px] ${over ? 'text-red-400' : 'text-muted-foreground/50'}`}>
               {value.length}/{PROMPT_MAX}
             </span>
           </div>

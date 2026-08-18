@@ -27,6 +27,7 @@ import {
 import { DEFAULT_STT_MODEL, resolveSttModel } from '@/hooks/voice-stt-models'
 import { getSttToken } from '@/hooks/voice-stt-token'
 import { describeMicError } from '@/lib/mic-error'
+import { isAbortedDictation } from '@/lib/voice-abort'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
 import { requestRefine } from '@/lib/voice-refine-request'
 
@@ -813,6 +814,19 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
         if (alreadySettled()) return
         if (!final) {
           armStuckReset()
+          return
+        }
+        // BEFORE the refine, deliberately: refining text that is about to be
+        // thrown away costs a model call and up to the full deadline of the
+        // user's time, for an answer nobody will ever read.
+        if (isAbortedDictation(final)) {
+          console.log(`[voice] ${elapsed()} kill phrase -- discarding ${final.length} chars`)
+          // Kept in history: "I said the magic words and lost a good paragraph"
+          // has to be recoverable. Discarding means NOT SENDING, not erasing.
+          addVoiceHistoryEntry({ raw: final, refined: '', conversationId: targetConversationIdRef.current })
+          // reset() is what drag-to-cancel already does: back to idle, nothing
+          // sent. Reusing it keeps "discarded" meaning one thing everywhere.
+          reset()
           return
         }
         // The direct path keeps the transcript in the browser, so the refiner has

@@ -7,6 +7,20 @@
  */
 
 /**
+ * The cap on `voiceRefinementPrompt`, in characters. ONE constant, imported by
+ * BOTH the broker's Zod schema and the settings textarea's `maxLength`, so the
+ * two cannot drift.
+ *
+ * They drifted once (2026-08-18): the client said 4000, the server said 2000.
+ * The panel accepted the 2683-char recommended prompt, the server's soft-fail
+ * STRIPPED the over-long field, and the textarea came back empty with no error
+ * -- indistinguishable from "Save did nothing". A shared constant makes that
+ * particular bug unrepresentable; the test below keeps the recommended prompt
+ * itself from ever outgrowing it.
+ */
+export const VOICE_PROMPT_MAX_CHARS = 5000
+
+/**
  * The prompt we measured everything against (2026-08-18). NOT a schema default:
  * `voiceRefinementPrompt` still defaults to '' and an empty prompt still means
  * OFF, because a refiner that improvises against no ground truth rewrites the

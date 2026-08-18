@@ -4,7 +4,8 @@ import {
   resolveVoiceRefinerModel,
   VOICE_REFINER_MODELS,
 } from '../shared/voice-refiner-models'
-import { initGlobalSettings } from './global-settings'
+import { VOICE_PROMPT_MAX_CHARS } from '../shared/voice-refiner-prompt'
+import { initGlobalSettings, updateGlobalSettings } from './global-settings'
 import type { KVStore } from './store/types'
 import {
   contextBlockFrom,
@@ -179,4 +180,35 @@ test('the recommended prompt is offered but is NOT the schema default', () => {
   expect(refinementSkipReason('hello')).toBe('no refinement prompt configured')
   expect(RECOMMENDED_VOICE_PROMPT).toContain('NO NONSENSE WORDS SURVIVE')
   expect(RECOMMENDED_VOICE_PROMPT.length).toBeLessThanOrEqual(4000)
+})
+
+test('REGRESSION: clicking "Use recommended prompt" and saving actually PERSISTS it', () => {
+  // 2026-08-18, reported live: the button filled the textarea, Save wiped it,
+  // and nothing said why. The client capped at 4000, the server's schema at
+  // 2000, and the 2683-char prompt fell in the gap -- updateGlobalSettings
+  // soft-fails by STRIPPING an invalid field, so the write silently no-opped
+  // and the reload showed empty. The cap is one shared constant now; this
+  // pins the prompt inside it and proves the round-trip.
+  expect(RECOMMENDED_VOICE_PROMPT.length).toBeLessThanOrEqual(VOICE_PROMPT_MAX_CHARS)
+
+  initGlobalSettings(fakeKv({}))
+  const { settings, errors } = updateGlobalSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: RECOMMENDED_VOICE_PROMPT,
+  })
+  expect(errors).toBeUndefined()
+  expect(settings.voiceRefinementPrompt).toBe(RECOMMENDED_VOICE_PROMPT)
+  // And the refiner agrees it is now configured, rather than silently off.
+  expect(refinementSkipReason('hello')).toBeNull()
+})
+
+test('a prompt over the shared cap is rejected LOUDLY, not stripped in silence', () => {
+  initGlobalSettings(fakeKv({ voiceRefinement: true, voiceRefinementPrompt: 'keep me' }))
+  const { settings, errors } = updateGlobalSettings({
+    voiceRefinementPrompt: 'x'.repeat(VOICE_PROMPT_MAX_CHARS + 1),
+  })
+  // The old value survives rather than being clobbered with a half-write...
+  expect(settings.voiceRefinementPrompt).toBe('keep me')
+  // ...and the caller is TOLD, which is what the UI had nothing to render.
+  expect(errors?.some(e => e.startsWith('voiceRefinementPrompt'))).toBe(true)
 })

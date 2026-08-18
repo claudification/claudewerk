@@ -11,6 +11,7 @@
 import type { ReactNode } from 'react'
 import type { VoiceState } from '@/hooks/use-voice-recording'
 import { cn } from '@/lib/utils'
+import { ABORT_HINT } from '@/lib/voice-abort'
 
 interface VoiceStatusLineProps {
   state: VoiceState
@@ -52,7 +53,14 @@ export function VoiceStatusLine({
       <span className={cn(LABEL, offline ? 'text-amber-400' : 'text-red-400')}>
         {offline ? 'Offline -- buffering' : recordingLabel}
       </span>
+      {/* The kill phrase is only useful in the seconds you are actually talking,
+          so it is shown then rather than left to be discovered in settings.
+          `warming up` wins the slot when both apply -- a mic that is not ready
+          yet is the more urgent thing to know. */}
       {!offline && !backendReady && <span className={cn(LABEL, 'text-muted-foreground/50 ml-auto')}>warming up</span>}
+      {!offline && backendReady && (
+        <span className={cn(LABEL, 'text-muted-foreground/40 ml-auto normal-case tracking-normal')}>{ABORT_HINT}</span>
+      )}
     </>
   )
 }

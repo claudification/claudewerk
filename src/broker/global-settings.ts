@@ -7,6 +7,7 @@
 import { z } from 'zod/v4'
 import { transportEnum } from '../shared/spawn-schema'
 import { DEFAULT_VOICE_REFINER_MODEL } from '../shared/voice-refiner-models'
+import { VOICE_PROMPT_MAX_CHARS } from '../shared/voice-refiner-prompt'
 import type { KVStore } from './store/types'
 
 const KV_KEY = 'global-settings'
@@ -24,7 +25,9 @@ const GlobalSettingsSchema = z.object({
   // voice-refiner.ts -- a refiner improvising against no ground truth rewrites
   // the user's words for them. Settings offers RECOMMENDED_VOICE_PROMPT as a
   // one-click starting point instead.
-  voiceRefinementPrompt: z.string().max(4000).default(''),
+  // The cap is SHARED with the settings textarea's maxLength -- see
+  // VOICE_PROMPT_MAX_CHARS for the drift bug that made it one constant.
+  voiceRefinementPrompt: z.string().max(VOICE_PROMPT_MAX_CHARS).default(''),
   // Free-form rather than an enum so a model can be pointed at a new id without
   // a broker deploy; resolveVoiceRefinerModel() degrades an unknown one to the
   // default rather than letting it 400 away someone's dictation.
