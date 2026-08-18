@@ -84,13 +84,53 @@ function routeFrame(buf: ArrayBuffer, ms: number) {
   else pushRing(buf, ms)
 }
 
-async function buildGraph(stream: MediaStream): Promise<PcmGraph> {
-  const built = await startPcmGraph(stream)
-  built.onFrame = routeFrame
-  graph = built
+/**
+ * Claim the stream SYNCHRONOUSLY, then build.
+ *
+ * THE CLAIM MUST LAND BEFORE THE FIRST AWAIT (2026-08-18 regression, shipped and
+ * caught within the hour). It used to be recorded when the build RESOLVED, so a
+ * press arriving mid-build -- which is every cold press, since acquireMicStream
+ * starts the build and beginDirect arms it microseconds later -- saw
+ * `boundStream === null`, read that as a different microphone, disposed the
+ * in-flight build and started a second one. Both graphs ended up live, both fed
+ * `routeFrame`, and every frame went out TWICE. Interleaved duplicate linear16 is
+ * not audio flux can read: it returns no transcript AND no error, which on screen
+ * is indistinguishable from a dead microphone.
+ */
+function beginBuild(stream: MediaStream): Promise<PcmGraph> {
   boundStream = stream
-  building = null
-  return built
+  const pending = startPcmGraph(stream).then(built => {
+    // Superseded while we were building: a device switch or a mic release. The
+    // graph we just built belongs to nobody, so it must not be left running.
+    if (boundStream !== stream) {
+      built.dispose()
+      throw new Error('preroll graph superseded before it started')
+    }
+    built.onFrame = routeFrame
+    graph = built
+    building = null
+    return built
+  })
+  building = pending
+  // A failed build must not become a permanently cached rejection -- drop the
+  // claim so the next acquire is free to try again.
+  pending.catch(err => {
+    console.warn('[voice] preroll graph failed to start --', err)
+    if (building !== pending) return
+    building = null
+    boundStream = null
+  })
+  return pending
+}
+
+/** The ONE path to a live graph for `stream`. Synchronous when it already exists,
+ *  which is what keeps a warm press free. Never builds a second one. */
+function ensureGraph(stream: MediaStream): PcmGraph | Promise<PcmGraph> {
+  if (boundStream !== stream) {
+    disposePreroll()
+    return beginBuild(stream)
+  }
+  return graph ?? building ?? beginBuild(stream)
 }
 
 /** Drop the graph and everything it captured. The warm stream owns this. */
@@ -109,16 +149,10 @@ export function disposePreroll() {
  * `voicePrerollMs` of audio, ready for a press that has not happened yet.
  */
 export function startPreroll(stream: MediaStream) {
-  if (boundStream !== stream) disposePreroll()
-  if (graph || building) return
-  const pending = buildGraph(stream)
-  building = pending
-  // Handled HERE so a failed warm-up is not an unhandled rejection. A press that
-  // joins this same promise gets the rejection too, and surfaces it honestly.
-  pending.catch(err => {
-    building = null
-    console.warn('[voice] preroll graph failed to start --', err)
-  })
+  // Rejection is already logged and cleaned up inside beginBuild; swallowing it
+  // here only stops a fire-and-forget warm-up becoming an unhandled rejection.
+  const pending = ensureGraph(stream)
+  if (pending instanceof Promise) pending.catch(() => {})
 }
 
 /** Hand the ring over, oldest frame first, then go live. */
@@ -154,13 +188,11 @@ function armGraph(g: PcmGraph, onChunk: ChunkHandler): CaptureEngine {
  * graph (async, and with an empty ring) when there was nothing warm to reuse.
  */
 export function armPreroll(stream: MediaStream, onChunk: ChunkHandler): CaptureEngine | Promise<CaptureEngine> {
-  if (graph && boundStream === stream && graph.isRunning()) return armGraph(graph, onChunk)
-  if (boundStream !== stream) disposePreroll()
-  const pending = building ?? buildGraph(stream)
-  building = pending
-  return pending.then(async g => {
-    // A context the platform suspended has an empty and stale ring; resuming is
-    // still worth it, because the recording that follows needs a live graph.
+  const live = ensureGraph(stream)
+  if (!(live instanceof Promise) && live.isRunning()) return armGraph(live, onChunk)
+  // Suspended (Safari backgrounds a context) or still building. Either way the
+  // answer is to wait for THIS graph and resume it -- never to build another.
+  return Promise.resolve(live).then(async g => {
     await g.resume()
     return armGraph(g, onChunk)
   })

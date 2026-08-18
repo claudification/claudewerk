@@ -32,7 +32,13 @@ vi.mock('@/hooks/use-conversations', () => ({
 import type { CaptureEngine } from '@/hooks/voice-capture-contract'
 import { PCM_SAMPLE_RATE } from '@/hooks/voice-capture-pcm'
 import { startUplink } from '@/hooks/voice-deepgram-uplink'
-import { FakeAudioWorkletNode, FakeWebSocket, fakeStream, installVoiceFakes } from '@/hooks/voice-fakes'
+import {
+  FakeAudioContext,
+  FakeAudioWorkletNode,
+  FakeWebSocket,
+  fakeStream,
+  installVoiceFakes,
+} from '@/hooks/voice-fakes'
 import { armPreroll, disposePreroll, startPreroll } from '@/hooks/voice-preroll'
 
 let restore: () => void
@@ -189,6 +195,40 @@ describe('one dictation never leaks into the next', () => {
 })
 
 describe('lifecycle', () => {
+  test('a press during the warm-up joins the build instead of starting a SECOND graph', async () => {
+    const stream = fakeStream()
+    // The real cold press: acquireMicStream kicks the build off and beginDirect
+    // arms it microseconds later, long before the worklet module has loaded.
+    startPreroll(stream)
+    const { got, onChunk } = collector()
+    await armPreroll(stream, onChunk)
+
+    // THE 2026-08-18 REGRESSION: the claim on the stream was recorded only after
+    // the build resolved, so the press saw boundStream===null, read it as a
+    // different mic, disposed the in-flight build and started its own. Two live
+    // graphs both feed routeFrame, so every frame goes out TWICE -- and
+    // interleaved duplicate linear16 is not audio flux can read. It answers with
+    // no transcript and no error, which is indistinguishable from a dead mic.
+    expect(FakeAudioContext.instances).toHaveLength(1)
+
+    for (const node of FakeAudioWorkletNode.instances) node.emit(frame(1))
+    expect(got).toEqual([1])
+  })
+
+  test('a suspended context is resumed, not replaced with a second one', async () => {
+    const stream = fakeStream()
+    await warmMic(stream)
+    // Safari suspends a backgrounded context. Rebuilding on top of the live one
+    // is the same two-graph duplication by another route.
+    const ctx = FakeAudioContext.latest()
+    ctx.state = 'suspended'
+
+    await armPreroll(stream, () => {})
+
+    expect(FakeAudioContext.instances).toHaveLength(1)
+    expect(ctx.state).toBe('running')
+  })
+
   test('releasing the mic drops the ring -- recorded speech does not outlive the stream', async () => {
     const stream = fakeStream()
     const node = await warmMic(stream)
