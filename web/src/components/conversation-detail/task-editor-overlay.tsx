@@ -31,6 +31,9 @@ export function TaskEditorOverlay({
     <>
       {taskEditorTask && (
         <TaskEditor
+          // Same rule as on the board: a different card is a different editor.
+          // See the note at the board's mount site -- these two must not drift.
+          key={taskEditorTask.slug}
           task={taskEditorTask}
           conversationId={conversationId}
           onSave={async (id, patch) => {
@@ -47,9 +50,6 @@ export function TaskEditorOverlay({
             onCloseEditor()
             onRunTask(task)
           }}
-          // Same navigation as on the board: the epic strip swaps the card the
-          // editor is showing rather than closing it.
-          onOpenTask={onSetTaskEditorTask}
           onClose={onCloseEditor}
         />
       )}

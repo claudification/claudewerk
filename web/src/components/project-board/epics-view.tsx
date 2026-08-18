@@ -39,6 +39,8 @@ function statusBreakdown(cards: ProjectTaskMeta[]): string {
 
 export function EpicsView({
   tasks,
+  selected,
+  onSelect,
   onOpenCard,
   onWorkOnEpic,
   onEpicMode,
@@ -46,6 +48,11 @@ export function EpicsView({
   onAdopt,
 }: {
   tasks: ProjectTaskMeta[]
+  /** WHICH epic is being read. Owned by the board, not by this view: something
+   *  outside it can say "show me THIS one" (the epic strip on a child card), and
+   *  the pick has to survive a trip to the Board tab and back. */
+  selected: string | null
+  onSelect: (epicId: string | null) => void
   onOpenCard: (slug: string) => void
   onWorkOnEpic: (epicId: string) => void
   onEpicMode: (epicId: string, mode: TaskMode) => void
@@ -57,7 +64,6 @@ export function EpicsView({
    *  wrapping it only to discard a value nobody reads. */
   onAdopt?: (slug: string, epicId: string) => Promise<unknown>
 }) {
-  const [selected, setSelected] = useState<string | null>(null)
   // The RUN dialog lives here rather than in the button so it survives the
   // button unmounting when the pane re-renders mid-arm. It keeps the epic ID
   // rather than the rollup so the dialog's briefing tracks a board that changes
@@ -120,7 +126,7 @@ export function EpicsView({
             liveDetail={priorityBreakdown(loose.live)}
             finishedCount={loose.finished.length}
             finishedDetail={statusBreakdown(loose.finished)}
-            onSelect={id => setSelected(prev => (prev === id ? null : id))}
+            onSelect={id => onSelect(selected === id ? null : id)}
             onTriage={onTriage}
           />
         </div>
@@ -134,7 +140,7 @@ export function EpicsView({
               onWorkOnEpic={onWorkOnEpic}
               onEpicMode={onEpicMode}
               onRunEpic={(epicId, run, project) => setRunDialog({ epicId, run, project })}
-              onBack={() => setSelected(null)}
+              onBack={() => onSelect(null)}
               links={links}
               onAdopt={adoptInto}
             />

@@ -12,6 +12,13 @@
  * this costs no extra fetch, and it means the strip works identically at both
  * mount sites (the board, and the overlay beside the transcript) without either
  * one threading an epic index through.
+ *
+ * Clicking it is a NAVIGATION, not a card swap. It used to hand the epic's card
+ * back to the open editor, which left you in the same dialog reading the epic as
+ * a kanban card -- no children table, no rollup, no RUN -- and, because the
+ * editor seeds its title and body once on mount, showed you the CHILD's text
+ * under the epic's header until you saved it over the epic. `revealEpic` opens
+ * the surface an epic is actually read on.
  */
 
 import { buildEpicIndex } from '@shared/epic-cards'
@@ -23,6 +30,7 @@ import { cn, haptic } from '@/lib/utils'
 import { cardEpicRole } from './card-epic-role'
 import { EpicMarkBadge } from './epic-mark-badge'
 import { EpicProgressBar } from './epic-progress'
+import { revealEpic } from './reveal-epic'
 
 function Shell({
   epicId,
@@ -58,23 +66,24 @@ function Shell({
 export function CardEpicStrip({
   task,
   conversationId,
-  onOpenTask,
+  onNavigate,
 }: {
   task: ProjectTask
   conversationId: string
-  /** Swap the editor onto another card. Absent => the strip is not clickable. */
-  onOpenTask?: (task: ProjectTask) => void
+  /** We are leaving this card -- close the editor the strip is sitting in. The
+   *  epic opens on the board behind it, and a dialog on top of the surface you
+   *  asked to see is the bug this navigation exists to fix. */
+  onNavigate: () => void
 }) {
-  const { tasks, readTask } = useProject(conversationId)
+  const { tasks } = useProject(conversationId)
   const role = useMemo(() => cardEpicRole(task, buildEpicIndex(tasks)), [task, tasks])
 
   if (role.kind === 'none') return null
 
-  async function open(slug: string) {
-    if (!onOpenTask) return
+  function goToEpic(epicId: string) {
     haptic('tap')
-    const full = await readTask(slug)
-    if (full) onOpenTask(full)
+    revealEpic(conversationId, epicId)
+    onNavigate()
   }
 
   // This card IS an epic. Nowhere to navigate to -- it says what it is and how
@@ -118,19 +127,14 @@ export function CardEpicStrip({
 
   const r = role.rollup
   return (
-    // The handler is only attached when there is somewhere to go. Passing an
-    // arrow unconditionally would render a <button> that looks clickable and
-    // does nothing, which is worse than plain text.
-    <Shell epicId={role.epicId} onClick={onOpenTask && (() => void open(role.epicId))} title={`Open ${role.epicId}`}>
+    <Shell epicId={role.epicId} onClick={() => goToEpic(role.epicId)} title={`Open ${role.epicId} on the EPICS view`}>
       <EpicMarkBadge epicId={role.epicId} variant="solid" />
       <span className="font-mono text-read text-foreground truncate">{r.card?.title ?? role.epicId}</span>
       <EpicProgressBar rollup={r} className="w-16 shrink-0" />
       <span className="font-mono text-meta tabular-nums text-muted-foreground/85 shrink-0">
         {r.done}/{r.total}
       </span>
-      {onOpenTask && (
-        <span className="ml-auto font-mono text-chrome text-muted-foreground/55 shrink-0">open epic →</span>
-      )}
+      <span className="ml-auto font-mono text-chrome text-muted-foreground/55 shrink-0">open epic →</span>
     </Shell>
   )
 }

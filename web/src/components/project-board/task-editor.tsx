@@ -49,7 +49,6 @@ export function TaskEditor({
   onMove,
   onRun,
   onPromote,
-  onOpenTask,
   onClose,
 }: {
   task: ProjectTask
@@ -59,9 +58,6 @@ export function TaskEditor({
   onRun: (task: ProjectTask) => void
   /** Promote this card into the project's nightshift queue (absent => hidden). */
   onPromote?: (task: ProjectTask) => void
-  /** Swap the editor onto another card -- what the epic strip navigates with.
-   *  Absent => the strip still names the epic, it just is not clickable. */
-  onOpenTask?: (task: ProjectTask) => void
   onClose: () => void
 }) {
   const [title, setTitle] = useState(task.title)
@@ -182,8 +178,9 @@ export function TaskEditor({
         <DialogTitle className="sr-only">Edit task: {title}</DialogTitle>
 
         {/* WHAT THIS CARD BELONGS TO -- above the title, because it is the
-            context you read the title IN. Renders nothing for a loose card. */}
-        <CardEpicStrip task={task} conversationId={conversationId} onOpenTask={onOpenTask} />
+            context you read the title IN. Renders nothing for a loose card.
+            Clicking it leaves this card for the EPICS view, so it closes us. */}
+        <CardEpicStrip task={task} conversationId={conversationId} onNavigate={onClose} />
 
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-primary/20 shrink-0">
