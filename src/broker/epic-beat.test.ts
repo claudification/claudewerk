@@ -18,6 +18,8 @@ const RUN: EpicRunSnapshot = {
   dryGens: 0,
   maxGens: 40,
   concurrency: 3,
+  plan: false,
+  planned: true,
   created: '',
   updated: '',
   digest: '',
@@ -41,6 +43,7 @@ function beat(over: Partial<EpicBeatInput> = {}, plan: Partial<EpicPlan> = {}, r
     overseerAlive: false,
     unacknowledged: [],
     windowOpen: true,
+    boardFingerprint: '',
     ...over,
   })
 }
@@ -132,5 +135,69 @@ describe('cadence is a mode on one engine', () => {
   test('cadence=window dispatches normally once the window is open', () => {
     const b = beat({ windowOpen: true }, { dispatch: [card('t1')] }, { cadence: 'window' })
     expect(kinds(b)).toEqual(['dispatch'])
+  })
+})
+
+/**
+ * GENERATION 0. The pass exists because readiness is arithmetic over `depends_on`
+ * and nothing else looks at it, so the DAG is only as good as the edges somebody
+ * remembered to declare. Racing it would defeat the point entirely: the engine
+ * would dispatch against the graph the planner is still in the middle of fixing.
+ */
+describe('the planning generation', () => {
+  const OWED = { plan: true, planned: false } as Partial<EpicRunSnapshot>
+
+  test('is dispatched before anything else, even with cards ready', () => {
+    const b = beat({ boardFingerprint: 'a' }, { dispatch: [card('t1')], verify: [card('t2')] }, OWED)
+    expect(kinds(b)).toEqual(['plan'])
+  })
+
+  test('outranks an unacknowledged settle and an open question', () => {
+    // Both of these normally win over dispatch. Planning wins over both, because
+    // until it runs the board those decisions are made from is unfinished.
+    const b = beat({ boardFingerprint: 'a', unacknowledged: ['t1'] }, { questions: [card('q1')] }, OWED)
+    expect(kinds(b)).toEqual(['plan'])
+  })
+
+  test('carries the fingerprint it must be judged against', () => {
+    const b = beat({ boardFingerprint: 'before' }, {}, OWED)
+    expect(b.actions[0]).toEqual({ kind: 'plan', baseline: 'before' })
+  })
+
+  test('does not run twice -- a baseline on the run means it is already in flight', () => {
+    const b = beat({ boardFingerprint: 'before' }, {}, { ...OWED, planBaseline: 'before' })
+    expect(kinds(b)).toEqual(['plan-accept'])
+  })
+
+  test('accepts a plan that left the board alone, and work proceeds', () => {
+    const b = beat({ boardFingerprint: 'same' }, {}, { ...OWED, planBaseline: 'same' })
+    expect(kinds(b)).toEqual(['plan-accept'])
+    expect(b.note).toContain('unchanged')
+  })
+
+  test('CHECKPOINTS when the planner rewrote the board -- nothing dispatches first', () => {
+    const b = beat({ boardFingerprint: 'after' }, { dispatch: [card('t1')] }, { ...OWED, planBaseline: 'before' })
+    expect(kinds(b)).toEqual(['plan-checkpoint'])
+    expect(b.actions[0]).toEqual({ kind: 'plan-checkpoint', before: 'before', after: 'after' })
+  })
+
+  test('is skipped entirely once it has run -- a RESUME never re-plans', () => {
+    const b = beat({ boardFingerprint: 'x' }, { dispatch: [card('t1')] }, { plan: true, planned: true })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('is skipped when the run was armed with planning off', () => {
+    const b = beat({ boardFingerprint: 'x' }, { dispatch: [card('t1')] }, { plan: false, planned: false })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('never pre-empts a live overseer -- the planner sits in that same seat', () => {
+    const b = beat({ boardFingerprint: 'a', overseerAlive: true }, {}, OWED)
+    expect(kinds(b)).toEqual([])
+  })
+
+  test('does not resurrect a paused run', () => {
+    const b = beat({ boardFingerprint: 'a' }, {}, { ...OWED, status: 'paused' })
+    expect(kinds(b)).toEqual([])
   })
 })

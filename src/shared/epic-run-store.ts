@@ -38,6 +38,15 @@ function num(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+/** Frontmatter is flat scalars, so a bool may arrive as a real boolean OR as the
+ *  string a YAML round-trip left behind. Absent falls back, not to false. */
+function bool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === 'boolean') return v
+  if (v === 'true') return true
+  if (v === 'false') return false
+  return fallback
+}
+
 /** Alias, deliberately: the on-disk run and the wire run are the same shape. */
 export type EpicRun = EpicRunFull
 
@@ -62,8 +71,15 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     dryGens: num(meta.dryGens, 0),
     maxGens: num(meta.maxGens, EPIC_RUN_DEFAULTS.maxGens),
     concurrency: num(meta.concurrency, EPIC_RUN_DEFAULTS.concurrency),
+    // A run armed before the planning stage existed carries neither field. It
+    // reads as ALREADY PLANNED rather than as owing a plan: retro-fitting a
+    // planning generation onto a run that is mid-flight would rewrite a board
+    // its own workers are holding open.
+    plan: bool(meta.plan, false),
+    planned: bool(meta.planned, true),
     created: typeof meta.created === 'string' ? meta.created : '',
     updated: typeof meta.updated === 'string' ? meta.updated : '',
+    ...(typeof meta.planBaseline === 'string' && meta.planBaseline ? { planBaseline: meta.planBaseline } : {}),
     ...(typeof meta.abortReason === 'string' && meta.abortReason ? { abortReason: meta.abortReason } : {}),
     digest: body.trim() || DEFAULT_DIGEST,
   }
@@ -83,17 +99,26 @@ export interface StartEpicRunInput {
   target?: EpicRun['target']
   concurrency?: number
   maxGens?: number
+  /** Run a planning generation before beat 1. Only consulted on a FRESH run --
+   *  see `startEpicRun` for why a resume never re-plans. */
+  plan?: boolean
 }
 
 /**
  * Arm a run. Re-arming an existing run RESUMES it (paused/complete -> armed)
  * rather than resetting the generation counter -- the baton already holds those
  * beats, and restarting the count would make two different beats share an id.
+ *
+ * A RESUME NEVER RE-PLANS, and that is deliberate: gen 0 already ran, the
+ * overseer's own replan step covers drift from there, and re-planning would burn
+ * a generation churning cards that live workers may be holding open. The `plan`
+ * input is therefore only consulted when there is no existing run.
  */
 export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: number): EpicRun {
   safeEpicId(input.epicId)
   const ts = nowIso(nowMs)
   const existing = readEpicRun(root, input.epicId)
+  const wantsPlan = input.plan ?? EPIC_RUN_DEFAULTS.plan
   const base: EpicRun = existing ?? {
     epicId: input.epicId,
     project: input.project,
@@ -104,6 +129,8 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     dryGens: 0,
     maxGens: EPIC_RUN_DEFAULTS.maxGens,
     concurrency: EPIC_RUN_DEFAULTS.concurrency,
+    plan: wantsPlan,
+    planned: !wantsPlan,
     created: ts,
     updated: ts,
     digest: DEFAULT_DIGEST,

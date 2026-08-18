@@ -11,6 +11,11 @@ export interface EpicRunState {
   cadence: 'now' | 'window'
   target: 'pr' | 'merged' | 'shipped'
   concurrency: number
+  /** Armed with a planning generation. */
+  plan: boolean
+  /** Generation 0 has already run -- the engine sets this, and it is what makes
+   *  a RESUME skip planning rather than churn a board mid-flight. */
+  planned: boolean
   dryGens: number
   abortReason?: string
   digest: string
@@ -35,6 +40,9 @@ export interface StartEpicOptions {
   target: 'pr' | 'merged' | 'shipped'
   concurrency: number
   maxGens?: number
+  /** Run a planning generation before anything dispatches. Ignored on a RESUME:
+   *  gen 0 already happened and re-planning would churn a live board. */
+  plan: boolean
 }
 
 async function post(body: Record<string, unknown>): Promise<EpicRunReply> {

@@ -21,6 +21,8 @@ const RUN: EpicRunSnapshot = {
   dryGens: 0,
   maxGens: 40,
   concurrency: 3,
+  plan: false,
+  planned: true,
   created: '',
   updated: '',
   digest: '',

@@ -67,6 +67,43 @@ describe('handleEpicOp', () => {
     expect(op('patch', { patch: { gen: 4 } }).ok).toBe(false)
   })
 
+  /**
+   * The planning flag has to survive broker -> sentinel -> disk -> read-back. A
+   * new field that type-checks at both ends but is dropped by a spread in the
+   * middle is the classic way one of these silently stops crossing, and it fails
+   * as "planning just never happens" rather than as an error.
+   */
+  test('the plan flag crosses the seam and lands on disk', () => {
+    expect(op('start', { start: { plan: true } }).ok).toBe(true)
+    const got = op('get')
+    expect(got.run?.plan).toBe(true)
+    expect(got.run?.planned).toBe(false)
+  })
+
+  test('planning defaults ON when the caller says nothing', () => {
+    expect(op('start', {}).ok).toBe(true)
+    expect(op('get').run?.plan).toBe(true)
+  })
+
+  test('opting OUT arms a run that owes no planning generation', () => {
+    expect(op('start', { start: { plan: false } }).ok).toBe(true)
+    const got = op('get')
+    expect(got.run?.plan).toBe(false)
+    // `planned` true is what makes the beat skip the gate entirely.
+    expect(got.run?.planned).toBe(true)
+  })
+
+  /**
+   * RESUME NEVER RE-PLANS. Gen 0 already ran; re-planning would burn a generation
+   * churning cards that live workers may be holding open.
+   */
+  test('re-arming a planned run does not owe another planning generation', () => {
+    op('start', { start: { plan: true } })
+    op('patch', { patch: { planned: true } })
+    expect(op('start', { start: { plan: true } }).ok).toBe(true)
+    expect(op('get').run?.planned).toBe(true)
+  })
+
   test('log_append persists and get returns the tail', () => {
     op('start')
     op('log_append', { logAppend: { kind: 'dispatch', convId: 'conv_1', cardId: 't1', body: 'sent t1' } })

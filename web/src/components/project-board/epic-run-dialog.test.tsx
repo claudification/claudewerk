@@ -10,9 +10,25 @@
 
 import type { EpicChild, EpicRollup } from '@shared/epic-cards'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
+import type { EpicRunState } from '@/lib/epic-run-api'
 import { EpicRunDialog } from './epic-run-dialog'
+
+/** A live run, for the RESUME cases. */
+const RUN_STATE: EpicRunState = {
+  epicId: 'werk-epic',
+  status: 'paused',
+  gen: 0,
+  maxGens: 40,
+  cadence: 'now',
+  target: 'merged',
+  concurrency: 3,
+  plan: true,
+  planned: false,
+  dryGens: 0,
+  digest: '',
+}
 
 vi.mock('@/lib/epic-run-api', async importOriginal => ({
   ...(await importOriginal<typeof import('@/lib/epic-run-api')>()),
@@ -84,14 +100,53 @@ it('turns concurrency into what beat 1 actually dispatches', () => {
   expect(screen.getByText(/Beat 1 dispatches all 4 ready cards at once\. 4 slot\(s\) go unused\./)).toBeTruthy()
 })
 
-it('resolves the three choices into one sentence of consequence', () => {
+it('resolves the choices into one sentence of consequence', () => {
   open()
+  // Planning is on by default, and it happens BEFORE the cadence clause applies.
+  expect(
+    screen.getByText(
+      'Plans the epic first, then: starts now, up to 3 at a time, and stops once each card is merged to main.',
+    ),
+  ).toBeTruthy()
+
+  fireEvent.click(screen.getByLabelText(/Analyze and create execution plan/i))
   expect(screen.getByText('Starts now, up to 3 at a time, and stops once each card is merged to main.')).toBeTruthy()
 
   fireEvent.click(screen.getByText('shipped'))
   expect(screen.getByText('Starts now, up to 3 at a time, and does not stop until it is deployed.')).toBeTruthy()
   // The one irreversible choice is the one that was whispering.
   expect(screen.getByText(/Deployed by the fleet, unreviewed/)).toBeTruthy()
+})
+
+describe('the planning generation', () => {
+  it('is offered, and ticked, on a fresh run', () => {
+    open()
+    expect((screen.getByLabelText(/Analyze and create execution plan/i) as HTMLInputElement).checked).toBe(true)
+    expect(screen.getByText(/writes the depends_on edges nobody declared/)).toBeTruthy()
+  })
+
+  it('says what turning it OFF costs, rather than going quiet', () => {
+    open()
+    fireEvent.click(screen.getByLabelText(/Analyze and create execution plan/i))
+    expect(screen.getByText(/Only the edges already declared will be honoured/)).toBeTruthy()
+  })
+
+  /**
+   * A RESUME cannot plan -- generation 0 already ran. Showing a ticked box that
+   * the store then ignores is worse than showing no box.
+   */
+  it('is not offered at all on a run that has already planned', () => {
+    render(
+      <EpicRunDialog
+        rollup={ROLLUP}
+        project="claude://host/proj"
+        existing={{ ...RUN_STATE, gen: 3, planned: true }}
+        onClose={() => {}}
+        onStarted={() => {}}
+      />,
+    )
+    expect(screen.queryByLabelText(/Analyze and create execution plan/i)).toBeNull()
+  })
 })
 
 it('carries its own epic colour, because it portals outside the pane that sets them', () => {

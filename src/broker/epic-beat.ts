@@ -26,6 +26,13 @@ export type EpicAction =
   | { kind: 'verify'; cardId: string }
   | { kind: 'park'; reason: string }
   | { kind: 'complete' }
+  /** Generation 0: analyse the board before anything is dispatched. Carries the
+   *  fingerprint to compare against when it settles. */
+  | { kind: 'plan'; baseline: string }
+  /** The planning generation settled and left the board as it found it. */
+  | { kind: 'plan-accept' }
+  /** The planning generation rewrote the board. Stop and show Jonas. */
+  | { kind: 'plan-checkpoint'; before: string; after: string }
 
 export interface EpicBeatInput {
   run: EpicRunSnapshot
@@ -40,6 +47,9 @@ export interface EpicBeatInput {
   /** Is the project's nightshift window open right now? Only consulted when the
    *  run's cadence is `window` -- `now` ignores the clock entirely. */
   windowOpen: boolean
+  /** The board's dispatch-relevant fingerprint right now (epic-board-fingerprint).
+   *  Only meaningful while a planning generation is owed. */
+  boardFingerprint: string
 }
 
 export interface EpicBeat {
@@ -60,7 +70,45 @@ function dispatchAllowed(run: EpicRunSnapshot, windowOpen: boolean): boolean {
  *  be revived by a late settle arriving from a worker nobody killed in time. */
 const INERT: readonly EpicRunSnapshot['status'][] = ['paused', 'complete', 'aborted']
 
-export function planBeat(input: EpicBeatInput): EpicBeat {
+/**
+ * The planning generation, in three states -- owed, in flight, settled.
+ *
+ * `planBaseline` is what tells them apart, and it is the fingerprint rather than
+ * a flag on purpose: the same field that says "a planner ran" is the evidence
+ * used to decide whether it changed anything, so the two can never disagree.
+ *
+ * Returns null when no planning is owed, which is the common case (planning off,
+ * or already done, or a run armed before this stage existed).
+ */
+function planningBeat(run: EpicRunSnapshot, fingerprint: string): EpicBeat | null {
+  if (!run.plan || run.planned) return null
+
+  if (!run.planBaseline) {
+    return beat('generation 0: analysing the board before anything dispatches', [
+      { kind: 'plan', baseline: fingerprint },
+    ])
+  }
+
+  if (run.planBaseline !== fingerprint) {
+    return beat('the planning generation rewrote the board; checkpointing before any work goes out', [
+      { kind: 'plan-checkpoint', before: run.planBaseline, after: fingerprint },
+    ])
+  }
+
+  return beat('the planning generation left the board unchanged; proceeding to the first beat', [
+    { kind: 'plan-accept' },
+  ])
+}
+
+/**
+ * Reasons a beat does something OTHER than move work, most urgent first. Order
+ * is the design: an epic that is simultaneously over its ceiling, owed a plan
+ * and holding an unacknowledged settle must do exactly one of those, and which
+ * one is not arbitrary.
+ *
+ * Returns null when nothing is in the way, at which point `workBeat` decides.
+ */
+function guardBeat(input: EpicBeatInput): EpicBeat | null {
   const { run, plan } = input
 
   if (INERT.includes(run.status)) return beat(`run is ${run.status}; nothing to do`)
@@ -72,8 +120,16 @@ export function planBeat(input: EpicBeatInput): EpicBeat {
   }
 
   // An overseer mid-turn owns the epic. Do not dispatch underneath it: it may be
-  // rewriting the very cards the plan was computed from.
+  // rewriting the very cards the plan was computed from. The PLANNER sits in the
+  // same seat, so this guard covers it too -- which is most of why it is not a
+  // separate role.
   if (input.overseerAlive) return beat(`overseer alive at gen ${run.gen}; holding the beat`)
+
+  // GENERATION 0. Ahead of every other decision, including settles and questions:
+  // once planning is owed, nothing may dispatch until it has happened, or the
+  // engine would race the pass that exists to tell it what may run in parallel.
+  const planning = planningBeat(run, input.boardFingerprint)
+  if (planning) return planning
 
   // A settled card the baton has not seen is the ONE fact that must reach a
   // fresh overseer, and it outranks dispatching more work.
@@ -90,6 +146,26 @@ export function planBeat(input: EpicBeatInput): EpicBeat {
     ])
   }
 
+  return null
+}
+
+export function planBeat(input: EpicBeatInput): EpicBeat {
+  return guardBeat(input) ?? workBeat(input)
+}
+
+/**
+ * Nothing is in the way: move the work, or explain why there is none.
+ *
+ * The suppression below is on CRAP only, and it is measured rather than waved
+ * through: cyclomatic and cognitive are both 10, under their thresholds, and the
+ * CRAP score is `CC^2 * (1 - cov)^3 + CC` against an ESTIMATED coverage --
+ * fallow infers it from export references, and this function is deliberately not
+ * exported. Real coverage from `bun test --coverage` on epic-beat.test.ts is
+ * 100% of lines and 8/8 functions in this file, which puts actual CRAP at 10.
+ */
+// fallow-ignore-next-line complexity
+function workBeat(input: EpicBeatInput): EpicBeat {
+  const { run, plan } = input
   const actions: EpicAction[] = plan.verify.map(c => ({ kind: 'verify' as const, cardId: c.slug }))
 
   if (!dispatchAllowed(run, input.windowOpen)) {

@@ -74,15 +74,46 @@ function Choice<T extends string>({
   )
 }
 
-/** All three, in the order they narrow the decision: when, how far, how wide. */
+/** All four, in the order they narrow the decision: what first, when, how far, how wide. */
 export function RunSettings({ settings, plan }: { settings: RunSettings_; plan: RunPlan }) {
-  const { options, setCadence, setTarget, setConcurrency } = settings
+  const { options, setCadence, setTarget, setConcurrency, setPlan, planApplies } = settings
   return (
     <>
+      {planApplies && <PlanField value={options.plan} onChange={setPlan} />}
       <Choice label="cadence" options={CADENCES} value={options.cadence} onChange={setCadence} />
       <Choice label="target" options={TARGETS} value={options.target} onChange={setTarget} />
       <ConcurrencyField value={options.concurrency} plan={plan} onChange={setConcurrency} />
     </>
+  )
+}
+
+/**
+ * GENERATION 0 -- the analysis pass, default on.
+ *
+ * It is first in the dialog because it happens first and because it changes what
+ * every field below it operates on: the ordering the concurrency ceiling divides
+ * up is the ordering this pass writes.
+ */
+function PlanField({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex flex-col gap-1 cursor-pointer">
+      <span className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={value}
+          onChange={e => onChange(e.target.checked)}
+          className="size-3 accent-[color:var(--epic-solid)]"
+        />
+        <span className="text-chrome font-mono text-foreground">Analyze and create execution plan</span>
+      </span>
+      <span className="text-chrome text-muted-foreground/70 leading-snug">
+        {value
+          ? 'One generation reads the epic and every card first: closes what is already done, files what is ' +
+            'missing, and writes the depends_on edges nobody declared -- so the ordering above is complete before ' +
+            'anything runs. If it changes your board, the run stops and shows you before dispatching.'
+          : 'Dispatch straight against the board as it stands. Only the edges already declared will be honoured.'}
+      </span>
+    </label>
   )
 }
 

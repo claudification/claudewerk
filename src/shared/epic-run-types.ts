@@ -79,6 +79,30 @@ export interface EpicRunMeta {
   dryGens: number
   /** Hard ceiling on generations, so a thrashing epic cannot bill forever. */
   maxGens: number
+  /**
+   * Run a PLANNING generation before anything dispatches. Default on.
+   *
+   * Readiness is arithmetic over `depends_on` (epic-ready.ts) and nothing else
+   * looks at it, so the DAG is only as good as the edges a human happened to
+   * declare. Two cards that touch the same code with no edge between them
+   * dispatch together and collide. The overseer can add the edge -- but only on
+   * the NEXT beat, after the collision.
+   *
+   * The planning generation closes that by completing the DAG BEFORE beat 1:
+   * it reads every card and the epic's intent, files what is missing, closes
+   * what is already done, and writes the edges nobody declared. The arithmetic
+   * then enforces them for free, every beat, with no model in the loop.
+   */
+  plan: boolean
+  /** The planning generation has already run. Set by the ENGINE when it settles,
+   *  so a RESUME never re-plans -- gen 0 happened, and the overseer's own replan
+   *  step covers drift from there. */
+  planned: boolean
+  /** Board fingerprint captured when the planner was dispatched, compared against
+   *  the board when it settles. Present ONLY while a planning generation is in
+   *  flight; its absence is what distinguishes "not dispatched yet" from
+   *  "dispatched and now settled". See epic-board-fingerprint.ts. */
+  planBaseline?: string
   /** Max implementers in flight. Defaults to 3 -- the supervision ceiling is a
    *  property of review, not of the human (werk-andon). Raising it is a choice
    *  to stop reviewing per-change, and the board should say so. */
@@ -105,6 +129,9 @@ export const EPIC_RUN_DEFAULTS = {
   target: 'merged' as const,
   maxGens: 40,
   concurrency: 3,
+  /** ON by default: an unplanned epic dispatches against whatever edges someone
+   *  remembered to write, which is the failure this stage exists to prevent. */
+  plan: true,
 }
 
 /** The launch tag every epic-run conversation carries, mirroring `nightshift`. */

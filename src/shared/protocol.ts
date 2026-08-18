@@ -4464,6 +4464,9 @@ export interface EpicStartInput {
   target?: 'pr' | 'merged' | 'shipped'
   concurrency?: number
   maxGens?: number
+  /** Run a planning generation before anything dispatches. Defaults ON at the
+   *  store. Ignored on a RESUME -- see `startEpicRun`. */
+  plan?: boolean
 }
 
 /** lease payload -- the CAS. `expectGen` is what makes a double-wake safe. */
@@ -4522,6 +4525,12 @@ export interface EpicRunPatchInput {
   dryGens?: number
   concurrency?: number
   digest?: string
+  /** Generation 0 has run. Only ever set TRUE, and only by the engine -- a run
+   *  that could un-plan itself would re-plan on every resume. */
+  planned?: boolean
+  /** Board fingerprint taken when the planner was dispatched; empty string
+   *  clears it. See epic-board-fingerprint.ts. */
+  planBaseline?: string
 }
 
 /** Broker -> Sentinel: the same op with the resolved absolute projectRoot. */

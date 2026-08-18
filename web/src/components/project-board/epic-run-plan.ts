@@ -67,5 +67,11 @@ export function consequence(options: StartEpicOptions): string {
   // dispatches every ready card up to that number and holds the rest back, so
   // the real figure is min(ready, concurrency) and is usually lower.
   const each = options.concurrency === 1 ? 'one card at a time' : `up to ${options.concurrency} at a time`
-  return `${CADENCE_CLAUSE[options.cadence]}, ${each}, and ${TARGET_CLAUSE[options.target]}.`
+  const sentence = `${CADENCE_CLAUSE[options.cadence]}, ${each}, and ${TARGET_CLAUSE[options.target]}.`
+  // The planning generation comes BEFORE the cadence clause takes effect, so it
+  // is a separate sentence rather than another clause in that one -- "starts
+  // now" is not true of the first thing that happens when a plan is owed.
+  return options.plan ? `Plans the epic first, then: ${lower(sentence)}` : sentence
 }
+
+const lower = (s: string): string => s.charAt(0).toLowerCase() + s.slice(1)

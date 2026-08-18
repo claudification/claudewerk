@@ -20,6 +20,7 @@
  * effect goes through the `epic-io.ts` seam.
  */
 
+import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
 import { type EpicBeat, planBeat } from './epic-beat'
@@ -85,12 +86,17 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     // what stops the NEXT sweep re-discovering the same settle forever.
     unacknowledged: pending,
     windowOpen,
+    // Computed from the SAME card read the plan came from, so the fingerprint
+    // and the plan can never describe two different boards.
+    boardFingerprint: boardFingerprint(cards, group.epicId),
   })
 
   const spawned = await performActions(deps, group, run, beat, {
     batonTail: renderEpicLogTail(view.baton),
     plan,
     settled: pending,
+    cardLines: plan.rollup?.children.map(c => `${c.card.slug} -- ${c.card.title} (${c.card.status})`) ?? [],
+    epicBody: plan.rollup?.card?.bodyPreview ?? '',
   })
 
   return finish(deps, group, run.gen, {

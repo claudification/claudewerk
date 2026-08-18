@@ -14,6 +14,7 @@
 
 import { buildImplementerPrompt } from '../shared/epic-prompt-implementer'
 import { buildOverseerPrompt, type OverseerPromptCtx } from '../shared/epic-prompt-overseer'
+import { buildPlannerPrompt, type PlannerPromptCtx } from '../shared/epic-prompt-planner'
 import type { EpicLaunchTag, EpicRole } from '../shared/epic-run-types'
 import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { buildGuardPrompt } from '../shared/guard-prompt'
@@ -95,6 +96,25 @@ export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCt
   return {
     ...base(ctx, 'overseer', undefined, `[epic ${ctx.epicId}] overseer gen ${ctx.gen}`),
     prompt: buildOverseerPrompt(promptCtx),
+  }
+}
+
+/**
+ * THE PLANNER -- generation 0. The OVERSEER SEAT with a different prompt.
+ *
+ * Same role tag on purpose, and it is not laziness: `overseerAlive` is what stops
+ * the engine dispatching underneath a live supervisor, and a planning generation
+ * needs exactly that guard. Tagging it `planner` would have made it invisible to
+ * the check whose whole job is to hold the beat -- so the engine would race the
+ * pass that exists to tell it what may safely run at once.
+ *
+ * No worktree, for the overseer's reason: it edits the board, which lives on
+ * main, and an isolated checkout would hide the state it exists to fix.
+ */
+export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx): EpicSpawnPlan {
+  return {
+    ...base(ctx, 'overseer', undefined, `[epic ${ctx.epicId}] planner`),
+    prompt: buildPlannerPrompt(promptCtx),
   }
 }
 
