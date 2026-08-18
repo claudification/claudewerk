@@ -81,18 +81,26 @@ function isFreshlyDone(c: Conversation, now: number): boolean {
 /**
  * Assign one conversation to exactly one band.
  *
- * Precedence is strict and NOT the same as the display order: attention beats
- * liveness beats recency. A conversation that is both `active` and asking a
- * question belongs in NEEDS YOU, not WORKING.
+ * Precedence is strict and NOT the same as the display order:
+ *   death > attention > liveness > recency
+ * A conversation that is both `active` and asking a question belongs in NEEDS
+ * YOU, not WORKING -- but one that has ENDED belongs nowhere near it.
  */
 export function bandOf(c: Conversation, flags: PulseAttentionFlags = {}, now: number = Date.now()): PulseBand {
-  if (wantsAttention(c, flags)) return 'needs'
-
+  // DEATH OUTRANKS ATTENTION, and it has to be checked FIRST.
+  //
+  // A conversation that has ENDED cannot want anything: there is no process
+  // left to answer, so its last self-report is a fossil rather than a request.
+  // This used to be checked after `wantsAttention`, which meant an agent whose
+  // final act was `needs_you` parked itself at the top of NEEDS YOU forever --
+  // unanswerable, unclearable, and pushing live work down the page.
   if (c.status === 'ended') {
-    // A conversation that ended recently is still worth a glance; past the
-    // window it drops out of sight entirely.
+    // Recently ended is still worth a glance; past the window it drops out of
+    // sight entirely.
     return now - c.lastActivity <= JUST_DONE_WINDOW_MS ? 'done' : 'expired'
   }
+
+  if (wantsAttention(c, flags)) return 'needs'
 
   if (isFreshlyDone(c, now)) return 'done'
   if (LIVE_STATUSES.has(c.status)) return 'working'

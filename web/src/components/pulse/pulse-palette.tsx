@@ -7,6 +7,7 @@ import { PulseBandsView } from './pulse-bands-view'
 import { PulseFooter } from './pulse-footer'
 import { PulsePaletteHeader } from './pulse-palette-header'
 import { PulseTideView } from './pulse-tide-view'
+import { useFrozenLayout } from './use-frozen-layout'
 import { type PulseRow, usePulseFleet } from './use-pulse-fleet'
 import { usePulseKeys } from './use-pulse-keys'
 
@@ -31,7 +32,11 @@ export function PulsePalette({ onOpen, onClose }: PulsePaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const view = useConversationsStore(s => s.controlPanelPrefs.pulseView)
-  const fleet = usePulseFleet(filter)
+  // Freeze the order for as long as the palette is up. It ticks every second,
+  // so without this a row slides out from under the pointer between the glance
+  // and the click -- and you open a conversation you never aimed at. Re-snapped
+  // on every keystroke, since a new query is a new list.
+  const fleet = useFrozenLayout(usePulseFleet(filter), true, filter)
 
   const select = (row: PulseRow) => {
     onOpen(row.conversation.id)

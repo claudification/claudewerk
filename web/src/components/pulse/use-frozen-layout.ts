@@ -58,18 +58,33 @@ function appendArrivals(groups: PulseBandGroup[], fleet: PulseFleet): PulseBandG
   return out
 }
 
-export function useFrozenLayout(fleet: PulseFleet, frozen: boolean): PulseFleet {
+/**
+ * @param resetKey  changing this retakes the snapshot even while frozen. The
+ *   palette is open for its whole life, so without this a typed filter would be
+ *   projected through an order captured before those rows existed.
+ */
+export function useFrozenLayout(fleet: PulseFleet, frozen: boolean, resetKey = ''): PulseFleet {
   const layoutRef = useRef<Layout | null>(null)
+  const keyRef = useRef(resetKey)
 
-  if (!frozen) {
-    // Re-snapshot continuously while open is false, so the NEXT freeze starts
-    // from what is actually on screen rather than a stale order.
+  const stale = keyRef.current !== resetKey
+  if (stale) keyRef.current = resetKey
+
+  if (!frozen || stale) {
+    // Re-snapshot while closed (so the NEXT freeze starts from what is actually
+    // on screen) and whenever the reset key moves.
     layoutRef.current = snapshot(fleet.groups)
     return fleet
   }
 
+  // Mounted already frozen -- the palette's normal case, since it is created
+  // open. Without this it would never capture a first layout and would not
+  // freeze at all.
+  if (!layoutRef.current) {
+    layoutRef.current = snapshot(fleet.groups)
+    return fleet
+  }
   const remembered = layoutRef.current
-  if (!remembered) return fleet
 
   const groups = appendArrivals(heldGroups(remembered, indexRows(fleet.groups)), fleet)
   return { ...fleet, groups, flat: groups.flatMap(g => g.rows) }

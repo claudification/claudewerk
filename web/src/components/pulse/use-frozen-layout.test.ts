@@ -138,6 +138,29 @@ describe('useFrozenLayout', () => {
     expect(result.current.flat.map(r => r.id)).toEqual(['a', 'b'])
   })
 
+  it('re-snapshots when the reset key moves, even while still frozen', () => {
+    // The palette is frozen for its whole life, so a typed filter would
+    // otherwise be projected through an order captured before those rows
+    // existed -- and the click would land on the wrong conversation.
+    const first = fleet([{ band: 'working', rows: [row('a'), row('b')] }])
+    const { result, rerender } = renderHook(({ f, frozen, key }) => useFrozenLayout(f, frozen, key), {
+      initialProps: { f: first, frozen: true, key: '' },
+    })
+
+    const filtered = fleet([{ band: 'working', rows: [row('c'), row('d')] }])
+    rerender({ f: filtered, frozen: true, key: 'ceiling' })
+    expect(ids(result.current)).toEqual(['c', 'd'])
+  })
+
+  it('holds the order again once the reset key settles', () => {
+    const first = fleet([{ band: 'working', rows: [row('a'), row('b')] }])
+    const { result, rerender } = renderHook(({ f, frozen, key }) => useFrozenLayout(f, frozen, key), {
+      initialProps: { f: first, frozen: true, key: 'q' },
+    })
+    rerender({ f: fleet([{ band: 'working', rows: [row('b'), row('a')] }]), frozen: true, key: 'q' })
+    expect(ids(result.current)).toEqual(['a', 'b'])
+  })
+
   it('RE-SNAPSHOTS on the next open rather than resurrecting a stale order', () => {
     const first = fleet([{ band: 'working', rows: [row('a'), row('b')] }])
     const { result, rerender } = renderHook(({ f, frozen }) => useFrozenLayout(f, frozen), {
