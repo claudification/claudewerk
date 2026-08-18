@@ -48,7 +48,7 @@ function LooseRow({
         dimmed && 'opacity-60',
       )}
     >
-      <span aria-hidden className="w-[1.15rem] text-center font-mono text-meta text-muted-foreground/50">
+      <span aria-hidden className="w-[1.15rem] text-center font-mono text-meta text-muted-foreground/55">
         ●
       </span>
       <span className="font-mono text-read text-muted-foreground/90 truncate">{label}</span>

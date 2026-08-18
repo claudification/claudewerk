@@ -34,7 +34,7 @@ export function BoardGroupBar({ group, rollup }: { group: CardGroup; rollup?: Ep
       {epicId ? (
         <EpicMarkBadge epicId={epicId} variant="solid" />
       ) : (
-        <span aria-hidden className="text-meta text-muted-foreground/50">
+        <span aria-hidden className="text-meta text-muted-foreground/55">
           ●
         </span>
       )}

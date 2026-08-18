@@ -27,7 +27,7 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
         <Count value={plan.ready} label="READY" tone="text-active" />
         {plan.waiting > 0 && <Count value={plan.waiting} label="WAITING ON DEPS" tone="text-event-prompt" />}
         {plan.done > 0 && <Count value={plan.done} label="DONE" tone="text-muted-foreground/70" />}
-        {plan.dropped > 0 && <Count value={plan.dropped} label="DROPPED" tone="text-muted-foreground/50" />}
+        {plan.dropped > 0 && <Count value={plan.dropped} label="DROPPED" tone="text-muted-foreground/60" />}
       </div>
       <p className="font-mono text-chrome text-muted-foreground/70 leading-relaxed">
         Each beat dispatches one implementer per ready card in <code className="text-foreground">depends_on</code>{' '}

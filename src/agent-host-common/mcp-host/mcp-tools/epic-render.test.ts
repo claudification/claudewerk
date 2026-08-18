@@ -101,7 +101,9 @@ describe('inspect', () => {
   test('a waiting card names the dependencies holding it', () => {
     const p = inspect().inspect!.plan!
     const out = renderEpic(
-      inspect({ plan: { ...p, waitingOnDeps: [{ id: 't7', title: 'later', status: 'open', waitingOn: ['t5', 't6'] }] } }),
+      inspect({
+        plan: { ...p, waitingOnDeps: [{ id: 't7', title: 'later', status: 'open', waitingOn: ['t5', 't6'] }] },
+      }),
     )
     expect(out).toContain('t7 [open] later <- waiting on t5, t6')
   })
@@ -149,7 +151,9 @@ describe('inspect', () => {
 
   test('an errored beat surfaces its error', () => {
     const out = renderEpic(
-      inspect({ beats: [{ at: 'T', gen: 3, epicId: 'e1', project: 'p', note: 'tried', actions: 0, spawned: [], error: 'boom' }] }),
+      inspect({
+        beats: [{ at: 'T', gen: 3, epicId: 'e1', project: 'p', note: 'tried', actions: 0, spawned: [], error: 'boom' }],
+      }),
     )
     expect(out).toContain('ERROR boom')
   })

@@ -42,7 +42,7 @@ function subtitle(rollup: EpicRollup): React.ReactNode {
   return (
     <>
       {blocked > 0 && <span className="text-event-prompt">{blocked} blocked</span>}
-      {blocked > 0 && next && <span className="text-muted-foreground/40"> · </span>}
+      {blocked > 0 && next && <span className="text-muted-foreground/55"> · </span>}
       {next && (
         <>
           <span className="text-muted-foreground/60">next </span>

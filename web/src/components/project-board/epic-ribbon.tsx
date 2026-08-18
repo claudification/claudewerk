@@ -85,7 +85,7 @@ export function EpicRibbon({
 
       {looseCount > 0 && (
         <span className="flex items-center gap-2 ml-auto px-2.5 py-1.5 shrink-0 border-l border-border/50">
-          <span aria-hidden className="text-meta text-muted-foreground/45">
+          <span aria-hidden className="text-meta text-muted-foreground/55">
             ●
           </span>
           <span className="font-mono text-read text-muted-foreground/85">no epic</span>
