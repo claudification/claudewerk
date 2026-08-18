@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation } from '../shared/protocol'
 import { isCountedLive, listActiveEpicRuns, STALE_BEAT_MS } from './epic-active'
 import { recordBeat, resetBeatLog } from './epic-beat-log'
@@ -40,6 +40,17 @@ function stubRun(run: Record<string, unknown> | null) {
 }
 
 beforeEach(() => {
+  resetArmedEpics()
+  resetBeatLog()
+  resetEpicIo()
+})
+
+// The armed registry, the beat ring and the IO seam are all MODULE-GLOBAL, and
+// bun runs every test file in one process. Cleaning up only on the way IN
+// leaves the last case's state armed for whichever file runs next -- which is
+// exactly how this suite broke epic-registry.test.ts's "nothing is armed to
+// start with". Clean up on the way OUT too.
+afterEach(() => {
   resetArmedEpics()
   resetBeatLog()
   resetEpicIo()

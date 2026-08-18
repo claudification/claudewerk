@@ -2,6 +2,7 @@ import { Radar, Settings } from 'lucide-react'
 import { Popover } from 'radix-ui'
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { EfficiencyWidget } from '@/components/efficiency-widget'
+import { HeaderRunBadge } from '@/components/header-run-badge'
 import { HealthWidget } from '@/components/health-widget'
 import { NotificationBell } from '@/components/notification-bell'
 import { ProjectSettingsEditor } from '@/components/project-settings-editor-lazy'
@@ -178,6 +179,7 @@ export function Header() {
         <HealthWidget />
         <EfficiencyWidget />
         <TokenFlowBar />
+        <HeaderRunBadge />
 
         <span className="flex-1" />
 

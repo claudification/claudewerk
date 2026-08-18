@@ -27,6 +27,7 @@ import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
 import { useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
+import { useOverseerOpen } from '@/components/overseer/overseer-state'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
 import { quickTaskBus } from '@/components/quick-task-trigger'
@@ -225,6 +226,16 @@ const VacuumModal = lazyModule(
       default: m.VacuumModal,
     })) as Promise<{ default: ComponentType }>,
   useVacuumOpen,
+)
+// The overseer control plane. The BADGE that opens it is eager (it is header
+// chrome and must render the moment anything is running); the window itself is
+// not, so a session that never opens it never pays for the chunk.
+const OverseerModal = lazyModule(
+  () =>
+    import('@/components/overseer/overseer-modal').then(m => ({
+      default: m.OverseerModal,
+    })) as Promise<{ default: ComponentType }>,
+  useOverseerOpen,
 )
 // Mermaid pan/zoom overlay -- chunk loads only when a diagram is first opened.
 const MermaidLightbox = lazyModule(
@@ -528,6 +539,7 @@ function Dashboard() {
       <OrganizeProjectsModal />
       <ManageWorkspacesModal />
       <VacuumModal />
+      <OverseerModal />
       <LaunchProfileCommands />
       <LaunchToastContainer />
       <TerminateConfirmDialog />

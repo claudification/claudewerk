@@ -23,6 +23,7 @@ import type {
   DispatchThread,
   DispatchToolCall,
   DispatchToolResult,
+  EpicActivityEntry,
   RecapCompleteMessage,
   RecapCreatedMessage,
   RecapErrorMessage,
@@ -70,6 +71,7 @@ import {
   useConversationsStore,
 } from './use-conversations'
 import { useLiveDialogsStore } from './use-live-dialogs'
+import { useOverseerActivityStore } from './use-overseer-activity'
 import {
   applyProjectCommitStats,
   type ProjectCommitStats,
@@ -1567,6 +1569,18 @@ function handleInterConversationActivity(msg: DashboardMessage): void {
   })
 }
 
+// What the epic engine is running in ONE project, after every sweep tick.
+// Replaces that project's slice wholesale -- the broker's message is the
+// complete truth for that project, and a merge would resurrect a run that had
+// just settled (its row is absent precisely because it is gone). An empty array
+// is the deliberate "this project is now quiet" signal, not a no-op.
+function handleEpicActivity(msg: DashboardMessage): void {
+  const project = msg.project as string | undefined
+  if (!project) return
+  const rows = (msg.epicActivity as EpicActivityEntry[] | undefined) ?? []
+  useOverseerActivityStore.getState().applyProject(project, rows)
+}
+
 // Live thinking-progress ping -> per-conversation ring outside React/Zustand.
 // Ephemeral: dropped after a 4s idle window, cleared when a new transcript
 // entry arrives. The ThinkingPill component reads via useSyncExternalStore.
@@ -1931,6 +1945,7 @@ export const handlers: Record<string, MessageHandler> = {
   sentinel_usage_report: handleSentinelUsageReport,
   token_sample: handleTokenSample,
   inter_conversation_activity: handleInterConversationActivity,
+  epic_activity: handleEpicActivity,
   // host shells (roster plane)
   shell_roster: handleShellRoster,
   shell_added: handleShellAdded,

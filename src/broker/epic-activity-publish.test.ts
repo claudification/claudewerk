@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { type ActivityBroadcaster, publishEpicActivity, resetActivityPublisher } from './epic-activity-publish'
 import { resetBeatLog } from './epic-beat-log'
 import { configureEpicIo, resetEpicIo } from './epic-io'
@@ -28,6 +28,15 @@ beforeEach(() => {
   configureEpicIo({
     fetchEpicRun: (async () => ({ run: { status: 'running', gen: 1, maxGens: 8 }, baton: [], lease: null })) as never,
   })
+})
+
+// Module-global state + one bun process = cleaning up only on the way IN leaves
+// the last case's arming visible to the next FILE. See epic-active.test.ts.
+afterEach(() => {
+  resetArmedEpics()
+  resetBeatLog()
+  resetEpicIo()
+  resetActivityPublisher()
 })
 
 describe('publishEpicActivity', () => {

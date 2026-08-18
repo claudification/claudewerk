@@ -831,6 +831,16 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       rootConversationId: conv.rootConversationId,
       // Night-task origin tag only -- never the full launchConfig (env/prompt).
       nightshift: conv.launchConfig?.nightshift,
+      // Epic origin tag, same rule and same reason. Four scalars (epicId, role,
+      // cardId, gen) with no prompt or env in them, so the whole tag forwards.
+      //
+      // It stays its own field rather than folding into any future agent-metadata
+      // bag: this is BROKER-AUTHORED PROVENANCE -- the sweep stamps it at dispatch
+      // and nothing else may write it. An agent's self-reported "what am I working
+      // on" is a different thing with a different trust level, and a surface
+      // deciding "is this machine-run" must not read a value the machine under
+      // inspection could have set itself.
+      epic: conv.launchConfig?.epic,
     }
   }
 

@@ -12,6 +12,7 @@ import { openForkDialog } from '@/components/fork-dialog-trigger'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
 import { openManageWorkspaces } from '@/components/manage-workspaces/manage-workspaces-state'
 import { openOrganizeProjects } from '@/components/organize-projects/organize-state'
+import { openOverseer } from '@/components/overseer/overseer-state'
 import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks'
 import { openRecapConfigDialog } from '@/components/recap-jobs/recap-config-trigger'
 import { openRecapHistory } from '@/components/recap-jobs/recap-history-trigger'
@@ -656,6 +657,11 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useCommand('vacuum', () => openVacuum(), {
     label: 'Vacuum -- reclaim disk space',
+    group: 'System',
+  })
+
+  useCommand('overseer', () => openOverseer(), {
+    label: 'Overseer -- what is running unattended',
     group: 'System',
   })
 

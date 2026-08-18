@@ -111,6 +111,16 @@
 	--idle: oklch(0.75 0.15 85);
 	--ended: oklch(0.55 0.02 260);
 
+	/* THE UNATTENDED-RUN AMBER. One fixed hue for "a machine is working on this
+	   without you", used by the header run badge and the overseer window chrome.
+	   Deliberately NOT the per-epic --epic-solid: that hue is derived from the
+	   epic id so two epics look different, which is right on a board and wrong
+	   on a badge that must mean the same thing every time you glance at it. */
+	--epic-badge: oklch(0.72 0.15 55);
+	--epic-badge-tint: oklch(0.72 0.15 55 / 0.1);
+	--epic-badge-edge: oklch(0.72 0.15 55 / 0.35);
+	--epic-badge-hover: oklch(0.72 0.15 55 / 0.18);
+
 	/* Event type colors */
 	--event-conversation: oklch(0.75 0.18 150);
 	--event-tool: oklch(0.7 0.15 250);
@@ -774,6 +784,18 @@ html[data-tab-hidden] *,
 html[data-tab-hidden] *::before,
 html[data-tab-hidden] *::after {
 	animation-play-state: paused !important;
+}
+
+/* The unattended-run heartbeat. Applied ONLY while the engine is actually
+   beating -- a stalled run freezes the pip, because an animation is a claim
+   that something is moving and making it unconditionally would be a lie. */
+@keyframes breathe {
+	0%, 100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.28;
+	}
 }
 
 /* Session pulse animation (triggered on locate / Ctrl+K selection) */
