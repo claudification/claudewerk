@@ -3,7 +3,8 @@ import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { EpicResult, EpicRunSnapshot } from '../shared/protocol'
 import type { TaskStatus } from '../shared/task-statuses'
-import { type BeatDeps, configureEpicIo, resetEpicIo, runEpicBeat } from './epic-executor'
+import { type BeatDeps, runEpicBeat } from './epic-executor'
+import { configureEpicIo, resetEpicIo } from './epic-io'
 import type { EpicGroup } from './epic-sweep'
 
 const PROJECT = 'claude://studio/proj'
@@ -72,7 +73,7 @@ beforeEach(() => {
   run = { ...RUN }
 
   configureEpicIo({
-    fetchEpicRun: async () => ({ run, baton, ...(run ? {} : { error: 'no run' }) }),
+    fetchEpicRun: async () => ({ run, baton, lease: null, ...(run ? {} : { error: 'no run' }) }),
     fetchBoardCards: async () => cards,
     appendBaton: async (_d, _p, _e, entry) => {
       baton.push({

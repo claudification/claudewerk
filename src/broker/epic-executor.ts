@@ -1,7 +1,7 @@
 /**
  * THE EPIC EXECUTOR -- one beat, performed.
  *
- * `planBeat` decides; this performs. The split is why the interesting cases are
+ * `planBeat` decides; this sequences. The split is why the interesting cases are
  * testable without a sentinel: everything below is plumbing plus the one thing
  * plumbing can still get wrong, which is ORDER.
  *
@@ -16,179 +16,35 @@
  * it, the beat would keep waking an overseer, and the generation counter would
  * climb with nothing moving. Acknowledge, THEN act.
  *
- * Every side effect goes through the injected `EpicIo` seam, for the reason
- * documented on NightshiftIo: Bun's `mock.module` is process-wide and leaks
- * doubles into every later test file in the run.
+ * The four things a beat can DO live in `epic-beat-actions.ts`, and every side
+ * effect goes through the `epic-io.ts` seam.
  */
 
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
-import type { EpicRunSnapshot } from '../shared/protocol'
-import type { SentinelRpcDeps } from './broker-sentinel-rpc'
-import { type EpicAction, type EpicBeat, planBeat } from './epic-beat'
-import { appendBaton, fetchBoardCards, fetchEpicRun, sendEpicOp } from './epic-broker-rpc'
-import { forgetArmedEpic } from './epic-registry'
-import { type EpicSpawnCtx, planImplementerSpawn, planOverseerSpawn, planVerifierSpawn } from './epic-spawn-plan'
+import { type EpicBeat, planBeat } from './epic-beat'
+import { acknowledge, performActions } from './epic-beat-actions'
+import { recordBeat } from './epic-beat-log'
+import { epicIo, tag } from './epic-io'
 import { type EpicGroup, generationMismatch, unacknowledgedCards } from './epic-sweep'
-import { dispatchSpawn } from './spawn-dispatch'
+import type { BeatDeps, BeatOutcome } from './epic-types'
 
-/** Effects, swappable. See the header for why this is not `mock.module`. */
-export interface EpicIo {
-  dispatchSpawn: typeof dispatchSpawn
-  sendEpicOp: typeof sendEpicOp
-  fetchEpicRun: typeof fetchEpicRun
-  fetchBoardCards: typeof fetchBoardCards
-  appendBaton: typeof appendBaton
-}
-
-const REAL_IO: EpicIo = { dispatchSpawn, sendEpicOp, fetchEpicRun, fetchBoardCards, appendBaton }
-let io: EpicIo = REAL_IO
+export type { BeatDeps, BeatOutcome } from './epic-types'
 
 /**
- * Override some effects. CUMULATIVE -- it layers on whatever is configured now,
- * not on the real IO. The other spelling (`{...REAL_IO, ...next}`) reads
- * identically and silently un-stubs everything a previous call had replaced,
- * which cost a test that failed for a reason nowhere near the assertion.
- */
-export function configureEpicIo(next: Partial<EpicIo>): void {
-  io = { ...io, ...next }
-}
-export function resetEpicIo(): void {
-  io = REAL_IO
-}
-
-export type LogFn = (line: string) => void
-
-export interface BeatDeps extends SentinelRpcDeps {
-  /** Everything `dispatchSpawn` needs, passed straight through. */
-  spawnContext: Record<string, unknown>
-  log: LogFn
-  /** Is the project's night window open? ASYNC and consulted ONLY for
-   *  cadence=window -- the answer lives in the project's nightshift config, and
-   *  a `now` run must not pay a sentinel round trip to be told it does not care. */
-  windowOpen: (project: string) => Promise<boolean>
-  /** The conversation id to attribute the overseer's own baton entries to. */
-  now: () => number
-}
-
-export interface BeatOutcome {
-  epicId: string
-  note: string
-  actions: number
-  spawned: string[]
-  error?: string
-}
-
-/** Short form used in every log line, so one epic can be grepped end to end. */
-const tag = (epicId: string, gen: number) => `[epic ${epicId} gen ${gen}]`
-
-/**
- * Write a `completion` entry for every settled card the baton has not seen.
+ * Every exit from a beat goes through here: log the line, ring the beat log,
+ * return the outcome.
  *
- * Deliberately MACHINE-AUTHORED and terse: the implementer's own narrative went
- * into its card, and the point of this entry is to record that the card reached
- * a terminal state at all. An agent-authored summary here would be the one thing
- * the whole design says not to trust.
+ * A single funnel because the beat's most useful line used to be the one that
+ * did not exist -- the early return below logged NOTHING, so "armed, but nothing
+ * on disk" (the commonest failure) was indistinguishable from a healthy idle
+ * sweep in `docker logs`. A return that skips the record is the bug this shape
+ * makes hard to write.
  */
-async function acknowledge(deps: BeatDeps, group: EpicGroup, pending: readonly string[]): Promise<void> {
-  for (const cardId of pending) {
-    const res = await io.appendBaton(deps, group.project, group.epicId, {
-      kind: 'completion',
-      convId: 'broker',
-      cardId,
-      body: `Card \`${cardId}\` settled: every backing conversation has ended. Read the card for what it claims and its gate evidence for what it proved.`,
-    })
-    if (!res.ok) deps.log(`${tag(group.epicId, 0)} baton append FAILED for ${cardId}: ${res.error}`)
-  }
-}
-
-/** Take the lease, then spawn the overseer. A refused lease is NORMAL. */
-async function wakeOverseer(
-  deps: BeatDeps,
-  group: EpicGroup,
-  run: EpicRunSnapshot,
-  action: Extract<EpicAction, { kind: 'wake-overseer' }>,
-  batonTail: string,
-  plan: ReturnType<typeof planEpic>,
-  settled: readonly string[],
-): Promise<string | null> {
-  const convId = `pending-${group.epicId}-${action.expectGen + 1}`
-  const res = await io.sendEpicOp(deps, group.project, {
-    op: 'lease',
-    epicId: group.epicId,
-    lease: { convId, expectGen: action.expectGen, holderAlive: group.overseerAlive },
-  })
-  if (!res.ok || !res.lease?.granted) {
-    deps.log(`${tag(group.epicId, run.gen)} wake refused: ${res.lease?.reason ?? res.error ?? 'unknown'}`)
-    return null
-  }
-
-  const gen = res.lease.gen
-  const ctx: EpicSpawnCtx = {
-    project: group.project,
-    projectRoot: group.project,
-    epicId: group.epicId,
-    gen,
-  }
-  const spawn = planOverseerSpawn(ctx, {
-    projectUri: group.project,
-    projectRoot: group.project,
-    run: { ...run, gen },
-    plan,
-    batonTail,
-    wake: action.reason as never,
-    settled: settled.map(c => `${c} settled`),
-  })
-  const out = await io.dispatchSpawn(spawn as never, deps.spawnContext as never)
-  if (!out.ok) {
-    deps.log(`${tag(group.epicId, gen)} overseer spawn FAILED: ${out.error}`)
-    return null
-  }
-  deps.log(`${tag(group.epicId, gen)} overseer spawned: ${out.conversationId}`)
-  return out.conversationId
-}
-
-/** Dispatch or verify one card. */
-async function spawnForCard(
-  deps: BeatDeps,
-  group: EpicGroup,
-  gen: number,
-  cardId: string,
-  role: 'dispatch' | 'verify',
-): Promise<string | null> {
-  const ctx: EpicSpawnCtx = { project: group.project, projectRoot: group.project, epicId: group.epicId, gen }
-  const spawn = role === 'dispatch' ? planImplementerSpawn(ctx, cardId) : planVerifierSpawn(ctx, cardId)
-  const out = await io.dispatchSpawn(spawn as never, deps.spawnContext as never)
-  if (!out.ok) {
-    deps.log(`${tag(group.epicId, gen)} ${role} FAILED for ${cardId}: ${out.error}`)
-    return null
-  }
-  await io.appendBaton(deps, group.project, group.epicId, {
-    kind: 'dispatch',
-    convId: out.conversationId,
-    cardId,
-    body: `${role === 'dispatch' ? 'Implementer' : 'Verifier'} dispatched for \`${cardId}\` at generation ${gen}.`,
-  })
-  deps.log(`${tag(group.epicId, gen)} ${role} ${cardId} -> ${out.conversationId}`)
-  return out.conversationId
-}
-
-/** Park or complete: patch the run and stop. Both are terminal for the sweep. */
-async function settleRun(
-  deps: BeatDeps,
-  group: EpicGroup,
-  gen: number,
-  action: Extract<EpicAction, { kind: 'park' | 'complete' }>,
-): Promise<void> {
-  const status = action.kind === 'complete' ? 'complete' : 'paused'
-  const body = action.kind === 'complete' ? 'Every child is terminal. Run complete.' : `Run PARKED: ${action.reason}`
-  await io.sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch: { status } })
-  await io.appendBaton(deps, group.project, group.epicId, { kind: 'checkpoint', convId: 'broker', body })
-  await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
-  // Stop sweeping it. A parked or complete run that stayed registered would be
-  // beaten on every 45s forever, doing nothing, for the life of the broker.
-  forgetArmedEpic(group.project, group.epicId)
-  deps.log(`${tag(group.epicId, gen)} ${status}: ${body}`)
+function finish(deps: BeatDeps, group: EpicGroup, gen: number, outcome: BeatOutcome): BeatOutcome {
+  deps.log(`${tag(group.epicId, gen)} beat: ${outcome.note}${outcome.error ? ` -- ERROR ${outcome.error}` : ''}`)
+  recordBeat(group.project, group.epicId, gen, outcome, deps.now())
+  return outcome
 }
 
 /**
@@ -196,9 +52,16 @@ async function settleRun(
  * line per epic per tick rather than a scatter of unrelated messages.
  */
 export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<BeatOutcome> {
+  const io = epicIo()
   const view = await io.fetchEpicRun(deps, group.project, group.epicId)
   if (!view.run) {
-    return { epicId: group.epicId, note: 'no run artifact', actions: 0, spawned: [], error: view.error }
+    return finish(deps, group, 0, {
+      epicId: group.epicId,
+      note: 'no run artifact -- the epic is armed but nothing is on disk for it',
+      actions: 0,
+      spawned: [],
+      error: view.error,
+    })
   }
   const run = view.run
 
@@ -209,12 +72,7 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
   if (pending.length > 0) await acknowledge(deps, group, pending)
 
   const cards = await io.fetchBoardCards(deps, group.project)
-  const plan = planEpic({
-    cards,
-    epicId: group.epicId,
-    concurrency: run.concurrency,
-    inFlight: group.inFlight,
-  })
+  const plan = planEpic({ cards, epicId: group.epicId, concurrency: run.concurrency, inFlight: group.inFlight })
 
   const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true
   const beat: EpicBeat = planBeat({
@@ -235,43 +93,10 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     settled: pending,
   })
 
-  deps.log(
-    `${tag(group.epicId, run.gen)} beat: ${beat.note} (${beat.actions.length} action(s), ${spawned.length} spawned)`,
-  )
-  return { epicId: group.epicId, note: beat.note, actions: beat.actions.length, spawned }
-}
-
-interface ActionContext {
-  batonTail: string
-  plan: ReturnType<typeof planEpic>
-  settled: readonly string[]
-}
-
-/**
- * Perform a beat's actions IN ORDER, collecting the conversations spawned.
- *
- * Sequential rather than concurrent on purpose: `dispatch` actions all consume
- * from the same capacity ledger, and firing them together would let the fleet
- * overshoot the concurrency ceiling by however many happened to be in the batch.
- */
-async function performActions(
-  deps: BeatDeps,
-  group: EpicGroup,
-  run: EpicRunSnapshot,
-  beat: EpicBeat,
-  ctx: ActionContext,
-): Promise<string[]> {
-  const spawned: string[] = []
-  for (const action of beat.actions) {
-    if (action.kind === 'wake-overseer') {
-      const id = await wakeOverseer(deps, group, run, action, ctx.batonTail, ctx.plan, ctx.settled)
-      if (id) spawned.push(id)
-    } else if (action.kind === 'dispatch' || action.kind === 'verify') {
-      const id = await spawnForCard(deps, group, run.gen, action.cardId, action.kind)
-      if (id) spawned.push(id)
-    } else {
-      await settleRun(deps, group, run.gen, action)
-    }
-  }
-  return spawned
+  return finish(deps, group, run.gen, {
+    epicId: group.epicId,
+    note: `${beat.note} (${beat.actions.length} action(s), ${spawned.length} spawned)`,
+    actions: beat.actions.length,
+    spawned,
+  })
 }

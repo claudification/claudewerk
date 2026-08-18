@@ -17,7 +17,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
-import { appendEpicLog, readEpicLogTail } from '../shared/epic-log'
+import { appendEpicLog, readEpicLogSlice } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import { parseFrontmatter, serializeFrontmatter } from '../shared/frontmatter'
@@ -29,8 +29,10 @@ type EpicOpHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
 
 const fail = (error: string): OpOutcome => ({ ok: false, error })
 
-/** How many baton entries a `get` returns. Enough for an overseer to pick up
- *  cold, small enough that a forty-generation run still fits in a prompt. */
+/** How many baton entries a `get` returns when the caller does not say. Enough
+ *  for an overseer to pick up cold, small enough that a forty-generation run
+ *  still fits in a prompt. A DEBUGGING caller overrides it via `baton.limit`;
+ *  the default is sized for the prompt, not for the human. */
 const BATON_TAIL = 20
 
 function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
@@ -70,8 +72,19 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
     return { ok: true, run: { ...run } }
   },
 
+  /**
+   * The one pure read. Returns the lease as well as the run, because the lease
+   * lives on the CARD -- so without it here the only way to answer "who is
+   * holding this epic, and since when" was to open the card by hand, which
+   * defeats the point of putting it somewhere visible.
+   */
   get(root, msg) {
-    return { ok: true, run: snapshot(root, msg.epicId), baton: readEpicLogTail(root, msg.epicId, BATON_TAIL) }
+    return {
+      ok: true,
+      run: snapshot(root, msg.epicId),
+      baton: readEpicLogSlice(root, msg.epicId, { limit: BATON_TAIL, ...(msg.baton ?? {}) }),
+      currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}),
+    }
   },
 
   patch(root, msg, nowMs) {

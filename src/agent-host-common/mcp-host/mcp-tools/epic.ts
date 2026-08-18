@@ -1,10 +1,14 @@
 /**
- * `epic_run` -- start, inspect, pause or abort an EPIC RUN.
+ * `epic_run` -- drive, inspect and debug an EPIC RUN.
  *
  * Deliberately has NO spawn verb. The engine owns dispatch: a tool that could
  * spawn an epic worker directly would bypass the DAG gate, the concurrency
  * ceiling and the overseer lease -- every safety property of the run, in one
  * call. If you want work to start, arm the run and let the beat decide.
+ *
+ * `beat` is not a hole in that rule. It runs ONE beat of the engine, taking the
+ * same reentrancy guard and the same plan the 45s sweep would take; all it
+ * changes is WHEN, never WHETHER or WHAT.
  *
  * Mirrors the quest/nightshift MCP idiom: one POST to a broker route, because
  * the agent host has no sentinel of its own to ask.
@@ -12,83 +16,89 @@
 
 import { wsToHttpUrl } from '../../../shared/ws-url'
 import { debug } from '../debug'
+import { type EpicRunPayload, renderEpic } from './epic-render'
 import type { McpToolContext, ToolDef, ToolResult } from './types'
 
 const DESCRIPTION = [
-  'Start / inspect / pause / abort an EPIC RUN: the engine plans AND executes a whole epic unattended.',
+  'Drive / inspect / debug an EPIC RUN: the engine plans AND executes a whole epic unattended.',
   'It dispatches one implementer per ready card (ordered by depends_on), sends an independent VERIFIER',
   'over every finished card, and wakes a single OVERSEER between beats -- the only seat that may ask a human.',
   '',
-  'action=start   arm (or resume) the run. `cadence` "now" ignores the clock; "window" defers dispatch to',
-  '               the project night window. `concurrency` defaults to 3 -- that is a REVIEW ceiling, not a',
-  '               machine one; raising it means choosing to stop reviewing per-change.',
-  'action=get     run state + digest + the baton tail (what the run remembers about itself).',
-  'action=pause   stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
-  '               generation counter.',
-  'action=abort   terminal, with `reason` recorded in the append-only baton.',
+  'DRIVE',
+  'action=start        arm (or resume) the run. `cadence` "now" ignores the clock; "window" defers dispatch to',
+  '                    the project night window. `concurrency` defaults to 3 -- that is a REVIEW ceiling, not a',
+  '                    machine one; raising it means choosing to stop reviewing per-change.',
+  'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
+  '                    generation counter.',
+  'action=abort        terminal, with `reason` recorded in the append-only baton.',
+  'action=beat         run ONE beat RIGHT NOW instead of waiting up to 45s for the sweep. Use this after arming',
+  '                    to see immediately whether the run does anything, and to step a stalled run by hand.',
+  '',
+  'INSPECT',
+  'action=list         every run this project has: status, generation, cards in flight, whether armed.',
+  'action=get          the cheap read -- run state, digest and baton tail.',
+  'action=inspect      THE DEBUG READ. Everything at once: the run, who holds the overseer lease, the DAG plan',
+  '                    (what is dispatchable / awaiting a verdict / held back by the ceiling / waiting on deps /',
+  '                    parked as a question), WHY nothing is moving, which conversations are alive, which settled',
+  '                    cards the baton has not acknowledged, and the beats the sweep actually performed.',
+  '                    Reach for this first whenever an epic looks stuck. It never mutates anything.',
+  '',
+  'DEBUG',
+  'action=break_lease  release a stuck overseer lease so the next beat can wake a fresh one. Refuses while the',
+  '                    holder conversation is still alive unless `force` is set. Records who broke it in the baton.',
+  '',
+  '`baton_limit` / `baton_kinds` / `baton_card` deepen or filter the baton on get and inspect -- e.g. every',
+  'verdict, or everything that ever happened to one card. The default tail is sized for a prompt, not for a human.',
 ].join('\n')
 
 function err(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
-interface EpicRunPayload {
-  ok?: boolean
-  error?: string
-  run?: {
-    epicId: string
-    status: string
-    gen: number
-    maxGens: number
-    cadence: string
-    target: string
-    concurrency: number
-    dryGens: number
-    abortReason?: string
-    digest: string
-  } | null
-  baton?: Array<{ ts: string; kind: string; cardId?: string; body: string }>
+const ACTIONS = ['start', 'get', 'inspect', 'list', 'beat', 'pause', 'abort', 'break_lease'] as const
+
+/** Comma-separated or already a list -> a list. The MCP schema says string, and
+ *  a model will send either spelling however the schema is worded. */
+function toList(v: unknown): string[] | undefined {
+  const raw = Array.isArray(v) ? v.map(String) : typeof v === 'string' ? v.split(',') : []
+  const list = raw.map(s => s.trim()).filter(Boolean)
+  return list.length > 0 ? list : undefined
 }
 
-/** Human-readable, because this is read by an agent deciding what to do next --
- *  a JSON dump would make it re-derive the same summary every time. */
-function render(json: EpicRunPayload): string {
-  const run = json.run
-  if (!run) return 'No run for this epic yet. Use action=start to arm one.'
-  const lines = [
-    `epic ${run.epicId}: ${run.status} (generation ${run.gen}/${run.maxGens})`,
-    `cadence ${run.cadence} . target ${run.target} . concurrency ${run.concurrency} . dry generations ${run.dryGens}`,
-    run.abortReason ? `aborted: ${run.abortReason}` : '',
-    '',
-    '## Digest',
-    run.digest,
-  ]
-  if (json.baton?.length) {
-    lines.push('', '## Baton (tail)')
-    for (const e of json.baton) {
-      lines.push(`- ${e.ts} ${e.kind}${e.cardId ? ` [${e.cardId}]` : ''}: ${e.body.slice(0, 200)}`)
-    }
-  }
-  return lines.filter(Boolean).join('\n')
+/** The baton slice, if the caller asked for one. Undefined means "the default",
+ *  which is the prompt-sized tail the engine itself uses. */
+function toBatonQuery(p: Record<string, unknown>): Record<string, unknown> | undefined {
+  const limit = typeof p.baton_limit === 'number' ? p.baton_limit : undefined
+  const kinds = toList(p.baton_kinds)
+  const cardId = p.baton_card ? String(p.baton_card) : undefined
+  if (limit === undefined && !kinds && !cardId) return undefined
+  return { ...(limit ? { limit } : {}), ...(kinds ? { kinds } : {}), ...(cardId ? { cardId } : {}) }
 }
 
 /** Tool args -> request body, or the error message. Separate from `handle` so
  *  the argument shaping is testable and the handler stays two lines. */
-export function toBody(p: Record<string, string | number>): Record<string, unknown> | string {
+export function toBody(p: Record<string, unknown>): Record<string, unknown> | string {
   const project = String(p.project ?? '')
   const epicId = String(p.epic_id ?? '')
   const action = String(p.action ?? '')
-  if (!project || !epicId || !action) return 'project + epic_id + action are required'
+  if (!project || !action) return 'project + action are required'
+  // `list` is the one action that is about the PROJECT rather than one epic.
+  if (!epicId && action !== 'list') return 'epic_id is required for every action except list'
 
   const start =
     action === 'start'
       ? { cadence: p.cadence, target: p.target, concurrency: p.concurrency, maxGens: p.max_gens }
       : undefined
+  const baton = toBatonQuery(p)
+
   return {
     project,
     op: action,
-    epicId,
+    ...(epicId ? { epicId } : {}),
     ...(start ? { start } : {}),
+    ...(baton ? { baton } : {}),
+    ...(p.beats ? { beats: Number(p.beats) } : {}),
+    ...(p.force ? { force: true } : {}),
     ...(p.reason ? { reason: String(p.reason) } : {}),
   }
 }
@@ -107,7 +117,7 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
       const json = (await res.json()) as EpicRunPayload
       if (!json.ok) return err(`epic error: ${json.error || res.status}`)
       debug(`[channel] epic ${String(body.op)} ok`)
-      return { content: [{ type: 'text', text: render(json) }] }
+      return { content: [{ type: 'text', text: renderEpic(json) }] }
     } catch (e) {
       return err(`epic request failed: ${(e as Error).message}`)
     }
@@ -120,17 +130,29 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
         type: 'object' as const,
         properties: {
           project: { type: 'string', description: 'Canonical project URI the epic belongs to (required).' },
-          epic_id: { type: 'string', description: 'The epic CARD id -- its file name without .md (required).' },
-          action: { type: 'string', enum: ['start', 'get', 'pause', 'abort'], description: 'What to do.' },
+          epic_id: {
+            type: 'string',
+            description: 'The epic CARD id -- its file name without .md. Required for everything except list.',
+          },
+          action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
           cadence: { type: 'string', enum: ['now', 'window'], description: 'start: when ready cards may dispatch.' },
           target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'start: delivery rung.' },
           concurrency: { type: 'number', description: 'start: max implementers in flight (default 3).' },
           max_gens: { type: 'number', description: 'start: overseer generation ceiling (default 40).' },
-          reason: { type: 'string', description: 'abort: why, recorded in the baton.' },
+          reason: { type: 'string', description: 'abort / break_lease: why, recorded in the baton.' },
+          force: { type: 'boolean', description: 'break_lease: break it even though the holder is still alive.' },
+          beats: { type: 'number', description: 'inspect: how many past beats to show (default 10).' },
+          baton_limit: { type: 'number', description: 'get / inspect: baton entries to return (default 20).' },
+          baton_kinds: {
+            type: 'string',
+            description:
+              'get / inspect: comma-separated kinds to keep -- intent, dispatch, completion, verdict, blocked, merge, steering, checkpoint.',
+          },
+          baton_card: { type: 'string', description: 'get / inspect: only baton entries about this card id.' },
         },
-        required: ['project', 'epic_id', 'action'],
+        required: ['project', 'action'],
       },
-      async handle(p: Record<string, string | number>) {
+      async handle(p: Record<string, unknown>) {
         const body = toBody(p)
         return typeof body === 'string' ? err(body) : post(body)
       },

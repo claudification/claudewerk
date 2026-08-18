@@ -4,9 +4,11 @@
  * `broker-sentinel-rpc.ts`; only the epic-shaped helpers live here.
  */
 
+import type { EpicLease } from '../shared/epic-lease'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type {
+  EpicBatonQuery,
   EpicLeaseInput,
   EpicLogAppendInput,
   EpicOpKind,
@@ -48,6 +50,7 @@ export interface EpicOpInput {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  baton?: EpicBatonQuery
   reason?: string
 }
 
@@ -65,14 +68,27 @@ export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): P
 export interface EpicRunView {
   run: EpicRunSnapshot | null
   baton: EpicLogEntry[]
+  /** Who holds the overseer seat, off the epic card. `null` = never run. */
+  lease: EpicLease | null
   error?: string
 }
 
-/** Run + baton in one call -- what a beat reads before deciding anything. */
-export async function fetchEpicRun(deps: SentinelRpcDeps, project: string, epicId: string): Promise<EpicRunView> {
-  const res = await sendEpicOp(deps, project, { op: 'get', epicId })
-  if (!res.ok) return { run: null, baton: [], error: res.error ?? 'epic get failed' }
-  return { run: res.run ?? null, baton: res.baton ?? [] }
+/**
+ * Run + lease + baton in one call -- what a beat reads before deciding anything,
+ * and what an inspect reads to explain the run.
+ *
+ * `baton` shapes the slice. A beat omits it and takes the prompt-sized default;
+ * a debugging caller asks for depth or a filter.
+ */
+export async function fetchEpicRun(
+  deps: SentinelRpcDeps,
+  project: string,
+  epicId: string,
+  baton?: EpicBatonQuery,
+): Promise<EpicRunView> {
+  const res = await sendEpicOp(deps, project, { op: 'get', epicId, ...(baton ? { baton } : {}) })
+  if (!res.ok) return { run: null, baton: [], lease: null, error: res.error ?? 'epic get failed' }
+  return { run: res.run ?? null, baton: res.baton ?? [], lease: res.currentLease ?? null }
 }
 
 /** Append one baton entry. Failures are logged by the caller, never thrown -- a

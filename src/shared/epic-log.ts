@@ -92,6 +92,35 @@ export function readEpicLogForCard(root: string, epicId: string, cardId: string)
   return readEpicLog(root, epicId).filter(e => e.cardId === cardId)
 }
 
+/** How much of the baton, and which of it. */
+export interface BatonQuery {
+  /** Entries to return, newest last. Omitted = the prompt-sized default. */
+  limit?: number
+  /** Keep only these kinds. Omitted = all of them. */
+  kinds?: readonly EpicLogKind[]
+  /** Keep only entries about this card. */
+  cardId?: string
+}
+
+/**
+ * The baton, FILTERED then tailed -- the read a human debugging a run wants
+ * ("every verdict", "everything about t5"), as opposed to the fixed prompt-sized
+ * tail an overseer generation is handed.
+ *
+ * Filter-then-tail, never tail-then-filter: asking for the last 10 verdicts must
+ * search the whole log, not return however many verdicts happen to fall inside
+ * the last 10 entries. The file is read whole either way (`readEpicLog`), so the
+ * correct order here is free.
+ */
+export function readEpicLogSlice(root: string, epicId: string, query: BatonQuery = {}): EpicLogEntry[] {
+  const kinds = query.kinds?.length ? new Set(query.kinds) : null
+  const matched = readEpicLog(root, epicId).filter(
+    e => (!kinds || kinds.has(e.kind)) && (!query.cardId || e.cardId === query.cardId),
+  )
+  const n = query.limit && query.limit > 0 ? query.limit : 20
+  return n >= matched.length ? matched : matched.slice(matched.length - n)
+}
+
 /** Render a tail as the markdown block a prompt embeds. */
 export function renderEpicLogTail(entries: readonly EpicLogEntry[]): string {
   if (entries.length === 0) return '_(empty -- this is the first generation)_'

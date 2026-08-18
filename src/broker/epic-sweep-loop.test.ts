@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation, EpicResult } from '../shared/protocol'
-import { configureEpicIo, resetEpicIo } from './epic-executor'
+import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
-import { resetSweepGuard, type SweepDeps, sweepEpics } from './epic-sweep-loop'
+import { beatOneEpic, resetSweepGuard, type SweepDeps, sweepEpics } from './epic-sweep-loop'
 
 let beats: string[]
 let log: string[]
@@ -44,7 +44,7 @@ beforeEach(() => {
     fetchEpicRun: async (_d, project) => {
       beats.push(project)
       if (release) await new Promise<void>(r => (release = r))
-      return { run: null, baton: [], error: 'no run in this test' }
+      return { run: null, baton: [], lease: null, error: 'no run in this test' }
     },
     fetchBoardCards: async () => [],
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
@@ -81,7 +81,7 @@ describe('sweepEpics', () => {
           throw new Error('sentinel exploded')
         }
         beats.push(project)
-        return { run: null, baton: [] }
+        return { run: null, baton: [], lease: null }
       },
     })
     await sweepEpics(deps())
@@ -122,7 +122,7 @@ describe('sweepEpics', () => {
     configureEpicIo({
       fetchEpicRun: async (_d, project) => {
         beats.push(project)
-        return { run: null, baton: [] }
+        return { run: null, baton: [], lease: null }
       },
     })
     await sweepEpics(deps())
@@ -164,5 +164,76 @@ describe('an ARMED epic with no conversations yet', () => {
     noteArmedEpic('claude://s/e2', 'e2')
     await sweepEpics(deps())
     expect(beats).toHaveLength(2)
+  })
+})
+
+describe('beatOneEpic -- the forced beat', () => {
+  test('beats the named epic immediately, without waiting for the 45s tick', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    const res = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(res.ok).toBe(true)
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('beats ONLY that epic, even when others have conversations', async () => {
+    convs = [conv('e1', 'implementer', 't1'), conv('e2', 'implementer', 'x1')]
+    await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('an epic the registry has never seen is still beaten, with an empty group', async () => {
+    // This is the case right after arming: no conversations exist yet, and
+    // refusing here would make the verb useless exactly when it is needed.
+    convs = []
+    const res = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(res.ok).toBe(true)
+    expect(beats).toHaveLength(1)
+  })
+
+  test('an armed epic is found through the registry, same as the sweep', async () => {
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('REFUSES while a scheduled sweep is mid-tick -- two beats would both dispatch the same ready card', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    release = () => {}
+    const sweeping = sweepEpics(deps())
+    const forced = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(forced).toMatchObject({ ok: false })
+    release?.()
+    await sweeping
+    // Exactly one beat ran: the forced one never started.
+    expect(beats).toHaveLength(1)
+  })
+
+  test('releases the guard afterwards, so a second forced beat is not locked out', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    const second = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(second.ok).toBe(true)
+    expect(beats).toHaveLength(2)
+  })
+
+  test('releases the guard even when the beat THROWS -- a crash must not wedge the sweep forever', async () => {
+    configureEpicIo({
+      fetchEpicRun: async () => {
+        throw new Error('sentinel exploded')
+      },
+    })
+    const res = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
+    expect(res).toMatchObject({ ok: false, error: 'sentinel exploded' })
+    // The guard is free again: a normal sweep still runs.
+    configureEpicIo({
+      fetchEpicRun: async (_d, project) => {
+        beats.push(project)
+        return { run: null, baton: [], lease: null }
+      },
+    })
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(deps())
+    expect(beats).toEqual(['claude://s/e1'])
   })
 })

@@ -206,19 +206,28 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 | The 45s sweep, started in `broker/index.ts` | **done**, tested |
 | `POST /api/epic` + `epic_run` MCP verb | **done**, tested |
 | RUN button + dialog | **done**, shipped to `web/dist` |
-| **A live end-to-end run** | **NEVER RUN** |
+| **A live end-to-end run** | **DONE 2026-08-18** -- two cards, one dependency, zero human intervention |
+| `inspect` / `list` / `beat` / `break_lease` + the beat ring | **built**, tested, **NOT DEPLOYED** |
 
-That last row is still the only one that matters, and it is now blocked on one
-thing: the executor and the sweep live in the BROKER, so nothing runs until the
-broker image is rebuilt and the container recreated. That drops every live
-WebSocket, so it is not covered by the standing web-deploy licence and needs an
-explicit go.
+The loop is closed. On 2026-08-18 an epic went arm -> dispatch -> in-review ->
+independent verifier -> done -> next card -> complete with nobody watching -- the
+first completed unattended run in this codebase.
 
-**Do not treat the rest of this table as proof.** Nightshift has 0 completed runs
-and sat at "Phase F FAILED" from 2026-06-26; its blocker (the sentinel's
-`expandPath` mangling a `claude://` URI) is fixed and covered by
-`src/sentinel/expand-path.test.ts`, but the closed loop has still never been
-demonstrated. Expect the smoke to find bugs -- that is what it is for.
+That run also found what §10's verbs exist to fix: the plan was computed every
+beat and discarded, the beat log barely reached `docker logs`, and the only way
+to see a run's state was to wait 45s and read the sentinel's files by hand. Four
+findings from that smoke are still open on
+[epic-smoke-findings](../.rclaude/project/cards/epic-smoke-findings.md) -- most
+importantly that the deterministic DONE-gate never runs for an epic card, so the
+implementer/verifier separation currently holds by CONVENTION rather than by the
+mechanism built to enforce it.
+
+**Deploying the new verbs needs an explicit go, twice.** The executor, the sweep
+and the broker actions live in the BROKER, so they need the image rebuilt and the
+container recreated -- which drops every live WebSocket. The deeper baton read
+and the lease-on-`get` are SENTINEL changes, and the sentinel ships as a frozen
+bundle, so they need `build:packages` plus a sentinel restart, which kills running
+work. Neither is covered by the standing web-deploy licence.
 
 ## 10. Running one
 
@@ -227,7 +236,59 @@ epic_run(project="claude://...", epic_id="werk-epic", action="start",
          cadence="now", concurrency=3)
 ```
 
-or the **RUN** button on any epic card in the EPICS view. `action=get` reads the
-run, its digest and the baton tail; `action=pause` releases the lease and stops
-dispatching (a later start RESUMES, it never resets the generation counter);
-`action=abort` is terminal and records the reason in the baton.
+or the **RUN** button on any epic card in the EPICS view.
+
+### The verbs
+
+Everything an epic run can be driven, inspected or debugged by is one MCP tool,
+`epic_run`, and one route, `POST /api/epic`.
+
+| Action | Does | Costs |
+|---|---|---|
+| `start` | arm or RESUME. Never resets the generation counter. | sentinel |
+| `pause` | stop dispatching, release the lease | sentinel |
+| `abort` | terminal, `reason` into the baton | sentinel |
+| `beat` | **run one beat NOW** instead of waiting up to 45s | broker |
+| `list` | every run in the project: status, gen, in flight, armed | broker |
+| `get` | the cheap read -- run, digest, baton tail | sentinel |
+| `inspect` | **everything at once** (below) | broker |
+| `break_lease` | release a stuck overseer so the next beat wakes a fresh one | broker |
+
+`lease`, `patch`, `log_append` and `release` stay ENGINE-INTERNAL and are refused
+over HTTP: exposing them would let a caller forge a generation or hand-edit the
+append-only baton, which is the one thing the baton exists to prevent.
+`break_lease` is `release`'s audited public face -- it refuses a live holder
+unless forced, and writes who broke it and why into the baton.
+
+### `inspect` -- reach for this first when an epic looks stuck
+
+One call, no mutation, and it answers the question in this order:
+
+1. **Why it is or is not moving** -- `idleReason`, computed by `epic-ready.ts`.
+   This is the line to read first. It used to be computed on every beat and
+   thrown away.
+2. **The plan** -- dispatch / verify / questions / held back by the ceiling /
+   waiting on dependencies, each with the cards named and the deps that hold them.
+3. **Live** -- what is actually running: cards in flight, whether the overseer is
+   alive, which settled cards the baton has **not acknowledged** (that is what a
+   wake is FOR), and every epic-tagged conversation with its role and generation.
+4. **Beats the sweep performed** -- the mechanical layer under the baton. The
+   baton is the overseer's memory; this is what the machine did.
+5. **The baton.**
+
+Two fields are worth knowing by name because each marks a specific failure:
+
+- `armed: NO` on a run whose status says `armed` means **the broker restarted and
+  forgot it** (the registry is in memory -- see §5). Re-arm; `start` resumes.
+- `generationMismatch` means spawns are being tagged with a generation the run
+  file does not have, i.e. **spawns are racing the lease**, which freezes a run
+  silently. It was a log line nobody read; it is now a field.
+
+### Reading deeper into the baton
+
+`baton_limit`, `baton_kinds` and `baton_card` shape the slice on `get` and
+`inspect` -- "the last 200", "every verdict", "everything that ever happened to
+t5". The default tail is 20, sized for an overseer's PROMPT rather than for a
+human debugging a forty-generation run; filtering happens before the tail, so
+"the last 2 verdicts" means two verdicts, not however many fall in the last two
+entries.

@@ -7,11 +7,13 @@ import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
+import type { EpicLease } from './epic-lease'
 import type {
   EpicCadence,
   EpicLaunchTag,
   EpicLogEntry,
   EpicLogKind,
+  EpicRole,
   EpicRunFull,
   EpicRunStatus,
 } from './epic-run-types'
@@ -4482,6 +4484,20 @@ export interface EpicLogAppendInput {
   cardId?: string
 }
 
+/**
+ * `get` payload -- HOW MUCH of the baton, and which of it.
+ *
+ * Absent means the prompt-sized default an overseer generation is handed. A
+ * human debugging a forty-generation run needs a different read entirely ("every
+ * verdict", "everything about t5", "the last 200"), and hard-coding one number
+ * for both callers meant the debugging one simply could not be served.
+ */
+export interface EpicBatonQuery {
+  limit?: number
+  kinds?: EpicLogKind[]
+  cardId?: string
+}
+
 /** Dashboard / agent-leg -> Broker: one epic substrate op. */
 export interface EpicRequest {
   type: 'epic_request'
@@ -4494,6 +4510,7 @@ export interface EpicRequest {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  baton?: EpicBatonQuery
   reason?: string
 }
 
@@ -4518,6 +4535,7 @@ export interface EpicOp {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  baton?: EpicBatonQuery
   reason?: string
 }
 
@@ -4529,12 +4547,17 @@ export interface EpicResult {
   ok: boolean
   /** start / patch / get / pause / abort -- the run after the write. */
   run?: EpicRunSnapshot | null
-  /** get -- the baton tail, newest last. */
+  /** get -- the baton slice, newest last. */
   baton?: EpicLogEntry[]
   /** log_append -- the persisted entry. */
   logEntry?: EpicLogEntry
   /** lease -- granted or refused, with the holder either way. */
   lease?: { granted: boolean; convId: string; gen: number; at: string; reason?: string }
+  /** get -- the lease as it stands, read off the epic card. A SEPARATE field
+   *  from `lease` above on purpose: that one is a VERDICT on a CAS attempt, this
+   *  one is a fact about the world, and collapsing them would make `granted`
+   *  mean two different things depending on which op you asked. */
+  currentLease?: EpicLease | null
   error?: string
 }
 
@@ -4558,6 +4581,116 @@ export interface EpicEvent {
   gen?: number
   status?: EpicRunStatus
   detail?: string
+}
+
+// ---------------------------------------------------------------------------
+// EPIC INSPECT -- the debug projection. BROKER-COMPUTED, never a sentinel op.
+//
+// `EpicOpKind` is the sentinel wire and stays exactly as small as it is. Every
+// type below is assembled in the broker out of things it ALREADY has: the run
+// and baton from one `get`, the board from one `list`, and the live picture from
+// its own conversation registry. That split is the whole reason inspect costs
+// no new sentinel deploy -- and it is also the honest one, since "what is
+// running right now" is a question only the broker can answer.
+//
+// Why this exists: the plan (`epic-ready.ts`) was computed on every beat and
+// thrown away, so `idleReason` -- the single most useful line when an epic stops
+// moving -- reached nobody, and a stalled run could only be explained by reading
+// broker logs that (see the 2026-08-18 smoke) largely were not there.
+// ---------------------------------------------------------------------------
+
+/** One card as an inspect renders it. Deliberately NOT `ProjectTaskMeta`: an
+ *  inspect is read by an agent deciding what to do, and a full card payload per
+ *  lane would bury the four fields that answer the question. */
+export interface EpicInspectCard {
+  id: string
+  title: string
+  status: string
+  /** Only on the waiting lane: the unfinished dependencies holding it. */
+  waitingOn?: string[]
+}
+
+/** The ARITHMETIC half: what the DAG says should happen next. Pure `planEpic`. */
+export interface EpicInspectPlan {
+  /** Children the rollup found. Zero means the epic exists but nothing claims it. */
+  children: number
+  dispatch: EpicInspectCard[]
+  verify: EpicInspectCard[]
+  questions: EpicInspectCard[]
+  heldBack: EpicInspectCard[]
+  waitingOnDeps: EpicInspectCard[]
+  complete: boolean
+  /** Why nothing is dispatchable, when nothing is. THE line to read first. */
+  idleReason?: string
+}
+
+/** One epic-tagged conversation, as the broker's registry sees it. */
+export interface EpicInspectConversation {
+  id: string
+  role: EpicRole
+  cardId?: string
+  gen: number
+  status: string
+  live: boolean
+}
+
+/** The REGISTRY half: what is actually running, right now. */
+export interface EpicInspectLive {
+  /** Is the epic in the sweep's in-memory armed set? A `false` here on a run
+   *  that says `armed` means the broker restarted and forgot it -- re-arm. */
+  armed: boolean
+  inFlight: string[]
+  settled: string[]
+  /** Settled cards the baton has never acknowledged. This is what a wake is FOR;
+   *  a non-empty list with no overseer alive means the next beat will wake one. */
+  unacknowledged: string[]
+  overseerAlive: boolean
+  maxGenSeen: number
+  /** Present only when the conversations and `run.md` disagree about the
+   *  generation -- spawns racing the lease, which silently freezes a run. */
+  generationMismatch?: string
+  conversations: EpicInspectConversation[]
+}
+
+/** One beat the sweep performed. The mechanical layer under the baton: the
+ *  baton is the overseer's memory, this is what the machine actually did. */
+export interface EpicBeatRecord {
+  at: string
+  gen: number
+  epicId: string
+  project: string
+  note: string
+  actions: number
+  spawned: string[]
+  error?: string
+}
+
+/** Everything known about one run, in one call. */
+export interface EpicInspectResult {
+  epicId: string
+  project: string
+  run: EpicRunSnapshot | null
+  /** The overseer singleton's grip, read off the epic CARD. `convId: ''` means
+   *  it ran and released; `null` means it has never run. */
+  lease: EpicLease | null
+  /** Null when the epic is not on the board at all -- see `error`. */
+  plan: EpicInspectPlan | null
+  live: EpicInspectLive
+  beats: EpicBeatRecord[]
+  baton: EpicLogEntry[]
+  error?: string
+}
+
+/** One row of `action=list` -- every run the broker can see in a project. */
+export interface EpicRunListEntry {
+  epicId: string
+  project: string
+  /** `null` when the epic has conversations but no run artifact on disk. */
+  status: EpicRunStatus | null
+  gen: number
+  armed: boolean
+  inFlight: number
+  overseerAlive: boolean
 }
 
 // ===========================================================================

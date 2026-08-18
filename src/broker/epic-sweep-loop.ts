@@ -12,7 +12,7 @@
 import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
-import { type BeatDeps, runEpicBeat } from './epic-executor'
+import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
 import { listArmedEpics } from './epic-registry'
 import { type EpicGroup, groupEpicConversations, type IsLive } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
@@ -128,6 +128,43 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
         deps.log(`[epic-sweep] beat crashed for ${group.epicId}: ${err instanceof Error ? err.message : String(err)}`)
       })
     }
+  } finally {
+    sweeping = false
+  }
+}
+
+/**
+ * Beat ONE epic right now, instead of waiting up to 45s for the tick.
+ *
+ * This is the verb the first live smoke needed and did not have: arming a run
+ * and then staring at nothing for three quarters of a minute, unable to tell a
+ * slow sweep from a broken one, is most of what made that session expensive.
+ *
+ * It takes the SAME reentrancy guard as the scheduled sweep, and that is the
+ * whole reason this lives here rather than in the route. Two beats on one epic
+ * would both read the same generation; the lease CAS refuses the second
+ * overseer, but nothing stops them both dispatching the same ready card, so the
+ * concurrency ceiling would be overshot by exactly the race the guard prevents.
+ */
+export async function beatOneEpic(
+  deps: SweepDeps,
+  project: string,
+  epicId: string,
+): Promise<{ ok: true; outcome: BeatOutcome } | { ok: false; error: string }> {
+  if (sweeping) return { ok: false, error: 'a sweep is already running; try again in a moment' }
+  sweeping = true
+  try {
+    const group = epicsToBeat(deps).find(g => g.epicId === epicId && g.project === project) ?? {
+      epicId,
+      project,
+      inFlight: [],
+      overseerAlive: false,
+      settled: [],
+      maxGenSeen: 0,
+    }
+    return { ok: true, outcome: await runEpicBeat(deps, group) }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
   } finally {
     sweeping = false
   }

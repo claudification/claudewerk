@@ -85,6 +85,7 @@ const epicRequest = buildRelayHandler<EpicRequest, EpicResult>({
     patch: d.patch,
     logAppend: d.logAppend,
     lease: d.lease,
+    baton: d.baton,
     reason: d.reason,
   }),
 })
