@@ -7,6 +7,12 @@
  * THE INCIDENT (2026-08-12, iPad): keydown used to call voice.start() with no
  * permission check, so a platform refusal surfaced as WebKit's raw DOMException
  * in the banner. A trigger that can open the mic owns the permission question.
+ *
+ * THE CHORD COLLISION (2026-08-18): the Pulse strip peeks on `mod+alt`, and a
+ * hold key bound to Alt or Meta meant that same hold opened the microphone.
+ * Starting is now guarded both ways -- see `push-to-talk-guard.ts`. The unlock
+ * probe deliberately stays OUTSIDE the grace window, because getUserMedia must
+ * run inside the user gesture or the platform refuses it.
  */
 
 import { useEffect, useRef } from 'react'
@@ -14,6 +20,7 @@ import type { MicPermissionResult } from '@/hooks/use-mic-permission'
 import type { UseVoiceRecordingResult } from '@/hooks/use-voice-recording'
 import { prewarmVoice, prewarmVoiceTransport } from '@/hooks/voice-prewarm'
 import { haptic } from '@/lib/utils'
+import { CHORD_GRACE_MS, hasForeignModifier } from './push-to-talk-guard'
 
 interface PushToTalkArgs {
   /** KeyboardEvent.code to hold, e.g. 'AltRight'. Empty/null = disabled. */
@@ -43,26 +50,58 @@ export function usePushToTalk({ holdKey, keepMicOpen, voice, permission }: PushT
 
   useEffect(() => {
     if (!holdKey) return
+    const key = holdKey
+
+    /** Pending start, held open just long enough to see a chord coming. */
+    let graceTimer: ReturnType<typeof setTimeout> | null = null
+    function abandonPendingStart() {
+      if (graceTimer === null) return
+      clearTimeout(graceTimer)
+      graceTimer = null
+    }
 
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.code !== holdKey || e.repeat || activeRef.current) return
+      // Any OTHER key landing during the grace window means this was the first
+      // half of a chord, not the start of speech. Drop it.
+      if (e.code !== key) {
+        abandonPendingStart()
+        return
+      }
+      if (e.repeat || activeRef.current || graceTimer !== null) return
+
+      // A modifier already down makes the chord knowable right now, with no
+      // waiting. Leave the event alone: it belongs to whatever owns that chord.
+      if (hasForeignModifier(key, e)) return
+
       e.preventDefault()
-      haptic('tap')
 
       // No grant yet: spend THIS press on the unlock probe rather than starting
       // a recording that cannot capture anything. getUserMedia has to run inside
-      // the gesture, so it happens here and not behind an await.
+      // the gesture, so it happens here and not behind an await -- and NOT
+      // behind the grace window either, which would put it outside the gesture
+      // and get it refused.
       if (needsUnlock) {
+        haptic('tap')
         void unlock()
         return
       }
 
-      activeRef.current = true
-      start()
+      graceTimer = setTimeout(() => {
+        graceTimer = null
+        activeRef.current = true
+        haptic('tap')
+        start()
+      }, CHORD_GRACE_MS)
     }
 
     function handleKeyUp(e: KeyboardEvent) {
-      if (e.code !== holdKey || !activeRef.current) return
+      if (e.code !== key) return
+      // Released inside the window: too brief to be speech, and never started.
+      if (graceTimer !== null) {
+        abandonPendingStart()
+        return
+      }
+      if (!activeRef.current) return
       e.preventDefault()
       activeRef.current = false
       haptic('tick')
@@ -74,6 +113,7 @@ export function usePushToTalk({ holdKey, keepMicOpen, voice, permission }: PushT
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
+      abandonPendingStart()
       if (activeRef.current) cancel()
     }
   }, [holdKey, needsUnlock, unlock, start, stop, cancel])

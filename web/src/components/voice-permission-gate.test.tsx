@@ -12,8 +12,9 @@
  *     text instead of an unlock attempt.
  */
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { CHORD_GRACE_MS } from '@/hooks/push-to-talk-guard'
 
 const startMock = vi.fn()
 const unlockMock = vi.fn()
@@ -147,15 +148,38 @@ describe('VoiceKey push-to-talk is gated', () => {
     expect(container).toBeTruthy()
   })
 
-  test('a granted key press records', async () => {
+  test('a granted key press records, once the chord-grace window elapses', async () => {
+    // The start is deliberately held for CHORD_GRACE_MS so that a hold which
+    // turns out to be the first half of a chord (Pulse peeks on mod+alt) never
+    // opens the mic. See push-to-talk-guard.ts.
     permissionState = 'granted'
     const { VoiceKey } = await import('./voice-key')
     render(<VoiceKey />)
 
     fireEvent.keyDown(window, { code: 'AltRight' })
+    expect(startMock).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, CHORD_GRACE_MS + 10))
+    })
 
     expect(startMock).toHaveBeenCalledTimes(1)
     expect(unlockMock).not.toHaveBeenCalled()
+  })
+
+  test('a press that becomes a chord never opens the mic', async () => {
+    permissionState = 'granted'
+    const { VoiceKey } = await import('./voice-key')
+    render(<VoiceKey />)
+
+    fireEvent.keyDown(window, { code: 'AltRight' })
+    fireEvent.keyDown(window, { code: 'MetaLeft', altKey: true, metaKey: true })
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, CHORD_GRACE_MS + 10))
+    })
+
+    expect(startMock).not.toHaveBeenCalled()
   })
 
   test('surfaces a permission refusal in the banner while idle', async () => {
