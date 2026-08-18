@@ -31,7 +31,13 @@ import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { openNightshiftModal } from '@/hooks/use-nightshift-modal'
 import { useShellsStore } from '@/hooks/use-shells'
 import { prewarmVoice } from '@/hooks/voice-prewarm'
-import { formatShortcut, useChordCommand, useCommand, validateChordBindings } from '@/lib/commands'
+import {
+  describeChordConflict,
+  formatShortcut,
+  useChordCommand,
+  useCommand,
+  validateChordBindings,
+} from '@/lib/commands'
 import { canRespawnStaleDaemon } from '@/lib/daemon-control'
 import { focusInputEditor } from '@/lib/focus-input'
 import { resolveLaunchTargetFromStore } from '@/lib/launch-target'
@@ -112,7 +118,10 @@ export function useGlobalCommands(toggleSidebar: () => void) {
       if (store.showTerminal) store.setShowTerminal(false)
       store.togglePulse()
     },
-    { label: 'Pulse — what is going on', key: 'p', group: 'Navigation' },
+    // `a` for ATTENTION -- `p` belongs to the Kanban board (open-project).
+    // scripts/lint-shortcuts.ts is what makes that a build failure, not a
+    // surprise for whoever presses the keys.
+    { label: 'Pulse — what is going on', key: 'a', group: 'Navigation' },
   )
 
   useCommand(
@@ -769,16 +778,10 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      const conflicts = validateChordBindings()
-      for (const c of conflicts) {
-        const longer = c.longerChords.map(l => formatShortcut(l.shortcut)).join(', ')
+      for (const c of validateChordBindings()) {
         window.dispatchEvent(
           new CustomEvent('rclaude-toast', {
-            detail: {
-              title: 'CHORD CONFLICT',
-              body: `"${c.bindingLabel}" (${formatShortcut(c.binding)}) is also a prefix of: ${longer} -- it will only fire on timeout`,
-              variant: 'warning',
-            },
+            detail: { title: 'CHORD CONFLICT', body: describeChordConflict(c), variant: 'warning' },
           }),
         )
       }

@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Keybinding collisions that predate scripts/lint-shortcuts.ts (2026-08-18).",
+    "These are REAL collisions, not false positives -- they are listed so the gate",
+    "can block NEW ones without forcing an unrelated UX decision in the same change.",
+    "Fix them and delete the entry; never add to this file to silence a new clash."
+  ],
+  "duplicates": [
+    {
+      "shortcut": "mod+g n",
+      "commands": ["notifications", "quick-task"],
+      "note": "notification-bell.tsx hardcodes the LEGACY leader 'mod+g n' while quick-task registers key 'n' (so both 'mod+k n' and 'mod+g n'). Only the legacy leader clashes; 'mod+k n' is unambiguously quick-task. Resolution is a UX call: move notifications to its own free key, or drop its legacy binding."
+    }
+  ],
+  "prefixes": [
+    {
+      "shortcut": "Escape",
+      "shadowedBy": ["Escape Escape"],
+      "note": "go-home on 'Escape' vs interrupt on 'Escape Escape'. May be deliberate if the key layer resolves double-tap by timeout; flagged so the question gets answered rather than assumed."
+    }
+  ]
+}

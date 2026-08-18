@@ -128,38 +128,94 @@ export function useChordCommand(id: string, action: CommandAction, options: UseC
 
 // ── Chord validation ───────────────────────────────────────────────────
 
-interface ChordConflict {
-  /** The binding that's both a command AND a prefix of a longer chord */
+export interface ChordConflict {
+  /** `duplicate` = two commands on the same binding. `prefix` = a binding that
+   *  is also the start of a longer chord, so it can never fire. */
+  kind: 'duplicate' | 'prefix'
+  /** The binding at fault. */
   binding: string
-  bindingLabel: string
-  /** The longer chord(s) that use it as a prefix */
-  longerChords: Array<{ shortcut: string; label: string }>
+  /** Everyone claiming it (duplicate), or the single owner (prefix). */
+  commands: Array<{ id: string; label: string }>
+  /** Only for `prefix`: the longer chord(s) shadowing this binding. */
+  shadowedBy?: Array<{ shortcut: string; label: string }>
 }
 
+type Bindable = { id: string; label: string; shortcut?: string }
+
+/** useChordCommand registers `<id>` and `<id>-legacy` on two leaders. That is
+ *  ONE command wearing two bindings, not a collision between two commands. */
+const baseId = (id: string) => id.replace(/-legacy$/, '')
+
 /**
- * Detect chord bindings that are also prefixes of longer chords.
- * e.g. "mod+g s" (spawn) conflicts with "mod+g s e" (sub-action)
- * because pressing S would enter chord mode instead of firing spawn immediately.
+ * Find every keybinding collision in a command set.
+ *
+ * Two kinds, and BOTH matter:
+ *
+ *   duplicate -- two commands claim the identical binding. Whichever registered
+ *     last silently wins. This is how Pulse ended up shadowing the Kanban board
+ *     on `mod+k p` (2026-08-18) with nothing complaining; the old version of
+ *     this function only looked for prefixes and never saw it.
+ *
+ *   prefix -- "mod+g s" (spawn) vs "mod+g s e" (a sub-action): pressing S enters
+ *     chord mode waiting for the next key instead of firing spawn.
+ *
+ * Pure and parameterised so it can be tested without a populated registry;
+ * `validateChordBindings()` is the thin wrapper over the module singleton.
  */
-export function validateChordBindings(): ChordConflict[] {
-  const all = Array.from(commands.values()).filter(
-    (c): c is Command & { shortcut: string } => !!c.shortcut?.includes(' '),
-  )
+export function findChordConflicts(all: Bindable[]): ChordConflict[] {
+  const bound = all.filter((c): c is Bindable & { shortcut: string } => !!c.shortcut)
   const conflicts: ChordConflict[] = []
 
-  for (const cmd of all) {
-    const prefix = `${cmd.shortcut} `
-    const longer = all.filter(other => other.id !== cmd.id && other.shortcut.startsWith(prefix))
-    if (longer.length > 0) {
+  // ── duplicates ──
+  const byShortcut = new Map<string, typeof bound>()
+  for (const cmd of bound) {
+    const list = byShortcut.get(cmd.shortcut) ?? []
+    list.push(cmd)
+    byShortcut.set(cmd.shortcut, list)
+  }
+  for (const [binding, list] of byShortcut) {
+    if (new Set(list.map(c => baseId(c.id))).size < 2) continue
+    conflicts.push({
+      kind: 'duplicate',
+      binding,
+      commands: list.map(c => ({ id: c.id, label: c.label })),
+    })
+  }
+
+  // ── prefixes (chords only -- a plain shortcut has no continuation) ──
+  for (const cmd of bound.filter(c => c.shortcut.includes(' '))) {
+    const shadowedBy = bound
+      .filter(o => baseId(o.id) !== baseId(cmd.id) && o.shortcut.startsWith(`${cmd.shortcut} `))
+      .map(o => ({ shortcut: o.shortcut, label: o.label }))
+    if (shadowedBy.length) {
       conflicts.push({
+        kind: 'prefix',
         binding: cmd.shortcut,
-        bindingLabel: cmd.label,
-        longerChords: longer.map(c => ({ shortcut: c.shortcut, label: c.label })),
+        commands: [{ id: cmd.id, label: cmd.label }],
+        shadowedBy,
       })
     }
   }
 
   return conflicts
+}
+
+/** Conflicts across the live command registry. */
+export function validateChordBindings(): ChordConflict[] {
+  return findChordConflicts(Array.from(commands.values()))
+}
+
+/**
+ * One conflict as a human-readable warning. Separate from the toast so the
+ * wording is testable -- a warning that says the wrong thing is worse than none.
+ */
+export function describeChordConflict(c: ChordConflict, format: (s: string) => string = formatShortcut): string {
+  if (c.kind === 'duplicate') {
+    const names = c.commands.map(cmd => `"${cmd.label}"`).join(', ')
+    return `${format(c.binding)} is claimed by ${c.commands.length} commands: ${names} -- only the last one registered will fire`
+  }
+  const longer = (c.shadowedBy ?? []).map(l => format(l.shortcut)).join(', ')
+  return `"${c.commands[0]?.label}" (${format(c.binding)}) is also a prefix of: ${longer} -- it will only fire on timeout`
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────────
