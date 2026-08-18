@@ -14,6 +14,7 @@
  * transcript alone.
  */
 
+import type { VoiceRefinerModelSpec } from '../shared/voice-refiner-models'
 import { chat } from './recap/shared/openrouter-client'
 
 interface ExtractedContext {
@@ -28,13 +29,16 @@ export async function extractContext(
   rawText: string,
   apiKey: string,
   keyterms: string[],
-  model: string,
+  spec: VoiceRefinerModelSpec,
 ): Promise<string> {
   const keytermHint = keyterms.length > 0 ? `\nKnown project terms: ${keyterms.join(', ')}` : ''
   const res = await chat({
     feature: 'voice-refiner-context',
-    model,
+    model: spec.id,
     apiKey,
+    // Step 1 sits IN FRONT of the refine call, so its provider pin matters more
+    // than step 2's: a slow host here eats the deadline before refining starts.
+    ...(spec.providerOrder ? { provider: { order: spec.providerOrder } } : {}),
     system: `You analyze voice transcripts to extract context that helps correct ASR errors.${keytermHint}`,
     user: `Analyze this voice transcript and output a brief JSON object with these fields:
 - "proper_nouns": names, brands, places, tools mentioned or likely intended (array of strings)

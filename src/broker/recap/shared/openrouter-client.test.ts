@@ -68,6 +68,36 @@ describe('chat()', () => {
     expect(calls[0].url).toBe('https://openrouter.ai/api/v1/chat/completions')
   })
 
+  it('omits the provider block entirely when no pin is requested', async () => {
+    const { fn, calls } = makeFetcher(() => jsonResponse('ok'))
+    await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0 })
+    expect(JSON.parse(calls[0].init.body as string).provider).toBeUndefined()
+  })
+
+  it('maps a provider pin to the wire shape and leaves fallbacks ON by default', async () => {
+    const { fn, calls } = makeFetcher(() => jsonResponse('ok'))
+    await chat({ feature: 'test', model: 'm', user: 'x', fetcher: fn, retries: 0, provider: { order: ['cerebras'] } })
+    // allow_fallbacks defaulting to false would turn one upstream 429 into a
+    // lost refinement -- measured 4/20 empty against Cerebras's shared pool.
+    expect(JSON.parse(calls[0].init.body as string).provider).toEqual({ order: ['cerebras'], allow_fallbacks: true })
+  })
+
+  it('honours an explicit allowFallbacks: false', async () => {
+    const { fn, calls } = makeFetcher(() => jsonResponse('ok'))
+    await chat({
+      feature: 'test',
+      model: 'm',
+      user: 'x',
+      fetcher: fn,
+      retries: 0,
+      provider: { order: ['cerebras', 'groq'], allowFallbacks: false },
+    })
+    expect(JSON.parse(calls[0].init.body as string).provider).toEqual({
+      order: ['cerebras', 'groq'],
+      allow_fallbacks: false,
+    })
+  })
+
   it('returns content + raw + usage', async () => {
     const { fn } = makeFetcher(() => jsonResponse('hello world', { prompt_tokens: 5, completion_tokens: 2 }))
     const res = await chat({ feature: 'test', model: 'anthropic/claude-haiku-4-5', user: 'x', fetcher: fn, retries: 0 })

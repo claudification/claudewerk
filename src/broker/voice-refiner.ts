@@ -28,7 +28,7 @@
  * it stays testable and cannot import voice-stream back.
  */
 
-import { resolveVoiceRefinerModel } from '../shared/voice-refiner-models'
+import { resolveVoiceRefinerSpec, type VoiceRefinerModelSpec } from '../shared/voice-refiner-models'
 import { buildMessages, stripPreamble } from '../shared/voice-refiner-prompt'
 import { getGlobalSettings } from './global-settings'
 import { chat } from './recap/shared/openrouter-client'
@@ -68,7 +68,8 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
     return rawText
   }
   const settings = getGlobalSettings()
-  const model = resolveVoiceRefinerModel(settings.voiceRefinementModel)
+  const spec = resolveVoiceRefinerSpec(settings.voiceRefinementModel)
+  const model = spec.id
   const deadlineMs = settings.voiceRefinementDeadlineMs ?? 2000
   const started = Date.now()
 
@@ -81,7 +82,7 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
       : null
 
   try {
-    const work = runRefinement(rawText, keyterms, model, settings.voiceRefinementContextPass !== false)
+    const work = runRefinement(rawText, keyterms, spec, settings.voiceRefinementContextPass !== false)
     const result = deadline ? await Promise.race([work, deadline]) : await work
     if (result === DEADLINE) {
       // The in-flight call is abandoned, not cancelled -- it still bills and
@@ -106,7 +107,7 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
 async function runRefinement(
   rawText: string,
   keyterms: string[],
-  model: string,
+  spec: VoiceRefinerModelSpec,
   contextPass: boolean,
 ): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY as string
@@ -116,7 +117,7 @@ async function runRefinement(
   let contextJson = ''
   if (contextPass) {
     try {
-      contextJson = await extractContext(rawText, apiKey, keyterms, model)
+      contextJson = await extractContext(rawText, apiKey, keyterms, spec)
       console.log(`[voice-refiner] step 1 context: ${contextJson.slice(0, 300)}`)
     } catch (err) {
       console.error('[voice-refiner] step 1 context failed:', err)
@@ -125,12 +126,13 @@ async function runRefinement(
 
   const res = await chat({
     feature: 'voice-refiner-refine',
-    model,
+    model: spec.id,
     apiKey,
     messages: buildMessages(systemPrompt, keyterms, contextBlockFrom(contextJson), rawText),
     maxTokens: 2048,
     temperature: 0.3,
     retries: 0,
+    ...(spec.providerOrder ? { provider: { order: spec.providerOrder } } : {}),
   })
   return stripPreamble(res.content || rawText)
 }

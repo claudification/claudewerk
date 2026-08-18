@@ -79,6 +79,16 @@ export interface ChatRequest {
    *  rate-limit retry budget -- e.g. 240s x 3 attempts = 12min of dead air
    *  (the recap-resilience incident). The recap pipeline passes 1. */
   timeoutRetries?: number
+  /** OpenRouter provider routing. Only set this when the SPECIFIC provider is
+   *  part of the requirement -- an open-weights model is served by ~20 hosts at
+   *  wildly different speeds, so "which provider" is a real latency decision, not
+   *  a detail (gemma-4-31b measured 472ms p50 on Cerebras vs 2404ms on DeepInfra).
+   *
+   *  Leave `allowFallbacks` at its default (true). Pinning one provider with
+   *  fallbacks OFF turns that provider's 429 into a total loss for the caller --
+   *  measured 2026-08-18: Cerebras's shared pool 429s under burst, and with
+   *  fallbacks off 4/20 refinements came back empty. */
+  provider?: { order: string[]; allowFallbacks?: boolean }
   /** Override fetch (test seam). Defaults to globalThis.fetch. */
   fetcher?: typeof fetch
   /** Override env lookup (test seam). Defaults to process.env. */
@@ -246,6 +256,9 @@ function buildBody(req: ChatRequest): Record<string, unknown> {
     ...(req.responseFormat && { response_format: req.responseFormat }),
     ...(req.tools && req.tools.length > 0 && { tools: req.tools.map(toWireTool) }),
     ...(req.toolChoice && { tool_choice: req.toolChoice }),
+    ...(req.provider && {
+      provider: { order: req.provider.order, allow_fallbacks: req.provider.allowFallbacks ?? true },
+    }),
   }
 }
 

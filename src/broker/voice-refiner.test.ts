@@ -2,6 +2,7 @@ import { afterAll, beforeEach, expect, test } from 'bun:test'
 import {
   DEFAULT_VOICE_REFINER_MODEL,
   resolveVoiceRefinerModel,
+  resolveVoiceRefinerSpec,
   VOICE_REFINER_MODELS,
 } from '../shared/voice-refiner-models'
 import { VOICE_PROMPT_MAX_CHARS } from '../shared/voice-refiner-prompt'
@@ -109,6 +110,26 @@ test('an unknown or missing refiner model degrades to the default, never a 400',
 
 test('the default refiner model is one the list actually offers', () => {
   expect(VOICE_REFINER_MODELS[DEFAULT_VOICE_REFINER_MODEL]).toBeDefined()
+})
+
+test('an unknown model degrades to the DEFAULT SPEC, not a spec-shaped undefined', () => {
+  // resolveVoiceRefinerSpec feeds `spec.providerOrder` straight into the request
+  // body, so a bare `VOICE_REFINER_MODELS[name]` lookup returning undefined would
+  // crash the refiner instead of degrading it.
+  expect(resolveVoiceRefinerSpec('acme/not-a-real-model').id).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  expect(resolveVoiceRefinerSpec(undefined).id).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  expect(resolveVoiceRefinerSpec(null).providerOrder).toBeUndefined()
+})
+
+test('gemma-4-31b is pinned to Cerebras -- the pin IS the reason it is offered', () => {
+  // Measured 2026-08-18: identical output, 472ms p50 on Cerebras vs 2404ms on
+  // DeepInfra. Dropping the pin silently turns the "fast" option into the
+  // slowest one in the list.
+  expect(resolveVoiceRefinerSpec('google/gemma-4-31b-it').providerOrder).toEqual(['cerebras'])
+})
+
+test('the default model carries NO provider pin (first-party, single host)', () => {
+  expect(resolveVoiceRefinerSpec(DEFAULT_VOICE_REFINER_MODEL).providerOrder).toBeUndefined()
 })
 
 // ─── The deadline ───────────────────────────────────────────────────
