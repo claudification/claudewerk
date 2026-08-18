@@ -1,5 +1,6 @@
 import type { LiveStatusInput, LiveStatusState } from '../../../shared/protocol'
 import { debug } from '../debug'
+import { repairStatusParams } from './status-field-repair'
 import type { McpToolContext, ToolDef } from './types'
 
 const STATES: readonly LiveStatusState[] = ['working', 'done', 'needs_you', 'blocked']
@@ -17,8 +18,12 @@ USE YOUR JUDGMENT — this is a subjective call. A small step, a quick lookup, a
 \`state\` (REQUIRED) is the one signal that matters:
 - \`working\`  — actively doing the task. (This is also the default at the start of every turn; you don't need to set it just to confirm you're working, but do set it if you want to show progress detail.)
 - \`done\`     — the task the user asked for is COMPLETE. Nothing remains that blocks completion.
-- \`needs_you\` — you are blocked ON THE USER for something only THEY can supply: a decision, an answer, an approval. Prefer opening a real dialog / AskUserQuestion / ExitPlanMode for this — that's what escalates to the user's phone. A bare \`needs_you\` shows the badge but does not buzz them.
+- \`needs_you\` — WORK IS STOPPED and cannot resume until the user acts. Not "I have a question" — STOPPED. Prefer opening a real dialog / AskUserQuestion / ExitPlanMode for this — that's what escalates to the user's phone. A bare \`needs_you\` shows the badge but does not buzz them.
 - \`blocked\`  — you are stuck on something NOT the user's to fix (a failing build, a missing credential, a dead end) and cannot proceed.
+
+"FINISHED, WHAT NEXT?" IS NOT \`needs_you\` — IT IS \`done\`. If you completed what was asked and are asking where to go next, offering options, or proposing follow-up work, the work is not stopped: it is finished, with a question attached. Use \`state:'done'\` and put the question in \`pending\`. THE TEST: if the user never answered, would anything be left unfinished? If no, it is \`done\`. \`needs_you\` is for work that cannot continue — an unanswered permission, a decision that gates the next edit, a credential only they have.
+
+This is the single most over-reported state. A fleet where a third of conversations show \`needs_you\` has trained its user to ignore the badge, and then the one that IS genuinely stuck gets missed. Every soft use costs the signal.
 
 A PENDING DEPLOY IS NOT \`needs_you\`. "Needs a broker restart", "run \`build:packages\`", "restart the sentinel", "hard refresh / \`Clear cache & reload\`" — the code is written, merged and correct; only an operational step the user runs on their own cadence is left. That belongs in \`notes\` with \`state:'done'\`, NEVER in \`needs_you\` or \`pending\`. Test: if the user restarted the thing tonight without saying a word to you, would the task be complete? If yes, it is a NOTE. Parking a finished task under \`needs_you\` makes the badge mean "I am waiting" when nobody is actually blocked, and the conversation rots. Reserve \`needs_you\` for a real question with no default answer.
 
@@ -90,13 +95,20 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
     set_status: {
       description: DESCRIPTION,
       inputSchema: INPUT_SCHEMA,
-      async handle(params) {
+      async handle(rawParams) {
+        // A call that mixed the two parameter syntaxes swallows every later
+        // field into the preceding string. Split it back out BEFORE anything
+        // reads the values -- otherwise raw markup lands on the handoff card,
+        // and the fields it ate never arrive at all.
+        const { params, repaired, fields } = repairStatusParams(rawParams)
+
         const state = params.state as LiveStatusState
         if (!STATES.includes(state)) return errorResult(`Error: state must be one of ${STATES.join(', ')}`)
         if (!ctx.callbacks.onSetStatus) return errorResult('set_status is not available in this conversation.')
 
         ctx.callbacks.onSetStatus(buildStatus(params, state))
         debug(`[channel] set_status: ${state}`)
+        if (repaired) debug(`[channel] set_status REPAIRED leaked markup; recovered: ${Object.keys(fields).join(', ')}`)
 
         // Optional attention-grab: a `notify` line shortcuts the `notify` tool,
         // firing a real push (phone/browser) via the same callback. The badge
@@ -109,7 +121,14 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
           debug(`[channel] set_status notify: ${buzz.slice(0, 80)}`)
         }
 
-        return { content: [{ type: 'text', text: `Status recorded: ${state}${resultTail(state, buzzed)}` }] }
+        // Tell the agent when its own call was malformed -- silently fixing it
+        // would let the habit persist and the next leak may not be repairable.
+        const repairNote = repaired
+          ? ` NOTE: your call leaked tool-call markup into a text field; recovered ${Object.keys(fields).join(', ') || 'nothing'}. Use one parameter syntax consistently.`
+          : ''
+        return {
+          content: [{ type: 'text', text: `Status recorded: ${state}${resultTail(state, buzzed)}${repairNote}` }],
+        }
       },
     },
   }

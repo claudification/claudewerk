@@ -31,9 +31,11 @@ const MUTATING_TOOLS: ReadonlySet<string> = new Set(['Edit', 'Write', 'MultiEdit
  *  file mutation (a real multi-step turn vs a small lookup). */
 const NUDGE_TOOL_THRESHOLD = 4
 
-const STATUS_NUDGE_REASON = `You did real work this turn but never called set_status. Make the call: if this rises to a triage-worthy state -- you FINISHED what the user asked, you're BLOCKED on the user, or you're STUCK on something else -- set one so the user can triage this conversation at a glance:
+const STATUS_NUDGE_REASON = `You did real work this turn but never called set_status. Make the call: if this rises to a triage-worthy state -- you FINISHED what the user asked, work is STOPPED until they act, or you're STUCK on something else -- set one so the user can triage this conversation at a glance:
 
   set_status({ state: 'working' | 'done' | 'needs_you' | 'blocked', ... })
+
+\`needs_you\` means WORK IS STOPPED and cannot resume until the user acts -- NOT "I have a question". If you finished what was asked and are asking what to do next, that is \`done\` with the question in \`pending\`. Test: if they never answered, would anything be left unfinished? If no, it is \`done\`.
 
 Keep the text fields sparse -- empty is fine, only fill what matters. But if this was just a small step, a lookup, or routine back-and-forth that does NOT change the conversation's status, you can skip it entirely -- just end your turn, no status needed. This is a one-time reminder; either a single set_status call OR ending your turn satisfies it. Do NOT explain at length.`
 

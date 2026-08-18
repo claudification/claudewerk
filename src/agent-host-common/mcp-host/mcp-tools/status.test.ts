@@ -66,10 +66,20 @@ describe('set_status tool', () => {
       expect(notesLine).toContain('`needs_you`')
     })
 
-    test('needs_you is scoped to what only the user can supply', () => {
+    test('needs_you means work is STOPPED, not merely that a question exists', () => {
+      // Tightened 2026-08-18: the old wording ("a decision, an answer, an
+      // approval") read as covering "I finished, what next?", and a third of a
+      // real fleet ended up flagged needs_you -- which trains the user to
+      // ignore the badge, so the one genuinely stuck run gets missed.
       const { description } = setup()
       const line = description.split('\n').find(l => l.trimStart().startsWith('- `needs_you`'))
-      expect(line).toContain('only THEY can supply')
+      expect(line).toContain('STOPPED')
+    })
+
+    test('the description sends "finished, what next?" to done rather than needs_you', () => {
+      const { description } = setup()
+      expect(description).toContain('IS NOT `needs_you`')
+      expect(description).toContain('would anything be left unfinished')
     })
   })
 })
