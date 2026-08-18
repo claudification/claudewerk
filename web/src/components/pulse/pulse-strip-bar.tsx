@@ -21,14 +21,12 @@ export function PulseStripBar({
   onToggle: () => void
 }) {
   const urgent = lead?.band === 'needs'
+  // 30px is fine for a mouse and hostile to a thumb, so the bar grows on narrow
+  // viewports and pads past the iOS home indicator.
+  const BAR_CLS =
+    'w-full h-[30px] max-sm:h-12 max-sm:box-content max-sm:pb-[env(safe-area-inset-bottom)] px-3 flex items-center gap-3 hover:bg-primary/10 transition-colors select-none'
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      aria-label="Pulse strip"
-      className="w-full h-[30px] px-3 flex items-center gap-3 hover:bg-primary/10 transition-colors select-none"
-    >
+    <button type="button" onClick={onToggle} aria-expanded={open} aria-label="Pulse strip" className={BAR_CLS}>
       <span className="flex gap-2.5 shrink-0">
         {PULSE_BANDS.map(band => {
           const style = PULSE_BAND_STYLE[band]

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { isMobileViewport } from '@/lib/utils'
 import { PulseBandsView } from './pulse-bands-view'
 import { PulseStripBar } from './pulse-strip-bar'
 import { type PulseRow, usePulseFleet } from './use-pulse-fleet'
@@ -60,8 +61,31 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
   // first, so this is whatever has been waiting longest.
   const lead: PulseRow | null = fleet.flat[0] ?? null
 
+  /** Picking a row is a SELECTION: jump there and get out of the way. Leaving
+   *  the bloom open behind the conversation you just opened is the bug this
+   *  fixes -- the surface is a selector, not a panel you dismiss by hand. */
   function select(row: PulseRow) {
     onOpen(row.conversation.id)
+    setOpen(false)
+    setPinned(false)
+  }
+
+  /**
+   * On a phone the inline bloom is the wrong shape: a 30px bar is barely
+   * tappable and a 52vh drawer hanging off it is worse. Tapping the strip
+   * instead opens the Pulse palette, which is ALREADY a full-height sheet with
+   * search at the thumb and select-then-dismiss behaviour. One selector, three
+   * ways in (right-edge swipe, this tap, `mod+k a`) -- rather than a second
+   * full-screen surface that would drift out of sync with the first.
+   */
+  function onBarToggle() {
+    if (isMobileViewport()) {
+      useConversationsStore.getState().setShowPulse(true)
+      return
+    }
+    const next = !open
+    setOpen(next)
+    setPinned(next)
   }
 
   return (
@@ -78,16 +102,7 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
         if (!pinned) setOpen(false)
       }}
     >
-      <PulseStripBar
-        totals={fleet.totals}
-        lead={lead}
-        open={open}
-        onToggle={() => {
-          const next = !open
-          setOpen(next)
-          setPinned(next)
-        }}
-      />
+      <PulseStripBar totals={fleet.totals} lead={lead} open={open} onToggle={onBarToggle} />
 
       {open && (
         <div className="max-h-[52vh] overflow-y-auto border-b border-primary/10">

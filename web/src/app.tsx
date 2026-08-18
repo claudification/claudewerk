@@ -59,8 +59,8 @@ import { VoiceKey } from '@/components/voice-key'
 import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
 import { useBuildUpdate } from '@/hooks/use-build-update'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useEdgeSwipe } from '@/hooks/use-edge-swipe'
 import { useGlobalCommands } from '@/hooks/use-global-commands'
-import { useSwipeToOpen } from '@/hooks/use-swipe-to-open'
 import { useSyncEffects } from '@/hooks/use-sync-effects'
 import { useWebSocket } from '@/hooks/use-websocket'
 import { executeCommand } from '@/lib/commands'
@@ -316,8 +316,14 @@ function Dashboard() {
   const showDebugConsole = useConversationsStore(s => s.showDebugConsole)
   const canAdmin = useConversationsStore(s => s.permissions.canAdmin)
 
-  // Edge-swipe from the left opens the same sidebar the hamburger does.
-  const swipeHandlers = useSwipeToOpen(sidebar.show)
+  // The two side edges are the only ones a web app can have on iOS -- the bottom
+  // is the home indicator and the top is Control Centre. Left opens the same
+  // sidebar the hamburger does; right opens PULSE as a full-screen selector,
+  // because a 30px strip is not a realistic tap target on a phone.
+  const swipeHandlers = useEdgeSwipe({
+    onFromLeft: sidebar.show,
+    onFromRight: () => useConversationsStore.getState().setShowPulse(true),
+  })
 
   useSyncEffects()
   useGlobalCommands(sidebar.toggle)
