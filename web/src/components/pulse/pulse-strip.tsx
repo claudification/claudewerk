@@ -4,6 +4,7 @@ import { isMobileViewport } from '@/lib/utils'
 import { PulseBandsView } from './pulse-bands-view'
 import { PulseStripBar } from './pulse-strip-bar'
 import { isPeekChordHeld, isPeekChordReleased } from './strip-peek-chord'
+import { useFrozenLayout } from './use-frozen-layout'
 import { type PulseRow, usePulseFleet } from './use-pulse-fleet'
 
 /**
@@ -33,6 +34,10 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
   const [filter, setFilter] = useState('')
 
   const fleet = usePulseFleet(filter, 5_000)
+  // The COLLAPSED bar rides the live fleet -- its whole job is to show the
+  // freshest thing, and there is nothing to click on it. The BLOOM gets a
+  // frozen layout, because that is the part you aim a pointer at.
+  const bloom = useFrozenLayout(fleet, open)
 
   // mod+alt held = peek; releasing either modifier collapses it, unless a click
   // pinned it open.
@@ -48,11 +53,20 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
     function up(e: KeyboardEvent) {
       if (isPeekChordReleased(e)) setOpen(o => (pinned ? o : false))
     }
+    // On macOS Ctrl+click IS the context menu, so clicking a row during a
+    // Ctrl+Alt peek popped the system menu instead of selecting. Swallow it
+    // ONLY while the full chord is held -- a real right-click carries no Alt,
+    // so ordinary context menus are untouched.
+    function menu(e: MouseEvent) {
+      if (isPeekChordHeld(e)) e.preventDefault()
+    }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
+    window.addEventListener('contextmenu', menu)
     return () => {
       window.removeEventListener('keydown', down)
       window.removeEventListener('keyup', up)
+      window.removeEventListener('contextmenu', menu)
     }
   }, [enabled, pinned])
 
@@ -118,7 +132,7 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
             />
             <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums">{fleet.flat.length} live</span>
           </div>
-          <PulseBandsView fleet={fleet} activeId={null} onSelect={select} />
+          <PulseBandsView fleet={bloom} activeId={null} onSelect={select} />
         </div>
       )}
     </div>
