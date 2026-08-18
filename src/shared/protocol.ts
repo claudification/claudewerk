@@ -6057,6 +6057,16 @@ export interface ForkCcSession {
   /** The session to fold. Comes out of the opaque agentHostMeta bag. */
   sourceCcSessionId: string
   /**
+   * Worktree the SOURCE session ran in, when it was born in one.
+   *
+   * CC slugs its transcript directory from the launch cwd, so a worktree-born
+   * session's transcript lives under `.claude/worktrees/<name>`'s slug, never
+   * the project root's. Without this the fork looks in the wrong directory and
+   * reports the source missing. The worktree NAME travels, not a path -- the
+   * sentinel owns that convention (CWD-IS-INFORMATIONAL).
+   */
+  sourceWorktree?: string
+  /**
    * Where the FORK will be launched, when that differs from `project`.
    *
    * CC derives its transcript directory from the cwd it is launched in, so a

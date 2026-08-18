@@ -37,6 +37,18 @@ describe('buildForkMessage', () => {
     expect(buildForkMessage(conv(), 'req1', { profile: 'personal' })?.profile).toBe('personal')
   })
 
+  // Regression: revive carried adHocWorktree (build-revive.ts) and fork did not,
+  // so a conversation born in a worktree had its source transcript looked up
+  // under the MAIN repo's slug and always came back "not found".
+  test('carries the worktree the source session ran in', () => {
+    const msg = buildForkMessage(conv({ adHocWorktree: 'feat/anvil-highlighter' }), 'req1')
+    expect(msg?.sourceWorktree).toBe('feat/anvil-highlighter')
+  })
+
+  test('omits the source worktree for a conversation born in the project root', () => {
+    expect(buildForkMessage(conv(), 'req1')?.sourceWorktree).toBeUndefined()
+  })
+
   test('passes the fold knobs through', () => {
     const msg = buildForkMessage(conv(), 'req1', { digestOverTokens: 0, tailTokenBudget: 50_000 })
     expect(msg?.digestOverTokens).toBe(0)

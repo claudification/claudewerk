@@ -8,7 +8,10 @@
  *
  * The profile pin matters as much here as on revive. CC writes a transcript
  * under the config dir of the profile that ran it, so a fork resolved against a
- * different profile would look in the wrong directory and find nothing.
+ * different profile would look in the wrong directory and find nothing. The
+ * worktree pin is the same story one level down: the profile picks the config
+ * dir, the worktree picks the project slug inside it, and both have to match
+ * the session that was actually recorded.
  */
 
 import { renderForkProvenance } from '../shared/fork-provenance'
@@ -51,6 +54,10 @@ export function buildForkMessage(
     requestId,
     project: conversation.project,
     sourceCcSessionId,
+    // History, not destination: where the source session ran. Revive has always
+    // carried this (build-revive.ts); fork not carrying it meant every
+    // worktree-born conversation resolved to the main repo's slug and failed.
+    sourceWorktree: conversation.adHocWorktree || undefined,
     provenanceBlock: renderForkProvenance({
       conversationId: conversation.id,
       conversationName: conversation.title || conversation.agentName || undefined,
