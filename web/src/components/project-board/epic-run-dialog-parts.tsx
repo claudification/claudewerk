@@ -1,9 +1,26 @@
 /**
- * The RUN dialog's chrome: the resume notice and the footer.
+ * The RUN dialog's chrome: the header, the resume notice and the footer.
  *
- * Neither has state and neither knows what a run is -- which is the point of the
- * split. The dialog keeps submission; these keep pixels.
+ * None of them has state and none knows what a run is -- which is the point of
+ * the split. The dialog keeps submission; these keep pixels.
  */
+
+import type { EpicRollup } from '@shared/epic-cards'
+import { DialogTitle } from '@/components/ui/dialog'
+
+/** The epic by NAME, with its slug demoted. The slug is what the engine keys
+ *  on; it is not what you recognise the work by. */
+export function RunDialogHeader({ rollup, resuming }: { rollup: EpicRollup; resuming: boolean }) {
+  const title = rollup.card?.title
+  return (
+    <div className="px-5 pt-5 pb-3 border-b border-border/50">
+      <DialogTitle className="font-mono text-sm">
+        {resuming ? 'RESUME' : 'RUN'} <span className="text-[color:var(--epic-solid)]">{title ?? rollup.epicId}</span>
+      </DialogTitle>
+      {title && <p className="mt-0.5 font-mono text-chrome text-muted-foreground/55">{rollup.epicId}</p>}
+    </div>
+  )
+}
 
 export function ResumeNotice({ gen }: { gen: number }) {
   return (

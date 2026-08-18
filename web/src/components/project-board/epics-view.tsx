@@ -53,7 +53,10 @@ export function EpicsView({
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   // The RUN dialog lives here rather than in the button so it survives the
-  // button unmounting when the pane re-renders mid-arm.
+  // button unmounting when the pane re-renders mid-arm. It keeps the epic ID
+  // rather than the rollup so the dialog's briefing tracks a board that changes
+  // underneath it -- an epic whose last card finishes mid-decision should not
+  // still be advertising it as ready.
   const [runDialog, setRunDialog] = useState<{
     epicId: string
     run: EpicRunState | null
@@ -75,6 +78,7 @@ export function EpicsView({
   const withWork = visible.filter(r => r.children.length > 0)
   const empty = visible.filter(r => r.children.length === 0)
   const current: EpicRollup | undefined = rollups.find(r => r.epicId === selected)
+  const running: EpicRollup | undefined = rollups.find(r => r.epicId === runDialog?.epicId)
 
   if (rollups.length === 0) {
     return (
@@ -143,9 +147,9 @@ export function EpicsView({
         </div>
       </div>
 
-      {runDialog && (
+      {runDialog && running && (
         <EpicRunDialog
-          epicId={runDialog.epicId}
+          rollup={running}
           project={runDialog.project}
           existing={runDialog.run}
           onClose={() => setRunDialog(null)}
