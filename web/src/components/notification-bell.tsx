@@ -24,8 +24,10 @@ export function NotificationBell() {
   const planApprovalCount = Object.values(dialogs).filter(d => d.source === 'plan_approval').length
   const totalCount = perms.length + links.length + asks.length + notifs.length + planApprovalCount
 
+  // `i` for inbox, not `n`: ⌘G N belongs to Quick task, which is reached far
+  // more often. The two collided until the chord gate caught it.
   useCommand('notifications', () => setOpen(o => !o), {
-    shortcut: 'mod+g n',
+    shortcut: 'mod+g i',
     label: 'Notifications',
     group: 'Navigation',
   })
