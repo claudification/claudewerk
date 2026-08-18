@@ -115,6 +115,7 @@ export function PulsePalette({ onOpen, onClose }: PulsePaletteProps) {
               onHover={hover}
               board={board}
               cards
+              onRevealManaged={() => appendToken('+over')}
             />
           )}
         </div>

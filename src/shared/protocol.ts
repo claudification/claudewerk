@@ -2076,6 +2076,9 @@ export interface AskQuestionTimeout {
 export type { DialogOp, DialogSnapshot } from './dialog-live'
 // Dialog MCP tool (channel-based rich UI for user interaction)
 export type { DialogLayout, DialogResult } from './dialog-schema'
+// EPIC MODE seat tag. Re-exported because `ConversationSummary.epic` is typed
+// as it -- a consumer of the summary cannot name the field's type otherwise.
+export type { EpicLaunchTag } from './epic-run-types'
 
 export interface DialogShowMessage {
   type: 'dialog_show'

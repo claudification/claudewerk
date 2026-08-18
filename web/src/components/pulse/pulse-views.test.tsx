@@ -37,6 +37,7 @@ function fleet(over: Partial<PulseFleet> = {}): PulseFleet {
     totals: { ...ZERO_TOTALS, ...over.totals },
     expired: over.expired ?? [],
     hidden: over.hidden ?? 0,
+    managedHidden: over.managedHidden ?? 0,
     query: over.query ?? parsePulseQuery(''),
     isEmpty: over.isEmpty ?? true,
   }
@@ -128,6 +129,62 @@ describe('PulseBandsView', () => {
   it('says so when nothing matches', () => {
     render(<PulseBandsView fleet={fleet()} activeId={null} onSelect={vi.fn()} />)
     expect(screen.getByText(/nothing matches/)).toBeTruthy()
+  })
+
+  it('ANNOUNCES machine-run rows it hid, and names the token that reveals them', () => {
+    // A managed run that is invisible with no explanation is the failure mode.
+    const f = fleet({ groups: [{ band: 'needs', rows: needs }], managedHidden: 3 })
+    render(<PulseBandsView fleet={f} activeId={null} onSelect={vi.fn()} />)
+    expect(screen.getByText(/3 machine-run hidden/)).toBeTruthy()
+    expect(screen.getByText('+over')).toBeTruthy()
+  })
+
+  it('does not mention machine-run rows when there are none', () => {
+    const f = fleet({ groups: [{ band: 'needs', rows: needs }] })
+    render(<PulseBandsView fleet={f} activeId={null} onSelect={vi.fn()} />)
+    expect(screen.queryByText(/machine-run hidden/)).toBeNull()
+  })
+
+  it('reveals on click', () => {
+    const onReveal = vi.fn()
+    const f = fleet({ groups: [{ band: 'needs', rows: needs }], managedHidden: 2 })
+    render(<PulseBandsView fleet={f} activeId={null} onSelect={vi.fn()} onRevealManaged={onReveal} />)
+    fireEvent.click(screen.getByText(/machine-run hidden/))
+    expect(onReveal).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the two hidden counts distinct', () => {
+    // "hidden by filter" is something the user typed; "machine-run hidden" is a
+    // default they never chose. Conflating them reads as a too-tight filter.
+    const f = fleet({ groups: [{ band: 'needs', rows: needs }], hidden: 4, managedHidden: 3 })
+    render(<PulseBandsView fleet={f} activeId={null} onSelect={vi.fn()} />)
+    expect(screen.getByText('4 hidden by filter')).toBeTruthy()
+    expect(screen.getByText(/3 machine-run hidden/)).toBeTruthy()
+  })
+})
+
+describe('PulseRowItem — machine-run marking', () => {
+  it('marks a managed row with its chip', () => {
+    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'implementer' }, managed: true })
+    render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} />)
+    expect(screen.getByText('OVER')).toBeTruthy()
+  })
+
+  it('names the run on hover so the chip is traceable', () => {
+    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'verifier' }, managed: true })
+    render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} />)
+    expect(screen.getByText('OVER').getAttribute('title')).toBe('epic ep_1 — verifier')
+  })
+
+  it('leaves a human-started row unmarked', () => {
+    render(<PulseRowItem row={row()} query={parsePulseQuery('')} onSelect={vi.fn()} />)
+    expect(screen.queryByText('OVER')).toBeNull()
+  })
+
+  it('marks the card treatment too', () => {
+    const r = row({ managedBy: { kind: 'nightshift', label: 'NIGHT', runId: 'run_1' }, managed: true })
+    render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} card />)
+    expect(screen.getByText('NIGHT')).toBeTruthy()
   })
 })
 

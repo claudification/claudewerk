@@ -87,41 +87,67 @@ function tokenizePulseQuery(raw: string): PulseToken[] {
   return tokens
 }
 
+/** `+` flags reveal things Pulse hides by default. */
+const PLUS_FLAG: Record<string, 'includeManaged' | 'onlyManaged'> = {
+  over: 'includeManaged',
+  managed: 'includeManaged',
+  only: 'onlyManaged',
+}
+
+/** `+over` / `+only` — reveal something Pulse hides by default. */
+function applyPlusFlag(q: PulseQuery, token: string): boolean {
+  if (token[0] !== '+') return false
+  const flag = PLUS_FLAG[token.slice(1).toLowerCase()]
+  if (!flag) return false
+  q[flag] = true
+  return true
+}
+
+/** `!` / `!!` — band shorthand. */
+function applyBand(q: PulseQuery, token: string): boolean {
+  const shorthand = BAND_SHORTHAND[token]
+  if (!shorthand) return false
+  q.bands = shorthand
+  return true
+}
+
+/** `@proj` `#tag` `&host` `:model` — scope to a string. */
+function applyStringSigil(q: PulseQuery, token: string): boolean {
+  const field = STRING_SIGIL[token[0]]
+  const rest = token.slice(1)
+  if (!field || !rest) return false
+  q[field] = rest.toLowerCase()
+  return true
+}
+
+/** `$1` `%80` — a numeric floor. */
+function applyNumberSigil(q: PulseQuery, token: string): boolean {
+  const field = NUMBER_SIGIL[token[0]]
+  const rest = token.slice(1)
+  if (!field || !rest) return false
+  const n = Number(rest)
+  // A non-numeric payload is not a filter — let it fall through to free text
+  // rather than silently swallowing the token.
+  if (!Number.isFinite(n) || n < 0) return false
+  q[field] = n
+  return true
+}
+
+/** `~30m` — a time window. */
+function applyWindow(q: PulseQuery, token: string): boolean {
+  const win = parseWindow(token)
+  if (win === null) return false
+  q.windowMs = win
+  return true
+}
+
+/** Tried in order; the first that claims the token wins. Anything unclaimed is
+ *  free text, which is why a stray sigil never eats the query. */
+const SIGIL_HANDLERS = [applyPlusFlag, applyBand, applyStringSigil, applyNumberSigil, applyWindow]
+
 /** Apply one unquoted token to the query. Returns false if it is plain text. */
 function applySigil(q: PulseQuery, token: string): boolean {
-  const shorthand = BAND_SHORTHAND[token]
-  if (shorthand) {
-    q.bands = shorthand
-    return true
-  }
-
-  const sigil = token[0]
-  const rest = token.slice(1)
-
-  const stringField = STRING_SIGIL[sigil]
-  if (stringField && rest) {
-    q[stringField] = rest.toLowerCase()
-    return true
-  }
-
-  const numberField = NUMBER_SIGIL[sigil]
-  if (numberField && rest) {
-    const n = Number(rest)
-    // A non-numeric payload is not a filter — let it fall through to free text
-    // rather than silently swallowing the token.
-    if (Number.isFinite(n) && n >= 0) {
-      q[numberField] = n
-      return true
-    }
-  }
-
-  const win = parseWindow(token)
-  if (win !== null) {
-    q.windowMs = win
-    return true
-  }
-
-  return false
+  return SIGIL_HANDLERS.some(handle => handle(q, token))
 }
 
 export function parsePulseQuery(raw: string): PulseQuery {

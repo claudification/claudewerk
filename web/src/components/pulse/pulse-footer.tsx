@@ -11,6 +11,7 @@ const SIGILS: Array<{ key: string; label: string }> = [
   { key: '&', label: 'host' },
   { key: ':', label: 'model' },
   { key: '-', label: 'exclude' },
+  { key: '+over', label: 'machine-run' },
 ]
 
 export function PulseFooter({ onSigil }: { onSigil: (token: string) => void }) {

@@ -243,6 +243,53 @@ describe('exclusion with -', () => {
   })
 })
 
+describe('managed rows (+over)', () => {
+  const q = parsePulseQuery
+  const seat = row({ managed: true, band: 'working' })
+  const mine = row({ managed: false, band: 'working' })
+
+  it('hides machine-run rows by DEFAULT — Pulse answers "what am I working on"', () => {
+    expect(matchesPulseQuery(seat, q(''))).toBe(false)
+    expect(matchesPulseQuery(mine, q(''))).toBe(true)
+  })
+
+  it('treats an absent flag as not-managed rather than hiding it', () => {
+    expect(matchesPulseQuery(row({ managed: undefined }), q(''))).toBe(true)
+  })
+
+  it('+over reveals them alongside everything else', () => {
+    expect(matchesPulseQuery(seat, q('+over'))).toBe(true)
+    expect(matchesPulseQuery(mine, q('+over'))).toBe(true)
+  })
+
+  it('+managed is an alias for +over', () => {
+    expect(matchesPulseQuery(seat, q('+managed'))).toBe(true)
+  })
+
+  it('+over +only narrows to ONLY machine-run rows', () => {
+    expect(matchesPulseQuery(seat, q('+over +only'))).toBe(true)
+    expect(matchesPulseQuery(mine, q('+over +only'))).toBe(false)
+  })
+
+  it('stays hidden even when another filter would have matched', () => {
+    // The default is not a search refinement -- it outranks a positive hit.
+    expect(matchesPulseQuery(row({ managed: true }), q('! @remote'))).toBe(false)
+  })
+
+  it('counts as a non-empty query so the surface knows a filter is active', () => {
+    expect(isEmptyQuery(q('+over'))).toBe(false)
+  })
+
+  it('lets an unknown + token fall through to free text', () => {
+    expect(parsePulseQuery('+nonsense').text).toBe('+nonsense')
+    expect(parsePulseQuery('+nonsense').includeManaged).toBe(false)
+  })
+
+  it('is case insensitive', () => {
+    expect(parsePulseQuery('+OVER').includeManaged).toBe(true)
+  })
+})
+
 describe('quoting', () => {
   it('keeps a quoted run together as one term', () => {
     expect(parsePulseQuery('"ceiling copy"').text).toBe('ceiling copy')

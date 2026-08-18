@@ -4,6 +4,7 @@ import { useConversations, useConversationsStore } from '@/hooks/use-conversatio
 import { pulseActionText, pulseTag } from '@/lib/pulse/action-text'
 import { bandOf, compareInBand, PULSE_BANDS, type PulseBand } from '@/lib/pulse/bands'
 import { isEmptyQuery, matchesPulseQuery, type PulseQuery, parsePulseQuery } from '@/lib/pulse/filter'
+import { isManaged, type ManagedInfo, managedInfo } from '@/lib/pulse/managed'
 import type { Conversation } from '@/lib/types'
 import { projectDisplayName } from '@/lib/utils'
 
@@ -27,6 +28,10 @@ export interface PulseRow {
   host?: string
   /** `:` axis — the model. */
   model?: string
+  /** Machine-dispatched provenance (epic seat / nightshift), or undefined when
+   *  a human started this. Drives the OVER chip and the default hide. */
+  managedBy?: ManagedInfo
+  managed?: boolean
 }
 
 export interface PulseBandGroup {
@@ -44,6 +49,8 @@ export interface PulseFleet {
   expired: PulseRow[]
   /** Rows the current query removed. */
   hidden: number
+  /** Machine-dispatched rows suppressed by the default (0 once `+over`). */
+  managedHidden: number
   query: PulseQuery
   isEmpty: boolean
 }
@@ -62,7 +69,10 @@ function useNowTick(intervalMs = 1_000): number {
 }
 
 function toRow(c: Conversation, band: PulseBand, now: number, label?: string): PulseRow {
+  const managedBy = managedInfo(c)
   return {
+    managedBy,
+    managed: managedBy !== undefined,
     id: c.id,
     conversation: c,
     band,
@@ -112,10 +122,13 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       byBand.get(band)?.push(c)
     }
 
-    const totals = Object.fromEntries(PULSE_BANDS.map(b => [b, byBand.get(b)?.length ?? 0])) as Record<
-      PulseBand,
-      number
-    >
+    // Chip counts must agree with what the list can actually show. While
+    // managed rows are hidden they are not part of the fleet the user is
+    // looking at, so counting them would make every band read too high.
+    const countable = (c: Conversation) => query.includeManaged || !isManaged(c)
+    const totals = Object.fromEntries(
+      PULSE_BANDS.map(b => [b, (byBand.get(b) ?? []).filter(countable).length]),
+    ) as Record<PulseBand, number>
 
     const build = (band: PulseBand): PulseRow[] =>
       (byBand.get(band) ?? [])
@@ -128,13 +141,18 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
     const flat = groups.flatMap(g => g.rows)
     const expired = build('expired')
     const shown = flat.length + expired.length
+    const managedCount = conversations.filter(isManaged).length
 
     return {
       groups,
       flat,
       totals,
       expired,
-      hidden: conversations.length - shown,
+      // `hidden` is what the QUERY removed. Managed rows suppressed by the
+      // default are reported separately -- conflating them would read as "your
+      // filter is too tight" when the user never typed a filter at all.
+      hidden: conversations.length - shown - (query.includeManaged ? 0 : managedCount),
+      managedHidden: query.includeManaged ? 0 : managedCount,
       query,
       isEmpty: isEmptyQuery(query),
     }

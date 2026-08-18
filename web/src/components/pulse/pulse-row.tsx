@@ -20,6 +20,31 @@ function Title({ text, query }: { text: string; query: PulseQuery }) {
   )
 }
 
+/**
+ * Machine-run marker. One fixed hue for every unattended row -- it must mean the
+ * same thing at every glance, so this uses `--epic-badge` (the shared
+ * unattended-run amber owned by the overseer surface) and NOT the per-epic
+ * derived colour, which is right on a board and wrong on a status affordance.
+ * The literal is a fallback for panels built before that token landed.
+ */
+function ManagedChip({ label, title }: { label: string; title?: string }) {
+  return (
+    <span
+      title={title}
+      className="shrink-0 rounded-sm px-1 text-[9px] font-bold leading-[1.4] text-[var(--epic-badge,oklch(0.72_0.15_55))] bg-[var(--epic-badge-tint,oklch(0.72_0.15_55_/_0.10))] border border-[var(--epic-badge-edge,oklch(0.72_0.15_55_/_0.35))]"
+    >
+      {label}
+    </span>
+  )
+}
+
+/** Hover text naming the run this seat belongs to, so the chip is traceable. */
+function managedTitle(row: Row): string | undefined {
+  if (!row.managedBy) return undefined
+  const { kind, runId, role } = row.managedBy
+  return role ? `${kind} ${runId} — ${role}` : `${kind} ${runId}`
+}
+
 interface PulseRowProps {
   row: Row
   query: PulseQuery
@@ -50,6 +75,7 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover, ca
         )}
       >
         <div className="flex items-start gap-2">
+          {row.managedBy && <ManagedChip label={row.managedBy.label} title={managedTitle(row)} />}
           <span className="text-sm text-foreground flex-1 min-w-0 break-words">
             <Title text={row.title} query={query} />
           </span>
@@ -76,6 +102,7 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover, ca
     >
       <span className={cn('text-[11px] font-mono w-3 shrink-0', style.text)}>{style.icon}</span>
       <span className="flex-1 min-w-0 flex items-baseline gap-2.5">
+        {row.managedBy && <ManagedChip label={row.managedBy.label} title={managedTitle(row)} />}
         <span className={cn('text-xs truncate', active ? 'text-foreground' : 'text-foreground/90')}>
           <Title text={row.title} query={query} />
         </span>

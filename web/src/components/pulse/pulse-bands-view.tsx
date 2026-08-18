@@ -20,9 +20,19 @@ interface PulseBandsViewProps {
   board?: boolean
   /** Render NEEDS YOU as full cards (mobile). */
   cards?: boolean
+  /** Types `+over` into the query box. Absent on surfaces with no input. */
+  onRevealManaged?: () => void
 }
 
-export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, cards }: PulseBandsViewProps) {
+export function PulseBandsView({
+  fleet,
+  activeId,
+  onSelect,
+  onHover,
+  board,
+  cards,
+  onRevealManaged,
+}: PulseBandsViewProps) {
   const [unfolded, setUnfolded] = useState<ReadonlySet<PulseBand>>(() => new Set())
   const [showExpired, setShowExpired] = useState(false)
 
@@ -71,6 +81,18 @@ export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, card
       <div className={cn(board && 'col-span-full')}>
         {fleet.hidden > 0 && (
           <div className="px-3 py-2 text-[11px] font-mono text-comment">{fleet.hidden} hidden by filter</div>
+        )}
+        {/* Managed rows are hidden by DEFAULT, not by anything the user typed --
+            so say so explicitly and name the token that reveals them. A silent
+            omission here is the failure mode: a run nobody can see anywhere. */}
+        {fleet.managedHidden > 0 && (
+          <button
+            type="button"
+            onClick={onRevealManaged}
+            className="w-full text-left px-3 py-2 text-[11px] font-mono text-comment hover:text-accent transition-colors"
+          >
+            {fleet.managedHidden} machine-run hidden — <span className="text-accent">+over</span> to show
+          </button>
         )}
         <PulseExpiredBar count={fleet.expired.length} open={showExpired} onToggle={() => setShowExpired(v => !v)} />
         {showExpired &&

@@ -24,6 +24,7 @@ import type {
   AgentHostCapability,
   BgTaskInfo as BgTaskSummary,
   ConversationTaskFields,
+  EpicLaunchTag,
   LaunchConfig,
   LiveStatus,
   MonitorInfo,
@@ -220,6 +221,15 @@ export interface Conversation extends ConversationTaskFields {
    *  Present => an unattended night-run task; the live Status screen filters
    *  night rows on this. Carries only run/task ids, no launch internals. */
   nightshift?: { runId: string; taskId: string }
+  /** EPIC MODE seat (mirrors server `ConversationSummary.epic`, ids only).
+   *
+   *  BROKER-AUTHORED PROVENANCE, not an agent self-report: the sweep stamps it
+   *  at dispatch and the conversation cannot alter it. That distinction is the
+   *  whole reason it is a field of its own rather than part of any
+   *  agent-writable metadata bag -- a surface deciding "this is machine-run,
+   *  keep it out of the human's own list" must not read a value the thing being
+   *  hidden could have written. */
+  epic?: EpicLaunchTag
 }
 
 // Project order tree types live in the shared module (single source of truth,

@@ -15,6 +15,8 @@ import type { PulseBand } from './bands'
  *   :opus       scope to a model
  *   -x          EXCLUDE — negates free text or any scope: -@anvil, -#wip, -noise
  *   "x" 'x'     LITERAL — no sigils, no exclusion. `rm "-rf"` searches for -rf.
+ *   +over       REVEAL managed rows (epic seats, nightshift), hidden by default
+ *   +only       with +over: show ONLY managed rows
  *
  * On the sigils, having checked what the world already means by them: `#` (tag),
  * `$` (money), `%` (percent) and `~` (time) line up with common usage. Two are
@@ -46,6 +48,10 @@ export interface PulseQuery {
   minContextPct: number | null
   host: string | null
   model: string | null
+  /** `+over` — include machine-dispatched rows, which are hidden by default. */
+  includeManaged: boolean
+  /** `+only` — with includeManaged, show ONLY those rows. */
+  onlyManaged: boolean
   /** Exclusions, gathered from `-` tokens. Any hit here rejects the row. */
   not: PulseExclusions
 }
@@ -73,6 +79,8 @@ export interface PulseSearchable {
   contextPct?: number
   host?: string
   model?: string
+  /** Machine-dispatched (epic seat / nightshift). Hidden unless `+over`. */
+  managed?: boolean
 }
 
 export const noExclusions = (): PulseExclusions => ({
@@ -94,5 +102,7 @@ export const EMPTY_QUERY: PulseQuery = {
   minContextPct: null,
   host: null,
   model: null,
+  includeManaged: false,
+  onlyManaged: false,
   not: noExclusions(),
 }

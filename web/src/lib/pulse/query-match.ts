@@ -16,6 +16,8 @@ export function isEmptyQuery(q: PulseQuery): boolean {
     q.windowMs === null &&
     q.minCostUsd === null &&
     q.minContextPct === null &&
+    !q.includeManaged &&
+    !q.onlyManaged &&
     !hasExclusions(q.not)
   )
 }
@@ -54,6 +56,10 @@ const CONSTRAINTS: Array<{
   applies: (q: PulseQuery) => boolean
   holds: (row: PulseSearchable, q: PulseQuery) => boolean
 }> = [
+  // Managed rows are machine-dispatched, so they are OUT unless asked for --
+  // Pulse answers "what am I working on", not "what is the fleet running".
+  { applies: q => !q.includeManaged, holds: row => !row.managed },
+  { applies: q => q.onlyManaged, holds: row => !!row.managed },
   { applies: q => q.bands !== null, holds: (row, q) => !!q.bands?.includes(row.band) },
   { applies: q => q.project !== null, holds: (row, q) => has(row.project, q.project ?? '') },
   { applies: q => q.tag !== null, holds: (row, q) => has(row.tag, q.tag ?? '') },
