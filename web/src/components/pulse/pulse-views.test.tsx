@@ -4,6 +4,7 @@ import type { PulseBand } from '@/lib/pulse/bands'
 import { parsePulseQuery } from '@/lib/pulse/filter'
 import { PulseBandsView } from './pulse-bands-view'
 import { PulseChips } from './pulse-chips'
+import { PulsePaletteHeader } from './pulse-palette-header'
 import { PulseRowItem } from './pulse-row'
 import { PulseStripBar } from './pulse-strip-bar'
 import { PulseTideView } from './pulse-tide-view'
@@ -265,6 +266,71 @@ describe('PulseChips', () => {
     fireEvent.click(screen.getByRole('button', { name: /^All/ }))
     expect(onPick).toHaveBeenNthCalledWith(1, 'working')
     expect(onPick).toHaveBeenNthCalledWith(2, null)
+  })
+
+  it('CENTRES every chip label, All included', () => {
+    // All laid its label out as an inline line box while the band chips used
+    // flex. The terminal font's oversized ascent then shoved the baseline past
+    // the 16px line box of text-[11px], so "All 80" rendered BELOW its own pill
+    // and got clipped by the row edge. Flex centring aligns on the glyph box,
+    // which is why the band chips were never affected.
+    const { container } = render(<PulseChips totals={totals} active={null} onPick={vi.fn()} />)
+    const chips = [...container.querySelectorAll('button')]
+    expect(chips.length).toBeGreaterThan(1)
+    for (const chip of chips) expectFlexCentred(chip)
+  })
+})
+
+/** The pill only contains its own label when the label is a flex item — see the
+ *  "All 80" / "≡ tide" clipping bug. */
+function expectFlexCentred(chip: HTMLElement) {
+  const why = `chip "${chip.textContent?.trim()}" is not flex-centred`
+  expect(chip.className, why).toMatch(/(^|\s)(inline-)?flex(\s|$)/)
+  expect(chip.className, why).toContain('items-center')
+}
+
+describe('PulsePaletteHeader', () => {
+  function renderHeader(view: 'bands' | 'tide' = 'bands') {
+    return render(
+      <PulsePaletteHeader
+        filter=""
+        onFilterChange={vi.fn()}
+        inputRef={{ current: null }}
+        liveCount={80}
+        totals={{ needs: 2, working: 5, done: 3, idle: 4, expired: 7 }}
+        activeBands={null}
+        onPickBand={vi.fn()}
+        view={view}
+        onToggleView={vi.fn()}
+        board={false}
+        onToggleBoard={vi.fn()}
+      />,
+    )
+  }
+
+  it('CENTRES the tide and board toggles like every other chip', () => {
+    const { container } = renderHeader('bands')
+    for (const label of ['≡ tide', '▦ board']) {
+      const chip = [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === label)
+      expect(chip, `no ${label} toggle`).toBeTruthy()
+      expectFlexCentred(chip as HTMLElement)
+    }
+  })
+
+  it('keeps the board toggle off narrow viewports without an ambiguous display class', () => {
+    // The chip shape sets `inline-flex`, so a bare `hidden` on the board toggle
+    // would be a coin flip decided by stylesheet order.
+    const { container } = renderHeader('bands')
+    const board = [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === '▦ board')
+    expect(board?.className).toContain('max-xl:hidden')
+    expect(board?.className).not.toMatch(/(^|\s)hidden(\s|$)/)
+  })
+
+  it('keeps the toggles centred in the other view too', () => {
+    const { container } = renderHeader('tide')
+    const chip = [...container.querySelectorAll('button')].find(b => b.textContent?.trim() === '▤ bands')
+    expect(chip).toBeTruthy()
+    expectFlexCentred(chip as HTMLElement)
   })
 })
 
