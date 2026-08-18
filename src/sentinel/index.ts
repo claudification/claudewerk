@@ -66,7 +66,6 @@ import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { transcriptSlug } from '../shared/transcript-path'
-import { worktreePath } from '../shared/worktree-path'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -89,6 +88,7 @@ import { registerDaemonSession, startDaemonRosterWatch, stopDaemonRosterWatch } 
 import { handleEpicOp } from './epic-handlers'
 import { expandPath } from './expand-path'
 import { forkCcSession } from './fork-cc-session'
+import { resolveForkCwds } from './fork-cwds'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
@@ -4071,22 +4071,27 @@ function connect(
             break
           }
 
+          // Read from where the source session RAN (its worktree, if any),
+          // write to where the fork will LAUNCH. Two independent directories --
+          // see fork-cwds.ts for why deriving either from the other loses forks.
+          const forkCwds = resolveForkCwds(
+            {
+              projectCwd: expandedCwd,
+              sourceWorktree: forkMsg.sourceWorktree,
+              targetWorktree: forkMsg.targetWorktree,
+              targetCwd: forkMsg.targetCwd ? expandPath(forkMsg.targetCwd, spawnRoot) : undefined,
+            },
+            realpathIfPossible,
+          )
           debug(
-            `Forking CC session ${forkMsg.sourceCcSessionId.slice(0, 8)} for: ${expandedCwd} (configDir=${forkConfigDir})`,
+            `Forking CC session ${forkMsg.sourceCcSessionId.slice(0, 8)} from: ${forkCwds.cwd} ` +
+              `-> ${forkCwds.targetCwd ?? 'in place'} (configDir=${forkConfigDir})`,
             verbose,
           )
-          // Resolve the launch target the same way the spawn will, so the fork
-          // lands in the directory CC will actually look in.
-          let forkTargetCwd: string | undefined
-          if (forkMsg.targetWorktree) {
-            forkTargetCwd = realpathIfPossible(worktreePath(expandedCwd, forkMsg.targetWorktree))
-          } else if (forkMsg.targetCwd) {
-            forkTargetCwd = realpathIfPossible(expandPath(forkMsg.targetCwd, spawnRoot))
-          }
 
           const outcome = await forkCcSession({
-            cwd: realpathIfPossible(expandedCwd),
-            targetCwd: forkTargetCwd,
+            cwd: forkCwds.cwd,
+            targetCwd: forkCwds.targetCwd,
             configDir: forkConfigDir,
             sourceCcSessionId: forkMsg.sourceCcSessionId,
             provenanceBlock: forkMsg.provenanceBlock,
@@ -4099,10 +4104,14 @@ function connect(
               `[fork] ${forkMsg.sourceCcSessionId.slice(0, 8)} -> ${outcome.ccSessionId.slice(0, 8)} ` +
                 `tokens=${outcome.stats.beforeTokens}->${outcome.stats.afterTokens} ` +
                 `entries=${outcome.stats.entriesBefore}->${outcome.stats.entriesAfter} ` +
-                `digested=${outcome.stats.digestedResults} cwd=${expandedCwd}`,
+                `digested=${outcome.stats.digestedResults} cwd=${forkCwds.cwd} ` +
+                `target=${forkCwds.targetCwd ?? 'in place'} sourceWorktree=${forkMsg.sourceWorktree ?? 'none'}`,
             )
           } else {
-            log(`[fork] FAILED ${forkMsg.sourceCcSessionId.slice(0, 8)} cwd=${expandedCwd}: ${outcome.error}`)
+            log(
+              `[fork] FAILED ${forkMsg.sourceCcSessionId.slice(0, 8)} cwd=${forkCwds.cwd} ` +
+                `sourceWorktree=${forkMsg.sourceWorktree ?? 'none'}: ${outcome.error}`,
+            )
           }
 
           ws.send(

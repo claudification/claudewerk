@@ -24,6 +24,8 @@
  */
 
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { disposePreroll, startPreroll } from '@/hooks/voice-preroll'
+import { mark, noteDictation } from '@/hooks/voice-timeline'
 
 const KEEP_MIC_IDLE_TTL = 30 * 60_000
 let warmStream: MediaStream | null = null
@@ -59,6 +61,10 @@ export function dismissMicExpired() {
 
 export function releaseWarmStream() {
   const wasKeepOpen = useConversationsStore.getState().controlPanelPrefs.keepMicOpen
+  // The pre-roll ring is audio from THIS stream. It has to die with it -- both
+  // because the graph is bound to the stream, and because holding recorded
+  // speech after the mic has been given back is not something to do quietly.
+  disposePreroll()
   if (warmStream) {
     for (const t of warmStream.getTracks()) t.stop()
     warmStream = null
@@ -143,6 +149,7 @@ export function isPinnableDevice(id: string): boolean {
 
 /** Release the warm stream so the next recording picks up a new device. */
 export function invalidateWarmStream() {
+  disposePreroll()
   if (warmStream) {
     for (const t of warmStream.getTracks()) t.stop()
     warmStream = null
@@ -243,6 +250,17 @@ function pinResolvedDevice(wantDevice: string, gotDevice: string) {
   }
 }
 
+/**
+ * Every warm stream captures into the pre-roll ring from the moment it exists,
+ * so a press that has not happened yet already has the second before it in hand.
+ * Fire-and-forget: a ring that fails to start costs the pre-roll, never the
+ * recording.
+ */
+function withPreroll(stream: MediaStream): MediaStream {
+  startPreroll(stream)
+  return stream
+}
+
 export async function acquireMicStream(): Promise<MediaStream> {
   if (warmStreamTimer) {
     clearTimeout(warmStreamTimer)
@@ -250,10 +268,19 @@ export async function acquireMicStream(): Promise<MediaStream> {
   }
   const wantDevice = preferredDeviceId()
   const reused = reuseOrDropWarmStream(wantDevice)
-  if (reused) return reused
+  // Idempotent: a no-op once the graph is up on this stream. It matters on the
+  // path where the stream outlived its graph, so the ring starts refilling
+  // instead of silently staying empty until the next cold acquire.
+  if (reused) {
+    noteDictation({ micWarm: true })
+    mark('mic', 'warm stream reused')
+    return withPreroll(reused)
+  }
 
   const t0 = performance.now()
   const stream = await openMicStream(wantDevice)
+  noteDictation({ micWarm: false })
+  mark('mic', `cold getUserMedia, ${Math.round(performance.now() - t0)}ms`)
   const gotDevice = stream.getAudioTracks()[0]?.getSettings().deviceId ?? ''
   console.log(
     `[voice] mic acquired in ${(performance.now() - t0).toFixed(0)}ms (device=${(gotDevice || 'unknown').slice(0, 8)})`,
@@ -261,5 +288,5 @@ export async function acquireMicStream(): Promise<MediaStream> {
   logAppliedConstraints(stream)
   pinResolvedDevice(wantDevice, gotDevice)
   warmStream = stream
-  return stream
+  return withPreroll(stream)
 }

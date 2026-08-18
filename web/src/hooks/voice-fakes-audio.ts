@@ -86,6 +86,12 @@ export class FakeAudioContext {
     FakeAudioContext.instances.push(this)
   }
 
+  static latest(): FakeAudioContext {
+    const ctx = FakeAudioContext.instances.at(-1)
+    if (!ctx) throw new Error('no AudioContext was constructed')
+    return ctx
+  }
+
   static reset() {
     FakeAudioContext.instances = []
     FakeAudioContext.modules = []

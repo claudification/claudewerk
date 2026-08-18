@@ -54,6 +54,20 @@ export interface ControlPanelPrefs {
   voiceHoldKey: string | null // KeyboardEvent.code for push-to-talk (e.g. 'F13', 'ScrollLock')
   keepMicOpen: boolean // keep mic stream alive permanently (eliminates cold-start latency)
   voiceLingerMs: number // how long to keep recording after releasing push-to-talk (catches trailing words)
+  /**
+   * How much speech from BEFORE the key went down is kept and sent with the
+   * recording (0 = off). The mirror of voiceLingerMs, which has caught the tail
+   * of every utterance from the beginning while the head had nothing.
+   *
+   * There is a real gap between pressing and capturing -- the 70ms chord grace
+   * window, the AudioContext, and the fact that people start the first syllable
+   * as the key bottoms out -- and buffering downstream cannot recover it, because
+   * the audio was never captured. A warm mic fills this ring continuously, so the
+   * press only chooses where the recording BEGAN. Requires a warm mic (see
+   * voiceWarmStreamMs / keepMicOpen) and raw-PCM capture; a container stream
+   * cannot be spliced. See voice-preroll.
+   */
+  voicePrerollMs: number
   voiceWarmStreamMs: number // how long to keep mic stream warm after recording (0 = release immediately)
   voiceNoiseSuppression: boolean // ask the browser for noise suppression + AGC. OFF by default: on macOS/Safari it can route the mic through Apple's voice-processing unit, which ducks other media (see voice-mic-stream.ts). Flip it if the room is noisy and judge for yourself.
   /**
@@ -181,6 +195,10 @@ const defaultPrefs: ControlPanelPrefs = {
   voiceHoldKey: null,
   keepMicOpen: false,
   voiceLingerMs: 1500,
+  // Symmetric with the tail linger above. Long enough to cover the grace window,
+  // the graph and a human lead-in with room to spare; short enough that the ring
+  // is a fraction of a sentence rather than a recording of the room.
+  voicePrerollMs: 1500,
   voiceWarmStreamMs: 30_000,
   voiceNoiseSuppression: false,
   // DIRECT BY DEFAULT (2026-08-13). The relay path measured 8.5-11.8 SECONDS

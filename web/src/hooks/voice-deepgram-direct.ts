@@ -22,6 +22,7 @@ import { liveUrl } from '@/hooks/voice-deepgram-protocol'
 import { startUplink, type Uplink } from '@/hooks/voice-deepgram-uplink'
 import { VoiceLagMeter } from '@/hooks/voice-lag-meter'
 import { resolveSttModel } from '@/hooks/voice-stt-models'
+import { mark } from '@/hooks/voice-timeline'
 
 /** If the Worker never answers the stop, resolve anyway rather than hang. */
 const STOP_BACKSTOP_MS = 4000
@@ -89,6 +90,7 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
 
   function onSocketOpen() {
     const flushed = uplink.attach(ws as WebSocket)
+    mark('socket', `open, flushed ${flushed.chunks} buffered chunks / ${flushed.bytes}B`)
     console.log(
       `[voice] stt socket open +${(performance.now() - t0).toFixed(0)}ms ` +
         `(flushed ${flushed.chunks} pre-open chunks / ${flushed.bytes}B)`,
@@ -107,6 +109,7 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
       // Time-to-first-word is what "does it feel fast" actually measures.
       if (!firstWordMs && text) {
         firstWordMs = Math.round(performance.now() - t0)
+        mark('firstword', JSON.stringify(text.slice(0, 40)))
         console.log(`[voice] first word +${firstWordMs}ms`)
       }
       if (!msg.final) lag.interim(0, (msg.audioEndMs ?? 0) / 1000, text)
@@ -168,10 +171,16 @@ export function startDeepgramDirect(opts: DeepgramDirectOptions): DeepgramDirect
     }
   }
 
-  Promise.resolve(opts.token).then(connect, err => {
-    if (torn) return
-    opts.callbacks.onError(`token mint failed: ${err instanceof Error ? err.message : err}`, 'token')
-  })
+  Promise.resolve(opts.token).then(
+    token => {
+      mark('token', 'STT token in hand')
+      connect(token)
+    },
+    err => {
+      if (torn) return
+      opts.callbacks.onError(`token mint failed: ${err instanceof Error ? err.message : err}`, 'token')
+    },
+  )
 
   async function stop(): Promise<string> {
     // Wait for the recorder's FINAL chunk before telling the Worker to stop.

@@ -174,6 +174,32 @@ describe('PulseStrip', () => {
     expect(bar.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('swallows the macOS Ctrl+click context menu WHILE the chord is held', () => {
+    // Ctrl+click IS the context menu on macOS, so clicking a row during a
+    // Ctrl+Alt peek popped the system menu instead of selecting.
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const e = new MouseEvent('contextmenu', { ctrlKey: true, altKey: true, cancelable: true, bubbles: true })
+    window.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(true)
+  })
+
+  it('leaves an ordinary right-click alone', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const e = new MouseEvent('contextmenu', { cancelable: true, bubbles: true })
+    window.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
+  })
+
+  it('leaves a bare Ctrl+click alone — that is a real context menu request', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const e = new MouseEvent('contextmenu', { ctrlKey: true, cancelable: true, bubbles: true })
+    window.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
+  })
+
   it('collapses when Escape is pressed', () => {
     desktop()
     render(<PulseStrip onOpen={vi.fn()} />)

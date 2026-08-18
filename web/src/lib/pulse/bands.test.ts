@@ -107,6 +107,46 @@ describe('bandOf', () => {
     }
   })
 
+  it('NEVER puts an ended conversation in NEEDS YOU, whatever it last claimed', () => {
+    // THE BUG (2026-08-18, seen live): an agent whose final act was `needs_you`
+    // parked itself at the top of NEEDS YOU forever. There is no process left
+    // to answer, so the report is a fossil, not a request -- and it pushed live
+    // work down the page while being unanswerable and unclearable.
+    const c = conv({ status: 'ended', liveStatus: live('needs_you'), lastActivity: NOW - 60_000 })
+    expect(bandOf(c, {}, NOW)).toBe('done')
+  })
+
+  it('keeps an ended conversation out of NEEDS YOU for every attention source', () => {
+    for (const over of [
+      { liveStatus: live('needs_you') },
+      { liveStatus: live('blocked') },
+      { pendingAttention: { type: 'permission' as const, timestamp: NOW } },
+      { pendingSpawnApproval: { requestId: 'r', requestedAt: NOW, request: {}, reason: 'why' } },
+    ]) {
+      const c = conv({ status: 'ended', lastActivity: NOW - 60_000, ...over })
+      expect(bandOf(c, {}, NOW)).not.toBe('needs')
+    }
+  })
+
+  it('keeps an ended conversation out of NEEDS YOU even via broker-side flags', () => {
+    const c = conv({ status: 'ended', lastActivity: NOW - 60_000 })
+    expect(bandOf(c, { hasPendingPermission: true, hasPendingLink: true }, NOW)).not.toBe('needs')
+  })
+
+  it('expires a long-dead conversation that was still claiming needs_you', () => {
+    const c = conv({
+      status: 'ended',
+      liveStatus: live('needs_you'),
+      lastActivity: NOW - JUST_DONE_WINDOW_MS - 1,
+    })
+    expect(bandOf(c, {}, NOW)).toBe('expired')
+  })
+
+  it('still lets a LIVE conversation reach NEEDS YOU', () => {
+    // The fix must not go so far that nothing can ask for attention.
+    expect(bandOf(conv({ status: 'active', liveStatus: live('needs_you') }), {}, NOW)).toBe('needs')
+  })
+
   it('bands a recently ended conversation as done', () => {
     const c = conv({ status: 'ended', lastActivity: NOW - 60_000 })
     expect(bandOf(c, {}, NOW)).toBe('done')

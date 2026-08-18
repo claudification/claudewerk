@@ -1,9 +1,10 @@
 import type { PulseBand } from '@/lib/pulse/bands'
 import { isMobileViewport } from '@/lib/utils'
-import { PulseChips } from './pulse-chips'
+import { PULSE_CHIP_CLS, PULSE_CHIP_OFF_CLS, PulseChips } from './pulse-chips'
 
-const TOGGLE_CLS =
-  'shrink-0 px-2.5 py-1 rounded-full border border-primary/15 text-[11px] text-accent hover:bg-primary/10 transition-colors'
+/** A toggle is a chip, so it wears the chip's shape — including the flex
+ *  centring that keeps the label inside its pill. */
+const TOGGLE_CLS = `${PULSE_CHIP_CLS} ${PULSE_CHIP_OFF_CLS}`
 
 export interface PulsePaletteHeaderProps {
   filter: string
@@ -63,7 +64,10 @@ export function PulsePaletteHeader({
         <button type="button" onClick={onToggleView} className={`${TOGGLE_CLS} ml-auto`}>
           {view === 'tide' ? '▤ bands' : '≡ tide'}
         </button>
-        <button type="button" onClick={onToggleBoard} className={`${TOGGLE_CLS} hidden xl:inline-block`}>
+        {/* `max-xl:hidden`, not a bare `hidden`: the chip shape already sets
+            `inline-flex`, and two unprefixed display utilities would be decided
+            by stylesheet order rather than by intent. */}
+        <button type="button" onClick={onToggleBoard} className={`${TOGGLE_CLS} max-xl:hidden`}>
           {board ? '▤ list' : '▦ board'}
         </button>
       </PulseChips>
