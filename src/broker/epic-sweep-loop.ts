@@ -27,12 +27,26 @@ export interface SweepDeps extends BeatDeps {
   isLive: IsLive
 }
 
-/** Trusted, autonomous caller -- the same shape nightshift uses for its own
- *  broker-internal spawns. An epic worker is not somebody's request. */
+/**
+ * Autonomous caller -- the same shape nightshift uses for its own broker-internal
+ * spawns. An epic worker is not somebody's request.
+ *
+ * BENEVOLENT, not `trusted`, and the reason is a hard gate rather than a
+ * preference: `evaluateSpawnPermission` REJECTS `bypassPermissions` outright
+ * below benevolent trust (spawn-permissions.ts), and that is the mode every epic
+ * seat runs in (see epic-spawn-plan.ts for why). At `trusted` the honest
+ * declaration would 403 and the engine would stop dispatching entirely.
+ *
+ * This is not a widening. The mode was already in force -- the ad-hoc rule in
+ * `resolveSpawnConfig` applied it downstream of this gate, so the gate was being
+ * passed a value that no longer described the spawn. Promoting the caller is what
+ * makes the gate see the truth and still say yes; it is the broker spawning into
+ * a project on a human's explicit RUN, which is what benevolent means.
+ */
 const EPIC_CALLER: SpawnCallerContext = {
   kind: 'mcp',
   hasSpawnPermission: true,
-  trustLevel: 'trusted',
+  trustLevel: 'benevolent',
   callerProject: null,
 }
 

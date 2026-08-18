@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { EpicPlan } from '../shared/epic-ready'
 import type { EpicRunSnapshot } from '../shared/protocol'
+import { resolveSpawnConfig } from '../shared/spawn-defaults'
 import { type EpicSpawnCtx, planImplementerSpawn, planOverseerSpawn, planVerifierSpawn } from './epic-spawn-plan'
 
 const CTX: EpicSpawnCtx = {
@@ -62,12 +63,41 @@ describe('the three seats differ in what they CAN do, not just what they are tol
     expect(hookCount(overseer().settingsInline)).toBe(1)
   })
 
-  test('every seat runs dontAsk and headless, ad-hoc', () => {
+  test('every seat runs bypassPermissions and headless, ad-hoc', () => {
     for (const plan of [overseer(), planImplementerSpawn(CTX, 't1'), planVerifierSpawn(CTX, 't1')]) {
-      expect(plan.permissionMode).toBe('dontAsk')
+      expect(plan.permissionMode).toBe('bypassPermissions')
       expect(plan.headless).toBe(true)
       expect(plan.adHoc).toBe(true)
     }
+  })
+
+  /**
+   * REGRESSION: this file used to declare `dontAsk` and a test used to assert it,
+   * while `resolveSpawnConfig` rewrote every ad-hoc spawn to `bypassPermissions`
+   * downstream. Both statements passed; neither described the running system.
+   *
+   * Asserting the DECLARED value alone cannot catch that, so this asserts the
+   * value that actually reaches the sentinel -- the two must agree.
+   */
+  test('the declared mode survives resolution -- no downstream rewrite', () => {
+    for (const plan of [overseer(), planImplementerSpawn(CTX, 't1'), planVerifierSpawn(CTX, 't1')]) {
+      const resolved = resolveSpawnConfig(plan as never)
+      expect(resolved.permissionMode).toBe(plan.permissionMode)
+    }
+  })
+
+  /**
+   * The mode is only safe because the guards are mode-INDEPENDENT. If the deny
+   * floor ever became allowlist-shaped, bypassPermissions would be a blank cheque.
+   */
+  test('bypass does not disarm the deny-floor', () => {
+    const settings = planImplementerSpawn(CTX, 't1').settingsInline as {
+      permissions: { deny: string[] }
+      hooks: { PreToolUse: unknown[] }
+    }
+    expect(settings.permissions.deny).toContain('Bash(sudo:*)')
+    expect(settings.permissions.deny.some(r => r.includes('force'))).toBe(true)
+    expect(settings.hooks.PreToolUse.length).toBeGreaterThan(0)
   })
 })
 

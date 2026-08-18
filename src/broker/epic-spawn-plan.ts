@@ -19,6 +19,31 @@ import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { buildGuardPrompt } from '../shared/guard-prompt'
 import type { UnattendedPermissionConfig } from '../shared/unattended-permissions'
 
+/**
+ * THE PERMISSION MODE, said out loud.
+ *
+ * This used to declare `dontAsk` and it was never true: every seat is `adHoc`,
+ * and `resolveSpawnConfig` rewrites an ad-hoc spawn's mode to `bypassPermissions`
+ * unconditionally (spawn-defaults.ts). So the declared value never reached CC,
+ * the test asserting it asserted a value with no effect, and anyone reading this
+ * file believed epic workers were allowlist-constrained -- and would either
+ * "widen the allowlist" to fix a problem that did not exist, or delete the ad-hoc
+ * rule and silently take every epic run's permissions away.
+ *
+ * Declaring it honestly is also the correct mode on its merits. `dontAsk` denies
+ * anything not on `permissions.allow`, and you cannot enumerate what a coding
+ * agent needs -- DEFAULT_ALLOW does not carry `git merge`, `git rebase` or
+ * `git fetch`, all three of which the OVERSEER is explicitly instructed to run.
+ * An allowlist is a treadmill; the deny-floor is a wall.
+ *
+ * WHAT STILL STOPS A RUNAWAY, none of which is the permission mode:
+ *   - the deny-floor PreToolUse hook (force-push, push to main, sudo, kill,
+ *     external send, rm outside the worktree). A hook runs in EVERY mode.
+ *   - the mute hook, for every seat that is not the overseer.
+ *   - worktree isolation: worst case a worker dirties its own branch.
+ */
+export type EpicPermissionMode = 'bypassPermissions'
+
 export interface EpicSpawnPlan {
   cwd: string
   prompt: string
@@ -27,7 +52,7 @@ export interface EpicSpawnPlan {
    *  watchdog reaps it. Same reasoning as the nightshift worker. */
   adHoc: true
   worktree?: string
-  permissionMode: 'dontAsk'
+  permissionMode: EpicPermissionMode
   settingsInline: Record<string, unknown>
   epic: EpicLaunchTag
   name: string
@@ -54,7 +79,7 @@ function base(
     cwd: ctx.project,
     headless: true,
     adHoc: true,
-    permissionMode: 'dontAsk',
+    permissionMode: 'bypassPermissions',
     settingsInline: buildEpicWorkerSettings(role, ctx.permissions),
     epic: { epicId: ctx.epicId, role, gen: ctx.gen, ...(cardId ? { cardId } : {}) },
     name: name.slice(0, 80),
