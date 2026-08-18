@@ -1,4 +1,5 @@
 import type { PulseBand } from '@/lib/pulse/bands'
+import { isMobileViewport } from '@/lib/utils'
 import { PulseChips } from './pulse-chips'
 
 const TOGGLE_CLS =
@@ -39,8 +40,12 @@ export function PulsePaletteHeader({
         <span className="text-comment text-sm shrink-0">⌕</span>
         <input
           ref={inputRef}
-          // biome-ignore lint/a11y/noAutofocus: palette surfaces focus their input on open
-          autoFocus
+          // Desktop opens focused, because you summoned it to type. A PHONE
+          // must not: focusing raises the software keyboard, which eats half
+          // the sheet and turns a glance into a text-entry chore. Tap the field
+          // when you actually want to filter.
+          // biome-ignore lint/a11y/noAutofocus: pointer surfaces focus on open; suppressed on touch
+          autoFocus={!isMobileViewport()}
           aria-label="Pulse filter"
           value={filter}
           onChange={e => onFilterChange(e.target.value)}

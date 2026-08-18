@@ -68,7 +68,12 @@ export function PulsePalette({ onOpen, onClose }: PulsePaletteProps) {
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop overlay closes on click
     <div
       role="presentation"
-      className="fixed inset-0 z-[60] flex items-start justify-center sm:pt-[12vh]"
+      className={cn(
+        'fixed inset-0 z-[60] flex justify-center',
+        // Phone: the sheet sits ON the bottom edge. Desktop: floats near the top.
+        'items-end sm:items-start sm:pt-[12vh]',
+        'bg-black/40 animate-in fade-in-0 duration-200',
+      )}
       onClick={onClose}
     >
       {/* react-doctor-disable-next-line react-doctor/prefer-tag-over-role, react-doctor/prefer-html-dialog */}
@@ -83,8 +88,17 @@ export function PulsePalette({ onOpen, onClose }: PulsePaletteProps) {
         }}
         className={cn(
           'w-full bg-surface-inset border border-primary/20 shadow-2xl flex flex-col',
-          // mobile: full-height sheet with the input pinned to the thumb
-          'h-dvh sm:h-auto flex-col-reverse sm:flex-col sm:max-h-[74vh]',
+          // PHONE: a HALF sheet, not the whole screen. Enough fleet to scan, with
+          // the conversation you came from still visible behind it -- and the
+          // input sits at the bottom edge under your thumb (flex-col-reverse).
+          'h-[62dvh] rounded-t-2xl flex-col-reverse',
+          // DESKTOP: unchanged -- a floating panel near the top.
+          'sm:h-auto sm:rounded-none sm:flex-col sm:max-h-[74vh]',
+          // It always rises from the BOTTOM, whichever way it was summoned:
+          // swipe from the right, tap the strip, or the chord. One arrival
+          // animation means one mental model for where this thing lives.
+          'animate-in slide-in-from-bottom duration-300 ease-out',
+          'sm:slide-in-from-bottom-4 sm:fade-in-0 sm:duration-150',
           board ? 'sm:max-w-5xl' : 'sm:max-w-2xl',
         )}
       >

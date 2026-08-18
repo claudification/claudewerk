@@ -21,10 +21,14 @@ export function PulseStripBar({
   onToggle: () => void
 }) {
   const urgent = lead?.band === 'needs'
-  // 30px is fine for a mouse and hostile to a thumb, so the bar grows on narrow
-  // viewports and pads past the iOS home indicator.
-  const BAR_CLS =
-    'w-full h-[30px] max-sm:h-12 max-sm:box-content max-sm:pb-[env(safe-area-inset-bottom)] px-3 flex items-center gap-3 hover:bg-primary/10 transition-colors select-none'
+  // Deliberately 30px and flush to the bottom edge on EVERY viewport.
+  //
+  // It was briefly taller on mobile with safe-area padding, to make it a real
+  // thumb target. That was solving the wrong problem: the right-edge swipe is
+  // the mobile way in now, so the bar does not have to be tappable there -- and
+  // sitting tight against the edge is what makes it read as a hairline status
+  // rail rather than a chunky toolbar. Do not pad it back out.
+  const BAR_CLS = 'w-full h-[30px] px-3 flex items-center gap-3 hover:bg-primary/10 transition-colors select-none'
   return (
     <button type="button" onClick={onToggle} aria-expanded={open} aria-label="Pulse strip" className={BAR_CLS}>
       <span className="flex gap-2.5 shrink-0">
