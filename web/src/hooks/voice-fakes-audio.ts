@@ -72,7 +72,7 @@ export class FakeAudioContext {
   /** Model a worklet module that fails to load (stale SW cache, offline). */
   static addModuleFails = false
 
-  state: 'suspended' | 'running' = 'running'
+  state: 'suspended' | 'running' | 'closed' = 'running'
   closed = false
   readonly destination = {}
   readonly audioWorklet = {
@@ -110,8 +110,15 @@ export class FakeAudioContext {
     this.state = 'running'
   }
 
+  async suspend() {
+    this.state = 'suspended'
+  }
+
   async close() {
     this.closed = true
+    // Terminal in the real API, and the code under test branches on it to decide
+    // whether the shared context can be reused. Modelled, not stubbed.
+    this.state = 'closed'
   }
 }
 

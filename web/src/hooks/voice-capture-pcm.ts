@@ -77,16 +77,71 @@ export interface PcmGraph {
 }
 
 /**
+ * The half of the graph that does NOT need a microphone -- kept warm across
+ * presses, and across the mic going cold.
+ *
+ * MEASURED, 2026-08-18: building this cost 316ms on a real cold press, inside a
+ * 1388ms total loss. Not one millisecond of it needs a MediaStream, a permission
+ * or the mic indicator: `new AudioContext()` and `addModule()` are entirely
+ * stream-independent. Paying for it at the keypress was simply the wrong moment.
+ *
+ * Deliberately NOT torn down with the mic. The stream is a device someone else
+ * may want; a suspended AudioContext is a handle. Releasing the microphone
+ * suspends this rather than closing it, so the next cold press pays a resume
+ * instead of a rebuild.
+ */
+let warmContext: AudioContext | null = null
+let moduleReady: Promise<void> | null = null
+
+function contextReady(): { ctx: AudioContext; module: Promise<void> } {
+  // `closed` is terminal -- a closed context can never be resumed, so a fresh
+  // one is the only option and the module has to load into it again.
+  if (!warmContext || warmContext.state === 'closed') {
+    warmContext = new AudioContext()
+    moduleReady = null
+  }
+  const ctx = warmContext
+  moduleReady ??= ctx.audioWorklet.addModule(WORKLET_URL)
+  return { ctx, module: moduleReady }
+}
+
+/**
+ * Build the context and load the worklet module NOW, so a later press does not.
+ * Safe to call whenever push-to-talk is armed: it touches no device, asks for no
+ * permission, and lights no indicator. The context starts suspended outside a
+ * user gesture, which is exactly what we want -- it is resumed on the press.
+ */
+export function prewarmPcmContext(): void {
+  try {
+    contextReady().module.catch(err => console.warn('[voice] worklet module prewarm failed --', err))
+  } catch (err) {
+    console.warn('[voice] audio context prewarm failed --', err)
+  }
+}
+
+/** Drop the shared context entirely. For teardown and for tests, which would
+ *  otherwise carry one page's context into the next case. */
+export function disposePcmContext() {
+  const ctx = warmContext
+  warmContext = null
+  moduleReady = null
+  try {
+    void ctx?.close()
+  } catch {}
+}
+
+/**
  * The AudioContext runs at the device's NATIVE rate on purpose. Forcing 16k
  * retriggers the CoreAudio HAL reconfigure that opening the mic raw exists to
  * avoid (see voice-mic-stream.ts); the worklet resamples internally, through a
  * proper anti-alias filter -- which is NOT optional, see pcm-worklet.js.
  */
 export async function startPcmGraph(stream: MediaStream): Promise<PcmGraph> {
-  const ctx = new AudioContext()
-  // Safari can hand back a suspended context even inside a user gesture.
+  const { ctx, module } = contextReady()
+  // Safari can hand back a suspended context even inside a user gesture, and a
+  // prewarmed one is suspended by definition -- it was built outside the gesture.
   if (ctx.state === 'suspended') await ctx.resume()
-  await ctx.audioWorklet.addModule(WORKLET_URL)
+  await module
 
   const source = ctx.createMediaStreamSource(stream)
   const worklet = new AudioWorkletNode(ctx, 'pcm-capture')
@@ -125,7 +180,10 @@ export async function startPcmGraph(stream: MediaStream): Promise<PcmGraph> {
         source.disconnect()
         worklet.disconnect()
         mute.disconnect()
-        void ctx.close()
+        // SUSPEND, never close. Closing is terminal, and rebuilding it is the
+        // 316ms this whole split exists to stop paying. Suspended costs nothing
+        // and the next press only has to resume it.
+        void ctx.suspend()
       } catch {}
     },
   }

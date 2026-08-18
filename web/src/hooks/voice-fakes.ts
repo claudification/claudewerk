@@ -14,6 +14,7 @@
  * Test-only, imported by *.test.ts.
  */
 
+import { disposePcmContext } from '@/hooks/voice-capture-pcm'
 import { installAudioFakes } from '@/hooks/voice-fakes-audio'
 
 export { FakeAudioContext, FakeAudioWorkletNode } from '@/hooks/voice-fakes-audio'
@@ -152,7 +153,12 @@ export function installVoiceFakes(): () => void {
   FakeWebSocket.reset()
   globals.MediaRecorder = FakeMediaRecorder
   globals.WebSocket = FakeWebSocket
+  // The AudioContext is deliberately SHARED across presses in production, so it
+  // is module state that would otherwise survive into the next test case holding
+  // a fake from the previous one. Dropped on both ends of the install.
+  disposePcmContext()
   return () => {
+    disposePcmContext()
     globals.MediaRecorder = prevRecorder
     globals.WebSocket = prevSocket
     restoreAudio()

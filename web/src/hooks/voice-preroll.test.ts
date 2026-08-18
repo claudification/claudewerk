@@ -30,7 +30,7 @@ vi.mock('@/hooks/use-conversations', () => ({
 }))
 
 import type { CaptureEngine } from '@/hooks/voice-capture-contract'
-import { PCM_SAMPLE_RATE } from '@/hooks/voice-capture-pcm'
+import { PCM_SAMPLE_RATE, prewarmPcmContext } from '@/hooks/voice-capture-pcm'
 import { startUplink } from '@/hooks/voice-deepgram-uplink'
 import {
   FakeAudioContext,
@@ -191,6 +191,49 @@ describe('one dictation never leaks into the next', () => {
     armPreroll(stream, next.onChunk)
 
     expect(next.got).toEqual([8])
+  })
+})
+
+describe('the graph is warmed without the microphone', () => {
+  test('prewarm builds the context and loads the worklet before any press', async () => {
+    prewarmPcmContext()
+    await vi.waitFor(() => expect(FakeAudioContext.modules).toHaveLength(1))
+
+    // MEASURED at 316ms of a 1388ms cold-press loss, and none of it needs a
+    // stream, a permission or the mic indicator. Paying it at the keypress was
+    // the wrong moment, not an unavoidable cost.
+    expect(FakeAudioContext.instances).toHaveLength(1)
+    expect(FakeAudioContext.modules[0]).toMatch(/^\/pcm-worklet\.js\?v=/)
+  })
+
+  test('a cold press reuses the prewarmed context instead of building one', async () => {
+    prewarmPcmContext()
+    await vi.waitFor(() => expect(FakeAudioContext.modules).toHaveLength(1))
+
+    await warmMic(fakeStream())
+
+    // One context, one module load -- the press paid for a resume, not a build.
+    expect(FakeAudioContext.instances).toHaveLength(1)
+    expect(FakeAudioContext.modules).toHaveLength(1)
+    expect(FakeAudioContext.latest().state).toBe('running')
+  })
+
+  test('releasing the mic suspends the context, it does not close it', async () => {
+    const stream = fakeStream()
+    await warmMic(stream)
+
+    disposePreroll()
+
+    // Closing is terminal, so the next cold press would have to rebuild -- which
+    // is the whole 316ms this split exists to stop paying.
+    const ctx = FakeAudioContext.latest()
+    expect(ctx.closed).toBe(false)
+    expect(ctx.state).toBe('suspended')
+
+    // ...and the next press brings that same context back rather than making one.
+    await armPreroll(stream, () => {})
+    expect(FakeAudioContext.instances).toHaveLength(1)
+    expect(FakeAudioContext.latest().state).toBe('running')
   })
 })
 
