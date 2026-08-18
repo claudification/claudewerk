@@ -63,6 +63,9 @@ const TARGET_CLAUSE: Record<StartEpicOptions['target'], string> = {
  * thing being agreed to by pressing the button.
  */
 export function consequence(options: StartEpicOptions): string {
-  const each = options.concurrency === 1 ? 'one card at a time' : `${options.concurrency} at a time`
+  // "3 at a time" read as a promise of three. It is a CEILING: the engine
+  // dispatches every ready card up to that number and holds the rest back, so
+  // the real figure is min(ready, concurrency) and is usually lower.
+  const each = options.concurrency === 1 ? 'one card at a time' : `up to ${options.concurrency} at a time`
   return `${CADENCE_CLAUSE[options.cadence]}, ${each}, and ${TARGET_CLAUSE[options.target]}.`
 }

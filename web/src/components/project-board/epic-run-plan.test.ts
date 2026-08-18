@@ -71,8 +71,14 @@ describe('firstBeat', () => {
 describe('consequence', () => {
   it('reads as one sentence about the combination, not three about the controls', () => {
     expect(consequence({ cadence: 'now', target: 'merged', concurrency: 3 })).toBe(
-      'Starts now, 3 at a time, and stops once each card is merged to main.',
+      'Starts now, up to 3 at a time, and stops once each card is merged to main.',
     )
+  })
+
+  it('says UP TO, because concurrency is a ceiling and not a promise of three', () => {
+    // The engine dispatches min(ready, concurrency). Reading "3 at a time" as a
+    // commitment to three is how a 1-ready epic looks broken.
+    expect(consequence({ cadence: 'now', target: 'pr', concurrency: 5 })).toContain('up to 5 at a time')
   })
 
   it('does not say "1 at a time"', () => {

@@ -34,7 +34,27 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
         order, sends an independent verifier over everything finished, then wakes one overseer. It runs unattended until
         the epic is done or it needs you.
       </p>
+      <OrderingCaveat waiting={plan.waiting} />
     </div>
+  )
+}
+
+/**
+ * The limit of the ordering, said out loud.
+ *
+ * Readiness is arithmetic over `depends_on` (`epic-ready.ts`) and nothing else
+ * looks at it -- the overseer is explicitly NOT the dispatcher. So two cards that
+ * touch the same thing without a declared edge go out together and collide, and
+ * the overseer can only add that edge on the NEXT beat, after the damage. A
+ * dialog that shows a confident ready-count owes you the caveat behind it.
+ */
+function OrderingCaveat({ waiting }: { waiting: number }) {
+  return (
+    <p className="font-mono text-chrome text-muted-foreground/55 leading-relaxed">
+      Ordering is only as good as the declared edges: cards with no{' '}
+      <code className="text-muted-foreground/80">depends_on</code> between them dispatch together even if they collide.
+      {waiting > 0 ? ' The overseer can add a missing edge, but only between beats.' : ' Nothing here declares one.'}
+    </p>
   )
 }
 

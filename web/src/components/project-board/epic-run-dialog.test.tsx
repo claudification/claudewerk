@@ -86,10 +86,10 @@ it('turns concurrency into what beat 1 actually dispatches', () => {
 
 it('resolves the three choices into one sentence of consequence', () => {
   open()
-  expect(screen.getByText('Starts now, 3 at a time, and stops once each card is merged to main.')).toBeTruthy()
+  expect(screen.getByText('Starts now, up to 3 at a time, and stops once each card is merged to main.')).toBeTruthy()
 
   fireEvent.click(screen.getByText('shipped'))
-  expect(screen.getByText('Starts now, 3 at a time, and does not stop until it is deployed.')).toBeTruthy()
+  expect(screen.getByText('Starts now, up to 3 at a time, and does not stop until it is deployed.')).toBeTruthy()
   // The one irreversible choice is the one that was whispering.
   expect(screen.getByText(/Deployed by the fleet, unreviewed/)).toBeTruthy()
 })
