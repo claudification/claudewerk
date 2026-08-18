@@ -6,6 +6,7 @@
 
 import { z } from 'zod/v4'
 import { transportEnum } from '../shared/spawn-schema'
+import { DEFAULT_VOICE_REFINER_MODEL } from '../shared/voice-refiner-models'
 import type { KVStore } from './store/types'
 
 const KV_KEY = 'global-settings'
@@ -19,7 +20,22 @@ const GlobalSettingsSchema = z.object({
   agentSize: z.string().max(4).default(''),
   deepgramModel: z.string().max(30).default('nova-3'),
   voiceRefinement: z.boolean().default(true),
-  voiceRefinementPrompt: z.string().max(2000).default(''),
+  // Stays '' on purpose: an empty prompt means OFF. See the opt-in note in
+  // voice-refiner.ts -- a refiner improvising against no ground truth rewrites
+  // the user's words for them. Settings offers RECOMMENDED_VOICE_PROMPT as a
+  // one-click starting point instead.
+  voiceRefinementPrompt: z.string().max(4000).default(''),
+  // Free-form rather than an enum so a model can be pointed at a new id without
+  // a broker deploy; resolveVoiceRefinerModel() degrades an unknown one to the
+  // default rather than letting it 400 away someone's dictation.
+  voiceRefinementModel: z.string().max(60).default(DEFAULT_VOICE_REFINER_MODEL),
+  // Wall-clock budget for BOTH refinement steps together. 0 disables the
+  // deadline entirely (the pre-2026-08-18 behaviour: wait as long as it takes).
+  voiceRefinementDeadlineMs: z.number().min(0).max(10000).default(2000),
+  // Step 1 doubles latency for a second opinion the keyterms usually already
+  // give. Default ON to preserve existing behaviour for anyone already running
+  // the refiner; turn it off to fit inside the deadline.
+  voiceRefinementContextPass: z.boolean().default(true),
   carriageReturnDelay: z.number().min(0).max(2000).default(0),
   defaultLaunchMode: z.enum(['headless', 'pty']).default('headless'),
   // Transport reframe (Phase 3) -- the default transport per backend for

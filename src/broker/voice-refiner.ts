@@ -5,7 +5,8 @@
  * Prompting (TAP) from "Generative Speech Recognition Error Correction with LLMs"
  * (Yang et al., 2023):
  *   Step 1 - Context Extraction: analyze the raw transcript for domain, proper
- *     nouns and likely misrecognitions.
+ *     nouns and likely misrecognitions (voice-refiner-context.ts, OPTIONAL --
+ *     it is a second sequential call and doubles the latency).
  *   Step 2 - Refinement: clean the transcript with TAP multi-turn structure,
  *     enriched by project keyterms AND step 1's findings.
  *
@@ -14,15 +15,27 @@
  * prompt. That is an LLM rewriting the user's words against NO ground truth --
  * step 1 literally invents `heard -> meant` pairs from the transcript alone and
  * step 2 then obeys them. Unconfigured now means OFF, not "improvise".
+ * RECOMMENDED_VOICE_PROMPT is offered as a one-click starting point in settings;
+ * it is deliberately NOT the schema default, which stays ''.
+ *
+ * THE DEADLINE (2026-08-18): refinement sits between the user finishing a
+ * sentence and seeing their text, so it is latency, not throughput. It races a
+ * wall-clock deadline covering BOTH steps and falls back to the raw transcript
+ * on expiry. Timing out is a normal outcome, logged and moved past -- never an
+ * error the user has to see.
  *
  * Deliberately socket-free: it returns text and never touches the WebSocket, so
  * it stays testable and cannot import voice-stream back.
  */
 
+import { resolveVoiceRefinerModel } from '../shared/voice-refiner-models'
+import { buildMessages, stripPreamble } from '../shared/voice-refiner-prompt'
 import { getGlobalSettings } from './global-settings'
 import { chat } from './recap/shared/openrouter-client'
+import { contextBlockFrom, extractContext } from './voice-refiner-context'
 
-const VOICE_REFINER_MODEL = 'anthropic/claude-haiku-4.5'
+export { RECOMMENDED_VOICE_PROMPT, stripPreamble } from '../shared/voice-refiner-prompt'
+export { contextBlockFrom } from './voice-refiner-context'
 
 /**
  * Whether a refinement pass would do anything. Checked by the caller before it
@@ -38,109 +51,15 @@ export function refinementSkipReason(rawText: string): string | null {
   return null
 }
 
-interface ExtractedContext {
-  proper_nouns?: string[]
-  domain?: string
-  corrections?: Array<{ heard: string; meant: string }>
-  tone?: string
-}
-
-/** Step 1: ask for a compact JSON sketch of what this transcript is about. */
-async function extractContext(rawText: string, apiKey: string, keyterms: string[]): Promise<string> {
-  const keytermHint = keyterms.length > 0 ? `\nKnown project terms: ${keyterms.join(', ')}` : ''
-  const res = await chat({
-    feature: 'voice-refiner-context',
-    model: VOICE_REFINER_MODEL,
-    apiKey,
-    system: `You analyze voice transcripts to extract context that helps correct ASR errors.${keytermHint}`,
-    user: `Analyze this voice transcript and output a brief JSON object with these fields:
-- "proper_nouns": names, brands, places, tools mentioned or likely intended (array of strings)
-- "domain": the topic/domain (e.g. "software development", "Thai culture", "DevOps") (string)
-- "corrections": any words that are likely ASR misrecognitions, with what they probably should be (array of {"heard": "x", "meant": "y"})
-- "tone": the speaker's tone/register (e.g. "casual", "technical", "formal") (string)
-
-Output ONLY valid JSON, nothing else.
-
-${rawText}`,
-    maxTokens: 512,
-    temperature: 0.1,
-    retries: 0,
-  })
-  return res.content
-}
-
-/** Render step 1's JSON as a prompt block. Unparseable output degrades to ''. */
-export function contextBlockFrom(contextJson: string): string {
-  if (!contextJson) return ''
-  let ctx: ExtractedContext
-  try {
-    const cleanJson = contextJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '')
-    ctx = JSON.parse(cleanJson)
-  } catch {
-    console.warn('[voice-refiner] Step 1 returned non-JSON, proceeding with step 2 anyway')
-    return ''
-  }
-  const parts: string[] = []
-  if (ctx.domain) parts.push(`Domain: ${ctx.domain}`)
-  if (ctx.tone) parts.push(`Tone: ${ctx.tone}`)
-  if (ctx.proper_nouns?.length) parts.push(`Proper nouns/names: ${ctx.proper_nouns.join(', ')}`)
-  if (ctx.corrections?.length) {
-    const fixes = ctx.corrections.map(c => `"${c.heard}" -> "${c.meant}"`).join(', ')
-    parts.push(`Likely ASR misrecognitions: ${fixes}`)
-  }
-  return parts.length > 0 ? `\n\nExtracted context from this transcript:\n${parts.join('\n')}` : ''
-}
-
-/** Strip common LLM preamble patterns that leak through despite instructions. */
-export function stripPreamble(text: string): string {
-  const preamblePatterns = [
-    /^(?:here(?:'s| is) (?:the )?(?:cleaned|corrected|refined|fixed)(?: version)?[:\s-]+)/i,
-    /^(?:corrected|cleaned|refined|fixed)(?: (?:version|text|transcript))?[:\s-]+/i,
-    // Punctuation required: bare "Sure enough ..." is the user's own sentence.
-    /^sure[,!.]+\s*/i,
-  ]
-  let result = text
-  for (const pattern of preamblePatterns) {
-    result = result.replace(pattern, '')
-  }
-  return result.trim()
-}
-
-function buildMessages(systemPrompt: string, keyterms: string[], contextBlock: string, rawText: string) {
-  const keytermBlock =
-    keyterms.length > 0
-      ? `\nDomain vocabulary (correct spellings for this project): ${keyterms.join(', ')}\nWhen the transcript contains words that sound similar to these terms, prefer the domain term.`
-      : ''
-  return [
-    { role: 'system' as const, content: `${systemPrompt}${keytermBlock}${contextBlock}` },
-    {
-      role: 'user' as const,
-      content: `Here's an example of a raw voice transcript and its corrected version:
-
-Raw: "okay so um I want to add a new end point uh to the API that handles like user authentication no no wait not authentication I mean authorization slash permissions and it should use jason web tokens uh jwt for the for the token format"
-
-Corrected: "I want to add a new endpoint to the API that handles authorization/permissions and it should use JSON Web Tokens (JWT) for the token format"
-
-Notice how: filler words removed, self-correction applied ("not authentication, I mean authorization"), "end point" merged to "endpoint", "jason" corrected to "JSON", "slash" converted to "/", repeated words cleaned up, but the speaker's casual tone and intent are preserved exactly.`,
-    },
-    {
-      role: 'assistant' as const,
-      content:
-        "Understood. I will clean the transcript by removing disfluencies, applying self-corrections, fixing ASR errors (especially technical terms and word boundaries), and converting spoken syntax to written form - while preserving the speaker's original intent and tone.",
-    },
-    {
-      role: 'user' as const,
-      content: `Clean this voice transcript. Apply all corrections. Output ONLY the cleaned text - no quotes, no explanation, no preamble, no "Here's the corrected version" prefix.
-
-${rawText}`,
-    },
-  ]
-}
+/** Sentinel resolved by the deadline timer. Never conflates with a real result:
+ *  the refine path only ever resolves to a string. */
+const DEADLINE = Symbol('voice-refiner-deadline')
 
 /**
  * Refine `rawText`, or return it untouched. NEVER throws and never returns
- * empty: every failure path falls back to the raw transcript, because losing the
- * user's words to a refiner hiccup is far worse than a rough transcript.
+ * empty: every failure path -- API error, malformed response, blown deadline --
+ * falls back to the raw transcript, because losing the user's words to a refiner
+ * hiccup is far worse than a rough transcript.
  */
 export async function refineTranscript(rawText: string, keyterms: string[]): Promise<string> {
   const skip = refinementSkipReason(rawText)
@@ -148,33 +67,70 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
     console.log(`[voice-refiner] skipped (${skip})`)
     return rawText
   }
+  const settings = getGlobalSettings()
+  const model = resolveVoiceRefinerModel(settings.voiceRefinementModel)
+  const deadlineMs = settings.voiceRefinementDeadlineMs ?? 2000
+  const started = Date.now()
+
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline =
+    deadlineMs > 0
+      ? new Promise<typeof DEADLINE>(resolve => {
+          timer = setTimeout(() => resolve(DEADLINE), deadlineMs)
+        })
+      : null
+
+  try {
+    const work = runRefinement(rawText, keyterms, model, settings.voiceRefinementContextPass !== false)
+    const result = deadline ? await Promise.race([work, deadline]) : await work
+    if (result === DEADLINE) {
+      // The in-flight call is abandoned, not cancelled -- it still bills and
+      // still logs its own spend. Shortening the deadline does not save money,
+      // it saves the USER's time. Say so in the log so a future reader does not
+      // "optimise" this into a cancellation that races the socket.
+      console.warn(`[voice-refiner] deadline blown after ${deadlineMs}ms (model=${model}) -- returning raw transcript`)
+      return rawText
+    }
+    console.log(`[voice-refiner] refined in ${Date.now() - started}ms (model=${model})\n  OUT: "${result}"`)
+    return result || rawText
+  } catch (err) {
+    console.error('[voice-refiner] refinement failed:', err)
+    return rawText
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Both steps, in order. Throws on a step-2 failure; step 1 failing is survivable
+ *  and degrades to an empty context block. */
+async function runRefinement(
+  rawText: string,
+  keyterms: string[],
+  model: string,
+  contextPass: boolean,
+): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY as string
   const systemPrompt = getGlobalSettings().voiceRefinementPrompt as string
-  console.log(`[voice-refiner] Refining (${keyterms.length} keyterms):\n  RAW: "${rawText}"`)
+  console.log(`[voice-refiner] refining (${keyterms.length} keyterms, context=${contextPass}):\n  RAW: "${rawText}"`)
 
   let contextJson = ''
-  try {
-    contextJson = await extractContext(rawText, apiKey, keyterms)
-    console.log(`[voice-refiner] Step 1 context: ${contextJson.slice(0, 300)}`)
-  } catch (err) {
-    console.error('[voice-refiner] Step 1 context failed:', err)
+  if (contextPass) {
+    try {
+      contextJson = await extractContext(rawText, apiKey, keyterms, model)
+      console.log(`[voice-refiner] step 1 context: ${contextJson.slice(0, 300)}`)
+    } catch (err) {
+      console.error('[voice-refiner] step 1 context failed:', err)
+    }
   }
 
-  try {
-    const res = await chat({
-      feature: 'voice-refiner-refine',
-      model: VOICE_REFINER_MODEL,
-      apiKey,
-      messages: buildMessages(systemPrompt, keyterms, contextBlockFrom(contextJson), rawText),
-      maxTokens: 2048,
-      temperature: 0.3,
-      retries: 0,
-    })
-    const refined = stripPreamble(res.content || rawText)
-    console.log(`[voice-refiner] Refined:\n  OUT: "${refined}"`)
-    return refined || rawText
-  } catch (err) {
-    console.error('[voice-refiner] Step 2 refinement failed:', err)
-    return rawText
-  }
+  const res = await chat({
+    feature: 'voice-refiner-refine',
+    model,
+    apiKey,
+    messages: buildMessages(systemPrompt, keyterms, contextBlockFrom(contextJson), rawText),
+    maxTokens: 2048,
+    temperature: 0.3,
+    retries: 0,
+  })
+  return stripPreamble(res.content || rawText)
 }
