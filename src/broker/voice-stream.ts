@@ -2,13 +2,17 @@
  * Voice streaming - Deepgram live WebSocket relay
  *
  * Flow: Browser -> broker WS -> Deepgram live WS -> interim/final results -> browser
- * After final transcript, optional Haiku refinement pass cleans up the text.
+ * After the final transcript, an optional refinement pass cleans up the text --
+ * see voice-refiner.ts (the model is a setting now, not hardcoded Haiku).
+ *
+ * This is the RELAY path. The direct path (browser -> stt-proxy Worker) reaches
+ * the same refiner over POST /api/voice/refine instead; keyterm resolution is
+ * shared between the two via voice-keyterms.ts.
  */
 
 import type { ServerWebSocket } from 'bun'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
-import { getProjectSettings } from './project-settings'
 import {
   createEndpointerState,
   type EndpointerState,
@@ -16,6 +20,7 @@ import {
   noteNaturalClose,
   rmsFromLinear16,
 } from './voice-endpointer'
+import { resolveKeyterms } from './voice-keyterms'
 import { bytesPerSecondFor, createLatencyTracker, type LatencyTracker } from './voice-latency'
 import { refinementSkipReason, refineTranscript } from './voice-refiner'
 
@@ -282,16 +287,8 @@ export function handleVoiceStart(
   // Clean up any existing voice session for this WS
   cleanupVoiceSession(ws)
 
-  // Build keyterms from project settings
-  const keyterms: string[] = []
-  const project =
-    data.project || (data.conversationId ? conversationStore.getConversation(data.conversationId)?.project : null)
-  if (project) {
-    const projSettings = getProjectSettings(project)
-    if (projSettings?.keyterms?.length) {
-      keyterms.push(...projSettings.keyterms)
-    }
-  }
+  // Shared with the direct path's refine route -- see voice-keyterms.ts.
+  const keyterms = resolveKeyterms(conversationStore, data.project, data.conversationId)
 
   // Build Deepgram live WS URL with params.
   const globalSettings = getGlobalSettings()

@@ -1,7 +1,18 @@
 import { afterAll, beforeEach, expect, test } from 'bun:test'
+import {
+  DEFAULT_VOICE_REFINER_MODEL,
+  resolveVoiceRefinerModel,
+  VOICE_REFINER_MODELS,
+} from '../shared/voice-refiner-models'
 import { initGlobalSettings } from './global-settings'
 import type { KVStore } from './store/types'
-import { contextBlockFrom, refinementSkipReason, refineTranscript, stripPreamble } from './voice-refiner'
+import {
+  contextBlockFrom,
+  RECOMMENDED_VOICE_PROMPT,
+  refinementSkipReason,
+  refineTranscript,
+  stripPreamble,
+} from './voice-refiner'
 
 /** Map-backed KVStore for driving initGlobalSettings without a real store. */
 function fakeKv(settings: Record<string, unknown>): KVStore {
@@ -81,4 +92,91 @@ test('stripPreamble removes assistant throat-clearing only', () => {
   // Must not eat real content that merely starts with a similar word (the old
   // pattern made punctuation optional and ate this "Sure").
   expect(stripPreamble('Sure enough the build passed')).toBe('Sure enough the build passed')
+})
+
+// ─── Model selection ────────────────────────────────────────────────
+
+test('an unknown or missing refiner model degrades to the default, never a 400', () => {
+  expect(resolveVoiceRefinerModel(undefined)).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  expect(resolveVoiceRefinerModel(null)).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  expect(resolveVoiceRefinerModel('')).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  // A model id someone typed by hand, or one removed from the list since the
+  // setting was saved. Falling through to OpenRouter would 400 away a dictation.
+  expect(resolveVoiceRefinerModel('acme/not-a-real-model')).toBe(DEFAULT_VOICE_REFINER_MODEL)
+  expect(resolveVoiceRefinerModel('openai/gpt-oss-120b')).toBe('openai/gpt-oss-120b')
+})
+
+test('the default refiner model is one the list actually offers', () => {
+  expect(VOICE_REFINER_MODELS[DEFAULT_VOICE_REFINER_MODEL]).toBeDefined()
+})
+
+// ─── The deadline ───────────────────────────────────────────────────
+
+test('REGRESSION: a refiner slower than the deadline returns the RAW transcript', async () => {
+  // There was no timeout at all before 2026-08-18: a slow model held the user's
+  // words hostage for as long as it liked, with the recorder stuck on 'refining'.
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 50,
+    voiceRefinementContextPass: false,
+  })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch // never resolves
+  try {
+    const started = Date.now()
+    expect(await refineTranscript('the raw words', [])).toBe('the raw words')
+    // Returned on the deadline, not on the (never-arriving) response.
+    expect(Date.now() - started).toBeLessThan(1000)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('deadline 0 means no deadline -- the refiner is awaited however long it takes', async () => {
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 0,
+    voiceRefinementContextPass: false,
+  })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => {
+    await new Promise(r => setTimeout(r, 60))
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'the clean words' } }] }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as unknown as typeof fetch
+  try {
+    expect(await refineTranscript('the raw words', [])).toBe('the clean words')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('a refiner that throws falls back to raw rather than losing the dictation', async () => {
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 2000,
+    voiceRefinementContextPass: false,
+  })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (() => Promise.reject(new Error('openrouter is down'))) as unknown as typeof fetch
+  try {
+    expect(await refineTranscript('the raw words', [])).toBe('the raw words')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+// ─── The recommended prompt ─────────────────────────────────────────
+
+test('the recommended prompt is offered but is NOT the schema default', () => {
+  // Shipping it as the default would silently re-enable freehand rewriting for
+  // everyone -- the exact regression the empty-prompt rule exists to prevent.
+  withSettings({})
+  expect(refinementSkipReason('hello')).toBe('no refinement prompt configured')
+  expect(RECOMMENDED_VOICE_PROMPT).toContain('NO NONSENSE WORDS SURVIVE')
+  expect(RECOMMENDED_VOICE_PROMPT.length).toBeLessThanOrEqual(4000)
 })

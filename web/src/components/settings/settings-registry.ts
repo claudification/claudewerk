@@ -16,6 +16,7 @@ import { VOICE_ITEMS } from './items-voice'
 import { VOICE_ENGINE_ITEMS } from './items-voice-engine'
 import { VOICE_MODEL_ITEMS } from './items-voice-model'
 import { VOICE_ORB_ITEMS } from './items-voice-orb'
+import { VOICE_REFINEMENT_ITEMS } from './items-voice-refinement'
 import type { SettingItem } from './settings-item'
 import { VOICE_TRANSPORT_ITEMS } from './voice-transport-items'
 
@@ -46,6 +47,7 @@ export const SETTINGS: SettingItem[] = [
   ...VOICE_MODEL_ITEMS,
   ...VOICE_ITEMS,
   ...VOICE_ENGINE_ITEMS,
+  ...VOICE_REFINEMENT_ITEMS,
   ...VOICE_ORB_ITEMS,
   ...CONVERSATION_ITEMS,
   ...SYSTEM_ITEMS,
