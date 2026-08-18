@@ -10,20 +10,31 @@
  */
 
 import type { ProjectTaskRef as TaskRef } from '@shared/project-task-types'
+import type { ProjectTaskInputWire } from '@shared/protocol'
 import type { TaskStatus } from '@shared/task-statuses'
 import { createWsRequestChannel } from '@/lib/ws-request'
 import { useConversationsStore } from './use-conversations'
 
 const channel = createWsRequestChannel('project')
 
-/** Board op params (subset of the wire envelope the dashboard is allowed to set). */
+/**
+ * Board op params (the subset of the wire envelope the dashboard may set).
+ *
+ * `input` and `patch` reuse `ProjectTaskInputWire` rather than restating it.
+ * They used to be hand-rolled four-field literals, which reproduced exactly the
+ * bug that type's own doc comment describes: the store has accepted `quest`,
+ * `epic` and linkage for a long time, but the caller-side type never said so, so
+ * writing `patch: { epic: 'x' }` was a type error and a reader reasonably
+ * concluded the field did not exist. Nothing was ever dropped at runtime -- the
+ * contract was just understated, in two places instead of one.
+ */
 export interface BoardOpParams {
   status?: TaskStatus
   slug?: string
   filterStatus?: TaskStatus
   refs?: TaskRef[]
-  input?: { title?: string; body: string; priority?: 'low' | 'medium' | 'high'; tags?: string[] }
-  patch?: { title?: string; body?: string; priority?: 'low' | 'medium' | 'high'; tags?: string[] }
+  input?: ProjectTaskInputWire
+  patch?: Partial<ProjectTaskInputWire>
   fromStatus?: TaskStatus
   toStatus?: TaskStatus
 }

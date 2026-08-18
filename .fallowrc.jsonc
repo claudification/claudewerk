@@ -13,6 +13,8 @@
     "@shared/card-path",
     "@shared/draw-dsl",
     "@shared/epic-cards",
+    "@shared/epic-color",
+    "@shared/epic-linked",
     "@shared/project-order-types",
     "@shared/project-task-types",
     "@shared/project-uri",
@@ -20,7 +22,9 @@
     "@shared/spawn-diagnostics",
     "@shared/spawn-naming",
     "@shared/spawn-prompt",
-    "@shared/spawn-schema"
+    "@shared/spawn-schema",
+    "@shared/task-modes",
+    "@shared/task-statuses"
   ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [

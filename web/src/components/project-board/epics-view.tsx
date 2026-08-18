@@ -10,7 +10,7 @@
  * pane with a back arrow. Two panes at 375px would be two unreadable panes.
  */
 
-import { buildEpicIndex, type EpicRollup, splitUnparented } from '@shared/epic-cards'
+import type { EpicRollup } from '@shared/epic-cards'
 import type { TaskMode } from '@shared/task-modes'
 import { useMemo, useState } from 'react'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
@@ -20,8 +20,8 @@ import { AllocationStrip } from './allocation-strip'
 import { EpicDetailPane } from './epic-detail-pane'
 import { EpicIndex } from './epic-index'
 import { EpicRunDialog } from './epic-run-dialog'
-import { sortEpics } from './epic-sorts'
 import { type EpicSort, EpicsToolbar } from './epics-toolbar'
+import { useEpicViewModel } from './use-epic-view-model'
 
 function priorityBreakdown(cards: ProjectTaskMeta[]): string {
   const counts = { high: 0, medium: 0, low: 0, unset: 0 }
@@ -43,6 +43,7 @@ export function EpicsView({
   onWorkOnEpic,
   onEpicMode,
   onTriage,
+  onAdopt,
 }: {
   tasks: ProjectTaskMeta[]
   onOpenCard: (slug: string) => void
@@ -50,6 +51,11 @@ export function EpicsView({
   onEpicMode: (epicId: string, mode: TaskMode) => void
   /** Hand the loose pile to the board, grouped so it can actually be triaged. */
   onTriage: () => void
+  /** Write `epic: <id>` onto a card. Absent => the linked section stays hidden
+   *  rather than offering an ADOPT button with nothing behind it. Returns
+   *  `unknown` so the board can pass `setCardEpic` straight through instead of
+   *  wrapping it only to discard a value nobody reads. */
+  onAdopt?: (slug: string, epicId: string) => Promise<unknown>
 }) {
   const [selected, setSelected] = useState<string | null>(null)
   // The RUN dialog lives here rather than in the button so it survives the
@@ -65,20 +71,13 @@ export function EpicsView({
   const [sort, setSort] = useState<EpicSort>('urgency')
   const [showComplete, setShowComplete] = useState(true)
 
-  const { rollups, loose } = useMemo(() => {
-    const index = buildEpicIndex(tasks)
-    return { rollups: [...index.values()], loose: splitUnparented(tasks, index) }
-  }, [tasks])
-
-  const visible = useMemo(
-    () => sortEpics(showComplete ? rollups : rollups.filter(r => !r.complete), sort),
-    [rollups, sort, showComplete],
-  )
-
-  const withWork = visible.filter(r => r.children.length > 0)
-  const empty = visible.filter(r => r.children.length === 0)
-  const current: EpicRollup | undefined = rollups.find(r => r.epicId === selected)
+  const { rollups, loose, withWork, empty, current, links } = useEpicViewModel(tasks, sort, showComplete, selected)
   const running: EpicRollup | undefined = rollups.find(r => r.epicId === runDialog?.epicId)
+
+  // Bound to the selected epic here rather than in the JSX -- the pane only
+  // knows a slug, the write needs both, and a ternary inside a prop is the
+  // least readable place to say so.
+  const adoptInto = onAdopt && current ? async (slug: string) => void (await onAdopt(slug, current.epicId)) : undefined
 
   if (rollups.length === 0) {
     return (
@@ -136,6 +135,8 @@ export function EpicsView({
               onEpicMode={onEpicMode}
               onRunEpic={(epicId, run, project) => setRunDialog({ epicId, run, project })}
               onBack={() => setSelected(null)}
+              links={links}
+              onAdopt={adoptInto}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center px-6 text-center">

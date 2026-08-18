@@ -12,10 +12,12 @@
 
 import type { EpicRollup } from '@shared/epic-cards'
 import { epicHue } from '@shared/epic-color'
+import type { LinkedCard } from '@shared/epic-linked'
 import type { TaskMode } from '@shared/task-modes'
 import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { EpicChildTable } from './epic-child-table'
 import { EpicDetailHeader, type EpicRunHandler } from './epic-detail-header'
+import { EpicLinkedSection } from './epic-linked-section'
 
 function excerpt(text: string | undefined, limit = 320): string {
   if (!text) return ''
@@ -60,6 +62,8 @@ export function EpicDetailPane({
   onEpicMode,
   onRunEpic,
   onBack,
+  links = [],
+  onAdopt,
 }: {
   rollup: EpicRollup
   onOpenCard: (slug: string) => void
@@ -68,6 +72,11 @@ export function EpicDetailPane({
   onRunEpic: EpicRunHandler
   /** Mobile only: the index is a separate screen there, so the pane needs a way home. */
   onBack?: () => void
+  /** Cards connected to this epic that it does not own. Empty renders nothing. */
+  links?: LinkedCard[]
+  /** Writes `epic: <id>` onto a card. Absent => the section stays hidden, so a
+   *  caller with no write path cannot offer a button that does nothing. */
+  onAdopt?: (slug: string) => Promise<void>
 }) {
   const body = excerpt(rollup.card?.bodyPreview)
 
@@ -103,6 +112,10 @@ export function EpicDetailPane({
             </p>
           )}
         </div>
+
+        {onAdopt && (
+          <EpicLinkedSection epicId={rollup.epicId} links={links} onOpenCard={onOpenCard} onAdopt={onAdopt} />
+        )}
       </div>
     </div>
   )

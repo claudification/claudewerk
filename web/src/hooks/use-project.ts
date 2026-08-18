@@ -112,6 +112,28 @@ export function useProject(conversationId: string | null) {
     [projectUri],
   )
 
+  /**
+   * Adopt a card into an epic, or release it (`null`).
+   *
+   * Its own verb rather than a field on `updateTask`, because that one forwards
+   * a FIXED list of four keys and silently drops anything else -- a caller
+   * passing `epic` there would see the patch succeed and nothing change.
+   *
+   * Release sends the empty string, not null: `updateProjectTask` only applies
+   * keys that are `!== undefined`, and `serializeCard` omits any ordered key
+   * whose value is `''`. So an empty string removes the line from the
+   * frontmatter rather than writing `epic: ""`.
+   */
+  const setCardEpic = useCallback(
+    async (id: string, epicId: string | null): Promise<ProjectTask | null> => {
+      if (!projectUri) return null
+      const resp = await sendBoardOp(projectUri, 'update', { slug: id, patch: { epic: epicId ?? '' } })
+      await refresh()
+      return (resp.task as ProjectTask) ?? null
+    },
+    [projectUri, refresh],
+  )
+
   return {
     projectUri,
     tasks,
@@ -122,5 +144,6 @@ export function useProject(conversationId: string | null) {
     deleteTask,
     readTask,
     updateTask,
+    setCardEpic,
   }
 }

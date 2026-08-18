@@ -29,7 +29,7 @@ import { openTaskBatch } from './task-batch-trigger'
 
 export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { conversationId: string }) {
   const project = useProject(conversationId)
-  const { projectUri, tasks, loading, refresh, moveTask, updateTask } = project
+  const { projectUri, tasks, loading, refresh, moveTask, updateTask, setCardEpic } = project
   const [configOpen, setConfigOpen] = useState(false)
   const { config: view, update: updateView, reset: resetView } = useBoardViewConfig()
 
@@ -128,6 +128,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
           onWorkOnEpic={actions.workOnEpic}
           onEpicMode={actions.epicMode}
           onTriage={triage}
+          onAdopt={setCardEpic}
         />
       )}
 
