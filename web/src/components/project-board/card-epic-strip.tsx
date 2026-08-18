@@ -21,8 +21,8 @@ import { type ProjectTask, useProject } from '@/hooks/use-project'
 import { epicColorVars } from '@/lib/cards/epic-color-vars'
 import { cn, haptic } from '@/lib/utils'
 import { cardEpicRole } from './card-epic-role'
-import { EpicProgressBar } from './epic-progress'
 import { EpicMarkBadge } from './epic-mark-badge'
+import { EpicProgressBar } from './epic-progress'
 
 function Shell({
   epicId,
@@ -121,11 +121,7 @@ export function CardEpicStrip({
     // The handler is only attached when there is somewhere to go. Passing an
     // arrow unconditionally would render a <button> that looks clickable and
     // does nothing, which is worse than plain text.
-    <Shell
-      epicId={role.epicId}
-      onClick={onOpenTask && (() => void open(role.epicId))}
-      title={`Open ${role.epicId}`}
-    >
+    <Shell epicId={role.epicId} onClick={onOpenTask && (() => void open(role.epicId))} title={`Open ${role.epicId}`}>
       <EpicMarkBadge epicId={role.epicId} variant="solid" />
       <span className="font-mono text-read text-foreground truncate">{r.card?.title ?? role.epicId}</span>
       <EpicProgressBar rollup={r} className="w-16 shrink-0" />
