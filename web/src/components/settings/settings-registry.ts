@@ -10,6 +10,7 @@ import { DISPLAY_ITEMS } from './items-display'
 import { EXPERIMENT_ITEMS } from './items-experiments'
 import { INPUT_ITEMS } from './items-input'
 import { LABEL_ITEMS } from './items-labels'
+import { PULSE_ITEMS } from './items-pulse'
 import { SIDEBAR_ITEMS } from './items-sidebar'
 import { SYSTEM_ITEMS } from './items-system'
 import { VOICE_ITEMS } from './items-voice'
@@ -37,6 +38,7 @@ export const SETTINGS: SettingItem[] = [
   ...DISPLAY_ITEMS,
   ...LABEL_ITEMS,
   ...SIDEBAR_ITEMS,
+  ...PULSE_ITEMS,
   ...INPUT_ITEMS,
   // Voice order is a DECISION HIERARCHY, not alphabetical: transport decides
   // whether the model settings below it apply at all, so it comes first. It used

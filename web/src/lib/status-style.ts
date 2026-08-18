@@ -57,15 +57,22 @@ export const CLOSEABLE_ICON = '✕'
  */
 export const isStatusSuperseded = isLiveStatusSuperseded
 
-/** Compact age like "3s" / "4m" / "2h" / "5d" -- for the dense status/age cells. */
-export function formatAgeShort(ts: number): string {
-  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000))
+/** Compact duration like "3s" / "4m" / "2h" / "5d", from an elapsed span in ms.
+ *  Split out from formatAgeShort so callers that already hold a DURATION (Pulse
+ *  rows carry `ageMs`) don't have to round-trip it through a timestamp. */
+export function formatDurationShort(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   if (m < 60) return `${m}m`
   const h = Math.floor(m / 60)
   if (h < 24) return `${h}h`
   return `${Math.floor(h / 24)}d`
+}
+
+/** Compact age like "3s" / "4m" / "2h" / "5d" -- for the dense status/age cells. */
+export function formatAgeShort(ts: number): string {
+  return formatDurationShort(Date.now() - ts)
 }
 
 /** The optional detail fields, in display order, each with its own accent tone.

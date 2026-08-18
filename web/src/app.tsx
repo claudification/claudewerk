@@ -108,6 +108,10 @@ const CommitDetailModal = lazy(() =>
 // Parkable, maximizable, detachable, project-scoped Kanban board modal. The
 // board (dnd-kit + CodeMirror) rides this lazy chunk, off the index bundle.
 const KanbanModal = lazy(() => import('@/components/kanban/kanban-modal').then(m => ({ default: m.KanbanModal })))
+// PULSE -- the fleet grouped by activity. Both surfaces are off the hot path:
+// the palette only exists once summoned, and the strip only when opted in.
+const PulsePalette = lazy(() => import('@/components/pulse/pulse-palette').then(m => ({ default: m.PulsePalette })))
+const PulseStrip = lazy(() => import('@/components/pulse/pulse-strip').then(m => ({ default: m.PulseStrip })))
 // Admin-only debug tool -- kept out of the index bundle (incl. its lazy YAML view).
 const DebugControlModal = lazy(() =>
   import('@/components/debug/debug-control-modal').then(m => ({ default: m.DebugControlModal })),
@@ -297,6 +301,7 @@ function Dashboard() {
 
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const showSwitcher = useConversationsStore(s => s.showSwitcher)
+  const showPulse = useConversationsStore(s => s.showPulse)
   const showDebugConsole = useConversationsStore(s => s.showDebugConsole)
   const canAdmin = useConversationsStore(s => s.permissions.canAdmin)
 
@@ -414,6 +419,14 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* PULSE STRIP -- app chrome, not a modal. Sits below the content, never
+          takes focus, and renders nothing at all unless opted in. */}
+      {canAdmin && (
+        <Suspense fallback={null}>
+          <PulseStrip onOpen={handleSwitcherSelect} />
+        </Suspense>
+      )}
+
       {showDebugConsole && <DebugConsole onClose={() => useConversationsStore.getState().toggleDebugConsole()} />}
 
       {canAdmin && showSwitcher && (
@@ -422,6 +435,17 @@ function Dashboard() {
             onSelect={handleSwitcherSelect}
             onClose={() => useConversationsStore.getState().setShowSwitcher(false)}
           />
+        </PanelBoundary>
+      )}
+
+      {canAdmin && showPulse && (
+        <PanelBoundary name="Pulse" variant="modal">
+          <Suspense fallback={null}>
+            <PulsePalette
+              onOpen={handleSwitcherSelect}
+              onClose={() => useConversationsStore.getState().setShowPulse(false)}
+            />
+          </Suspense>
         </PanelBoundary>
       )}
 

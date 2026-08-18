@@ -102,6 +102,28 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     group: 'Navigation',
   })
 
+  // PULSE — the fleet grouped by activity. A SIBLING of the command palette,
+  // not a replacement: `@` already means task mode there, and Pulse needs `@`
+  // for project scoping, so the two grammars can't share one box.
+  useChordCommand(
+    'open-pulse',
+    () => {
+      const store = useConversationsStore.getState()
+      if (store.showTerminal) store.setShowTerminal(false)
+      store.togglePulse()
+    },
+    { label: 'Pulse — what is going on', key: 'p', group: 'Navigation' },
+  )
+
+  useCommand(
+    'toggle-pulse-strip',
+    () => {
+      const s = useConversationsStore.getState()
+      s.updateControlPanelPrefs({ pulseStrip: !s.controlPanelPrefs.pulseStrip })
+    },
+    { label: 'Pulse strip: always-on fleet bar', group: 'View' },
+  )
+
   useCommand(
     'toggle-verbose',
     () => {
