@@ -146,6 +146,7 @@ const TERMINATION_SOURCE_REASONS: Record<string, { status: SheafStatus; phrase: 
   'dashboard-terminate-dialog': { status: 'killed', phrase: 'killed via dashboard' },
   'dashboard-terminate-project': { status: 'killed', phrase: 'killed via project terminate-all' },
   'dashboard-launch-toast': { status: 'killed', phrase: 'launch cancelled' },
+  'dashboard-fork-close-original': { status: 'ended', phrase: 'superseded by a fork' },
   'dashboard-other': { status: 'killed', phrase: 'killed via dashboard' },
   'inter-conversation-restart': { status: 'killed', phrase: 'restarted by peer' },
   'mcp-exit-session': { status: 'ended', phrase: 'agent self-exit' },

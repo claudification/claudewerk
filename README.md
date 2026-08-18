@@ -1023,7 +1023,8 @@ docker exec broker broker-cli termination show --conv <conversationId> --cache-d
 `TerminationSource` enum values (defined in `src/shared/protocol.ts`):
 `dashboard-context-menu`, `dashboard-terminate-dialog`,
 `dashboard-lineage`, `dashboard-terminate-project`,
-`dashboard-launch-toast`, `dashboard-other`, `inter-conversation-restart`,
+`dashboard-launch-toast`, `dashboard-fork-close-original`, `dashboard-other`,
+`inter-conversation-restart`,
 `mcp-exit-session`, `headless-input`, `cc-exit-normal`, `cc-exit-crash`,
 `ws-close`, `reaper-phantom`, `sentinel-kill`, `unknown`.
 

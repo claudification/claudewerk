@@ -2448,6 +2448,7 @@ export type TerminationSource =
   | 'dashboard-lineage' // "terminate full lineage" subtree kill (per-member tag)
   | 'dashboard-terminate-project' // project context menu "Terminate all" (per-member tag)
   | 'dashboard-launch-toast' // launch-profile toast "Cancel launch" button
+  | 'dashboard-fork-close-original' // fork dialog "Close the original conversation" -- the fork took over
   | 'dashboard-other' // fallback for legacy/unknown dashboard callers
   // Inter-conversation
   | 'inter-conversation-restart' // another conversation issued channel_restart

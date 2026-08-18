@@ -8,6 +8,7 @@
  */
 
 import { useCallback, useState } from 'react'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
@@ -39,7 +40,10 @@ export interface UseForkAction {
   resumeId: string | null
   spawnedConversationId: string | null
   runFork: (strategy: ForkStrategy, target: ForkTarget) => Promise<void>
-  runLaunch: (overrides: ForkLaunchOverrides) => Promise<void>
+  /** `closeOriginal` kills the SOURCE conversation, and only after the fork has
+   *  actually been accepted -- a failed launch must never leave the user with
+   *  neither conversation. */
+  runLaunch: (overrides: ForkLaunchOverrides, closeOriginal?: boolean) => Promise<void>
   reset: () => void
 }
 
@@ -117,7 +121,7 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
   )
 
   const runLaunch = useCallback(
-    async (overrides: ForkLaunchOverrides) => {
+    async (overrides: ForkLaunchOverrides, closeOriginal = false) => {
       // Either a folded transcript to resume, or a summary to start fresh from.
       if (!conversation || (!resumeId && !seedPrompt)) return
       setPhase('launching')
@@ -127,6 +131,11 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
       const result = await sendSpawnRequest(buildForkSpawnRequest(conversation, { resumeId, seedPrompt }, overrides))
       if (result.ok) {
         setSpawned(result.conversationId)
+        // The fork now owns the work, so the source is retired -- tagged with
+        // its own termination source so the NDJSON shows a supersede, not a kill.
+        if (closeOriginal && conversation.status !== 'ended') {
+          useConversationsStore.getState().terminateConversation(conversation.id, 'dashboard-fork-close-original')
+        }
         haptic('success')
       } else {
         setError(result.error)
