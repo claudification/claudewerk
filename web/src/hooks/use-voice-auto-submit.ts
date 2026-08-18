@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react'
 import { sendInput, useConversationsStore } from '@/hooks/use-conversations'
 import type { UseVoiceRecordingResult } from '@/hooks/use-voice-recording'
+import { isAbortedDictation } from '@/lib/voice-abort'
 import { deFluff } from '@/lib/voice-defluff'
 
 interface AutoSubmitOptions {
@@ -44,6 +45,23 @@ function outgoingText(refinedText: string, finalText: string): string {
   return strip ? deFluff(raw) : raw
 }
 
+/**
+ * Whether this transcript may be delivered at all.
+ *
+ * The kill phrase is checked HERE as well as in the direct path's stop, and that
+ * is on purpose. The direct check is an OPTIMISATION (skip refining text nobody
+ * will read); this one is the GUARANTEE, because it sits on the single line
+ * every transport's transcript crosses on its way to being sent -- a new
+ * transport that forgets to check still cannot deliver an aborted dictation.
+ *
+ * Both forms are tested: the refiner is instructed never to obey the transcript,
+ * but it is still an LLM and may reword the tail it was told to preserve.
+ */
+export function isSendable(outgoing: string, rawFinal: string): boolean {
+  if (!outgoing.trim()) return false
+  return !isAbortedDictation(rawFinal) && !isAbortedDictation(outgoing)
+}
+
 export function useVoiceAutoSubmit(voice: UseVoiceRecordingResult, options: AutoSubmitOptions = {}) {
   // Held in a ref so fresh callback identities each render do not re-fire the
   // effect -- a re-fire here would double-send the transcript.
@@ -63,7 +81,9 @@ export function useVoiceAutoSubmit(voice: UseVoiceRecordingResult, options: Auto
     // is deliberately narrow (a re-fire on object identity would double-send),
     // and capturing the object would widen it.
     const text = outgoingText(voice.refinedText, voice.finalText)
-    if (text.trim()) {
+    if (!isSendable(text, voice.finalText)) {
+      console.log('[voice] not sending (empty or kill phrase)')
+    } else {
       // The conversation that was active when recording STARTED. The user may
       // have switched during the post-release refinement delay, and the message
       // belongs to the conversation they were dictating into.
