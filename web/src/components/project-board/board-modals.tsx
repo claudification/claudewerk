@@ -61,6 +61,14 @@ export function BoardModals({
     <>
       {editingTask && (
         <TaskEditor
+          // A DIFFERENT CARD IS A DIFFERENT EDITOR. The editor seeds its title
+          // and body from props once, on mount, and its sync effect refreshes
+          // only status/priority/tags so a background refresh cannot clobber
+          // what someone is typing. Without this key, swapping the card (a
+          // `.rclaude/project/**` link, a deep link, a push notification) kept
+          // the OLD card's text under the NEW card's header -- and saved it
+          // there.
+          key={editingTask.slug}
           task={editingTask}
           conversationId={conversationId}
           onSave={updateTask}
@@ -70,9 +78,6 @@ export function BoardModals({
             setRunTask(task)
           }}
           onPromote={promote}
-          // The epic strip navigates by swapping the open editor's card, so
-          // walking child -> epic never costs you the dialog.
-          onOpenTask={setEditingTask}
           onClose={() => setEditingTask(null)}
         />
       )}

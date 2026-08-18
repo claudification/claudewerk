@@ -5,10 +5,11 @@
  */
 
 import { buildEpicIndex } from '@shared/epic-cards'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 import type { ProjectTask, ProjectTaskMeta } from '@/hooks/use-project'
 import { CardEpicStrip } from './card-epic-strip'
+import { revealEpic } from './reveal-epic'
 
 function meta(slug: string, over: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
   return {
@@ -34,57 +35,52 @@ const BOARD: ProjectTaskMeta[] = [
   meta('orphan', { epic: 'epic-that-vanished' }),
 ]
 
-const readTask = vi.fn(async (slug: string) => {
-  const found = BOARD.find(c => c.slug === slug)
-  return found ? full(found) : null
-})
-
 vi.mock('@/hooks/use-project', () => ({
-  useProject: () => ({ tasks: BOARD, readTask }),
+  useProject: () => ({ tasks: BOARD, readTask: async () => null }),
 }))
+
+vi.mock('./reveal-epic', () => ({ revealEpic: vi.fn() }))
 
 afterEach(() => {
   cleanup()
-  readTask.mockClear()
+  vi.mocked(revealEpic).mockClear()
 })
 
 test('a child card names its epic, in the epic colour, with the parent rollup', () => {
-  render(<CardEpicStrip task={full(BOARD[1])} conversationId="conv-1" onOpenTask={vi.fn()} />)
+  render(<CardEpicStrip task={full(BOARD[1])} conversationId="conv-1" onNavigate={vi.fn()} />)
   expect(screen.getByText('ANVIL: inline interaction language')).toBeTruthy()
   // 1 of the 2 children is done -- the strip carries the PARENT's progress.
   expect(screen.getByText('1/2')).toBeTruthy()
 })
 
-test('clicking a child strip opens the epic card, without closing the editor', async () => {
-  const onOpenTask = vi.fn()
-  render(<CardEpicStrip task={full(BOARD[1])} conversationId="conv-1" onOpenTask={onOpenTask} />)
+/**
+ * REGRESSION: this used to hand the epic's CARD back to the open editor. You
+ * stayed in the card dialog -- header swapped, body still the child's -- which
+ * is neither the epic nor the surface an epic is read on.
+ */
+test('clicking a child strip reveals the epic, and leaves the card behind', () => {
+  const onNavigate = vi.fn()
+  render(<CardEpicStrip task={full(BOARD[1])} conversationId="conv-1" onNavigate={onNavigate} />)
   fireEvent.click(screen.getByRole('button'))
-  await waitFor(() => expect(onOpenTask).toHaveBeenCalledTimes(1))
-  expect(readTask).toHaveBeenCalledWith('anvil-epic')
-  expect(onOpenTask.mock.calls[0][0].slug).toBe('anvil-epic')
-})
-
-test('without a navigation handler the strip still names the epic, just is not a button', () => {
-  render(<CardEpicStrip task={full(BOARD[1])} conversationId="conv-1" />)
-  expect(screen.getByText('ANVIL: inline interaction language')).toBeTruthy()
-  expect(screen.queryByRole('button')).toBeNull()
+  expect(revealEpic).toHaveBeenCalledWith('conv-1', 'anvil-epic')
+  expect(onNavigate).toHaveBeenCalledTimes(1)
 })
 
 test('an epic card says it IS one, and does not offer to navigate to itself', () => {
-  render(<CardEpicStrip task={full(BOARD[0])} conversationId="conv-1" onOpenTask={vi.fn()} />)
+  render(<CardEpicStrip task={full(BOARD[0])} conversationId="conv-1" onNavigate={vi.fn()} />)
   expect(screen.getByText('EPIC')).toBeTruthy()
   expect(screen.getByText('2 cards')).toBeTruthy()
   expect(screen.queryByRole('button')).toBeNull()
 })
 
 test('a card pointing at an epic that is not on the board says so', () => {
-  render(<CardEpicStrip task={full(BOARD[4])} conversationId="conv-1" onOpenTask={vi.fn()} />)
+  render(<CardEpicStrip task={full(BOARD[4])} conversationId="conv-1" onNavigate={vi.fn()} />)
   expect(screen.getByText('epic-that-vanished')).toBeTruthy()
   expect(screen.getByText('is not on this board')).toBeTruthy()
 })
 
 test('a loose card renders nothing at all -- no "unparented" chip', () => {
-  const { container } = render(<CardEpicStrip task={full(BOARD[3])} conversationId="conv-1" onOpenTask={vi.fn()} />)
+  const { container } = render(<CardEpicStrip task={full(BOARD[3])} conversationId="conv-1" onNavigate={vi.fn()} />)
   expect(container.innerHTML).toBe('')
 })
 

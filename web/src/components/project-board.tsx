@@ -15,16 +15,15 @@ import { buildEpicIndex, splitUnparented } from '@shared/epic-cards'
 import { memo, useMemo, useState } from 'react'
 import { useBoardViewConfig } from '@/hooks/use-board-view-config'
 import { useCardDeepLink } from '@/hooks/use-card-deeplink'
-import { type ProjectTaskMeta, useProject } from '@/hooks/use-project'
-import { BoardArchiveDrawer } from './project-board/board-archive-drawer'
+import { useProject } from '@/hooks/use-project'
 import { BoardHeader } from './project-board/board-header'
-import { BoardLanes } from './project-board/board-lanes'
 import { BoardModals } from './project-board/board-modals'
-import { EpicRibbon } from './project-board/epic-ribbon'
+import { BoardSurface } from './project-board/board-surface'
 import { EpicsView } from './project-board/epics-view'
-import { ProjectCard } from './project-board/project-card'
 import { useBoardFilters } from './project-board/use-board-filters'
 import { useCardActions } from './project-board/use-card-actions'
+import { useCardRenderer } from './project-board/use-card-renderer'
+import { useEpicReading } from './project-board/use-epic-reading'
 import { openTaskBatch } from './task-batch-trigger'
 
 export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { conversationId: string }) {
@@ -43,29 +42,16 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
   // link) -- resolved by slug once the manifest has landed. See the hook.
   useCardDeepLink({ ready: !!projectUri, readTask: project.readTask, onOpen: actions.setEditingTask })
 
+  // Which epic the EPICS view is reading, and "show me THIS one" arriving from
+  // a surface that is not the board (the epic strip on a child card).
+  const { readingEpic, setReadingEpic } = useEpicReading({ updateView, setEditingTask: actions.setEditingTask })
+
   // The ribbon's trailing count is LIVE unparented only. Counting the archive
   // there is what made "no epic" read as an alarm instead of as a bucket.
   const looseLive = useMemo(() => splitUnparented(tasks, epicIndex).live.length, [tasks, epicIndex])
   const rollups = useMemo(() => [...epicIndex.values()], [epicIndex])
 
-  /** One card, wired to the board's handlers. Same everywhere it renders --
-   *  the columns and the archive drawer must not drift apart. */
-  const renderCard = useMemo(
-    () => (task: ProjectTaskMeta) => (
-      <ProjectCard
-        key={task.slug}
-        task={task}
-        view={view}
-        epicIndex={epicIndex}
-        onMove={actions.move}
-        onDelete={actions.remove}
-        onArchive={actions.archive}
-        onEdit={meta => void actions.openCardBySlug(meta.slug)}
-        onOpenSlug={slug => void actions.openCardBySlug(slug)}
-      />
-    ),
-    [view, epicIndex, actions],
-  )
+  const renderCard = useCardRenderer(view, epicIndex, actions)
 
   /**
    * TRIAGE hands the loose pile to the board, grouped by tag. The triage tool
@@ -77,10 +63,6 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
     updateView('groupBy', 'tag')
     updateView('view', 'board')
   }
-
-  const archivedTasks = filters.filtered.filter(n => n.status === 'archived')
-  const activeTasks = filters.filtered.filter(n => n.status !== 'archived')
-  const onBoard = view.view === 'board'
 
   if (loading && tasks.length === 0) {
     return (
@@ -103,20 +85,15 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         filters={filters}
       />
 
-      {onBoard && view.groupBy === 'epic' && (
-        <EpicRibbon
-          rollups={rollups}
-          selected={filters.selectedEpic}
-          looseCount={looseLive}
-          onSelect={filters.setSelectedEpic}
-        />
-      )}
-
-      {onBoard ? (
-        <BoardLanes
-          tasks={activeTasks}
+      {view.view === 'board' ? (
+        <BoardSurface
+          tasks={filters.filtered}
           view={view}
           epicIndex={epicIndex}
+          rollups={rollups}
+          selectedEpic={filters.selectedEpic}
+          onSelectEpic={filters.setSelectedEpic}
+          looseLive={looseLive}
           renderCard={renderCard}
           onMove={actions.move}
           onCreate={actions.create}
@@ -124,6 +101,8 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
       ) : (
         <EpicsView
           tasks={filters.filtered}
+          selected={readingEpic}
+          onSelect={setReadingEpic}
           onOpenCard={actions.openCardBySlug}
           onWorkOnEpic={actions.workOnEpic}
           onEpicMode={actions.epicMode}
@@ -131,8 +110,6 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
           onAdopt={setCardEpic}
         />
       )}
-
-      {onBoard && <BoardArchiveDrawer tasks={archivedTasks} renderCard={renderCard} />}
 
       <BoardModals
         conversationId={conversationId}

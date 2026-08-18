@@ -489,6 +489,11 @@ interface ConversationsState {
   /** A card to open, by id. No lane: a card's id is its whole address. */
   pendingTaskEdit: { slug: string } | null
   setPendingTaskEdit: (task: { slug: string } | null) => void
+  /** An epic to REVEAL on the board's EPICS view. Parked here rather than
+   *  passed, because the caller is often somewhere with no board mounted yet
+   *  (the card editor beside the transcript) -- the board claims it on arrival. */
+  pendingEpicReveal: { epicId: string } | null
+  setPendingEpicReveal: (reveal: { epicId: string } | null) => void
   inputDrafts: Record<string, string>
   setInputDraft: (conversationId: string, text: string) => void
   messageStash: Record<string, StashEntry[]>
@@ -1125,6 +1130,8 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   requestedTabSeq: 0,
   pendingTaskEdit: null,
   setPendingTaskEdit: task => set({ pendingTaskEdit: task }),
+  pendingEpicReveal: null,
+  setPendingEpicReveal: reveal => set({ pendingEpicReveal: reveal }),
   renamingConversationId: null,
   setRenamingConversationId: conversationId => set({ renamingConversationId: conversationId }),
   renameConversation: (conversationId, name, description) => {
