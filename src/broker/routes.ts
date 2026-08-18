@@ -42,6 +42,7 @@ import { createSpawnRouter } from './routes/spawn'
 import { createStatsRouter } from './routes/stats'
 import { createStatuspageWebhookRouter } from './routes/statuspage-webhook'
 import { createVacuumRouter } from './routes/vacuum'
+import { createVoiceRefineRouter } from './routes/voice-refine'
 import { getScheduledTaskEngine } from './scheduled-tasks/engine-registry'
 import { createScheduledTasksRouter } from './scheduled-tasks/routes'
 import type { SentinelRegistry } from './sentinel-registry'
@@ -315,6 +316,7 @@ export function createRouter(options: RouteOptions): Hono {
     createApiRouter(conversationStore, store, helpers, rclaudeSecret, cacheDir, blobDir, publicOrigin, vapidPublicKey),
   )
   app.route('/', createCommitsRouter(conversationStore, store, helpers))
+  app.route('/', createVoiceRefineRouter(conversationStore, helpers))
   app.route('/', createArchivesRouter(helpers, cacheDir ?? ''))
   app.route(
     '/',

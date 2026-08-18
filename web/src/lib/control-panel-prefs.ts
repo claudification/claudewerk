@@ -128,6 +128,12 @@ export interface ControlPanelPrefs {
   listViewMode: 'default' | 'rail'
   /** Active workspace filter. null = "All" (show every root node). */
   activeWorkspaceId: string | null
+  /** PULSE default view. 'bands' groups by activity; 'tide' is one time axis.
+   *  Toggled inside the Pulse surface, remembered per-device. */
+  pulseView: 'bands' | 'tide'
+  /** PULSE strip: the always-on 30px bar pinned under the app. OFF by default —
+   *  it permanently spends vertical space, so it is opt-in. */
+  pulseStrip: boolean
   /** Virtualizer Lab experiment knobs (Experiments settings tab). Stored as a
    *  partial so knobs added later inherit their defaults; resolve with
    *  resolveVirtualizerLab() at the point of use. {} = production behavior. */
@@ -206,6 +212,8 @@ const defaultPrefs: ControlPanelPrefs = {
   theme: 'tokyo-night',
   listViewMode: 'default',
   activeWorkspaceId: null,
+  pulseView: 'bands',
+  pulseStrip: false,
   virtualizerLab: {},
   plainRendererLab: {},
   transcriptRenderer: 'plain',

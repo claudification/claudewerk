@@ -1,0 +1,67 @@
+import type { PulseBand } from '@/lib/pulse/bands'
+import { PulseChips } from './pulse-chips'
+
+const TOGGLE_CLS =
+  'shrink-0 px-2.5 py-1 rounded-full border border-primary/15 text-[11px] text-accent hover:bg-primary/10 transition-colors'
+
+export interface PulsePaletteHeaderProps {
+  filter: string
+  onFilterChange: (value: string) => void
+  inputRef: React.RefObject<HTMLInputElement | null>
+  liveCount: number
+  totals: Record<PulseBand, number>
+  activeBands: readonly PulseBand[] | null
+  onPickBand: (band: PulseBand | null) => void
+  view: 'bands' | 'tide'
+  onToggleView: () => void
+  board: boolean
+  onToggleBoard: () => void
+}
+
+/** Search row + band chips + the two view toggles. Split out of PulsePalette so
+ *  that component stays about STATE and this one stays about chrome. */
+export function PulsePaletteHeader({
+  filter,
+  onFilterChange,
+  inputRef,
+  liveCount,
+  totals,
+  activeBands,
+  onPickBand,
+  view,
+  onToggleView,
+  board,
+  onToggleBoard,
+}: PulsePaletteHeaderProps) {
+  return (
+    <>
+      <div className="px-3 py-2.5 flex items-center gap-2 border-t sm:border-t-0 sm:border-b border-primary/15">
+        <span className="text-comment text-sm shrink-0">⌕</span>
+        <input
+          ref={inputRef}
+          // biome-ignore lint/a11y/noAutofocus: palette surfaces focus their input on open
+          autoFocus
+          aria-label="Pulse filter"
+          value={filter}
+          onChange={e => onFilterChange(e.target.value)}
+          placeholder="filter the fleet…  !  @project  #tag  ~30m  $1  %80  &host  :model"
+          className="w-full bg-transparent text-[19px] sm:text-sm text-foreground placeholder:text-comment outline-none"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+        />
+        <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums">{liveCount} live</span>
+      </div>
+
+      <PulseChips totals={totals} active={activeBands} onPick={onPickBand}>
+        <button type="button" onClick={onToggleView} className={`${TOGGLE_CLS} ml-auto`}>
+          {view === 'tide' ? '▤ bands' : '≡ tide'}
+        </button>
+        <button type="button" onClick={onToggleBoard} className={`${TOGGLE_CLS} hidden xl:inline-block`}>
+          {board ? '▤ list' : '▦ board'}
+        </button>
+      </PulseChips>
+    </>
+  )
+}

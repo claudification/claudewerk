@@ -28,6 +28,7 @@ import { DEFAULT_STT_MODEL, resolveSttModel } from '@/hooks/voice-stt-models'
 import { getSttToken } from '@/hooks/voice-stt-token'
 import { describeMicError } from '@/lib/mic-error'
 import { addVoiceHistoryEntry } from '@/lib/voice-history'
+import { requestRefine } from '@/lib/voice-refine-request'
 
 // TWO TRANSPORTS, TWO CAPTURE STORIES.
 //   broker relay (default)  MediaRecorder only. A real container the broker hands
@@ -792,20 +793,42 @@ export function useVoiceRecording(): UseVoiceRecordingResult {
     // the tail-truncation race cannot happen because Deepgram itself signals done.
     const direct = directSessionRef.current
     if (direct) {
+      // Pinned HERE, not read inside the callbacks: both the Deepgram flush and
+      // the refine round-trip are awaits a new recording can start inside, and
+      // `voiceSeqRef.current` would by then be the NEW session's.
+      const stopSeq = voiceSeqRef.current
       directSessionRef.current = null
       streamRef.current = null
       scheduleStreamRelease()
       setState('refining')
       console.log(`[voice] ${elapsed()} direct stop -- awaiting Deepgram final`)
-      direct.stop().then(text => {
+      // A function, not an inline comparison: this is checked once before the
+      // refine round-trip and again after it, and TS's control-flow narrowing
+      // would treat the second read of stateRef.current as dead code -- it does
+      // not model a ref mutating across an await. Reading through a call keeps
+      // both checks honest.
+      const alreadySettled = () => stateRef.current === 'submitting' || stateRef.current === 'idle'
+      direct.stop().then(async text => {
         const final = (text || accumulatedTextRef.current || '').trim()
-        if (stateRef.current === 'submitting' || stateRef.current === 'idle') return
+        if (alreadySettled()) return
         if (!final) {
           armStuckReset()
           return
         }
-        addVoiceHistoryEntry({ raw: final, refined: final, conversationId: targetConversationIdRef.current })
-        setRefinedText(final)
+        // The direct path keeps the transcript in the browser, so the refiner has
+        // to be ASKED for rather than arriving on the socket like it does on the
+        // relay path. requestRefine never rejects and never returns empty -- the
+        // worst case is `final` straight back. State is already 'refining', which
+        // is exactly what the user should be looking at while this is in flight.
+        const refined = await requestRefine(final, targetConversationIdRef.current)
+        // The await is a real gap: a cancel or a fresh recording can land inside
+        // it, and submitting then would deliver this dictation into whatever the
+        // user moved on to.
+        if (cancelledRef.current || stopSeq !== voiceSeqRef.current || alreadySettled()) return
+        // History keeps BOTH so a bad refine is always recoverable by the user.
+        addVoiceHistoryEntry({ raw: final, refined, conversationId: targetConversationIdRef.current })
+        setFinalText(final)
+        setRefinedText(refined)
         setState('submitting')
       })
       return

@@ -312,6 +312,8 @@ interface ConversationsState {
   terminalWrapperId: string | null
   showSwitcher: boolean
   switcherInitialFilter: string
+  /** PULSE — the fleet surface (sibling to the command palette, own chord). */
+  showPulse: boolean
   showDebugConsole: boolean
   pendingProjectLinks: Array<{
     fromConversation: string
@@ -428,6 +430,8 @@ interface ConversationsState {
   setShowSwitcher: (show: boolean) => void
   toggleSwitcher: () => void
   openSwitcherWithFilter: (filter: string) => void
+  setShowPulse: (show: boolean) => void
+  togglePulse: () => void
   toggleDebugConsole: () => void
   openTerminal: (conversationId: string) => void
   setEvents: (conversationId: string, events: HookEvent[]) => void
@@ -975,6 +979,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   terminalWrapperId: null,
   showSwitcher: false,
   switcherInitialFilter: '',
+  showPulse: false,
   showDebugConsole: false,
   pendingProjectLinks: [],
   respondToProjectLink: (fromConversation, toConversation, action) => {
@@ -1347,6 +1352,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setShowSwitcher: show => set({ showSwitcher: show }),
   toggleSwitcher: () => set(state => ({ showSwitcher: !state.showSwitcher, switcherInitialFilter: '' })),
   openSwitcherWithFilter: (filter: string) => set({ showSwitcher: true, switcherInitialFilter: filter }),
+  // Pulse and the command palette are mutually exclusive overlays — opening one
+  // closes the other rather than stacking two dialogs on the same z-layer.
+  setShowPulse: show => set(show ? { showPulse: true, showSwitcher: false } : { showPulse: false }),
+  togglePulse: () => set(state => ({ showPulse: !state.showPulse, showSwitcher: false })),
   toggleDebugConsole: () => set(state => ({ showDebugConsole: !state.showDebugConsole })),
   openTerminal: conversationId => {
     // Find the conversation that owns this agent host so we can select it in the main panel too
