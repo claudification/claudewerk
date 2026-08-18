@@ -1,12 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { isMobileViewport } from '@/lib/utils'
 import { PulseBandsView } from './pulse-bands-view'
 import { PulseStripBar } from './pulse-strip-bar'
+import { isPeekChordHeld, isPeekChordReleased } from './strip-peek-chord'
 import { type PulseRow, usePulseFleet } from './use-pulse-fleet'
-
-/** Hover dwell before the strip peeks open, so brushing past it does nothing. */
-const PEEK_DELAY_MS = 200
 
 /**
  * THE STRIP — Pulse with no summoning at all.
@@ -16,6 +14,15 @@ const PEEK_DELAY_MS = 200
  * glance at it, even open it, and your caret does not move. The bloom's own
  * filter box is the one focusable thing in here, and only if you click it.
  *
+ * TWO WAYS IN, BOTH DELIBERATE:
+ *   click        pins it open until you click again or press Escape
+ *   mod+alt held peeks while held, collapses on release
+ *
+ * There is NO hover trigger. It used to peek on hover after a 200ms dwell,
+ * which meant a bar pinned across the bottom of the window opened itself every
+ * time the pointer travelled past it on the way somewhere else. An always-on
+ * surface must not react to the pointer merely passing through.
+ *
  * Ticks at 5s rather than 1s: this thing is mounted all day, so it trades age
  * precision for not re-rendering the app shell every second.
  */
@@ -24,22 +31,22 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [filter, setFilter] = useState('')
-  const peekTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fleet = usePulseFleet(filter, 5_000)
 
-  // Alt held = bloom; release collapses unless it was pinned by a click.
+  // mod+alt held = peek; releasing either modifier collapses it, unless a click
+  // pinned it open.
   useEffect(() => {
     if (!enabled) return
     function down(e: KeyboardEvent) {
-      if (e.key === 'Alt') setOpen(true)
+      if (isPeekChordHeld(e)) setOpen(true)
       if (e.key === 'Escape') {
         setPinned(false)
         setOpen(false)
       }
     }
     function up(e: KeyboardEvent) {
-      if (e.key === 'Alt') setOpen(o => (pinned ? o : false))
+      if (isPeekChordReleased(e)) setOpen(o => (pinned ? o : false))
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -48,12 +55,6 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
       window.removeEventListener('keyup', up)
     }
   }, [enabled, pinned])
-
-  useEffect(() => {
-    return () => {
-      if (peekTimer.current) clearTimeout(peekTimer.current)
-    }
-  }, [])
 
   if (!enabled) return null
 
@@ -83,25 +84,23 @@ export function PulseStrip({ onOpen }: { onOpen: (conversationId: string) => voi
       useConversationsStore.getState().setShowPulse(true)
       return
     }
+    // Clicking mid-PEEK pins, it does not close. Toggling on `open` alone would
+    // read the chord-held bloom as "already open" and collapse the thing you
+    // were reaching for -- the exact opposite of the intent. Only a click on an
+    // already-PINNED bloom closes it.
+    if (open && !pinned) {
+      setPinned(true)
+      return
+    }
     const next = !open
     setOpen(next)
     setPinned(next)
   }
 
   return (
-    /* Hover-peek is a pointer-only enhancement: the bar is a real <button> and Alt/Escape
-       drive it from the keyboard, so nothing is reachable ONLY via these handlers. */
-    // biome-ignore lint/a11y/noStaticElementInteractions: pointer-only enhancement, keyboard path exists
-    <div
-      className="shrink-0 border-t border-border bg-surface-inset flex flex-col-reverse"
-      onMouseEnter={() => {
-        peekTimer.current = setTimeout(() => setOpen(true), PEEK_DELAY_MS)
-      }}
-      onMouseLeave={() => {
-        if (peekTimer.current) clearTimeout(peekTimer.current)
-        if (!pinned) setOpen(false)
-      }}
-    >
+    // No pointer handlers here on purpose -- see the header. The bar is a real
+    // <button>, so this wrapper carries layout only.
+    <div className="shrink-0 border-t border-border bg-surface-inset flex flex-col-reverse">
       <PulseStripBar totals={fleet.totals} lead={lead} open={open} onToggle={onBarToggle} />
 
       {open && (

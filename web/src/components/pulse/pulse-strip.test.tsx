@@ -100,6 +100,80 @@ describe('PulseStrip', () => {
     expect(bar.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('does NOTHING on hover', () => {
+    // A bar pinned across the bottom of the window used to peek open every time
+    // the pointer travelled past it on the way somewhere else.
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+    fireEvent.mouseEnter(bar.parentElement as HTMLElement)
+    fireEvent.mouseOver(bar)
+    expect(bar.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('peeks while mod+alt is held and collapses on release', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+
+    fireEvent.keyDown(window, { key: 'Alt', altKey: true, metaKey: true })
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.keyUp(window, { key: 'Meta', altKey: true, metaKey: false })
+    expect(bar.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('ignores bare Alt', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+    fireEvent.keyDown(window, { key: 'Alt', altKey: true })
+    expect(bar.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('accepts ctrl+alt for Windows and Linux', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+    fireEvent.keyDown(window, { key: 'Alt', altKey: true, ctrlKey: true })
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('clicking mid-peek PINS it rather than collapsing it', () => {
+    // Toggling on `open` alone would read the chord-held bloom as "already
+    // open" and close the thing you were reaching for.
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+
+    fireEvent.keyDown(window, { key: 'Alt', altKey: true, metaKey: true })
+    fireEvent.click(bar)
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+
+    // Still open after the chord is released, because the click pinned it.
+    fireEvent.keyUp(window, { key: 'Meta', altKey: false, metaKey: false })
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('clicking an already-pinned bloom closes it', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+    fireEvent.click(bar)
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(bar)
+    expect(bar.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('a chord release does NOT close a bloom that was pinned by a click', () => {
+    desktop()
+    render(<PulseStrip onOpen={vi.fn()} />)
+    const bar = screen.getByRole('button', { name: 'Pulse strip' })
+    fireEvent.click(bar)
+    fireEvent.keyUp(window, { key: 'Meta', altKey: false, metaKey: false })
+    expect(bar.getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('collapses when Escape is pressed', () => {
     desktop()
     render(<PulseStrip onOpen={vi.fn()} />)
