@@ -37,7 +37,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
   // lane cards and the EPICS view read the same numbers by construction.
   const epicIndex = useMemo(() => buildEpicIndex(tasks), [tasks])
   const filters = useBoardFilters(tasks)
-  const actions = useCardActions(project, epicIndex)
+  const actions = useCardActions(project, epicIndex, conversationId)
 
   // Deep links (push notification, #task/<id>, a `.rclaude/project/...` markdown
   // link) -- resolved by slug once the manifest has landed. See the hook.
@@ -98,7 +98,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
         tabCounts={{ board: tasks.length, epics: epicIndex.size }}
         configOpen={configOpen}
         onToggleConfig={() => setConfigOpen(v => !v)}
-        onBatch={() => openTaskBatch()}
+        onBatch={() => openTaskBatch({ conversationId })}
         onRefresh={() => refresh()}
         filters={filters}
       />

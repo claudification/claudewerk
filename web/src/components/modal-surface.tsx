@@ -93,13 +93,24 @@ function SurfaceHost({ modal, title, icon, headerExtra, className, onClose }: Ho
   )
 }
 
+/** The document the body is currently displayed in, for nested Radix portals.
+ *  null unless detached -- inline and docked both live in the main document. */
+function hostContainer(modal: ManagedModal): HTMLElement | null {
+  if (modal.presentation !== 'detached') return null
+  return getDetachedWindow(modal.id)?.document.body ?? null
+}
+
 export function ModalSurface({ children, ...host }: ModalSurfaceProps) {
   if (host.modal.presentation === 'closed') return null
   return (
     <>
       {/* Fixed tree position -- the body mounts here once, for the whole life of
-          the surface, and only its canvas moves between hosts. */}
-      <SurfaceBody id={host.modal.id}>{children}</SurfaceBody>
+          the surface, and only its canvas moves between hosts. Which window it is
+          being SHOWN in has to be handed down explicitly: the canvas move is DOM,
+          and React context does not travel with it. */}
+      <SurfaceBody id={host.modal.id} container={hostContainer(host.modal)}>
+        {children}
+      </SurfaceBody>
       <SurfaceHost {...host} />
     </>
   )

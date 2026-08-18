@@ -24,7 +24,7 @@ interface ProjectApi {
   tasks: ProjectTaskMeta[]
 }
 
-export function useCardActions(api: ProjectApi, epicIndex: Map<string, EpicRollup>) {
+export function useCardActions(api: ProjectApi, epicIndex: Map<string, EpicRollup>, conversationId: string) {
   const [editingTask, setEditingTask] = useState<ProjectTask | null>(null)
   const [runTask, setRunTask] = useState<ProjectTask | null>(null)
   const { createTask, moveTask, deleteTask, readTask, tasks } = api
@@ -67,13 +67,18 @@ export function useCardActions(api: ProjectApi, epicIndex: Map<string, EpicRollu
    * Hand the EXISTING batch selector this epic's cards, ticked and on the right
    * template. WORK ticks the not-started ones; REFINE and ANALYZE tick
    * everything still live -- `epicBatchPayload` owns that decision.
+   *
+   * The board's own conversation rides along: the selector otherwise reads and
+   * sends against the app's SELECTED conversation, which is a different project
+   * whenever the board was opened for one (a detached board makes that the
+   * normal case, not the edge one).
    */
   const epicMode = useCallback(
     (epicId: string, mode: TaskMode) => {
       const rollup = epicIndex.get(epicId)
-      if (rollup) openTaskBatch(epicBatchPayload(rollup, mode))
+      if (rollup) openTaskBatch({ ...epicBatchPayload(rollup, mode), conversationId })
     },
-    [epicIndex],
+    [epicIndex, conversationId],
   )
 
   const workOnEpic = useCallback((epicId: string) => epicMode(epicId, 'work'), [epicMode])

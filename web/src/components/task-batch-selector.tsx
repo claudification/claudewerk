@@ -25,6 +25,7 @@ import { useKeyLayer } from '@/lib/key-layers'
 import { cn, haptic } from '@/lib/utils'
 import { Markdown } from './markdown'
 import { batchOpenState, buildBatchPrompt } from './task-batch/prompt'
+import { resolveBatchTargets } from './task-batch/target'
 import { type TaskBatchOpen, taskBatchBus } from './task-batch-trigger'
 
 // --- Constants ---
@@ -246,18 +247,15 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
   const searchRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Get a conversation ID for useProject -- use the first active conversations's agent host
+  /** Pinned by the dispatch site (a board hands us its own conversation), so a
+   *  board scoped to one project never reads or sends against another's. */
+  const [pinnedConversationId, setPinnedConversationId] = useState<string | null>(null)
   const selectedConversationId = useConversationsStore(s => s.selectedConversationId)
   const conversations = useConversations()
-  // Find a connected conversation to relay project requests through
-  const relayConversationId = useMemo(() => {
-    // Prefer selected conversation, fall back to any active conversations
-    if (selectedConversationId) {
-      const sess = conversations.find(s => s.id === selectedConversationId && s.status !== 'ended')
-      if (sess) return sess.id
-    }
-    return conversations.find(s => s.status !== 'ended')?.id ?? null
-  }, [selectedConversationId, conversations])
+  const { relay: relayConversationId, target: targetConversationId } = useMemo(
+    () => resolveBatchTargets(conversations, pinnedConversationId, selectedConversationId),
+    [conversations, pinnedConversationId, selectedConversationId],
+  )
 
   const { tasks, readTask } = useProject(relayConversationId)
 
@@ -332,7 +330,12 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
       setShowSelected(false)
       setScope(next.scope)
       setSelected(next.selected)
+      setPinnedConversationId(detail?.conversationId ?? null)
       switchTemplate(next.mode)
+      // This selector is mounted in the app shell, so a dispatch from a DETACHED
+      // surface opens it in the opener window -- behind the popup the click came
+      // from. Best-effort raise: without it the action looks like it did nothing.
+      window.focus()
       requestAnimationFrame(() => searchRef.current?.focus())
     }
     taskBatchBus.setHandler(handleOpen)
@@ -394,9 +397,9 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
 
   // Actions
   function handleSubmit() {
-    if (!selectedConversationId || selectedTasks.length === 0) return
+    if (!targetConversationId || selectedTasks.length === 0) return
     haptic('success')
-    sendInput(selectedConversationId, finalPrompt)
+    sendInput(targetConversationId, finalPrompt)
     setOpen(false)
     setSelected(new Set())
   }
@@ -427,8 +430,9 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     { id: 'batch-selector', enabled: open },
   )
 
-  const hasActiveConversation =
-    !!selectedConversationId && conversations.some(s => s.id === selectedConversationId && s.status !== 'ended')
+  // `resolveBatchTargets` already refused to name an ended conversation, so a
+  // non-null target IS a live one.
+  const hasActiveConversation = !!targetConversationId
 
   return (
     <Dialog open={open} onOpenChange={v => !v && handleClose()}>

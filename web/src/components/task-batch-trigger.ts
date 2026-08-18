@@ -22,6 +22,18 @@ export interface TaskBatchOpen {
    * you just clicked is how the wrong template gets submitted.
    */
   mode?: TaskMode
+  /**
+   * The conversation the cards belong to, and the one the batch prompt is sent
+   * to. Omit to fall back to whatever is selected in the app.
+   *
+   * A board is PROJECT-scoped, and the project it shows is not always the
+   * project of the selected conversation -- most visibly when the board is
+   * detached into its own window, where "selected" means the other window's
+   * selection. Without this, "work on this epic" preselected project A's card
+   * ids against project B's card list: an empty selector, or a prompt fired at
+   * the wrong project.
+   */
+  conversationId?: string
 }
 
 /** Buffering bus bridging the `open-batch-selector` window event so the
