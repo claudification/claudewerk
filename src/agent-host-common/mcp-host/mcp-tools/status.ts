@@ -17,15 +17,17 @@ USE YOUR JUDGMENT — this is a subjective call. A small step, a quick lookup, a
 \`state\` (REQUIRED) is the one signal that matters:
 - \`working\`  — actively doing the task. (This is also the default at the start of every turn; you don't need to set it just to confirm you're working, but do set it if you want to show progress detail.)
 - \`done\`     — the task the user asked for is COMPLETE. Nothing remains that blocks completion.
-- \`needs_you\` — you are blocked ON THE USER: a decision, an answer, an approval. Prefer opening a real dialog / AskUserQuestion / ExitPlanMode for this — that's what escalates to the user's phone. A bare \`needs_you\` shows the badge but does not buzz them.
+- \`needs_you\` — you are blocked ON THE USER for something only THEY can supply: a decision, an answer, an approval. Prefer opening a real dialog / AskUserQuestion / ExitPlanMode for this — that's what escalates to the user's phone. A bare \`needs_you\` shows the badge but does not buzz them.
 - \`blocked\`  — you are stuck on something NOT the user's to fix (a failing build, a missing credential, a dead end) and cannot proceed.
+
+A PENDING DEPLOY IS NOT \`needs_you\`. "Needs a broker restart", "run \`build:packages\`", "restart the sentinel", "hard refresh / \`Clear cache & reload\`" — the code is written, merged and correct; only an operational step the user runs on their own cadence is left. That belongs in \`notes\` with \`state:'done'\`, NEVER in \`needs_you\` or \`pending\`. Test: if the user restarted the thing tonight without saying a word to you, would the task be complete? If yes, it is a NOTE. Parking a finished task under \`needs_you\` makes the badge mean "I am waiting" when nobody is actually blocked, and the conversation rots. Reserve \`needs_you\` for a real question with no default answer.
 
 The text fields are ALL OPTIONAL and render as MARKDOWN in the control panel (the \`done\`/\`pending\`/etc. values support **bold**, \`code\`, links, and \`- \` bullet lists — use them when they make the handoff clearer, but keep it tight). Empty is signal: a fully-finished task is \`state:'done'\` with one line in \`done\` and everything else empty. NEVER manufacture content to fill them.
 - \`done\`    — what you FINISHED.
 - \`pending\` — what still MUST happen for this to be complete. Test: "does this BLOCK done?" If no, it is NOT pending — it's a note.
 - \`caveats\` — it works, but watch X.
 - \`blocked\` — what you tried and could NOT finish, and why (the error / dead-end). Not "things I chose not to do."
-- \`notes\`   — FYI asides that are NOT todos. Test: "is this still true even though the task IS complete?" e.g. "didn't commit", "didn't deploy", "left the dev server running" → ALWAYS a note, never pending or blocked. Don't nag the user with routine hygiene.
+- \`notes\`   — FYI asides that are NOT todos. Test: "is this still true even though the task IS complete?" e.g. "didn't commit", "left the dev server running", and EVERY un-run deploy step — "broker restart pending", "needs \`build:packages\`", "sentinel restart pending", "hard refresh to pick up the bundle" → ALWAYS a note, never pending, blocked, or \`needs_you\`. Don't nag the user with routine hygiene.
 - \`safe_to_close\` (boolean) — set true ONLY when this conversation is genuinely disposable: no uncommitted/unpushed work, no pending interaction, nothing the user still needs from it. It surfaces as a visible marker so the user can spot which conversations they can just close. When unsure, leave it off.
 - \`notify\` (plain text) — USE SPARINGLY. A short one-line message that physically BUZZES the user's phone and browser right now (a real push, same as the \`notify\` tool). Set this ONLY when you genuinely need to grab their attention away from whatever they're doing — never for routine status. The badge \`state\` is the quiet signal; \`notify\` is the loud one. Most set_status calls MUST omit it. Plain text, not markdown.
 
