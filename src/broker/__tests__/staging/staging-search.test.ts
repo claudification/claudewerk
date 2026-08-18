@@ -138,14 +138,55 @@ async function getWindow(conversationId: string, params: Record<string, string |
 // ─── /api/search basics ──────────────────────────────────────────
 
 run('search: basic queries', () => {
-  it('returns 400 with no query', async () => {
+  // No query is BROWSE, not a client error -- "what happened lately" has no
+  // search term to give. These used to assert 400 and were the bug.
+  it('no query browses instead of erroring', async () => {
     const res = await httpGet('/api/search', { bearer: getBrokerSecret() })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SearchResponse & { mode: string; sort: string }
+    expect(body.mode).toBe('browse')
+    expect(body.sort).toBe('recency')
   })
 
-  it('returns 400 with empty query', async () => {
+  it('empty query browses instead of erroring', async () => {
     const res = await httpGet('/api/search?q=', { bearer: getBrokerSecret() })
-    expect(res.status).toBe(400)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as { mode: string }).mode).toBe('browse')
+  })
+
+  it('browse returns a conversation newest-first', async () => {
+    const agent = await connectAgentHost()
+    const { convId } = await bootConversation(agent, 'claude://staging/browse-order')
+    await seedTranscript(agent, convId, [
+      { type: 'user', text: 'browse alpha' },
+      { type: 'assistant', text: 'browse beta' },
+      { type: 'user', text: 'browse gamma' },
+    ])
+
+    const res = await httpGet(`/api/search?conversation=${convId}&limit=2`, { bearer: getBrokerSecret() })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as SearchResponse & { mode: string }
+    expect(body.mode).toBe('browse')
+    expect(body.hits.length).toBe(2)
+    expect(JSON.stringify(body.hits[0].content)).toContain('browse gamma')
+    expect(JSON.stringify(body.hits[1].content)).toContain('browse beta')
+  })
+
+  it('browse honours the type filter -- the latest user messages', async () => {
+    const agent = await connectAgentHost()
+    const { convId } = await bootConversation(agent, 'claude://staging/browse-types')
+    await seedTranscript(agent, convId, [
+      { type: 'user', text: 'question one' },
+      { type: 'assistant', text: 'answer one' },
+      { type: 'user', text: 'question two' },
+      { type: 'assistant', text: 'answer two' },
+    ])
+
+    const res = await httpGet(`/api/search?conversation=${convId}&type=user&limit=2`, { bearer: getBrokerSecret() })
+    const body = (await res.json()) as SearchResponse
+    expect(body.hits.length).toBe(2)
+    expect(body.hits.every(h => h.type === 'user')).toBe(true)
+    expect(JSON.stringify(body.hits[0].content)).toContain('question two')
   })
 
   it('finds a single seeded entry by bareword', async () => {
@@ -375,7 +416,21 @@ run('transcript-window: sliding context', () => {
     expect(win.entries[0].seq).toBe(1)
   })
 
-  it('400 with neither aroundSeq nor aroundId', async () => {
+  it('tail returns the last N entries with no centre given', async () => {
+    const agent = await connectAgentHost()
+    const { convId } = await bootConversation(agent, 'claude:///tmp/staging-tail')
+    await seedTranscript(
+      agent,
+      convId,
+      Array.from({ length: 10 }, (_, i) => ({ type: 'user', text: `tail-${i}` })),
+    )
+
+    const win = await getWindow(convId, { tail: 3 })
+    expect(win.entries.length).toBe(3)
+    expect(win.entries.map(e => e.seq)).toEqual([8, 9, 10])
+  })
+
+  it('400 with neither aroundSeq, aroundId, nor tail', async () => {
     const agent = await connectAgentHost()
     const { convId } = await bootConversation(agent, 'claude:///tmp/staging-window-args')
     const res = await httpGet(`/api/transcript-window?conversation=${convId}`, { bearer: getBrokerSecret() })

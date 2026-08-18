@@ -17,7 +17,7 @@ import { asVoiceTone } from '../desk/voice-tones'
 import { voiceRealtimeTools } from '../desk/voice-tools'
 import { getGlobalSettings, updateGlobalSettings } from '../global-settings'
 import { getModels, getModelsFetchedAt } from '../model-pricing'
-import { hasPermissionAnyCwd, resolvePermissions, type UserGrant } from '../permissions'
+import { hasPermissionAnyCwd, resolvePermissions } from '../permissions'
 import { getProjectOrder, type ProjectOrder, setProjectOrder } from '../project-order'
 import { advertiseProjectOrder, scopeOrderToGrants } from '../project-order-broadcast'
 import { orderUserForRequest } from '../project-order-owner'
@@ -143,8 +143,10 @@ export function createApiRouter(
   // entries via windowBefore / windowAfter.
   app.get('/api/search', c => {
     const url = new URL(c.req.raw.url)
+    // No `q` is a legitimate call, not a client error: it means BROWSE -- newest
+    // entries first, filters only. "What did I say lately?" has no search term to
+    // give, and rejecting it left callers with no way to reach the tail at all.
     const q = (url.searchParams.get('q') || url.searchParams.get('query') || '').trim()
-    if (!q) return c.json({ error: 'Missing q parameter' }, 400)
 
     const conversationId = url.searchParams.get('conversation') || url.searchParams.get('conversationId') || undefined
     const projectPattern = url.searchParams.get('project') || undefined
@@ -159,7 +161,9 @@ export function createApiRouter(
     const offset = clampInt(url.searchParams.get('offset'), 0, 0, Number.MAX_SAFE_INTEGER)
     const windowBefore = clampInt(url.searchParams.get('windowBefore'), 0, 0, 50)
     const windowAfter = clampInt(url.searchParams.get('windowAfter'), 0, 0, 50)
-    const sort = url.searchParams.get('sort') === 'recency' ? 'recency' : 'relevance'
+    // Browse has nothing to rank, so it reports `recency` whatever the caller asked.
+    const mode = q ? 'search' : 'browse'
+    const sort = !q || url.searchParams.get('sort') === 'recency' ? 'recency' : 'relevance'
 
     // Permission filter: collect conversations the caller can read.
     const allConversations = conversationStore.getAllConversations()
@@ -172,7 +176,7 @@ export function createApiRouter(
     // (e.g. a `project` filter that matches no conversation) must render as
     // "0 hits for <query>", never as `query: undefined` -> the client's
     // misleading `for "undefined"` (looks like a broken tool, not a real miss).
-    if (allowed.length === 0) return c.json({ hits: [], total: 0, query: q, limit, offset, sort })
+    if (allowed.length === 0) return c.json({ hits: [], total: 0, query: q, limit, offset, sort, mode })
 
     // If a single-conversation filter resolves to an unauthorized conversation, deny.
     if (conversationId && !allowed.some(s => s.id === conversationId)) {
@@ -184,14 +188,14 @@ export function createApiRouter(
       allowed.map(s => [s.id, { project: s.project, title: s.title, description: s.description }]),
     )
 
-    const hits = store.transcripts.search(q, {
+    const scope = {
       conversationId: conversationId,
       conversationIds: conversationId ? undefined : conversationIds,
       types,
       limit,
       offset,
-      sort,
-    })
+    }
+    const hits = q ? store.transcripts.search(q, { ...scope, sort }) : store.transcripts.browse(scope)
 
     const enriched = hits.map(hit => {
       const meta = convMeta.get(hit.conversationId)
@@ -212,7 +216,7 @@ export function createApiRouter(
       }
     })
 
-    return c.json({ hits: enriched, total: hits.length, query: q, limit, offset, sort })
+    return c.json({ hits: enriched, total: hits.length, query: q, limit, offset, sort, mode })
   })
 
   // ─── Search-index admin (stats + manual rebuild) ──────────────────
@@ -327,13 +331,17 @@ export function createApiRouter(
     const aroundIdRaw = url.searchParams.get('aroundId') || url.searchParams.get('id')
     const aroundSeq = aroundSeqRaw ? parseInt(aroundSeqRaw, 10) : undefined
     const aroundId = aroundIdRaw ? parseInt(aroundIdRaw, 10) : undefined
-    if (aroundSeq == null && aroundId == null) {
-      return c.json({ error: 'Missing aroundSeq or aroundId' }, 400)
+    // `tail` is the third way in: read the END of the transcript without first
+    // having to find a seq to centre on.
+    const tailRaw = url.searchParams.get('tail')
+    const tail = tailRaw ? clampInt(tailRaw, 20, 1, 100) : undefined
+    if (aroundSeq == null && aroundId == null && tail == null) {
+      return c.json({ error: 'Missing aroundSeq, aroundId, or tail' }, 400)
     }
     const before = clampInt(url.searchParams.get('before'), 5, 0, 50)
     const after = clampInt(url.searchParams.get('after'), 5, 0, 50)
 
-    const entries = store.transcripts.getWindow(conversationId, { aroundSeq, aroundId, before, after })
+    const entries = store.transcripts.getWindow(conversationId, { aroundSeq, aroundId, before, after, tail })
     return c.json({
       entries,
       conversation: { id: conv.id, project: conv.project, title: conv.title, description: conv.description },

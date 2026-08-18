@@ -239,11 +239,25 @@ export interface SearchOpts {
   sort?: SearchSort
 }
 
+/** Filters for `browse()` -- the query-less twin of SearchOpts. No `sort`: a
+ *  listing with no query has no relevance to sort by, so it is always newest-first. */
+export interface BrowseOpts {
+  conversationId?: string
+  conversationIds?: string[]
+  types?: string[]
+  limit?: number
+  offset?: number
+}
+
 export interface WindowOpts {
   aroundSeq?: number
   aroundId?: number
   before?: number
   after?: number
+  /** Center-free mode: the last N entries of the conversation, chronological.
+   *  Ignored when aroundSeq/aroundId is set. Answers "show me the end of this
+   *  transcript" without first having to find a seq to center on. */
+  tail?: number
 }
 
 export interface SearchIndexStats {
@@ -310,6 +324,12 @@ export interface TranscriptStore {
   hasUuid(conversationId: string, uuid: string): boolean
   find(conversationId: string, filter: TranscriptFilter): TranscriptEntryRecord[]
   search(query: string, opts?: SearchOpts): SearchHit[]
+  /** Query-less listing, newest-first. The answer to "what did I say lately?" --
+   *  a question FTS cannot express, because it has no search term. Same hit shape
+   *  as `search()` so every caller and formatter downstream is unchanged; `rank`
+   *  is 0 (nothing was ranked) and `snippet` is a leading preview of the content
+   *  rather than a match window. */
+  browse(opts?: BrowseOpts): SearchHit[]
   getWindow(conversationId: string, opts: WindowOpts): TranscriptEntryRecord[]
   count(conversationId: string, agentId?: string | null): number
   pruneOlderThan(cutoffMs: number): number

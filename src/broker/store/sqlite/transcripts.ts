@@ -1,6 +1,7 @@
 import type { Database, Statement } from 'bun:sqlite'
 import type { TranscriptEntry } from '../../../shared/protocol'
 import { sortTranscriptEntries } from '../../../shared/transcript-order'
+import { buildBrowsePreview, clampBrowsePaging, clampWindowBounds } from '../transcript-read'
 import type {
   SearchHit,
   TranscriptAppendResult,
@@ -8,8 +9,26 @@ import type {
   TranscriptEntryRecord,
   TranscriptStore,
 } from '../types'
+import { appendConversationIdsFilter, appendTypeFilter } from './sql-filters'
 
 type Params = Record<string, string | number | bigint | boolean | null>
+
+interface ScopeFilters {
+  conversationId?: string
+  conversationIds?: string[]
+  types?: string[]
+}
+
+/** The conversation/type WHERE fragments shared by `search()` and `browse()`.
+ *  Appends to `sql`, binds into `params`. Rows are aliased `t` in both queries. */
+function appendScopeFilters(sql: string, params: Params, opts: ScopeFilters | undefined): string {
+  if (opts?.conversationId) {
+    sql += ' AND t.conversation_id = $conversationId'
+    params.conversationId = opts.conversationId
+  }
+  sql = appendConversationIdsFilter(sql, params, opts?.conversationIds, 't.')
+  return appendTypeFilter(sql, params, opts?.types, 't.')
+}
 
 function rowToEntry(row: Params): TranscriptEntryRecord {
   return {
@@ -24,6 +43,23 @@ function rowToEntry(row: Params): TranscriptEntryRecord {
     content: JSON.parse(row.content as string),
     timestamp: row.timestamp as number,
     ingestedAt: row.ingested_at as number,
+  }
+}
+
+/** A result row as a SearchHit. `rank` and `snippet` are where the two callers
+ *  differ: FTS supplies both, browse ranks nothing and previews the content. */
+function rowToHit(row: Params, ranked: boolean): SearchHit {
+  const entry = rowToEntry(row)
+  return {
+    id: entry.id,
+    conversationId: entry.conversationId,
+    seq: entry.seq,
+    type: entry.type,
+    subtype: entry.subtype,
+    content: entry.content,
+    timestamp: entry.timestamp,
+    rank: ranked ? (row.rank as number) : 0,
+    snippet: ranked ? ((row.snippet as string) ?? '') : buildBrowsePreview(entry.content),
   }
 }
 
@@ -549,8 +585,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
     search(query, opts) {
       const trimmed = query.trim()
       if (!trimmed) return []
-      const limit = Math.min(Math.max(opts?.limit ?? 20, 1), 100)
-      const offset = Math.max(opts?.offset ?? 0, 0)
+      const { limit, offset } = clampBrowsePaging(opts)
 
       // FTS5 MATCH expression. Caller can use FTS5 syntax (AND/OR/NOT, "phrases", prefix*).
       // sanitizeFtsQuery quotes individual tokens that contain characters FTS5 would
@@ -567,24 +602,7 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
         WHERE transcript_fts MATCH $q
       `
       const params: Params = { q: ftsQuery, limit, offset }
-      if (opts?.conversationId) {
-        sql += ' AND t.conversation_id = $conversationId'
-        params.conversationId = opts.conversationId
-      }
-      if (opts?.conversationIds?.length) {
-        const placeholders = opts.conversationIds.map((_, i) => `$cid${i}`)
-        sql += ` AND t.conversation_id IN (${placeholders.join(', ')})`
-        for (let i = 0; i < opts.conversationIds.length; i++) {
-          params[`cid${i}`] = opts.conversationIds[i]
-        }
-      }
-      if (opts?.types?.length) {
-        const placeholders = opts.types.map((_, i) => `$type${i}`)
-        sql += ` AND t.type IN (${placeholders.join(', ')})`
-        for (let i = 0; i < opts.types.length; i++) {
-          params[`type${i}`] = opts.types[i]
-        }
-      }
+      sql = appendScopeFilters(sql, params, opts)
       // Ordering: bm25 relevance by default; `recency` sorts newest-first by the
       // entry timestamp (indexed), with id as a stable tiebreaker for same-ms rows.
       sql += opts?.sort === 'recency' ? ' ORDER BY t.timestamp DESC, t.id DESC' : ' ORDER BY rank'
@@ -611,36 +629,39 @@ export function createSqliteTranscriptStore(db: Database): TranscriptStore {
         }
       }
 
-      return rows.map(row => {
-        const entry = rowToEntry(row)
-        const hit: SearchHit = {
-          id: entry.id,
-          conversationId: entry.conversationId,
-          seq: entry.seq,
-          type: entry.type,
-          subtype: entry.subtype,
-          content: entry.content,
-          timestamp: entry.timestamp,
-          rank: row.rank as number,
-          snippet: (row.snippet as string) ?? '',
-        }
-        return hit
-      })
+      return rows.map(row => rowToHit(row, true))
+    },
+
+    browse(opts) {
+      const { limit, offset } = clampBrowsePaging(opts)
+
+      // `WHERE 1=1` so appendScopeFilters can bolt ` AND ...` on unconditionally.
+      let sql = 'SELECT t.* FROM transcript_entries t WHERE 1=1'
+      const params: Params = { limit, offset }
+      sql = appendScopeFilters(sql, params, opts)
+      sql += ' ORDER BY t.timestamp DESC, t.id DESC LIMIT $limit OFFSET $offset'
+
+      const rows = db.prepare(sql).all(params) as Params[]
+      return rows.map(row => rowToHit(row, false))
     },
 
     getWindow(conversationId, opts) {
-      const before = Math.min(Math.max(opts.before ?? 5, 0), 50)
-      const after = Math.min(Math.max(opts.after ?? 5, 0), 50)
+      const { before, after, tail } = clampWindowBounds(opts)
 
-      let centerSeq: number | null = null
-      if (opts.aroundSeq != null) {
-        centerSeq = opts.aroundSeq
-      } else if (opts.aroundId != null) {
+      let centerSeq: number | null = opts.aroundSeq ?? null
+      if (centerSeq == null && opts.aroundId != null) {
         const row = stmtWindowSeqById.get({ id: opts.aroundId, conversationId }) as { seq: number } | null
         if (!row) return []
         centerSeq = row.seq
       }
-      if (centerSeq == null) return []
+      if (centerSeq == null) {
+        if (tail == null) return []
+        // No centre asked for -- serve the end of the transcript directly.
+        // latestStmts[0] is the all-scopes variant, matching the centred path
+        // (which does not filter by agent either).
+        const rows = (latestStmts[0].all({ conversationId, limit: tail }) as Params[]).reverse()
+        return chrono(rows.map(rowToEntry))
+      }
 
       const minSeq = centerSeq - before
       const maxSeq = centerSeq + after

@@ -171,14 +171,23 @@ export function createMcpServer(
   // ─── search_transcripts ─────────────────────────────────────────────
   mcp.tool(
     'search_transcripts',
-    'FTS5 full-text search across the HOT transcript store -- indexed, ranked, stemmed, answers in milliseconds. This is the first resort for finding prior decisions, code snippets or context. Default `output: "conversations"` returns one row per matching conversation; `output: "snippets"` returns the actual matching transcript entries with seq numbers (feed seq into get_transcript_context to expand). NOTE: months older than the hot window (~90 days) are moved out to cold archives and are NOT in this index -- an empty result for old material means "not hot", not "never happened". For those, cost the scan with archive_search_plan and then use search_archives (slow, unindexed).',
+    'Search OR browse the HOT transcript store. With `query`: FTS5 full-text -- indexed, ranked, stemmed, answers in milliseconds, the first resort for finding prior decisions, code snippets or context. WITHOUT `query`: browse mode -- the newest entries matching the filters, newest first. `search_transcripts({ conversationId, types: ["user"], limit: 3, output: "snippets" })` is how you read back the last 3 messages the user sent. Default `output: "conversations"` returns one row per conversation; `output: "snippets"` returns the actual transcript entries with seq numbers (feed seq into get_transcript_context to expand, or call it with `tail` to read the end of a conversation outright). NOTE: months older than the hot window (~90 days) are moved out to cold archives and are NOT in this index -- an empty result for old material means "not hot", not "never happened". For those, cost the scan with archive_search_plan and then use search_archives (slow, unindexed).',
     {
-      query: z.string(),
+      query: z.string().optional().describe('FTS5 query. Omit to browse the newest entries instead of searching.'),
+      conversationId: z.string().optional().describe('Limit to one conversation.'),
+      types: z
+        .array(z.string())
+        .optional()
+        .describe('Filter by entry type: ["user"], ["assistant"], ["tool_use"], ...'),
       output: z.enum(['conversations', 'snippets']).optional(),
       limit: z.number().optional(),
+      offset: z.number().optional(),
     },
-    async ({ query, output, limit }) => {
-      const hits = store.transcripts.search(query, { limit: limit || 20 })
+    async ({ query, conversationId, types, output, limit, offset }) => {
+      const scope = { conversationId, types, limit: limit || 20, offset }
+      // No query is BROWSE, not an error -- "my last three messages" has no
+      // search term to give.
+      const hits = query?.trim() ? store.transcripts.search(query, scope) : store.transcripts.browse(scope)
       if (output === 'snippets') {
         const snippets = hits.map(h => ({
           conversationId: h.conversationId,
@@ -217,19 +226,26 @@ export function createMcpServer(
   // ─── get_transcript_context ─────────────────────────────────────────
   mcp.tool(
     'get_transcript_context',
-    'Sliding window of transcript entries around a given seq number. Use after search_transcripts (with output:"snippets") to expand context around a hit -- pass the conversationId and seq from the search result. Output is compact text by default: per-entry header + canonical body, base64 stripped, duplicate tool_result wrappers collapsed, per-entry byte cap, walk pointers at the bottom. Set format:"json" for the raw row dump.',
+    'Read transcript entries: a window around a given seq, or the END of a conversation. Use after search_transcripts (with output:"snippets") to expand context around a hit -- pass the conversationId and seq from the search result. OR pass `tail: N` with no seq to read the last N entries directly, which is the fast path for "what just happened in that conversation". Output is compact text by default: per-entry header + canonical body, base64 stripped, duplicate tool_result wrappers collapsed, per-entry byte cap, walk pointers at the bottom. Set format:"json" for the raw row dump.',
     {
       conversationId: z.string(),
-      seq: z.number(),
+      seq: z.number().optional().describe('Center on this seq. Omit when using tail.'),
+      tail: z.number().optional().describe('Return the LAST N entries instead of centering (1-100).'),
       window: z.number().optional(),
       format: z.enum(['text', 'json']).optional(),
       maxBytesPerEntry: z.number().optional(),
     },
-    async ({ conversationId, seq, window: windowSize, format, maxBytesPerEntry }) => {
+    async ({ conversationId, seq, tail, window: windowSize, format, maxBytesPerEntry }) => {
+      if (seq == null && tail == null) {
+        return { content: [{ type: 'text' as const, text: 'Error: seq or tail required' }], isError: true }
+      }
+      // `??`, not `||` -- an explicit window:0 (just this entry) is falsy and
+      // `|| 5` silently widened it to eleven entries.
       const entries = store.transcripts.getWindow(conversationId, {
         aroundSeq: seq,
-        before: windowSize || 5,
-        after: windowSize || 5,
+        tail,
+        before: windowSize ?? 5,
+        after: windowSize ?? 5,
       })
       if (format === 'json') {
         return { content: [{ type: 'text', text: JSON.stringify(entries, null, 2) }] }

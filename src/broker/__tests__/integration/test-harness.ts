@@ -203,6 +203,7 @@ function createMockStoreDriver(): StoreDriver {
       hasUuid: () => false,
       find: () => [],
       search: () => [],
+      browse: () => [],
       getWindow: () => [],
       count: () => 0,
       pruneOlderThan: () => 0,

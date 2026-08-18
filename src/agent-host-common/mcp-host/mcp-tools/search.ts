@@ -1,97 +1,103 @@
 /**
- * MCP search tools -- progressive transcript search.
+ * MCP search tools -- progressive transcript access.
  *
  * Designed for minimal context consumption:
  *   1. search_transcripts (conversations mode) -> which conversations match?
- *   2. search_transcripts (snippets mode, + conversationId) -> matches within a conversation
- *   3. get_transcript_context (aroundSeq) -> full content window around a hit
+ *   2. search_transcripts (snippets mode, + conversationId) -> entries within one
+ *   3. get_transcript_context (aroundSeq or tail) -> full content window
  *
- * Both tools call the broker over HTTP. The broker enforces permission gating.
+ * Both tools work WITHOUT a search term: search_transcripts browses when `query`
+ * is omitted, and get_transcript_context takes `tail` when there is no seq to
+ * centre on. Neither could reach the end of a conversation before that.
+ *
+ * Both call the broker over HTTP. The broker enforces permission gating.
+ * Descriptions + schemas live in ./search-schemas, rendering in ./search-format.
  */
 
 import { formatTranscriptWindow } from '../../../shared/transcript-window-format'
 import { wsToHttpUrl } from '../../../shared/ws-url'
 import { debug } from '../debug'
+import { formatConversationsOutput, formatSnippetsOutput, type SearchResponse } from './search-format'
+import {
+  SEARCH_TRANSCRIPTS_DESCRIPTION,
+  SEARCH_TRANSCRIPTS_SCHEMA,
+  TRANSCRIPT_CONTEXT_DESCRIPTION,
+  TRANSCRIPT_CONTEXT_SCHEMA,
+} from './search-schemas'
 import type { McpToolContext, ToolDef } from './types'
 
-interface SearchHit {
-  id: number
-  conversationId: string
-  seq: number
-  type: string
-  subtype?: string
-  snippet: string
-  score: number
-  content: unknown
-  createdAt: number
+interface WindowResponse {
+  entries: Array<{
+    seq: number
+    type: string
+    subtype?: string
+    content: unknown
+    timestamp?: number
+    conversationId?: string
+  }>
   conversation?: { id: string; project?: string; title?: string; description?: string }
-  window?: unknown[]
 }
 
-interface SearchResponse {
-  hits: SearchHit[]
-  total: number
-  query: string
-  limit: number
-  offset: number
+function errorResult(text: string) {
+  return { content: [{ type: 'text', text }], isError: true }
 }
 
-function formatConversationsOutput(data: SearchResponse): string {
-  const grouped = new Map<string, { conv: SearchHit['conversation']; hits: SearchHit[]; bestScore: number }>()
+/** Copy defined values onto a query string. `null`/`undefined` entries are
+ *  dropped, so a caller passes the whole shape once instead of guarding each
+ *  field with its own `if`. */
+function setQuery(url: URL, values: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(values)) {
+    if (value != null) url.searchParams.set(key, String(value))
+  }
+}
 
-  for (const hit of data.hits) {
-    const cid = hit.conversationId
-    const existing = grouped.get(cid)
-    if (existing) {
-      existing.hits.push(hit)
-      if (hit.score < existing.bestScore) existing.bestScore = hit.score
-    } else {
-      grouped.set(cid, { conv: hit.conversation, hits: [hit], bestScore: hit.score })
+/** `types` arrives as an array from a well-behaved caller and a comma string
+ *  from a sloppy one. Normalise to the comma list the broker expects. */
+function typeList(types: unknown): string | null {
+  if (types == null) return null
+  const list = Array.isArray(types) ? types : String(types).split(',')
+  return list.map(String).join(',') || null
+}
+
+/** How each output mode renders a search response. Unknown modes fall back to
+ *  the grouped view, which is also the documented default. */
+const OUTPUT_FORMATTERS: Record<string, (data: SearchResponse) => string> = {
+  full: data => JSON.stringify(data, null, 2),
+  snippets: formatSnippetsOutput,
+  conversations: formatConversationsOutput,
+}
+
+/** Why a transcript-window request cannot be served, or null if it can. */
+function windowRequestError(conversationId: string, params: Record<string, unknown>): string | null {
+  if (!conversationId) return 'Error: conversationId is required'
+  if (params.aroundSeq == null && params.aroundId == null && params.tail == null) {
+    return 'Error: aroundSeq, aroundId, or tail required'
+  }
+  return null
+}
+
+type BrokerFetch<T> = { ok: true; data: T } | { ok: false; result: ReturnType<typeof errorResult> }
+
+/** GET a broker endpoint and parse it, or hand back the error result to return
+ *  verbatim. `label` names the tool in the debug line and the user-facing text,
+ *  which is the only thing that differed between the two call sites. */
+async function fetchBroker<T>(url: URL, headers: Record<string, string>, label: string): Promise<BrokerFetch<T>> {
+  try {
+    const res = await fetch(url, { headers })
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '')
+      debug(`[channel] ${label}: HTTP ${res.status} ${errBody.slice(0, 200)}`)
+      return {
+        ok: false,
+        result: errorResult(`${label} failed (${res.status}): ${errBody.slice(0, 200) || 'unknown'}`),
+      }
     }
+    return { ok: true, data: (await res.json()) as T }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown'
+    debug(`[channel] ${label} error: ${msg}`)
+    return { ok: false, result: errorResult(`${label} request failed: ${msg}`) }
   }
-
-  const lines: string[] = [`Found ${data.total} hits across ${grouped.size} conversations for "${data.query}"`, '']
-
-  for (const [cid, group] of grouped) {
-    const title = group.conv?.title || 'untitled'
-    const project = group.conv?.project || ''
-    const shortProject = project
-    lines.push(`[${cid}] ${title}`)
-    lines.push(`  project: ${shortProject}  |  hits: ${group.hits.length}`)
-    const best = group.hits[0]
-    if (best?.snippet) {
-      const clean = best.snippet
-        .replace(/<\/?mark>/g, '*')
-        .replace(/\.\.\./g, '...')
-        .trim()
-      lines.push(`  best match: ${clean}`)
-    }
-    lines.push('')
-  }
-
-  lines.push('Drill in: search_transcripts({ query, conversationId, output: "snippets" })')
-  return lines.join('\n')
-}
-
-function formatSnippetsOutput(data: SearchResponse): string {
-  const lines: string[] = [`${data.total} matches for "${data.query}" (offset ${data.offset}, limit ${data.limit})`, '']
-
-  for (const hit of data.hits) {
-    const convTitle = hit.conversation?.title || ''
-    const ts = hit.createdAt ? new Date(hit.createdAt).toISOString().replace('T', ' ').slice(0, 19) : ''
-    const clean = (hit.snippet || '')
-      .replace(/<\/?mark>/g, '*')
-      .replace(/\.\.\./g, '...')
-      .trim()
-
-    lines.push(`seq ${hit.seq}  |  ${hit.type}${hit.subtype ? `/${hit.subtype}` : ''}  |  ${ts}  |  ${convTitle}`)
-    lines.push(`  conv: ${hit.conversationId}`)
-    if (clean) lines.push(`  ${clean}`)
-    lines.push('')
-  }
-
-  lines.push('Expand: get_transcript_context({ conversationId, aroundSeq })')
-  return lines.join('\n')
 }
 
 export function registerSearchTools(ctx: McpToolContext): Record<string, ToolDef> {
@@ -106,197 +112,66 @@ export function registerSearchTools(ctx: McpToolContext): Record<string, ToolDef
 
   return {
     search_transcripts: {
-      description:
-        'Search conversation transcripts (FTS5 full-text). Progressive: start broad, drill in.\n\n' +
-        'OUTPUT MODES (progressive disclosure):\n' +
-        '  1. "conversations" (default) -- which conversations match? Grouped, compact.\n' +
-        '  2. "snippets" -- individual hits with highlighted snippets. Add conversationId to focus.\n' +
-        '  3. "full" -- raw transcript entries (large! use sparingly).\n\n' +
-        'TYPICAL FLOW:\n' +
-        '  search_transcripts({ query: "auth" })                          -> conversations list\n' +
-        '  search_transcripts({ query: "auth", conversationId: "abc..." , output: "snippets" }) -> snippets in that conversation\n' +
-        '  get_transcript_context({ conversationId: "abc...", aroundSeq: 42 })  -> full content window\n\n' +
-        'QUERY SYNTAX (FTS5):\n' +
-        '  bareword: `migration` | phrase: `"merge conflict"` | boolean: `auth AND token`\n' +
-        '  prefix: `migrat*` | NOT: `error NOT timeout` | NEAR: `NEAR(foo bar, 5)`\n\n' +
-        'FILTERS: conversationId, project (URI or glob `path/*`), types (["user","assistant",...]).\n' +
-        'SORT: "relevance" (default, best match first) or "recency" (newest first -- use to find recent activity).',
-      inputSchema: {
-        type: 'object' as const,
-        properties: {
-          query: {
-            type: 'string',
-            description: 'FTS5 search query.',
-          },
-          output: {
-            type: 'string',
-            enum: ['conversations', 'snippets', 'full'],
-            description:
-              'Output mode. "conversations" (default) = grouped by conversation. "snippets" = individual hits. "full" = raw entries.',
-          },
-          conversationId: {
-            type: 'string',
-            description: 'Limit to one conversation.',
-          },
-          project: {
-            type: 'string',
-            description: 'Filter by project URI (exact or glob suffix `path/*`).',
-          },
-          types: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'Filter by entry types: "user", "assistant", "tool_use", "tool_result", etc.',
-          },
-          sort: {
-            type: 'string',
-            enum: ['relevance', 'recency'],
-            description:
-              'Result order. "relevance" (default) = best FTS match first. "recency" = newest transcript entry first (date desc); use to surface recent activity regardless of match quality.',
-          },
-          limit: { type: 'number', description: 'Max results (1-100, default 20).' },
-          offset: { type: 'number', description: 'Pagination offset (default 0).' },
-        },
-        required: ['query'],
-      },
+      description: SEARCH_TRANSCRIPTS_DESCRIPTION,
+      inputSchema: SEARCH_TRANSCRIPTS_SCHEMA,
       async handle(params) {
         const http = brokerHttp()
-        if (!http) return { content: [{ type: 'text', text: 'Error: broker not available' }], isError: true }
+        if (!http) return errorResult('Error: broker not available')
+        // No query is BROWSE, not an error -- "my last three messages" has no
+        // search term to give, and rejecting it left that question unanswerable.
         const query = String(params.query || '').trim()
-        if (!query) return { content: [{ type: 'text', text: 'Error: query is required' }], isError: true }
-
         const output = String(params.output || 'conversations')
 
         const url = new URL(`${http}/api/search`)
         url.searchParams.set('q', query)
-        if (params.conversationId) url.searchParams.set('conversation', String(params.conversationId))
-        if (params.project) url.searchParams.set('project', String(params.project))
-        if (params.types) {
-          const types = Array.isArray(params.types) ? params.types : String(params.types).split(',')
-          url.searchParams.set('type', types.map(String).join(','))
-        }
-        if (params.sort === 'recency') url.searchParams.set('sort', 'recency')
-        if (params.limit != null) url.searchParams.set('limit', String(params.limit))
-        if (params.offset != null) url.searchParams.set('offset', String(params.offset))
+        setQuery(url, {
+          conversation: params.conversationId || null,
+          project: params.project || null,
+          type: typeList(params.types),
+          sort: params.sort === 'recency' ? 'recency' : null,
+          limit: params.limit,
+          offset: params.offset,
+        })
 
-        try {
-          const res = await fetch(url, { headers: authHeaders() })
-          if (!res.ok) {
-            const errBody = await res.text().catch(() => '')
-            debug(`[channel] search_transcripts: HTTP ${res.status} ${errBody.slice(0, 200)}`)
-            return {
-              content: [{ type: 'text', text: `Search failed (${res.status}): ${errBody.slice(0, 200) || 'unknown'}` }],
-              isError: true,
-            }
-          }
-          const data = (await res.json()) as SearchResponse
+        const fetched = await fetchBroker<SearchResponse>(url, authHeaders(), 'Search')
+        if (!fetched.ok) return fetched.result
 
-          let text: string
-          if (output === 'full') {
-            text = JSON.stringify(data, null, 2)
-          } else if (output === 'snippets') {
-            text = formatSnippetsOutput(data)
-          } else {
-            text = formatConversationsOutput(data)
-          }
-
-          return { content: [{ type: 'text', text }] }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'unknown'
-          debug(`[channel] search_transcripts error: ${msg}`)
-          return { content: [{ type: 'text', text: `Search request failed: ${msg}` }], isError: true }
-        }
+        const render = OUTPUT_FORMATTERS[output] ?? formatConversationsOutput
+        return { content: [{ type: 'text', text: render(fetched.data) }] }
       },
     },
 
     get_transcript_context: {
-      description:
-        'Sliding window of transcript entries around a point. Use after search_transcripts to read full content.\n\n' +
-        'Center on aroundSeq (from search hits) or aroundId. Adjust before/after (0-50) to expand.\n' +
-        'Output is compact text by default: per-entry header + canonical body, base64 stripped, ' +
-        'duplicate tool_result wrappers collapsed, per-entry byte cap with head/tail elision. ' +
-        'Walk pointers (next/prev) are printed at the bottom -- no seq arithmetic needed.\n' +
-        'Set format:"json" for the raw row dump (large; rarely useful). ' +
-        'Set maxBytesPerEntry to expand or tighten the per-entry cap (default 2000).',
-      inputSchema: {
-        type: 'object' as const,
-        properties: {
-          conversationId: { type: 'string', description: 'Conversation to read from.' },
-          aroundSeq: {
-            type: 'number',
-            description: 'Center on this sequence number (preferred). From search hit results.',
-          },
-          aroundId: {
-            type: 'number',
-            description: 'Center on this entry id (fallback).',
-          },
-          before: { type: 'number', description: 'Entries before center (0-50, default 5).' },
-          after: { type: 'number', description: 'Entries after center (0-50, default 5).' },
-          format: {
-            type: 'string',
-            enum: ['text', 'json'],
-            description: 'Output format. "text" (default) = compact human-readable. "json" = raw rows.',
-          },
-          maxBytesPerEntry: {
-            type: 'number',
-            description: 'Per-entry body byte cap for text format (default 2000). Ignored for json.',
-          },
-        },
-        required: ['conversationId'],
-      },
+      description: TRANSCRIPT_CONTEXT_DESCRIPTION,
+      inputSchema: TRANSCRIPT_CONTEXT_SCHEMA,
       async handle(params) {
         const http = brokerHttp()
-        if (!http) return { content: [{ type: 'text', text: 'Error: broker not available' }], isError: true }
+        if (!http) return errorResult('Error: broker not available')
         const conversationId = String(params.conversationId || '').trim()
-        if (!conversationId) {
-          return { content: [{ type: 'text', text: 'Error: conversationId is required' }], isError: true }
-        }
-        if (params.aroundSeq == null && params.aroundId == null) {
-          return { content: [{ type: 'text', text: 'Error: aroundSeq or aroundId required' }], isError: true }
-        }
+        const invalid = windowRequestError(conversationId, params)
+        if (invalid) return errorResult(invalid)
 
         const url = new URL(`${http}/api/transcript-window`)
-        url.searchParams.set('conversation', conversationId)
-        if (params.aroundSeq != null) url.searchParams.set('aroundSeq', String(params.aroundSeq))
-        if (params.aroundId != null) url.searchParams.set('aroundId', String(params.aroundId))
-        if (params.before != null) url.searchParams.set('before', String(params.before))
-        if (params.after != null) url.searchParams.set('after', String(params.after))
+        setQuery(url, {
+          conversation: conversationId,
+          aroundSeq: params.aroundSeq,
+          aroundId: params.aroundId,
+          tail: params.tail,
+          before: params.before,
+          after: params.after,
+        })
 
-        try {
-          const res = await fetch(url, { headers: authHeaders() })
-          if (!res.ok) {
-            const errBody = await res.text().catch(() => '')
-            debug(`[channel] get_transcript_context: HTTP ${res.status} ${errBody.slice(0, 200)}`)
-            return {
-              content: [
-                { type: 'text', text: `Context fetch failed (${res.status}): ${errBody.slice(0, 200) || 'unknown'}` },
-              ],
-              isError: true,
-            }
-          }
-          const data = (await res.json()) as {
-            entries: Array<{
-              seq: number
-              type: string
-              subtype?: string
-              content: unknown
-              timestamp?: number
-              conversationId?: string
-            }>
-            conversation?: { id: string; project?: string; title?: string; description?: string }
-          }
+        const fetched = await fetchBroker<WindowResponse>(url, authHeaders(), 'Context fetch')
+        if (!fetched.ok) return fetched.result
 
-          const format = String(params.format || 'text')
-          if (format === 'json') {
-            return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
-          }
-          const maxBytes = typeof params.maxBytesPerEntry === 'number' ? params.maxBytesPerEntry : undefined
-          const text = formatTranscriptWindow(data.entries, data.conversation, { maxBytesPerEntry: maxBytes })
-          return { content: [{ type: 'text', text }] }
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : 'unknown'
-          debug(`[channel] get_transcript_context error: ${msg}`)
-          return { content: [{ type: 'text', text: `Context request failed: ${msg}` }], isError: true }
+        if (String(params.format || 'text') === 'json') {
+          return { content: [{ type: 'text', text: JSON.stringify(fetched.data, null, 2) }] }
         }
+        const maxBytes = typeof params.maxBytesPerEntry === 'number' ? params.maxBytesPerEntry : undefined
+        const text = formatTranscriptWindow(fetched.data.entries, fetched.data.conversation, {
+          maxBytesPerEntry: maxBytes,
+        })
+        return { content: [{ type: 'text', text }] }
       },
     },
   }

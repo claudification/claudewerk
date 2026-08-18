@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import type { EventInput, EventRecord, EventStore } from '../types'
+import { appendTypeFilter } from './sql-filters'
 
 type Params = Record<string, string | number | bigint | boolean | null>
 
@@ -33,13 +34,7 @@ export function createSqliteEventStore(db: Database): EventStore {
       let sql = 'SELECT * FROM events WHERE conversation_id = $conversationId'
       const params: Params = { conversationId: conversationId }
 
-      if (opts?.types?.length) {
-        const placeholders = opts.types.map((_, i) => `$type${i}`)
-        sql += ` AND type IN (${placeholders.join(', ')})`
-        for (let i = 0; i < opts.types.length; i++) {
-          params[`type${i}`] = opts.types[i]
-        }
-      }
+      sql = appendTypeFilter(sql, params, opts?.types)
 
       if (opts?.afterId != null) {
         sql += ' AND id > $afterId'
