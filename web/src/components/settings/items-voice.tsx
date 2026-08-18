@@ -76,4 +76,24 @@ export const VOICE_ITEMS: SettingItem[] = [
       />
     ),
   },
+  {
+    tab: 'voice',
+    group: 'Voice input',
+    label: 'Pre-roll',
+    description:
+      'Send this much speech from BEFORE the key went down, so words spoken into the press are not lost (ms, 0 = off). Needs a warm mic -- turn on "Keep mic open" above, or press again within the warm stream TTL. Raw-PCM models only (flux); a container stream cannot be spliced.',
+    keywords: 'voice preroll pre-roll lead-in first word missing head buffer ring lookback',
+    render: (ctx, ariaLabel) => (
+      <input
+        aria-label={ariaLabel}
+        type="number"
+        min={0}
+        max={5000}
+        step={100}
+        value={ctx.prefs.voicePrerollMs ?? 1500}
+        onChange={e => ctx.updatePrefs({ voicePrerollMs: Math.max(0, Number(e.target.value) || 0) })}
+        className={`${NUM_INPUT_CLS} w-20`}
+      />
+    ),
+  },
 ]

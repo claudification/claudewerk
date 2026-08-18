@@ -4,11 +4,16 @@
  *
  *   container  MediaRecorder -> webm/opus (mp4/AAC on Safari). What nova-3
  *              auto-detects. A real container the decoder can sniff. Here.
+ *              Built per press, and it gets NO pre-roll: chunk 0 carries the
+ *              container header and the muxer's timeline is continuous, so there
+ *              is no point in the middle you can start sending from.
  *   pcm16      AudioWorklet -> linear16 @ 16kHz. The ONLY thing
  *              @cf/deepgram/flux accepts: fed a container it takes every byte,
- *              errors on nothing, and returns no transcript at all. In
- *              voice-capture-pcm, along with the scar tissue that explains why
- *              it was deleted once and what changed before it came back.
+ *              errors on nothing, and returns no transcript at all. The graph
+ *              lives in voice-capture-pcm (with the scar tissue explaining why it
+ *              was deleted once), and is OWNED by voice-preroll, which keeps it
+ *              running between presses so the press pays for no setup and the
+ *              last second of speech before it is already in hand.
  *
  * The chunk handler is passed to the FACTORY, not registered afterwards: a
  * container's chunk 0 carries the header, and an engine that starts producing
@@ -22,7 +27,7 @@
  */
 
 import { type CaptureEngine, type CaptureKind, type ChunkHandler, stopGuard } from '@/hooks/voice-capture-contract'
-import { pcmEngine } from '@/hooks/voice-capture-pcm'
+import { armPreroll } from '@/hooks/voice-preroll'
 
 export type { AudioChunk, CaptureEngine, CaptureKind, ChunkHandler } from '@/hooks/voice-capture-contract'
 export { chunkBytes } from '@/hooks/voice-capture-contract'
@@ -73,12 +78,13 @@ function containerEngine(stream: MediaStream, onChunk: ChunkHandler): CaptureEng
   }
 }
 
-/** Build the engine this model requires. Async ONLY for pcm16 (the worklet
- *  module has to load); the caller must not assume either shape. */
+/** Build the engine this model requires. Async ONLY when pcm16 has to build its
+ *  graph -- on a warm mic that graph is already running and arming is
+ *  synchronous, which is the point. The caller must not assume either shape. */
 export function startCapture(
   stream: MediaStream,
   kind: CaptureKind,
   onChunk: ChunkHandler,
 ): CaptureEngine | Promise<CaptureEngine> {
-  return kind === 'pcm16' ? pcmEngine(stream, onChunk) : containerEngine(stream, onChunk)
+  return kind === 'pcm16' ? armPreroll(stream, onChunk) : containerEngine(stream, onChunk)
 }
