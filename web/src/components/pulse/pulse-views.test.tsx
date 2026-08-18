@@ -52,6 +52,29 @@ describe('PulseRowItem', () => {
     expect(screen.getByText('2m')).toBeTruthy()
   })
 
+  it('tints the project and draws its icon when the project has settings', () => {
+    // The project used to render as flat grey mono on every row, so a
+    // hundred-row fleet gave no way to tell one project from another at a
+    // glance -- the icon + colour already existed in project settings and the
+    // command palette drew them; Pulse simply threw them away.
+    const { container } = render(
+      <PulseRowItem
+        row={row({ projectIcon: 'rocket', projectColor: 'oklch(0.7 0.15 250)' })}
+        query={parsePulseQuery('')}
+        onSelect={vi.fn()}
+      />,
+    )
+    const tag = screen.getByText('remote-claude').closest('span[style]')
+    expect(tag?.getAttribute('style')).toContain('oklch(0.7 0.15 250)')
+    expect(container.querySelector('svg')).toBeTruthy()
+  })
+
+  it('leaves the project uncoloured when the project has no settings', () => {
+    const { container } = render(<PulseRowItem row={row()} query={parsePulseQuery('')} onSelect={vi.fn()} />)
+    expect(screen.getByText('remote-claude')).toBeTruthy()
+    expect(container.querySelector('svg')).toBeNull()
+  })
+
   it('floors a very fresh row to "now" instead of flickering seconds', () => {
     render(<PulseRowItem row={row({ ageMs: 500 })} query={parsePulseQuery('')} onSelect={vi.fn()} />)
     expect(screen.getByText('now')).toBeTruthy()

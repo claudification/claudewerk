@@ -5,7 +5,7 @@ import { pulseActionText, pulseTag } from '@/lib/pulse/action-text'
 import { bandOf, compareInBand, PULSE_BANDS, type PulseBand } from '@/lib/pulse/bands'
 import { isEmptyQuery, matchesPulseQuery, type PulseQuery, parsePulseQuery } from '@/lib/pulse/filter'
 import { isManaged, type ManagedInfo, managedInfo } from '@/lib/pulse/managed'
-import type { Conversation } from '@/lib/types'
+import type { Conversation, ProjectSettings } from '@/lib/types'
 import { projectDisplayName } from '@/lib/utils'
 
 /** Bands that render as rows. `expired` is a collapsed count, never a band. */
@@ -17,6 +17,11 @@ export interface PulseRow {
   band: PulseBand
   title: string
   project: string
+  /** Project icon + colour, resolved ONCE here rather than per row at render:
+   *  the palette lists ~100 rows and each would otherwise re-read the settings
+   *  map. Absent when the project has no settings entry. */
+  projectIcon?: string
+  projectColor?: string
   action: string
   tag?: string
   ageMs: number
@@ -68,7 +73,7 @@ function useNowTick(intervalMs = 1_000): number {
   return now
 }
 
-function toRow(c: Conversation, band: PulseBand, now: number, label?: string): PulseRow {
+function toRow(c: Conversation, band: PulseBand, now: number, ps?: ProjectSettings): PulseRow {
   const managedBy = managedInfo(c)
   return {
     managedBy,
@@ -77,7 +82,9 @@ function toRow(c: Conversation, band: PulseBand, now: number, label?: string): P
     conversation: c,
     band,
     title: c.title || c.name || c.summary || c.id.slice(0, 8),
-    project: projectDisplayName(c.project, label),
+    project: projectDisplayName(c.project, ps?.label),
+    projectIcon: ps?.icon,
+    projectColor: ps?.color,
     action: pulseActionText(c),
     tag: pulseTag(c),
     ageMs: Math.max(0, now - c.lastActivity),
@@ -134,7 +141,7 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       (byBand.get(band) ?? [])
         .slice()
         .sort((a, b) => compareInBand(band, a, b))
-        .map(c => toRow(c, band, now, projectSettings[projectIdentityKey(c.project)]?.label))
+        .map(c => toRow(c, band, now, projectSettings[projectIdentityKey(c.project)]))
         .filter(row => matchesPulseQuery(row, query))
 
     const groups = VISIBLE_BANDS.map(band => ({ band, rows: build(band) })).filter(g => g.rows.length > 0)

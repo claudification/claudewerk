@@ -1,7 +1,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { type Conversation, canTerminal, projectPath } from '@/lib/types'
 import { cn, formatAge, formatModel, projectDisplayName } from '@/lib/utils'
-import { ProjectIcon } from '../project-icons'
+import { ProjectTag } from '../project-tag'
 import type { ConversationResultsProps } from './types'
 
 function statusIndicator(s: Conversation, selectedConversationId: string | null) {
@@ -44,6 +44,7 @@ export function ConversationRow({
   onSelect,
   onMouseEnter,
 }: ConversationRowProps) {
+  const ps = projectSettings[projectIdentityKey(conversation.project)]
   return (
     <button
       type="button"
@@ -60,32 +61,11 @@ export function ConversationRow({
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-foreground truncate flex items-center gap-1.5">
-          {projectSettings[projectIdentityKey(conversation.project)]?.icon && (
-            <span
-              style={
-                projectSettings[projectIdentityKey(conversation.project)]?.color
-                  ? { color: projectSettings[projectIdentityKey(conversation.project)].color }
-                  : undefined
-              }
-            >
-              <ProjectIcon
-                iconId={projectSettings[projectIdentityKey(conversation.project)]?.icon || ''}
-                className="size-3 inline"
-              />
-            </span>
-          )}
-          <span
-            style={
-              projectSettings[projectIdentityKey(conversation.project)]?.color
-                ? { color: projectSettings[projectIdentityKey(conversation.project)].color }
-                : undefined
-            }
-          >
-            {projectDisplayName(
-              projectPath(conversation.project),
-              projectSettings[projectIdentityKey(conversation.project)]?.label,
-            )}
-          </span>
+          <ProjectTag
+            name={projectDisplayName(projectPath(conversation.project), ps?.label)}
+            icon={ps?.icon}
+            color={ps?.color}
+          />
           {(conversation.title || conversation.agentName) && (
             <>
               <span className="text-comment">·</span>
@@ -141,14 +121,7 @@ export function ProjectRow({ projectUri, projectSettings, active, onSelect, onMo
       <span className="text-sm text-accent">{'◈'}</span>
       <div className="flex-1 min-w-0">
         <div className="text-xs text-foreground truncate flex items-center gap-1.5">
-          {ps?.icon && (
-            <span style={ps.color ? { color: ps.color } : undefined}>
-              <ProjectIcon iconId={ps.icon} className="size-3 inline" />
-            </span>
-          )}
-          <span style={ps?.color ? { color: ps.color } : undefined}>
-            {projectDisplayName(projectPath(projectUri), ps?.label)}
-          </span>
+          <ProjectTag name={projectDisplayName(projectPath(projectUri), ps?.label)} icon={ps?.icon} color={ps?.color} />
         </div>
         <div className="text-[10px] text-comment truncate">{projectPath(projectUri)}</div>
       </div>
