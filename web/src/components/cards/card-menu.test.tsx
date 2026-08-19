@@ -15,12 +15,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import type { CardKind, CardLookup, CardProvider } from '@/lib/cards'
+import type { CardLookup, CardProvider, CardSummary } from '@/lib/cards'
 import { registerCardProvider, resetCardProviders } from '@/lib/cards'
 
-const moveTask = vi.fn(async () => 'wall-time-cursor')
+const moveTask = vi.fn(async (_id: string, _to: string) => 'wall-time-cursor')
 vi.mock('@/hooks/use-project', () => ({
-  useProject: () => ({ moveTask: (...a: unknown[]) => moveTask(...(a as [string, never])), tasks: [] }),
+  useProject: () => ({ moveTask: (id: string, to: string) => moveTask(id, to), tasks: [] }),
 }))
 
 const { CardChip } = await import('./card-chip')
@@ -45,7 +45,7 @@ function provider(lookup: CardLookup): CardProvider {
   }
 }
 
-function ready(kind: CardKind): CardLookup {
+function ready(kind: CardSummary['kind']): CardLookup {
   return {
     status: 'ready',
     summary: {
