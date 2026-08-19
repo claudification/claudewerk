@@ -87,14 +87,35 @@ describe('wall state: coalesce, never queue', () => {
     const s = createWallState()
     s.noteHost({ nodeId: 'studio', alias: 'studio', at: 1, cpuPct: 10 })
     s.noteHost({ nodeId: 'studio', alias: 'studio', at: 2, cpuPct: 90 })
-    s.notePlan({ profile: 'a', utilization: 10, at: 1 })
-    s.notePlan({ profile: 'a', node: 'nas', utilization: 20, at: 1 })
+    s.notePlan({ profile: 'a', utilization: 10, at: 1, state: 'ok' })
+    s.notePlan({ profile: 'a', node: 'nas', utilization: 20, at: 1, state: 'ok' })
 
     const delta = s.drain()
     expect(delta.hosts).toHaveLength(1)
     expect(delta.hosts[0]?.cpuPct).toBe(90)
     // profile alone and profile@node are DIFFERENT series, not the same one twice.
     expect(delta.plan).toHaveLength(2)
+  })
+
+  // `plan` is the exception to latest-value-wins: S2 draws a five-hour shape, so
+  // the snapshot has to hand a fresh subscriber the series and not its last dot.
+  it('plan accumulates a per-key series, and the snapshot carries all of it', () => {
+    const s = createWallState()
+    s.notePlan({ profile: 'a', node: 'nas', utilization: 10, at: 1_000, state: 'ok' })
+    s.notePlan({ profile: 'a', node: 'nas', utilization: 55, at: 2_000, state: 'ok' })
+    s.notePlan({ profile: 'b', node: 'nas', utilization: 90, at: 1_500, state: 'ok' })
+
+    expect(s.drain().plan).toHaveLength(3)
+    // Drained is not forgotten -- the accumulator still holds the history.
+    expect(s.snapshot().plan.map(p => p.at)).toEqual([1_000, 1_500, 2_000])
+  })
+
+  it('refuses a plan sample that would redraw history backwards', () => {
+    const s = createWallState()
+    s.notePlan({ profile: 'a', utilization: 10, at: 2_000, state: 'ok' })
+    s.notePlan({ profile: 'a', utilization: 99, at: 1_000, state: 'ok' })
+
+    expect(s.drain().plan).toHaveLength(1)
   })
 })
 

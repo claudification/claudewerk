@@ -102,6 +102,7 @@ import { recentCutoff, recentLimit, resolveRecentWindow } from './store/recent-w
 import type { ConversationStats, RecentScopeFilter, StoreDriver, TaskRecord } from './store/types'
 import type { TerminationLog } from './termination-log'
 import { dropWallSubscriber, publishWallPulseGone } from './wall'
+import { samplePlanUsage } from './wall/plan-usage-series'
 import { attachWallSources, pushWallPulse } from './wall/wall-sources'
 
 export type { ControlPanelMessage, ConversationSummary }
@@ -2956,12 +2957,34 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   function getUsage(): UsageUpdate | undefined {
     return sentinelState.usage
   }
+
+  /**
+   * THE ONE SEAM THE WALL'S PLAN SERIES HANGS OFF.
+   *
+   * Both usage paths -- the sentinel's batched poll and the per-conversation
+   * `rate_limit_event` fold -- end in this same merged `sentinel_usage_report`
+   * broadcast. Sampling here means S2 gets the series without a poll of its own
+   * and without a second utilization path to keep in step with this one.
+   *
+   * Sampling happens BEFORE the broadcast, not inside it: `broadcast()` returns
+   * early when no control panel is connected, and a fleet running unattended is
+   * exactly when the throttle history matters most.
+   */
+  function broadcastUsage(message: ControlPanelMessage): void {
+    const sentinelId = message.sentinelId
+    if (message.profileUsage && sentinelId) {
+      const conn = sentinelState.sentinels.get(sentinelId)
+      samplePlanUsage(message.profileUsage, conn?.alias || sentinelId)
+    }
+    broadcast(message)
+  }
+
   function setSentinelProfileUsage(
     ws: ServerWebSocket<unknown>,
     profiles: ProfileUsageSnapshot[],
     polledAt: number,
   ): boolean {
-    return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcast)
+    return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcastUsage)
   }
   function recordInferenceUsage(
     sentinelId: string,
@@ -2973,7 +2996,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       observedAt: number
     },
   ): boolean {
-    return recordInferenceUsageImpl(sentinelState, sentinelId, profile, args, broadcast)
+    return recordInferenceUsageImpl(sentinelState, sentinelId, profile, args, broadcastUsage)
   }
   function getSentinelProfileUsage(
     sentinelId: string,

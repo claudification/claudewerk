@@ -1,4 +1,4 @@
-import type { WallCommitRow, WallFrame, WallPulseRow } from '@shared/wall'
+import type { WallCommitRow, WallFrame, WallPlanSample, WallPulseRow } from '@shared/wall'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { applyWallFrame, getWallView, resetWallFrames, subscribe } from './wall-frame-store'
 
@@ -101,5 +101,49 @@ describe('wall frame store', () => {
     expect(view.pulse).toHaveLength(0)
     expect(view.commits).toHaveLength(0)
     expect(view.gaps).toBe(0)
+  })
+})
+
+/** `plan` is the one section that is a SERIES rather than a latest value. It is
+ *  also the one a flat FIFO would silently corrupt: interleave two profiles and
+ *  the busier one evicts the quieter one's history, leaving S2 drawing a line
+ *  with a hole in it that looks exactly like real data. */
+describe('wall frame store: the plan series', () => {
+  const T = 1_760_000_000_000
+
+  function plan(over: Partial<WallPlanSample> = {}): WallPlanSample {
+    return { profile: 'default', utilization: 40, at: T, state: 'ok', ...over }
+  }
+
+  it('accumulates a series rather than keeping the latest sample', () => {
+    applyWallFrame(frame({ at: T, plan: [plan({ at: T, utilization: 10 })] }))
+    applyWallFrame(frame({ at: T + 1_000, plan: [plan({ at: T + 1_000, utilization: 20 })] }))
+
+    expect(getWallView().plan.map(p => p.utilization)).toEqual([10, 20])
+  })
+
+  it('does not let a busy profile evict a quiet one', () => {
+    applyWallFrame(frame({ at: T, plan: [plan({ profile: 'quiet', at: T })] }))
+    for (let i = 1; i <= 400; i++) {
+      const at = T + i * 1_000
+      applyWallFrame(frame({ at, plan: [plan({ profile: 'busy', at, utilization: i % 100 })] }))
+    }
+
+    expect(getWallView().plan.filter(p => p.profile === 'quiet')).toHaveLength(1)
+  })
+
+  it('keeps only the last five hours', () => {
+    applyWallFrame(frame({ at: T, plan: [plan({ at: T })] }))
+    const later = T + 5 * 60 * 60 * 1000 + 60_000
+    applyWallFrame(frame({ at: later, plan: [plan({ at: later, utilization: 7 })] }))
+
+    expect(getWallView().plan.map(p => p.utilization)).toEqual([7])
+  })
+
+  it('a full frame replaces the series, so a resubscribe is not a double history', () => {
+    applyWallFrame(frame({ at: T, plan: [plan({ at: T, utilization: 10 })] }))
+    applyWallFrame(frame({ at: T + 1_000, full: true, plan: [plan({ at: T + 1_000, utilization: 55 })] }))
+
+    expect(getWallView().plan.map(p => p.utilization)).toEqual([55])
   })
 })

@@ -286,6 +286,132 @@
 	border-radius: 3px;
 }
 
+/* ---------- S2 plan usage ---------- */
+.wall-plan {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.wall-plan-chart {
+	width: 100%;
+	height: 64px;
+	display: block;
+	overflow: visible;
+}
+.wall-root[data-ambient] .wall-plan-chart {
+	height: 96px;
+}
+.wall-plan-grid {
+	stroke: var(--border-subtle);
+	stroke-width: 1;
+}
+.wall-plan-line {
+	fill: none;
+	stroke-width: 1.5;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+/* On top of the series and in the destructive token on purpose: it has to read
+   as a limit being crossed, not as one more profile. */
+.wall-plan-throttle {
+	stroke: var(--destructive);
+	stroke-width: 1;
+	stroke-dasharray: 4 3;
+	opacity: 0.85;
+}
+
+.wall-plan-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.wall-plan-row {
+	display: grid;
+	grid-template-columns: 8px auto 1fr auto;
+	align-items: center;
+	gap: 4px 6px;
+}
+.wall-plan-swatch {
+	width: 7px;
+	height: 7px;
+	border-radius: 2px;
+}
+.wall-plan-name {
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+.wall-plan-host {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-pct {
+	justify-self: end;
+	font-variant-numeric: tabular-nums;
+	color: var(--fg-muted);
+}
+.wall-plan-row[data-over] .wall-plan-pct {
+	color: var(--destructive);
+	font-weight: 700;
+}
+.wall-plan-row[data-state='unauthed'] .wall-plan-pct,
+.wall-plan-row[data-state='unknown'] .wall-plan-pct,
+.wall-plan-row[data-state='error'] .wall-plan-pct {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-row[data-state='error'] .wall-plan-pct {
+	color: var(--warning);
+}
+.wall-plan-bar {
+	grid-column: 2 / -1;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--surface-inset);
+	overflow: hidden;
+}
+.wall-plan-bar i {
+	display: block;
+	height: 100%;
+	border-radius: 2px;
+}
+/* A carried-forward reading is dimmed, so the bar itself says the number is not
+   live even before you read the age beside it. */
+.wall-plan-row[data-stale] .wall-plan-bar i {
+	opacity: 0.55;
+}
+.wall-plan-foot {
+	grid-column: 2 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 3px 8px;
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-stale {
+	color: var(--warning);
+}
+.wall-plan-stale::before {
+	content: 'as of ';
+	color: var(--comment);
+}
+.wall-plan-reset {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px 6px;
+	align-items: baseline;
+}
+.wall-plan-reset b {
+	font-weight: 700;
+	color: var(--fg-muted);
+}
+.wall-plan-when {
+	color: var(--comment);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
