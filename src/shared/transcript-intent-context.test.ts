@@ -73,6 +73,29 @@ describe('buildIntentContext', () => {
     expect(ctx.userMessages).toEqual([{ text: 'real', atMs: 2 }])
   })
 
+  // Found by benchmarking: real conversations were naming themselves after our
+  // own stop-hook text, because hook output arrives on a user turn.
+  test('drops hook feedback injected as a user turn', () => {
+    const hook = 'Stop hook feedback: You did real work this turn but never called set_status.'
+    const ctx = buildIntentContext([userLine(hook, 1), userLine('fix the spawn timeout', 2)])
+    expect(ctx.userMessages).toEqual([{ text: 'fix the spawn timeout', atMs: 2 }])
+  })
+
+  test('drops image placeholders and continuation banners', () => {
+    const ctx = buildIntentContext([
+      userLine('[Image: original 2308x1972, displayed at 2000x1709.]', 1),
+      userLine('This session is being continued from a previous conversation', 2),
+      userLine('real ask', 3),
+    ])
+    expect(ctx.userMessages).toEqual([{ text: 'real ask', atMs: 3 }])
+  })
+
+  // A human quoting a hook is still the human -- only a LEADING match counts.
+  test('keeps a human message that merely mentions a hook', () => {
+    const ctx = buildIntentContext([userLine('why does the stop hook feedback keep firing?', 1)])
+    expect(ctx.userMessages).toHaveLength(1)
+  })
+
   test('bounds the activity tail to the most recent entries', () => {
     const lines = Array.from({ length: 40 }, (_, i) => ({
       content: line({ role: 'assistant', content: [{ type: 'tool_use', name: `T${i}`, input: {} }] }),

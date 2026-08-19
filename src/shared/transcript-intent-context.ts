@@ -90,21 +90,43 @@ export function conversationShape(ctx: IntentContext): 'new' | 'long' {
 }
 
 /**
+ * Text that arrives on a `user` turn but is the HARNESS talking, not the human.
+ *
+ * Found by benchmarking: several real conversations named themselves after
+ * `"Stop hook feedback: You did real work this turn but never called
+ * set_status..."`, because hook output is injected as a user message. A
+ * classifier reading that describes our own tooling instead of the work.
+ *
+ * Matched at the START only -- a human quoting a hook mid-sentence is still the
+ * human, and dropping their whole message would be worse than keeping it.
+ */
+const INJECTED_PREFIXES = [
+  '<', // <system-reminder>, <channel>, <forked...>
+  'stop hook feedback',
+  'posttooluse:',
+  'pretooluse:',
+  'caveat: the messages below',
+  '[image:', // an image placeholder carries no intent text
+  'this session is being continued',
+]
+
+function isInjected(text: string): boolean {
+  const head = text.trimStart().toLowerCase()
+  return INJECTED_PREFIXES.some(p => head.startsWith(p))
+}
+
+/**
  * Fold raw transcript lines into classifier context.
  *
- * `<system-reminder>`-style injected turns are dropped: they are the harness
- * talking, not the human, and counting them would both misread the shape and
- * pad the context with text no one asked for.
+ * Harness-injected turns are dropped: they are not the human, and counting them
+ * both misreads the shape and hands the classifier our own plumbing to name.
  */
-export function buildIntentContext(
-  lines: Array<{ content: string; atMs: number }>,
-  maxActivity = 25,
-): IntentContext {
+export function buildIntentContext(lines: Array<{ content: string; atMs: number }>, maxActivity = 25): IntentContext {
   const userMessages: IntentUserMessage[] = []
   const activity: string[] = []
   for (const line of lines) {
     const { user, activity: act } = extractText(line.content)
-    if (user && !user.startsWith('<')) userMessages.push({ text: user.slice(0, 2000), atMs: line.atMs })
+    if (user && !isInjected(user)) userMessages.push({ text: user.slice(0, 2000), atMs: line.atMs })
     if (act) activity.push(act)
   }
   return { userMessages, activity: activity.slice(-maxActivity) }
