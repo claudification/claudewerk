@@ -26,6 +26,7 @@ import { openTerminateLineageConfirm } from '@/components/terminate-lineage-conf
 import { openVacuum } from '@/components/vacuum/vacuum-state'
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
+import { openWall } from '@/components/wall/wall-state'
 import { openCommitBrowser } from '@/hooks/use-commit-modals'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
@@ -699,6 +700,14 @@ export function useGlobalCommands(toggleSidebar: () => void) {
   useCommand('overseer', () => openOverseer(), {
     label: 'Overseer -- what is running unattended',
     group: 'System',
+  })
+
+  // Gated to match `{canAdmin && <WallModal />}` in app.tsx. Without the guard
+  // the entry lists for every user and picking it opens nothing.
+  useCommand('wall', () => openWall(), {
+    label: 'THE WALL -- the whole fleet on one surface',
+    group: 'System',
+    when: () => useConversationsStore.getState().permissions.canAdmin,
   })
 
   // Quick task opener. Registered HERE (eager, app-shell level) and NOT inside

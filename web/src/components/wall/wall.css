@@ -1,0 +1,306 @@
+/**
+ * THE WALL -- surface-local styling.
+ *
+ * Two things Tailwind cannot express cleanly and one it must not: the hard
+ * three-column grid, the thin scrollbars, and the AMBIENT type scale. Ambient
+ * scales by moving two custom properties on the root (`--wall-fs`,
+ * `--wall-pane-pad`) exactly the way the approved mockup's `body.ambient` block
+ * does -- a utility class per size would need every descendant to know it.
+ *
+ * Colours are the app's own tokens, not the mockup's raw oklch. The mockup took
+ * its palette from this file's neutral ladder in the first place; a second copy
+ * would drift the first time a theme changes.
+ */
+
+.wall-root {
+	--wall-fs: 12px;
+	--wall-pane-pad: 10px;
+	--wall-gap: 8px;
+
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-mono);
+	font-size: var(--wall-fs);
+	line-height: 1.45;
+}
+
+/* ---------- W3 ambient ---------- */
+.wall-root[data-ambient] {
+	--wall-fs: 15px;
+	--wall-pane-pad: 14px;
+	--wall-gap: 12px;
+}
+.wall-root[data-ambient] .wall-hide-ambient {
+	display: none !important;
+}
+.wall-root[data-ambient] .wall-pane-title {
+	font-size: 12px;
+}
+.wall-root[data-ambient] .wall-brand b {
+	font-size: 18px;
+}
+
+/* ---------- header ---------- */
+.wall-header {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border-subtle);
+	background: var(--card);
+	flex: 0 0 auto;
+}
+.wall-brand {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	flex: 0 0 auto;
+}
+.wall-brand b {
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	font-size: 13px;
+}
+.wall-clock {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	font-variant-numeric: tabular-nums;
+}
+.wall-livedot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--success);
+	align-self: center;
+	animation: wall-pulse 2s infinite;
+}
+@keyframes wall-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.25;
+	}
+}
+
+/* W2 filter -- inert until wall-filter-bus lands. */
+.wall-filter {
+	flex: 1 1 320px;
+	min-width: 180px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--surface-inset);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 3px 8px;
+}
+.wall-filter:focus-within {
+	border-color: var(--border-strong);
+}
+.wall-filter input {
+	flex: 1;
+	min-width: 0;
+	background: none;
+	border: none;
+	outline: none;
+	color: var(--foreground);
+	font: inherit;
+	padding: 2px 0;
+}
+.wall-filter input::placeholder {
+	color: var(--comment);
+}
+
+/* W1 time cursor -- inert until wall-time-cursor lands. */
+.wall-scrub {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1 1 280px;
+	min-width: 180px;
+}
+.wall-scrub-label {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+	flex: 0 0 auto;
+}
+.wall-scrub input {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--foreground);
+}
+.wall-scrub-value {
+	flex: 0 0 48px;
+	text-align: right;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--success);
+}
+
+.wall-btns {
+	display: flex;
+	gap: 4px;
+	flex: 0 0 auto;
+}
+.wall-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.wall-btn:disabled:hover {
+	border-color: var(--border);
+	color: var(--fg-muted);
+}
+
+/* ---------- A5 NOW strip ---------- */
+.wall-nowbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 4px 12px;
+	border-bottom: 1px solid var(--border-subtle);
+	background: var(--card);
+	flex: 0 0 auto;
+}
+.wall-nowbar-cap {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	flex: 0 0 auto;
+}
+.wall-btn {
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 3px 8px;
+	color: var(--fg-muted);
+	font: inherit;
+	font-size: 11px;
+	background: none;
+	cursor: pointer;
+}
+.wall-btn:hover {
+	border-color: var(--border-strong);
+	color: var(--foreground);
+}
+.wall-btn[data-on] {
+	background: var(--surface-raised);
+	border-color: var(--border-strong);
+	color: var(--foreground);
+}
+.wall-kbd {
+	color: var(--comment);
+	font-size: 9px;
+	margin-left: 5px;
+}
+
+/* ---------- the hard grid ---------- */
+.wall-grid {
+	flex: 1;
+	display: grid;
+	gap: var(--wall-gap);
+	padding: var(--wall-gap);
+	overflow: hidden;
+	grid-template-columns: minmax(300px, 5fr) minmax(280px, 4fr) minmax(240px, 3.2fr);
+	grid-template-rows: 1fr;
+}
+.wall-col {
+	display: flex;
+	flex-direction: column;
+	gap: var(--wall-gap);
+	min-height: 0;
+	overflow: hidden;
+}
+.wall-col-scroll {
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+.wall-col-scroll::-webkit-scrollbar {
+	width: 6px;
+}
+.wall-col-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+
+/* ---------- pane chrome ---------- */
+.wall-pane {
+	background: var(--card);
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	flex: 0 0 auto;
+}
+.wall-pane-grow {
+	flex: 1 1 auto;
+}
+.wall-pane-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--border-subtle);
+	flex: 0 0 auto;
+}
+.wall-pane-title {
+	margin: 0;
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	font-weight: 700;
+	color: var(--fg-muted);
+}
+.wall-pane-code {
+	color: var(--comment);
+	font-size: 9px;
+	letter-spacing: 0.06em;
+}
+.wall-pane-count {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-pane-body {
+	overflow: auto;
+	padding: var(--wall-pane-pad);
+	flex: 1;
+	min-height: 0;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+.wall-pane-body::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+.wall-pane-body::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+
+/* ---------- legend ---------- */
+.wall-footer {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 5px 12px;
+	border-top: 1px solid var(--border-subtle);
+	background: var(--card);
+	color: var(--comment);
+	font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wall-livedot {
+		animation: none;
+	}
+}
