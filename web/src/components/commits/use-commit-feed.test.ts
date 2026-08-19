@@ -33,7 +33,10 @@ describe('useCommitFeed', () => {
   })
 
   it('still stops loading on a non-ok response', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500 })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 500 })),
+    )
 
     const { result } = renderHook(() => useCommitFeed({}))
     await waitFor(() => expect(result.current.loading).toBe(false))
