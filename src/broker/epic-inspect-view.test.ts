@@ -37,6 +37,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: 'claude://s/p',
     inFlight: [],
     overseerAlive: false,
+    liveOverseers: [],
     settled: [],
     maxGenSeen: 0,
     ...over,

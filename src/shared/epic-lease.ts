@@ -37,6 +37,20 @@ export interface LeaseRequest {
   /** A human breaking a stuck lease. Skips the liveness and CAS checks, never
    *  the audit -- the displaced lease comes back in `replaced`. */
   force?: boolean
+  /**
+   * SWAP THE REAL CONVERSATION ID IN, same generation.
+   *
+   * A wake must take the lease BEFORE it knows its conversation id -- the CAS is
+   * what decides whether it may spawn at all -- so it takes it under a `pending-`
+   * placeholder and adopts once the spawn returns. Adoption is not a wake: it
+   * burns no generation and keeps the original take time, so the stale window
+   * still measures how long the WAKE has been sitting.
+   *
+   * Without it the board carries a holder no lookup can resolve, which is worse
+   * than an empty lease -- the panel shows no overseer, and every check written
+   * as "is the holder alive" silently answers no.
+   */
+  adopt?: boolean
 }
 
 export type LeaseDecision =
@@ -80,6 +94,10 @@ export function releasePatch(): Record<string, unknown> {
   return { overseer: '', overseer_at: '' }
 }
 
+/** The holder reported when there is none -- a refusal still owes the caller a
+ *  shape it can read without a null check. */
+const EMPTY_LEASE: EpicLease = { convId: '', gen: 0, at: '' }
+
 function isStale(lease: EpicLease, nowMs: number): boolean {
   if (!lease.at) return true
   const taken = Date.parse(lease.at)
@@ -95,9 +113,21 @@ export function evaluateLease(current: EpicLease | null, req: LeaseRequest, nowM
   const next = (fromGen: number): EpicLease => ({ convId: req.convId, gen: fromGen + 1, at: nowIso(nowMs) })
 
   // Never run: the first generation is 1, whatever the waker guessed.
-  if (!current) return { grant: true, lease: { convId: req.convId, gen: 1, at: nowIso(nowMs) } }
+  if (!current) {
+    if (req.adopt) return { grant: false, reason: 'nothing to adopt: the lease was never taken', holder: EMPTY_LEASE }
+    return { grant: true, lease: { convId: req.convId, gen: 1, at: nowIso(nowMs) } }
+  }
 
   if (req.force) return { grant: true, lease: next(current.gen), replaced: current }
+
+  // Adoption is the SAME grip under its real name, so it is checked against the
+  // generation it is adopting and never advances one.
+  if (req.adopt) {
+    if (current.gen !== req.expectGen) {
+      return { grant: false, reason: `stale adopt: expected gen ${req.expectGen}, epic is at gen ${current.gen}`, holder: current }
+    }
+    return { grant: true, lease: { convId: req.convId, gen: current.gen, at: current.at }, replaced: current }
+  }
 
   // Someone else already woke on the same fact. Exactly one waker sees a match.
   if (current.gen !== req.expectGen) {

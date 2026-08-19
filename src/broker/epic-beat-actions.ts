@@ -8,6 +8,7 @@
  */
 
 import { fingerprintDelta } from '../shared/epic-board-fingerprint'
+import type { EpicLease } from '../shared/epic-lease'
 import type { planEpic } from '../shared/epic-ready'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { EpicAction, EpicBeat } from './epic-beat'
@@ -62,17 +63,57 @@ async function takeLease(
   convId: string,
   expectGen: number,
   what: string,
+  holder?: EpicLease | null,
 ): Promise<number | null> {
   const res = await epicIo().sendEpicOp(deps, group.project, {
     op: 'lease',
     epicId: group.epicId,
-    lease: { convId, expectGen, holderAlive: group.overseerAlive },
+    // Is THE HOLDER alive -- not "is any overseer alive", which reads true in
+    // exactly the case this check exists to refuse.
+    lease: { convId, expectGen, holderAlive: holderIsAlive(group, holder) },
   })
   if (!res.ok || !res.lease?.granted) {
     deps.log(`${tag(group.epicId, run.gen)} ${what} refused: ${res.lease?.reason ?? res.error ?? 'unknown'}`)
     return null
   }
   return res.lease.gen
+}
+
+/**
+ * Does the conversation named on the lease still live?
+ *
+ * With no holder known -- the run artifact was unreadable, or nothing has ever
+ * taken it -- fall back to "is any overseer alive", which is the conservative
+ * answer: it refuses a wake rather than stacking a second overseer.
+ */
+function holderIsAlive(group: EpicGroup, holder?: EpicLease | null): boolean {
+  if (!holder?.convId) return group.overseerAlive
+  return group.liveOverseers.includes(holder.convId)
+}
+
+/**
+ * SWAP THE REAL CONVERSATION ID IN over the `pending-` placeholder the wake took
+ * the lease under. Same generation, so this is not a second wake.
+ *
+ * A failure is logged and swallowed on purpose: the overseer is already running,
+ * and refusing to proceed because the bookkeeping write missed would trade a
+ * wrong holder id for a lost generation. The log line is what makes the mismatch
+ * findable (LOG EVERYTHING).
+ */
+async function adoptLease(deps: BeatDeps, group: EpicGroup, gen: number, convId: string, what: string): Promise<void> {
+  const res = await epicIo().sendEpicOp(deps, group.project, {
+    op: 'lease',
+    epicId: group.epicId,
+    lease: { convId, expectGen: gen, holderAlive: true, adopt: true },
+  })
+  if (!res.ok || !res.lease?.granted) {
+    deps.log(
+      `${tag(group.epicId, gen)} ${what} lease adopt FAILED for ${convId.slice(0, 8)}: ` +
+        `${res.lease?.reason ?? res.error ?? 'unknown'} -- the board still names the placeholder`,
+    )
+    return
+  }
+  deps.log(`${tag(group.epicId, gen)} ${what} lease adopted by ${convId.slice(0, 8)} at gen ${gen}`)
 }
 
 /** Spawn a planned seat and say so. Returns the conversation id, or null. */
@@ -101,10 +142,10 @@ async function wakeOverseer(
   ctx: ActionContext,
 ): Promise<string | null> {
   const convId = `pending-${group.epicId}-${action.expectGen + 1}`
-  const gen = await takeLease(deps, group, run, convId, action.expectGen, 'wake')
+  const gen = await takeLease(deps, group, run, convId, action.expectGen, 'wake', ctx.holder)
   if (gen === null) return null
 
-  return spawnSeat(
+  const spawned = await spawnSeat(
     deps,
     group,
     gen,
@@ -119,6 +160,8 @@ async function wakeOverseer(
     }),
     'overseer',
   )
+  if (spawned) await adoptLease(deps, group, gen, spawned, 'overseer')
+  return spawned
 }
 
 /** Dispatch or verify one card. */
@@ -164,7 +207,7 @@ async function spawnPlanner(
   ctx: ActionContext,
 ): Promise<string | null> {
   const io = epicIo()
-  const gen = await takeLease(deps, group, run, `pending-${group.epicId}-planner`, run.gen, 'planner')
+  const gen = await takeLease(deps, group, run, `pending-${group.epicId}-planner`, run.gen, 'planner', ctx.holder)
   if (gen === null) return null
 
   await io.sendEpicOp(deps, group.project, {
@@ -187,6 +230,7 @@ async function spawnPlanner(
     'planner',
   )
   if (!convId) return null
+  await adoptLease(deps, group, gen, convId, 'planner')
 
   await io.appendBaton(deps, group.project, group.epicId, {
     kind: 'intent',
@@ -270,6 +314,13 @@ export interface ActionContext {
   cardLines: string[]
   /** Planning generation only: the epic card's own body -- where intent lives. */
   epicBody: string
+  /**
+   * The lease as it stands on the board, from the SAME read the run came from.
+   * The CAS needs the holder's identity to ask whether that holder is alive; it
+   * was being fetched and thrown away, so the check ran on "is any overseer
+   * alive" and could never refuse.
+   */
+  holder: EpicLease | null
 }
 
 /** Everything a performer is handed. One bag so the map's entries share a

@@ -175,6 +175,7 @@ export async function beatOneEpic(
       project,
       inFlight: [],
       overseerAlive: false,
+      liveOverseers: [],
       settled: [],
       maxGenSeen: 0,
     }
