@@ -18,6 +18,7 @@ import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
 import { TASK_STATUSES, type TaskStatus } from './task-statuses'
+import { isWallPinned } from './wall-pin'
 
 /** Keys the store owns and renders in a stable order. Everything else is
  *  preserved verbatim, after these. DERIVED, not declared: the order lives in
@@ -77,6 +78,10 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     quest: readOne(linkage, 'quest'),
     epic: readOne(linkage, 'epic'),
     color: raw.meta.color === undefined ? undefined : String(raw.meta.color),
+    // Only ever `true` on the wire. An unpinned card carries no key at all, so
+    // projecting `false` would make every card on the board claim a pin state it
+    // does not have.
+    wallPinned: isWallPinned(raw.meta) || undefined,
     dependsOn: linkage.depends_on,
     relatesTo: linkage.relates_to,
     created: String(raw.meta.created || ''),

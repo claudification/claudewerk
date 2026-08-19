@@ -89,6 +89,4 @@ if (flags.includes('--apply')) {
   for (const f of qualifying) console.log(f)
 }
 
-console.error(
-  `${qualifying.length} of ${jsdom.size} files qualify (identical results under both environments)`,
-)
+console.error(`${qualifying.length} of ${jsdom.size} files qualify (identical results under both environments)`)

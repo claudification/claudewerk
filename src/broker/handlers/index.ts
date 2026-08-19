@@ -7,6 +7,7 @@ import { registerAskQuestionHandlers } from './ask-question'
 import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerCanvasChatHandlers } from './canvas-chat'
 import { registerCanvasSyncHandlers } from './canvas-sync'
+import { registerCardLedgerHandlers } from './card-ledger'
 import { registerChannelHandlers } from './channel'
 import { registerChecklistHandlers } from './checklist'
 import { registerClipboardHandlers } from './clipboard'
@@ -57,6 +58,7 @@ export function registerAllHandlers(): void {
   registerBootLifecycleHandlers()
   registerCanvasChatHandlers()
   registerCanvasSyncHandlers()
+  registerCardLedgerHandlers()
   registerChannelHandlers()
   registerChecklistHandlers()
   registerCommitHandlers()

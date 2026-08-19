@@ -3,6 +3,12 @@
  *   "A reporter key authenticates zero HTTP routes -- proved by a test that
  *    curls them."
  *
+ * AMENDED by card `node-stats-http-ingest` (2026-08-19). The rule is now
+ * EXACTLY ONE: `POST /api/node-stats`, whose entire body is a vitals frame. The
+ * test did not disappear with the rule change -- it flipped from "opens NOTHING"
+ * to "opens exactly one path and 401s on every other route class", which is the
+ * assertion that would actually notice the door being widened later.
+ *
  * This boots a REAL broker HTTP surface (Hono router + the real requireAuth
  * middleware) and issues real `fetch` requests -- the in-process equivalent of
  * curl, minus the flake of a subprocess and a port.
@@ -17,8 +23,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { NODE_STATS_INGEST_PATH } from '../shared/node-stats'
 import { addCredential, createUser, hasAnyUsers, initAuth } from './auth'
 import { requireAuth, resolveAuth, setSentinelRegistry } from './auth-routes'
+import { canAuthenticateHttpRoutes, canIngestNodeStatsHttp } from './node-capability'
 import { createRouteHelpers } from './routes/shared'
 import { createSentinelRegistry } from './sentinel-registry'
 
@@ -64,15 +72,16 @@ const ROUTES = [
   '/some/spa/path',
 ]
 
-function req(path: string, secret?: string): Request {
+function req(path: string, secret?: string, method = 'GET'): Request {
   return new Request(`http://localhost:9999${path}`, {
+    method,
     headers: secret ? { authorization: `Bearer ${secret}` } : {},
   })
 }
 
 /** True when requireAuth lets the request through to a handler. */
-function passesAuth(path: string, secret?: string): boolean {
-  return requireAuth(req(path, secret)) === null
+function passesAuth(path: string, secret?: string, method = 'GET'): boolean {
+  return requireAuth(req(path, secret, method)) === null
 }
 
 describe('the rpt_ key resolves as a reporter', () => {
@@ -94,7 +103,7 @@ describe('the rpt_ key resolves as a reporter', () => {
   })
 })
 
-describe('curl every route: the rpt_ key opens NOTHING', () => {
+describe('curl every route: the rpt_ key opens EXACTLY ONE path', () => {
   for (const path of ROUTES) {
     it(`${path}: reporter gets no more than an anonymous caller`, () => {
       const anonymous = passesAuth(path)
@@ -105,6 +114,28 @@ describe('curl every route: the rpt_ key opens NOTHING', () => {
       expect(reporter).toBe(anonymous)
     })
   }
+
+  it(`${NODE_STATS_INGEST_PATH}: THE one door -- POST passes for the reporter, anonymous does not`, () => {
+    expect(passesAuth(NODE_STATS_INGEST_PATH, reporterSecret, 'POST')).toBe(true)
+    expect(passesAuth(NODE_STATS_INGEST_PATH, undefined, 'POST')).toBe(false)
+  })
+
+  it('the door is POST-only: the same key on the same path with GET is refused', () => {
+    expect(passesAuth(NODE_STATS_INGEST_PATH, reporterSecret)).toBe(false)
+  })
+
+  it('the door is that EXACT path, not a prefix of it', () => {
+    for (const path of [`${NODE_STATS_INGEST_PATH}/../conversations`, `${NODE_STATS_INGEST_PATH}-admin`]) {
+      expect(passesAuth(path, reporterSecret, 'POST')).toBe(false)
+    }
+  })
+
+  it('ONE door, counted: every other route class stays shut to a POST too', () => {
+    // The flip from "opens NOTHING" is only meaningful if the count is pinned.
+    // A future capability granted too widely shows up here as a second opening.
+    const opened = ROUTES.filter(p => passesAuth(p, reporterSecret, 'POST') && !passesAuth(p, undefined, 'POST'))
+    expect(opened).toEqual([])
+  })
 
   it('there is at least one route the SENTINEL key opens and the reporter does not', () => {
     const sentinelOnly = ROUTES.filter(p => passesAuth(p, sentinelSecret) && !passesAuth(p, reporterSecret))
@@ -145,7 +176,22 @@ describe('the rpt_ key is never promoted to admin by the grant resolver', () => 
   })
 })
 
-describe('the rpt_ key CAN open a websocket -- that is its only door', () => {
+describe('the capability table still says the general HTTP surface is shut', () => {
+  it('canAuthenticateHttpRoutes(reporter) is STILL false -- the new row is a separate one', () => {
+    expect(canAuthenticateHttpRoutes('reporter')).toBe(false)
+    expect(canIngestNodeStatsHttp('reporter')).toBe(true)
+  })
+
+  it('the ingest capability is not a back door to general HTTP for anyone', () => {
+    // The two predicates must never be aliases: granting one must not grant the
+    // other for any role in the table.
+    for (const role of ['reporter', 'control-panel', 'agent-host', 'share', 'none'] as const) {
+      expect(canAuthenticateHttpRoutes(role)).toBe(false)
+    }
+  })
+})
+
+describe('the rpt_ key CAN open a websocket -- its other door', () => {
   function wsReq(secret: string): Request {
     return new Request(`http://localhost:9999/ws?secret=${encodeURIComponent(secret)}`, {
       headers: { upgrade: 'websocket' },

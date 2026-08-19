@@ -17,21 +17,9 @@
 import type { EpicRollup } from '@shared/epic-cards'
 import { Play, Square } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
 import { abortEpicRun, type EpicRunState, getEpicRun, isRunLive, pauseEpicRun } from '@/lib/epic-run-api'
 import { cn, haptic } from '@/lib/utils'
-
-/**
- * The board is ambient: it shows the SELECTED conversation's project, exactly
- * like the card-hover provider. Reading it here keeps the project out of four
- * component signatures that have no other use for it. Returns a string (never an
- * object literal) so the Zustand selector identity stays stable.
- */
-function useAmbientProject(): string | null {
-  return useConversationsStore(s =>
-    s.selectedConversationId ? (s.conversationsById[s.selectedConversationId]?.project ?? null) : null,
-  )
-}
+import { useAmbientProject } from './use-ambient-project'
 
 const LIVE_POLL_MS = 15_000
 

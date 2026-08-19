@@ -916,6 +916,7 @@ async function main() {
     sentinelRegistry,
     gatewayRegistry,
     terminationLog,
+    verbose,
   })
 
   // Combined HTTP + WebSocket server. (The legacy unauthenticated

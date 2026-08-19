@@ -8,6 +8,9 @@ import {
   createMachineSampler,
   osArchLabel,
   parseDfOutput,
+  readDiskViaDf,
+  readDiskViaStatfs,
+  usedFromAvailable,
 } from './node-stats-sample'
 
 function times(user: number, nice: number, sys: number, idle: number, irq: number) {
@@ -56,8 +59,11 @@ describe('parseDfOutput -- the fallback for filesystems statfs cannot describe',
   ].join('\n')
 
   it('reads used/total bytes and the mount point', () => {
+    // `usedBytes` is total MINUS AVAILABLE, the same definition statfs uses --
+    // NOT df's own `Used` column (1,893,184,216 KB here), which excludes the
+    // root-reserved blocks and would read ~8.7 GiB low on this very capture.
     expect(parseDfOutput(DARWIN)).toEqual({
-      usedBytes: 1_893_184_216 * 1024,
+      usedBytes: (1_942_700_360 - 40_374_144) * 1024,
       totalBytes: 1_942_700_360 * 1024,
       mount: '/',
     })
@@ -87,6 +93,65 @@ describe('parseDfOutput -- the fallback for filesystems statfs cannot describe',
     expect(parseDfOutput('Filesystem 1024-blocks Used Available Capacity Mounted on')).toBeNull()
     expect(parseDfOutput('header\n/dev/disk5 100 40')).toBeNull()
     expect(parseDfOutput('header\n/dev/disk5 lots some more 40% /')).toBeNull()
+  })
+})
+
+describe('one definition of usedBytes -- both readers, one number', () => {
+  // REGRESSION (2026-08-19): the two readers filled the SAME field two ways.
+  // statfs computed `total - bavail` (the reserve counts as used); the df
+  // fallback took df's `Used` column, which excludes the reserve. So the one
+  // node that needs the fallback -- the 30TB Synology -- read systematically
+  // low against every other node on the wall, with nothing in the payload to
+  // say which reader produced the number.
+  const CAPTURE = [
+    'Filesystem 1024-blocks      Used Available Capacity  Mounted on',
+    '/dev/disk3s1s1 1942700360 1893184216  40374144    98%    /',
+  ].join('\n')
+  const [, blocksKb, dfUsedKb, availKb] = CAPTURE.split('\n')[1].split(/\s+/)
+
+  it('agrees with the statfs arithmetic on one and the same df capture', () => {
+    // statfs on this volume sees the same two numbers: blocks*bsize is the
+    // 1024-blocks column and bavail*bsize is the Available column.
+    const viaStatfs = usedFromAvailable(Number(blocksKb) * 1024, Number(availKb) * 1024)
+    expect(parseDfOutput(CAPTURE)).toMatchObject({
+      usedBytes: viaStatfs?.usedBytes,
+      totalBytes: viaStatfs?.totalBytes,
+    })
+  })
+
+  it('is NOT df field 3 -- the reserve counts as used, and the gap is real', () => {
+    const parsed = parseDfOutput(CAPTURE)
+    expect(parsed?.usedBytes).not.toBe(Number(dfUsedKb) * 1024)
+    // df's own column reads LOW, never high: total = used + available + reserve.
+    expect(parsed?.usedBytes).toBeGreaterThan(Number(dfUsedKb) * 1024)
+  })
+
+  // Cyclomatic 11 here is eleven `?.` guards on four assertions, not eleven
+  // code paths. The test has one branch: none.
+  // fallow-ignore-next-line complexity
+  it('both readers describe the live volume the same way', () => {
+    const dir = process.cwd()
+    const viaStatfs = readDiskViaStatfs(dir)
+    const viaDf = readDiskViaDf(dir)
+    expect(viaStatfs).not.toBeNull()
+    expect(viaDf).not.toBeNull()
+    expect(viaDf?.totalBytes).toBe(viaStatfs?.totalBytes)
+    expect(viaDf?.mount).toBe(viaStatfs?.mount)
+    // The two readings are milliseconds apart on a live filesystem, so allow a
+    // little drift -- but only a little. The bug this pins was a whole reserve
+    // (~5% on a default ext4) wide, not a few blocks of churn.
+    const drift = Math.abs((viaDf?.usedBytes ?? 0) - (viaStatfs?.usedBytes ?? 0))
+    expect(drift).toBeLessThan((viaStatfs?.totalBytes ?? 0) * 0.005)
+  })
+
+  it('reports the directory it was asked about, not df`s mount point', () => {
+    // `mount` diverged too: statfs cannot name a mount point at all, so it
+    // reported the directory, while the df path reported df`s `Mounted on`.
+    // One meaning wins -- the directory measured -- because that is the only
+    // one the fast path (and the sh reporter, and the zeroed fallback) can say.
+    const dir = process.cwd()
+    expect(readDiskViaDf(dir)?.mount).toBe(dir)
+    expect(dir).not.toBe('/')
   })
 })
 

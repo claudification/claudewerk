@@ -1,0 +1,839 @@
+/**
+ * THE WALL -- surface-local styling.
+ *
+ * Two things Tailwind cannot express cleanly and one it must not: the hard
+ * three-column grid, the thin scrollbars, and the AMBIENT type scale. Ambient
+ * scales by moving two custom properties on the root (`--wall-fs`,
+ * `--wall-pane-pad`) exactly the way the approved mockup's `body.ambient` block
+ * does -- a utility class per size would need every descendant to know it.
+ *
+ * Colours are the app's own tokens, not the mockup's raw oklch. The mockup took
+ * its palette from this file's neutral ladder in the first place; a second copy
+ * would drift the first time a theme changes.
+ */
+
+.wall-root {
+	--wall-fs: 12px;
+	--wall-pane-pad: 10px;
+	--wall-gap: 8px;
+
+	display: flex;
+	flex: 1;
+	min-height: 0;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-mono);
+	font-size: var(--wall-fs);
+	line-height: 1.45;
+}
+
+/* ---------- W3 ambient ---------- */
+.wall-root[data-ambient] {
+	--wall-fs: 15px;
+	--wall-pane-pad: 14px;
+	--wall-gap: 12px;
+}
+.wall-root[data-ambient] .wall-hide-ambient {
+	display: none !important;
+}
+.wall-root[data-ambient] .wall-pane-title {
+	font-size: 12px;
+}
+.wall-root[data-ambient] .wall-brand b {
+	font-size: 18px;
+}
+
+/* ---------- header ---------- */
+.wall-header {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--border-subtle);
+	background: var(--card);
+	flex: 0 0 auto;
+}
+.wall-brand {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	flex: 0 0 auto;
+}
+.wall-brand b {
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	font-size: 13px;
+}
+.wall-clock {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	font-variant-numeric: tabular-nums;
+}
+.wall-livedot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: var(--success);
+	align-self: center;
+	animation: wall-pulse 2s infinite;
+}
+@keyframes wall-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.25;
+	}
+}
+
+/* W2 filter -- inert until wall-filter-bus lands. */
+.wall-filter {
+	flex: 1 1 320px;
+	min-width: 180px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--surface-inset);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 3px 8px;
+}
+.wall-filter:focus-within {
+	border-color: var(--border-strong);
+}
+.wall-filter input {
+	flex: 1;
+	min-width: 0;
+	background: none;
+	border: none;
+	outline: none;
+	color: var(--foreground);
+	font: inherit;
+	padding: 2px 0;
+}
+.wall-filter input::placeholder {
+	color: var(--comment);
+}
+
+/* W1 time cursor -- inert until wall-time-cursor lands. */
+.wall-scrub {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1 1 280px;
+	min-width: 180px;
+}
+.wall-scrub-label {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+	flex: 0 0 auto;
+}
+.wall-scrub input {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--foreground);
+}
+.wall-scrub-value {
+	flex: 0 0 48px;
+	text-align: right;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--success);
+}
+
+.wall-btns {
+	display: flex;
+	gap: 4px;
+	flex: 0 0 auto;
+}
+.wall-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.wall-btn:disabled:hover {
+	border-color: var(--border);
+	color: var(--fg-muted);
+}
+
+/* ---------- A5 NOW strip ---------- */
+.wall-nowbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 4px 12px;
+	border-bottom: 1px solid var(--border-subtle);
+	background: var(--card);
+	flex: 0 0 auto;
+}
+.wall-nowbar-cap {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	flex: 0 0 auto;
+}
+.wall-btn {
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 3px 8px;
+	color: var(--fg-muted);
+	font: inherit;
+	font-size: 11px;
+	background: none;
+	cursor: pointer;
+}
+.wall-btn:hover {
+	border-color: var(--border-strong);
+	color: var(--foreground);
+}
+.wall-btn[data-on] {
+	background: var(--surface-raised);
+	border-color: var(--border-strong);
+	color: var(--foreground);
+}
+.wall-kbd {
+	color: var(--comment);
+	font-size: 9px;
+	margin-left: 5px;
+}
+
+/* ---------- the hard grid ---------- */
+.wall-grid {
+	flex: 1;
+	display: grid;
+	gap: var(--wall-gap);
+	padding: var(--wall-gap);
+	overflow: hidden;
+	grid-template-columns: minmax(300px, 5fr) minmax(280px, 4fr) minmax(240px, 3.2fr);
+	grid-template-rows: 1fr;
+}
+.wall-col {
+	display: flex;
+	flex-direction: column;
+	gap: var(--wall-gap);
+	min-height: 0;
+	overflow: hidden;
+}
+.wall-col-scroll {
+	overflow-y: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+.wall-col-scroll::-webkit-scrollbar {
+	width: 6px;
+}
+.wall-col-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+
+/* ---------- pane chrome ---------- */
+.wall-pane {
+	background: var(--card);
+	border: 1px solid var(--border-subtle);
+	border-radius: var(--radius);
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	flex: 0 0 auto;
+}
+.wall-pane-grow {
+	flex: 1 1 auto;
+}
+.wall-pane-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	border-bottom: 1px solid var(--border-subtle);
+	flex: 0 0 auto;
+}
+.wall-pane-title {
+	margin: 0;
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	font-weight: 700;
+	color: var(--fg-muted);
+}
+.wall-pane-code {
+	color: var(--comment);
+	font-size: 9px;
+	letter-spacing: 0.06em;
+}
+.wall-pane-count {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-pane-body {
+	overflow: auto;
+	padding: var(--wall-pane-pad);
+	flex: 1;
+	min-height: 0;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+.wall-pane-body::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+.wall-pane-body::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+
+/* ---------- S2 plan usage ---------- */
+.wall-plan {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.wall-plan-chart {
+	width: 100%;
+	height: 64px;
+	display: block;
+	overflow: visible;
+}
+.wall-root[data-ambient] .wall-plan-chart {
+	height: 96px;
+}
+.wall-plan-grid {
+	stroke: var(--border-subtle);
+	stroke-width: 1;
+}
+.wall-plan-line {
+	fill: none;
+	stroke-width: 1.5;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+/* On top of the series and in the destructive token on purpose: it has to read
+   as a limit being crossed, not as one more profile. */
+.wall-plan-throttle {
+	stroke: var(--destructive);
+	stroke-width: 1;
+	stroke-dasharray: 4 3;
+	opacity: 0.85;
+}
+
+.wall-plan-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.wall-plan-row {
+	display: grid;
+	grid-template-columns: 8px auto 1fr auto;
+	align-items: center;
+	gap: 4px 6px;
+}
+.wall-plan-swatch {
+	width: 7px;
+	height: 7px;
+	border-radius: 2px;
+}
+.wall-plan-name {
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+.wall-plan-host {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-pct {
+	justify-self: end;
+	font-variant-numeric: tabular-nums;
+	color: var(--fg-muted);
+}
+.wall-plan-row[data-over] .wall-plan-pct {
+	color: var(--destructive);
+	font-weight: 700;
+}
+.wall-plan-row[data-state='unauthed'] .wall-plan-pct,
+.wall-plan-row[data-state='unknown'] .wall-plan-pct,
+.wall-plan-row[data-state='error'] .wall-plan-pct {
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-row[data-state='error'] .wall-plan-pct {
+	color: var(--warning);
+}
+.wall-plan-bar {
+	grid-column: 2 / -1;
+	height: 4px;
+	border-radius: 2px;
+	background: var(--surface-inset);
+	overflow: hidden;
+}
+.wall-plan-bar i {
+	display: block;
+	height: 100%;
+	border-radius: 2px;
+}
+/* A carried-forward reading is dimmed, so the bar itself says the number is not
+   live even before you read the age beside it. */
+.wall-plan-row[data-stale] .wall-plan-bar i {
+	opacity: 0.55;
+}
+.wall-plan-foot {
+	grid-column: 2 / -1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 3px 8px;
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-plan-stale {
+	color: var(--warning);
+}
+.wall-plan-stale::before {
+	content: 'as of ';
+	color: var(--comment);
+}
+.wall-plan-reset {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px 6px;
+	align-items: baseline;
+}
+.wall-plan-reset b {
+	font-weight: 700;
+	color: var(--fg-muted);
+}
+.wall-plan-when {
+	color: var(--comment);
+}
+
+/* ---------- A8 pinned epics ---------- */
+.wall-pin {
+	padding: 5px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-pin:last-child {
+	border-bottom: none;
+}
+.wall-pin-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	border-radius: 4px;
+	padding: 1px 3px;
+}
+.wall-pin-head:hover {
+	background: var(--card2, var(--muted));
+}
+.wall-pin-proj {
+	flex: 0 0 auto;
+	min-width: 0;
+	max-width: 40%;
+}
+.wall-pin-open {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	text-align: left;
+}
+.wall-pin-sep {
+	color: var(--comment);
+}
+.wall-pin-epic {
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* The bar and its counts are ONE unit: a bar without them is a lie about scale. */
+.wall-pin-bar {
+	flex: 1 1 auto;
+	min-width: 60px;
+	height: 8px;
+	background: var(--bg);
+	border-radius: 2px;
+	overflow: hidden;
+	display: flex;
+}
+.wall-pin-bar i {
+	display: block;
+	height: 100%;
+	background: var(--active, var(--accent));
+}
+.wall-pin-frac {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--fg-muted);
+}
+.wall-pin-pct {
+	flex: 0 0 32px;
+	text-align: right;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-pin-kid {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	width: 100%;
+	padding: 1px 3px 1px 14px;
+	border-radius: 3px;
+	font-size: 11px;
+	text-align: left;
+}
+.wall-pin-kid:hover {
+	background: var(--card2, var(--muted));
+}
+.wall-pin-marker {
+	flex: 0 0 8px;
+	text-align: center;
+}
+.wall-pin-kid-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-pin-kid-lane {
+	flex: 0 0 auto;
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-pin-more {
+	padding-left: 14px;
+	font-size: 10px;
+	color: var(--comment);
+}
+
+/* ---------- A1 blocked on you ----------
+   The tier is carried by `data-tier` on the section AND on every row, so the two
+   halves cannot drift apart: HARD is the destructive token (a real stop), SOFT
+   is the warning token (a self-report). Nothing else on the wall uses those two
+   colours for a list, which is what makes the split readable at a glance. */
+.wall-att-tier {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	margin: 0 0 3px;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	color: var(--comment);
+}
+.wall-att-tier[data-tier='hard'] {
+	color: var(--destructive);
+}
+.wall-att-tier[data-tier='soft'] {
+	color: var(--warning);
+}
+.wall-att-tier-n {
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-att-list {
+	list-style: none;
+	margin: 0 0 9px;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.wall-att-list:last-child {
+	margin-bottom: 0;
+}
+.wall-att {
+	border-left: 2px solid var(--border-strong);
+	padding: 2px 0 3px 6px;
+}
+.wall-att[data-tier='hard'] {
+	border-left-color: var(--destructive);
+}
+.wall-att[data-tier='soft'] {
+	border-left-color: var(--warning);
+}
+.wall-att-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+.wall-att-num {
+	flex: 0 0 auto;
+	min-width: 11px;
+	text-align: center;
+	border-radius: 2px;
+	background: var(--surface-inset);
+	color: var(--fg-muted);
+	font-size: 9px;
+	font-variant-numeric: tabular-nums;
+}
+.wall-att-proj {
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 42%;
+	text-align: left;
+}
+.wall-att-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fg-muted);
+	font-size: 11px;
+}
+/* The waiting clock never truncates and never wraps: it is the one number on
+   this pane that decides whether you get up. */
+.wall-att-wait {
+	flex: 0 0 auto;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.wall-att[data-tier='hard'] .wall-att-wait {
+	color: var(--destructive);
+}
+.wall-att[data-tier='soft'] .wall-att-wait {
+	color: var(--warning);
+}
+.wall-att-q {
+	margin: 1px 0 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-att-detail {
+	margin: 1px 0 0;
+	padding: 1px 4px;
+	border-radius: 3px;
+	background: var(--surface-inset);
+	color: var(--comment);
+	font: inherit;
+	font-size: 10px;
+	white-space: pre-wrap;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+.wall-att-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 3px;
+}
+.wall-att-btn {
+	padding: 1px 6px;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+}
+.wall-att-btn[data-tone='go'] {
+	color: var(--success);
+	border-color: color-mix(in oklch, var(--success) 40%, transparent);
+}
+.wall-att-btn[data-tone='stop'] {
+	color: var(--destructive);
+	border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
+}
+.wall-att-btn[data-primary] {
+	font-weight: 700;
+}
+.wall-att-hint {
+	margin: 3px 0 0;
+	color: var(--comment);
+	font-size: 10px;
+}
+
+/* ---------- A7 unattended runs ---------- */
+.wall-run {
+	padding: 6px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-run:last-child {
+	border-bottom: none;
+}
+.wall-run-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+}
+.wall-run-proj {
+	flex: 0 0 auto;
+	min-width: 0;
+	max-width: 34%;
+}
+.wall-run-name,
+.wall-run-name-static {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: left;
+}
+.wall-run-gen {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-run-tag {
+	flex: 0 0 auto;
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 0 4px;
+	color: var(--comment);
+}
+.wall-run-tag-on {
+	color: var(--active);
+	border-color: color-mix(in oklch, var(--active) 45%, transparent);
+}
+.wall-run-tag-night {
+	color: var(--event-prompt);
+	border-color: color-mix(in oklch, var(--event-prompt) 45%, transparent);
+}
+/* The beat pulse: a tick per performed beat. A beat that found nothing to do is
+   dim, so a row of dim ticks reads as "beating and going nowhere" rather than
+   as motion. */
+.wall-run-beats {
+	flex: 0 0 auto;
+	display: flex;
+	gap: 2px;
+	align-items: center;
+}
+.wall-run-beats i {
+	display: block;
+	width: 3px;
+	height: 9px;
+	border-radius: 1px;
+	background: var(--info);
+	opacity: 0.25;
+}
+.wall-run-beats i[data-did] {
+	opacity: 1;
+}
+.wall-run-buckets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 9px;
+	margin-top: 3px;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+/* THE ALARM. A stalled run and a dead lease are the two things this pane exists
+   to make impossible to miss, so both get the destructive tone and weight. */
+.wall-run-stalled,
+.wall-run-overseer-bad {
+	color: var(--destructive);
+	font-weight: 700;
+}
+.wall-run-stalled {
+	margin-top: 3px;
+	font-size: 10px;
+	letter-spacing: 0.04em;
+}
+.wall-run-overseer {
+	margin-top: 3px;
+	font-size: 10px;
+	color: var(--success);
+}
+.wall-run-why {
+	margin-top: 2px;
+	font-size: 10px;
+	color: var(--warning);
+}
+.wall-run-baton {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin-top: 4px;
+	font-size: 10px;
+}
+.wall-run-baton-kind {
+	display: inline-block;
+	width: 74px;
+}
+.wall-run-baton-age {
+	display: inline-block;
+	width: 34px;
+	color: var(--comment);
+}
+.wall-run-baton-body {
+	color: var(--fg-muted);
+}
+.wall-run-acts {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	margin-top: 5px;
+}
+.wall-run-act {
+	font-size: 10px;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 1px 6px;
+	color: var(--fg-muted);
+}
+.wall-run-act:hover {
+	border-color: var(--epic-badge-edge);
+	background: var(--epic-badge-tint);
+	color: var(--foreground);
+}
+.wall-run-act:disabled {
+	color: var(--comment);
+	cursor: not-allowed;
+}
+/* ARMED = one more click does it. It has to look different from hover, or the
+   confirm is a decoration. */
+.wall-run-act-armed {
+	color: var(--warning);
+	border-color: color-mix(in oklch, var(--warning) 55%, transparent);
+	background: color-mix(in oklch, var(--warning) 12%, transparent);
+}
+.wall-run-note,
+.wall-run-read {
+	font-size: 10px;
+	color: var(--comment);
+}
+.wall-run-read {
+	margin-top: 3px;
+	color: var(--warning);
+}
+.wall-run-more {
+	padding-top: 4px;
+	font-size: 10px;
+	color: var(--comment);
+}
+
+/* ---------- legend ---------- */
+.wall-footer {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 5px 12px;
+	border-top: 1px solid var(--border-subtle);
+	background: var(--card);
+	color: var(--comment);
+	font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wall-livedot {
+		animation: none;
+	}
+}

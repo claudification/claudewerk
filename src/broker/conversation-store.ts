@@ -101,6 +101,9 @@ import { listShares } from './shares'
 import { recentCutoff, recentLimit, resolveRecentWindow } from './store/recent-window'
 import type { ConversationStats, RecentScopeFilter, StoreDriver, TaskRecord } from './store/types'
 import type { TerminationLog } from './termination-log'
+import { dropWallSubscriber, publishWallPulseGone } from './wall'
+import { samplePlanUsage } from './wall/plan-usage-series'
+import { attachWallSources, pushWallPulse } from './wall/wall-sources'
 
 export type { ControlPanelMessage, ConversationSummary }
 
@@ -975,6 +978,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         continue
       }
 
+      // THE WALL fans in here rather than on its own poll: this flush is already
+      // the universal "a conversation really changed" chokepoint. No-op (and no
+      // projection built) while nobody is watching the wall.
+      pushWallPulse(summary)
+
       if (delta.mode === 'patch') {
         broadcastConversationScoped(
           {
@@ -1005,6 +1013,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   if (store) {
     loadFromStore()
   }
+
+  // THE WALL accumulates nothing while unwatched, so the first subscriber pulls
+  // the current fleet through this seam instead of waiting for conversations to
+  // change. Reads the in-memory map only -- no store round-trip.
+  attachWallSources(() => getAllConversations().map(conv => getSummaryEntry(conv).summary))
 
   // Periodically mark idle conversations, clean stale agents, evict old conversations, and save state
   const ENDED_EVICTION_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days after ending, then cascade-deleted (retention)
@@ -2088,6 +2101,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
     conversations.delete(conversationId)
     conversationSockets.delete(conversationId)
+    // The row is gone, not idle -- tell the wall so its pulse pane drops it
+    // instead of showing a conversation that no longer exists.
+    publishWallPulseGone(conversationId)
     invalidateSummary(conversationId)
     lastBroadcastSummary.delete(conversationId)
     transcriptCache.delete(conversationId)
@@ -2601,6 +2617,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     controlPanelSubscribers.delete(ws)
     // Unregister from channel registry (removes v2, unsubscribes all channels, deletes registry entry)
     channelRegistry.unregisterSubscriber(ws)
+    // The wall hub keeps its OWN subscriber set (it filters and serializes per
+    // socket, which the generic channel broadcast cannot), so the close path
+    // has to tell it too or it would keep flushing into a dead socket.
+    dropWallSubscriber(ws)
     // Orb status watches are SOCKET-scoped: this close is their end of life. The
     // panel re-asserts what it still wants on reconnect (voice_watch_assert).
     forgetWatcher(ws)
@@ -2937,12 +2957,34 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   function getUsage(): UsageUpdate | undefined {
     return sentinelState.usage
   }
+
+  /**
+   * THE ONE SEAM THE WALL'S PLAN SERIES HANGS OFF.
+   *
+   * Both usage paths -- the sentinel's batched poll and the per-conversation
+   * `rate_limit_event` fold -- end in this same merged `sentinel_usage_report`
+   * broadcast. Sampling here means S2 gets the series without a poll of its own
+   * and without a second utilization path to keep in step with this one.
+   *
+   * Sampling happens BEFORE the broadcast, not inside it: `broadcast()` returns
+   * early when no control panel is connected, and a fleet running unattended is
+   * exactly when the throttle history matters most.
+   */
+  function broadcastUsage(message: ControlPanelMessage): void {
+    const sentinelId = message.sentinelId
+    if (message.profileUsage && sentinelId) {
+      const conn = sentinelState.sentinels.get(sentinelId)
+      samplePlanUsage(message.profileUsage, conn?.alias || sentinelId)
+    }
+    broadcast(message)
+  }
+
   function setSentinelProfileUsage(
     ws: ServerWebSocket<unknown>,
     profiles: ProfileUsageSnapshot[],
     polledAt: number,
   ): boolean {
-    return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcast)
+    return setSentinelProfileUsageImpl(sentinelState, ws, profiles, polledAt, broadcastUsage)
   }
   function recordInferenceUsage(
     sentinelId: string,
@@ -2954,7 +2996,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       observedAt: number
     },
   ): boolean {
-    return recordInferenceUsageImpl(sentinelState, sentinelId, profile, args, broadcast)
+    return recordInferenceUsageImpl(sentinelState, sentinelId, profile, args, broadcastUsage)
   }
   function getSentinelProfileUsage(
     sentinelId: string,

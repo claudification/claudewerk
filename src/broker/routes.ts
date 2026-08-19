@@ -33,6 +33,7 @@ import { createForkRouter } from './routes/fork'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
 import { createNightshiftRouter } from './routes/nightshift'
+import { createNodeStatsHttpRouter } from './routes/node-stats-http'
 import { createPermissionsRouter } from './routes/permissions'
 import { createQuestRouter } from './routes/quest'
 import { createRecapsRouter } from './routes/recaps'
@@ -118,6 +119,9 @@ export interface RouteOptions {
    *   GET /api/terminations              -- query the log (admin only)
    */
   terminationLog?: TerminationLog
+  /** Gates per-sample debug logging on the node-stats ingest route, so the HTTP
+   *  transport is exactly as loud as the WS one (`ctx.log.debug`). */
+  verbose?: boolean
 }
 
 export function createRouter(options: RouteOptions): Hono {
@@ -133,6 +137,7 @@ export function createRouter(options: RouteOptions): Hono {
     sentinelRegistry,
     gatewayRegistry,
     terminationLog,
+    verbose = false,
   } = options
 
   // Initialize disk-backed blob store + shared files log
@@ -318,6 +323,9 @@ export function createRouter(options: RouteOptions): Hono {
     createApiRouter(conversationStore, store, helpers, rclaudeSecret, cacheDir, blobDir, publicOrigin, vapidPublicKey),
   )
   app.route('/', createCommitsRouter(conversationStore, store, helpers))
+  // The vitals ingest route. Its own gate (a NODE credential), not `helpers` --
+  // an `rpt_` holds no user grants by design.
+  app.route('/', createNodeStatsHttpRouter(conversationStore, verbose))
   app.route('/', createVoiceRefineRouter(conversationStore, helpers))
   app.route('/', createArchivesRouter(helpers, cacheDir ?? ''))
   app.route(

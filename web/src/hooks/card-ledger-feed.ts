@@ -1,0 +1,72 @@
+/**
+ * The client half of THE WALL's card ledger (P3).
+ *
+ * ONE module-level feed, not one per pane. A cold surface is seeded from the
+ * broker's ring and then appends live moves on top -- so the pane has history
+ * the instant it mounts instead of an empty box until somebody happens to move
+ * a card.
+ *
+ * TRANSPORT: the `wall` channel, not a private socket route. Both halves ride
+ * the frame -- the ring arrives in the `full: true` snapshot the broker sends
+ * on subscribe, and live moves arrive in the deltas after it. That is why the
+ * old `card_ledger_request` round trip and the `card_changed` bypass in
+ * use-websocket.ts are gone: one channel, one subscription, per the epic.
+ *
+ * Module-global for the same reason `project-task-cache.ts` is: the frame
+ * handler is a singleton, so the state it feeds has to be too. A second
+ * subscriber costs one listener, not a second request.
+ *
+ * Epics are absent because the SENTINEL never sends them. Nothing here filters,
+ * and nothing here should start to.
+ */
+
+import type { CardMove } from '@shared/protocol'
+
+/** The client's own render bound. Mirrors the broker ring's cap in spirit; it
+ *  does not have to match it, because a slow surface should still be able to
+ *  hold less than the broker is willing to serve. */
+export const LEDGER_RENDER_MAX = 300
+
+/** Newest first, same order the broker serves. */
+let moves: CardMove[] = []
+const listeners = new Set<() => void>()
+
+function publish(next: CardMove[]): void {
+  moves = next.length > LEDGER_RENDER_MAX ? next.slice(0, LEDGER_RENDER_MAX) : next
+  for (const notify of listeners) notify()
+}
+
+/**
+ * Fold one wall frame's `cards` section into the feed. The section is already
+ * newest-first (the broker orders it to match `readCardLedger()`), so a delta
+ * simply goes on top.
+ *
+ * `full` REPLACES rather than merges: it is the broker's authoritative ring
+ * after a fresh subscribe or a reconnect, and merging would resurrect moves
+ * that have since aged out of it.
+ */
+export function applyCardLedgerFrame(incoming: CardMove[], opts: { full: boolean }): void {
+  if (opts.full) {
+    publish([...incoming])
+    return
+  }
+  if (incoming.length === 0) return
+  publish([...incoming, ...moves])
+}
+
+export function getCardLedger(): CardMove[] {
+  return moves
+}
+
+export function subscribeCardLedger(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/** Tests only -- the feed is module-global. */
+export function resetCardLedger(): void {
+  moves = []
+  listeners.clear()
+}

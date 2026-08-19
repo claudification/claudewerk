@@ -35,6 +35,7 @@ import type {
 } from '@shared/protocol'
 import type { ScheduledRun } from '@shared/scheduled-run'
 import type { ScheduledTask } from '@shared/scheduled-task'
+import type { WallFrame } from '@shared/wall'
 import { useDispatchStore } from '@/components/dispatch-overlay/dispatch-store'
 import { handleLaunchProfilesUpdatedMessage } from '@/components/launch-profiles/use-launch-profiles'
 import { handleScheduledTaskRun, handleScheduledTasksUpdated } from '@/components/scheduled-tasks/store'
@@ -86,6 +87,7 @@ import {
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
+import { applyWallFrame } from './wall-frame-store'
 
 // Loose WS message type (mirror of use-websocket.ts -- intentionally duplicated
 // to keep this module standalone; the canonical source lives in use-websocket.ts).
@@ -464,6 +466,10 @@ function handleChannelAck(msg: DashboardMessage) {
       `[ws] Channel ${ack.channel} rolled over: ${ack.previousConversationId.slice(0, 8)} -> ${ack.conversationId?.slice(0, 8)}`,
     )
   }
+}
+
+function handleWallFrame(msg: DashboardMessage) {
+  applyWallFrame(msg as unknown as WallFrame)
 }
 
 const EVENTS_CAP = 500
@@ -1935,4 +1941,7 @@ export const handlers: Record<string, MessageHandler> = {
   project_commit_stats: handleProjectCommitStats,
   project_integration_result: handleProjectIntegration,
   sotu_updated: handleSotuUpdated,
+  // THE WALL: one coalesced fleet frame at ~2 Hz, folded into its own external
+  // store so a frame costs one notify rather than a Zustand update per pane.
+  wall_frame: handleWallFrame,
 }
