@@ -29,33 +29,15 @@ import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
+import { WallTab } from '../wall-tab'
 import { wallPulseFleet } from '../wall-pulse-fleet'
-import { useWallPulseStore, type WallPulseView } from '../wall-pulse-state'
+import { useWallPulseStore } from '../wall-pulse-state'
 
 /** Ask the feed for the WHOLE fleet -- see the file header. */
 const WHOLE_FLEET = '+over'
 
 /** Every axis. A pulse row is a conversation and carries all ten facets. */
 const AXES = WALL_AXES
-
-function ViewTab({ view, current, onPick }: { view: WallPulseView; current: WallPulseView; onPick: () => void }) {
-  const on = view === current
-  return (
-    <button
-      type="button"
-      onClick={onPick}
-      aria-pressed={on}
-      className={cn(
-        'text-[10px] px-[7px] py-[2px] rounded-[3px] border transition-colors',
-        on
-          ? 'bg-background text-foreground border-primary/25'
-          : 'border-transparent text-comment hover:text-foreground',
-      )}
-    >
-      {view.toUpperCase()}
-    </button>
-  )
-}
 
 export default function PulsePane() {
   const base = usePulseFleet(WHOLE_FLEET)
@@ -97,8 +79,8 @@ export default function PulsePane() {
       }
       tabs={
         <div className="flex gap-[2px]">
-          <ViewTab view="bands" current={view} onPick={() => setView('bands')} />
-          <ViewTab view="tide" current={view} onPick={() => setView('tide')} />
+          <WallTab label="bands" active={view === 'bands'} onPick={() => setView('bands')} />
+          <WallTab label="tide" active={view === 'tide'} onPick={() => setView('tide')} />
         </div>
       }
     >

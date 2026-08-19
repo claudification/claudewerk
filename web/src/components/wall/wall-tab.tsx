@@ -8,9 +8,9 @@
  *
  * P1 grew the identical component locally as `ViewTab` while this pane was being
  * written on a branch it could not see (the same collision that produced
- * `wall-chip-capture.ts` and `use-project-look.ts` at the P2 merge). P1's copy is
- * NOT edited from here -- one writer per file, and P1's card owns that one -- so
- * collapsing it onto this is a merge-time job, not a pane-time one.
+ * `wall-chip-capture.ts` and `use-project-look.ts` at the P2 merge). That copy was
+ * collapsed onto this one at the P3 merge (overseer gen 30, R19) -- `p1-pulse.tsx`
+ * now imports `WallTab` and defines no tab of its own.
  */
 
 import { cn } from '@/lib/utils'
