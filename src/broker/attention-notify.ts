@@ -122,3 +122,54 @@ export function cancelAskNotify(conversationId: string): void {
     askTimers.delete(conversationId)
   }
 }
+
+/**
+ * A tool-permission gate blocks CC dead until someone answers, and until now it
+ * was the ONE attention path that never buzzed: dialog and ask had timers, a
+ * permission request had only an in-panel banner. With the panel closed the
+ * session simply sat there.
+ *
+ * Grace is 30s when a dashboard is watching that conversation's transcript --
+ * long enough that a gate you are already looking at never buzzes. With nobody
+ * watching there is no one to answer in-panel, so it fires immediately.
+ */
+const PERMISSION_GRACE_MS = 30 * 1000
+
+const permissionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function schedulePermissionNotify(
+  params: BaseParams & { requestId: string; toolName: string; detail?: string; hasLiveViewer: boolean },
+): void {
+  cancelPermissionNotify(params.conversationId)
+  const { conversationId, project, requestId, toolName, detail, hasLiveViewer } = params
+  const label = extractProjectLabel(project) || conversationId.slice(0, 8)
+  const fire = () => {
+    permissionTimers.delete(conversationId)
+    if (!isPushConfigured()) return
+    if (!attentionDebouncer.shouldNotify(conversationId)) return
+    const trimmed = detail?.trim().slice(0, 100)
+    sendPushToAll({
+      title: `Permission: ${toolName}`,
+      body: trimmed ? `${trimmed} -- ${label}` : label,
+      conversationId,
+      project,
+      tag: `attention-${conversationId}`,
+      // Presence of this id is what turns the notification into an answerable
+      // one (the service worker attaches Allow/Deny actions to it).
+      data: { permissionRequestId: requestId },
+    }).catch(() => {})
+  }
+  if (!hasLiveViewer) {
+    fire()
+    return
+  }
+  permissionTimers.set(conversationId, setTimeout(fire, PERMISSION_GRACE_MS))
+}
+
+export function cancelPermissionNotify(conversationId: string): void {
+  const t = permissionTimers.get(conversationId)
+  if (t !== undefined) {
+    clearTimeout(t)
+    permissionTimers.delete(conversationId)
+  }
+}

@@ -14,18 +14,18 @@ export type NotifItem = StoreState['notifications'][number]
 
 type Navigate = (conversationId: string) => void
 type RespondPerm = StoreState['respondToPermission']
-type SendRule = StoreState['sendPermissionRule']
+type AllowAlways = StoreState['allowPermissionAlways']
 type RespondLink = StoreState['respondToProjectLink']
 type DismissNotif = StoreState['dismissNotification']
 
 export function PermissionRow({
   item,
   respondPerm,
-  sendRule,
+  allowAlways,
 }: {
   item: PermissionItem
   respondPerm: RespondPerm
-  sendRule: SendRule
+  allowAlways: AllowAlways
 }) {
   return (
     <ConversationBanner
@@ -49,8 +49,7 @@ export function PermissionRow({
             size="sm"
             onClick={() => {
               haptic('double')
-              respondPerm(item.conversationId, item.requestId, 'allow')
-              sendRule(item.conversationId, item.toolName, 'allow')
+              allowAlways(item.conversationId, item.requestId, item.toolName)
             }}
           />
           <BannerButton

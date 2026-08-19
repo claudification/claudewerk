@@ -330,8 +330,18 @@ interface ConversationsState {
     inputPreview: string
     timestamp: number
   }>
-  respondToPermission: (conversationId: string, requestId: string, behavior: 'allow' | 'deny') => void
+  respondToPermission: (
+    conversationId: string,
+    requestId: string,
+    behavior: 'allow' | 'deny',
+    /** ALWAYS was pressed -- folds the answer + the standing rule into one receipt. */
+    rule?: boolean,
+  ) => void
   sendPermissionRule: (conversationId: string, toolName: string, behavior: 'allow' | 'deny') => void
+  /** ALLOW this call AND install a conversation-scoped auto-allow rule for the
+   *  tool. The one place that pairing lives -- every surface with an ALWAYS
+   *  button calls this rather than re-deriving the two sends. */
+  allowPermissionAlways: (conversationId: string, requestId: string, toolName: string) => void
   /**
    * Pending spawn approvals derived from conversations[].pendingSpawnApproval. The
    * broker stores the prompt on the caller conversation and broadcasts it via
@@ -996,14 +1006,21 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     }))
   },
   pendingPermissions: [],
-  respondToPermission: (conversationId, requestId, behavior) => {
-    wsSend('permission_response', { conversationId, requestId, behavior })
+  respondToPermission: (conversationId, requestId, behavior, rule = false) => {
+    wsSend('permission_response', { conversationId, requestId, behavior, rule })
     useConversationsStore.setState(state => ({
       pendingPermissions: state.pendingPermissions.filter(p => p.requestId !== requestId),
     }))
   },
   sendPermissionRule: (conversationId, toolName, behavior) => {
     wsSend('permission_rule', { conversationId, toolName, behavior })
+  },
+  allowPermissionAlways: (conversationId, requestId, toolName) => {
+    const { respondToPermission, sendPermissionRule } = useConversationsStore.getState()
+    // `rule: true` rides the answer so the broker stamps ONE `allowed_always`
+    // receipt instead of an `allowed` plus an unexplained standing rule.
+    respondToPermission(conversationId, requestId, 'allow', true)
+    sendPermissionRule(conversationId, toolName, 'allow')
   },
   respondToSpawnApproval: (conversationId, requestId, decision, persist) => {
     wsSend('spawn_approval_decision', { conversationId, requestId, decision, persist })

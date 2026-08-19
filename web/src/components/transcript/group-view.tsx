@@ -10,6 +10,7 @@ import type { ResultLookup, TranscriptSettings } from './group-view-types'
 import type { DisplayGroup } from './grouping'
 import { LaunchTimeline } from './launch-timeline'
 import { parseGroupEntries } from './parse-entries'
+import { PermissionCard } from './permission-card'
 import { ShellReceipt } from './shell-receipt'
 import { SpawnNotification } from './spawn-notification'
 import { SystemLine } from './system-line'
@@ -53,6 +54,10 @@ function GroupView({
 
   if (group.type === 'spawn_notification') {
     return <SpawnNotification group={group} />
+  }
+
+  if (group.type === 'permission') {
+    return <PermissionCard group={group} />
   }
 
   if (group.type === 'shell') {

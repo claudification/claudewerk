@@ -60,6 +60,7 @@ import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAllHandlers } from './handlers'
 import { leaveAllCanvasRooms } from './handlers/canvas-sync'
+import { startPermissionSweep } from './handlers/permission-sweep'
 import { dropShellViewerSocket, onSentinelDisconnect } from './handlers/shell'
 import { startSpawnApprovalSweep } from './handlers/spawn-approval'
 import { appendMessage, initInterConversationLog } from './inter-conversation-log'
@@ -940,6 +941,11 @@ async function main() {
     // startup (clears anything stuck across a restart) and on a periodic
     // cadence after that.
     startSpawnApprovalSweep(conversationStore)
+
+    // Same shape for tool-permission gates: a prompt nobody answered is denied
+    // (forwarded to the host, so CC is unblocked rather than left hanging) and
+    // stamped with an `expired` receipt.
+    startPermissionSweep(conversationStore)
 
     // Context deps shared by all handler contexts
     const contextDeps: ContextDeps = {

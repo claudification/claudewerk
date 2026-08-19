@@ -1,305 +1,171 @@
 /**
- * Permission and question relay handlers.
- * Bidirectional relay between agent host (rclaude) and dashboard for:
- * - Tool permission requests/responses
- * - Session-scoped auto-approve rules
- * - AskUserQuestion flow
- * - Clipboard capture notifications
+ * Tool-permission relay: agent host <-> control panel.
+ *
+ * The wire relay is only half the job. Every gate also leaves a pair of
+ * transcript entries -- the ASK where CC asked, the ANSWER naming the outcome,
+ * the human, and the wait (see `permission-receipts.ts`). That pair is what the
+ * panel renders as one inline card, and what survives reload.
+ *
+ * AskUserQuestion and clipboard capture used to live here too; they are their
+ * own modules now (`ask-question.ts`, `clipboard.ts`).
  */
 
-import type { AskQuestionDismiss, PermissionDismiss } from '../../shared/protocol'
-import { cancelAskNotify, scheduleAskNotify } from '../attention-notify'
-import type { MessageHandler } from '../handler-context'
+import { schedulePermissionNotify } from '../attention-notify'
+import type { HandlerContext, MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
+import { resolvePermissionGate } from '../permission-resolve'
+import { emitPermissionDecisionEntry, emitPermissionRequestEntry } from './permission-receipts'
+import { conversationForBroadcast, forwardToAgentHost } from './relay-helpers'
 
-// Permission relay: agent host -> dashboard (broadcast + store for reconnect recovery)
-const permissionRequest: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
-  if (!conversationId) return
+/**
+ * Is a dashboard actually LOOKING at this conversation right now? Subscription
+ * to its transcript channel is the honest test -- a panel open on some other
+ * conversation is no more use than a closed laptop when a gate blocks here.
+ * Drives the push grace: watched gates wait, unwatched ones buzz immediately.
+ */
+function hasLiveViewer(ctx: HandlerContext, conversationId: string): boolean {
+  return ctx.conversations.getChannelSubscribers('conversation:transcript', conversationId).size > 0
+}
+
+/** Record the open gate on the conversation so a reconnecting dashboard
+ *  rehydrates the prompt instead of losing it with the socket. */
+function mirrorPending(ctx: HandlerContext, conversationId: string, data: Record<string, unknown>): void {
   const conversation = ctx.conversations.getConversation(conversationId)
-
-  // Store for reconnect recovery (same pattern as pendingDialog/pendingPlanApproval)
-  if (conversation) {
-    conversation.pendingPermission = {
-      requestId: data.requestId as string,
-      toolName: data.toolName as string,
-      description: data.description as string,
-      inputPreview: data.inputPreview as string,
-      toolUseId: data.toolUseId as string | undefined,
-      timestamp: Date.now(),
-    }
-    conversation.pendingAttention = {
-      type: 'permission',
-      toolName: data.toolName as string,
-      timestamp: Date.now(),
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
+  if (!conversation) return
+  const toolName = data.toolName as string
+  conversation.pendingPermission = {
+    requestId: data.requestId as string,
+    toolName,
+    description: data.description as string,
+    inputPreview: data.inputPreview as string,
+    toolUseId: data.toolUseId as string | undefined,
+    timestamp: Date.now(),
   }
+  conversation.pendingAttention = { type: 'permission', toolName, timestamp: Date.now() }
+  ctx.conversations.persistConversationById(conversationId)
+  ctx.conversations.broadcastConversationUpdate(conversationId)
+}
 
+/** Agent host -> dashboard: CC is blocked on a tool permission.
+ *  Mirrors onto the conversation for reconnect recovery, stamps the ASK into
+ *  the transcript, and arms the push timer. */
+const permissionRequest: MessageHandler = (ctx, data) => {
+  const conversationId = (data.conversationId || ctx.ws.data.conversationId) as string
+  if (!conversationId) return
+  const requestId = data.requestId as string
+  const toolName = data.toolName as string
+
+  // Mirror BEFORE the project check: a conversation with no project still needs
+  // its pending record, or a reconnecting dashboard forgets the gate exists.
+  mirrorPending(ctx, conversationId, data)
+
+  const conversation = ctx.conversations.getConversation(conversationId)
   if (!conversation?.project) {
     ctx.log.debug(`[permission] dropping request: no project on ${conversationId.slice(0, 8)}`)
     return
   }
-  const msg = {
-    type: 'permission_request',
-    conversationId: conversationId,
-    requestId: data.requestId,
-    toolName: data.toolName,
-    description: data.description,
-    inputPreview: data.inputPreview,
-    toolUseId: data.toolUseId,
-  }
-  ctx.broadcastScoped(msg, conversation.project)
-  ctx.log.debug(`[permission] Request: ${data.requestId} ${data.toolName}`)
-}
 
-// Permission relay: dashboard -> agent host (forward + clear stored state)
-const permissionResponse: MessageHandler = (ctx, data) => {
-  const conversationId = data.conversationId as string
-  const requestId = data.requestId as string
-  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
-  if (conversation) ctx.requirePermission('chat', conversation.project)
-
-  // Forward the response to the agent host that owns this conversation.
-  const targetWs = conversationId ? ctx.conversations.getConversationSocket(conversationId) : null
-  if (targetWs) {
-    targetWs.send(
-      JSON.stringify({
-        type: 'permission_response',
-        conversationId: conversationId,
-        requestId,
-        behavior: data.behavior,
-        toolUseId: data.toolUseId,
-      }),
-    )
-    ctx.log.debug(`[permission] Response: ${requestId} -> ${data.behavior}`)
-  } else {
-    ctx.log.error(`[permission] No socket for conversation ${conversationId?.slice(0, 8)} (request ${requestId})`)
-  }
-
-  // Clear pending permission state (resolved by user) -- regardless of socket
-  // presence, so a reconnecting dashboard does not rehydrate a stale prompt.
-  if (conversation) {
-    delete conversation.pendingPermission
-    if (conversation.pendingAttention?.type === 'permission') {
-      delete conversation.pendingAttention
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
-
-  // Broadcast dismiss to other dashboard subscribers so the permission prompt
-  // disappears on every session, not just the one that answered.
-  if (conversation?.project) {
-    ctx.broadcastScoped(
-      { type: 'permission_dismiss', conversationId, requestId } satisfies PermissionDismiss,
-      conversation.project,
-    )
-  }
-}
-
-// Permission rule: dashboard -> agent host (conversation-scoped auto-approve)
-const permissionRule: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId) as string
-  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
-  if (conversation) ctx.requirePermission('chat', conversation.project)
-  const targetWs = conversationId ? ctx.conversations.getConversationSocket(conversationId) : null
-  if (targetWs) {
-    targetWs.send(
-      JSON.stringify({
-        type: 'permission_rule',
-        toolName: data.toolName,
-        behavior: data.behavior,
-      }),
-    )
-    ctx.log.debug(`[permission] Rule: ${data.toolName} -> ${data.behavior}`)
-  }
-}
-
-// Permission auto-approved: agent host -> dashboard (notification)
-const permissionAutoApproved: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
-  if (!conversationId) return
-  const conversation = ctx.conversations.getConversation(conversationId)
-  if (!conversation?.project) {
-    ctx.log.debug(`[permission] dropping auto-approved: no project on ${conversationId.slice(0, 8)}`)
-    return
-  }
-  const msg = {
-    type: 'permission_auto_approved',
-    conversationId: conversationId,
-    requestId: data.requestId,
-    toolName: data.toolName,
-    description: data.description,
-  }
-  ctx.broadcastScoped(msg, conversation.project)
-}
-
-// Clipboard capture: agent host -> dashboard (broadcast)
-const clipboardCapture: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
-  if (!conversationId) return
-  const conversation = ctx.conversations.getConversation(conversationId)
-  if (!conversation?.project) {
-    ctx.log.debug(`[clipboard] dropping capture: no project on ${conversationId.slice(0, 8)}`)
-    return
-  }
-  const msg = {
-    type: 'clipboard_capture',
-    conversationId: conversationId,
-    contentType: data.contentType,
-    text: data.text,
-    base64: data.base64,
-    mimeType: data.mimeType,
-    timestamp: data.timestamp || Date.now(),
-  }
-  ctx.broadcastScoped(msg, conversation.project)
-  ctx.log.debug(`[clipboard] ${data.contentType}${data.mimeType ? ` (${data.mimeType})` : ''}`)
-}
-
-// AskUserQuestion relay: agent host -> dashboard (broadcast + store for reconnect recovery)
-const askQuestion: MessageHandler = (ctx, data) => {
-  const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
-  if (!conversationId) return
-  const conversation = ctx.conversations.getConversation(conversationId)
-
-  // Store for reconnect recovery (same pattern as pendingPermission)
-  if (conversation) {
-    conversation.pendingAskQuestion = {
-      toolUseId: data.toolUseId as string,
-      questions: data.questions as unknown[],
-      timestamp: Date.now(),
-    }
-    conversation.pendingAttention = {
-      type: 'ask',
-      toolName: 'AskUserQuestion',
-      timestamp: Date.now(),
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
-
-  if (!conversation?.project) {
-    ctx.log.debug(`[ask] dropping question: no project on ${conversationId.slice(0, 8)}`)
-    return
-  }
-  const msg = {
-    type: 'ask_question',
-    conversationId: conversationId,
-    toolUseId: data.toolUseId,
-    questions: data.questions,
-  }
-  ctx.broadcastScoped(msg, conversation.project)
-
-  const firstQuestion = (data.questions as Array<{ question: string }>)?.[0]?.question
-  scheduleAskNotify({
-    conversationId,
-    project: conversation.project,
-    question: firstQuestion || 'Question waiting',
+  emitPermissionRequestEntry(ctx.conversations, conversationId, {
+    requestId,
+    toolUseId: data.toolUseId as string | undefined,
+    toolName,
+    description: data.description as string | undefined,
+    inputPreview: data.inputPreview as string | undefined,
   })
 
-  ctx.log.debug(
-    `[ask] Question: ${(data.toolUseId as string)?.slice(0, 12)} ${(data.questions as unknown[])?.length || 0}q`,
+  ctx.broadcastScoped(
+    {
+      type: 'permission_request',
+      conversationId,
+      requestId,
+      toolName,
+      description: data.description,
+      inputPreview: data.inputPreview,
+      toolUseId: data.toolUseId,
+    },
+    conversation.project,
+  )
+
+  schedulePermissionNotify({
+    conversationId,
+    project: conversation.project,
+    requestId,
+    toolName,
+    detail: (data.inputPreview as string | undefined) || (data.description as string | undefined),
+    hasLiveViewer: hasLiveViewer(ctx, conversationId),
+  })
+
+  ctx.log.debug(`[permission] Request: ${requestId} ${toolName}`)
+}
+
+// Dashboard -> agent host. The gate itself is resolved by the shared resolver
+// so this path and the push-notification route cannot drift.
+const permissionResponse: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
+  if (conversation) ctx.requirePermission('chat', conversation.project)
+
+  resolvePermissionGate(ctx.conversations, {
+    conversationId,
+    requestId: data.requestId as string,
+    behavior: data.behavior === 'allow' ? 'allow' : 'deny',
+    rule: data.rule === true,
+    // From the authenticated socket -- a client cannot sign someone else's name.
+    decidedBy: ctx.ws.data.userName,
+  })
+}
+
+// Permission rule: dashboard -> agent host (conversation-scoped auto-approve).
+// No receipt of its own -- the ALWAYS press already stamped one decision entry
+// with outcome `allowed_always`.
+const permissionRule: MessageHandler = (ctx, data) => {
+  const conversationId = data.conversationId as string
+  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
+  if (conversation) ctx.requirePermission('chat', conversation.project)
+  const sent = forwardToAgentHost(
+    ctx,
+    conversationId,
+    { type: 'permission_rule', toolName: data.toolName, behavior: data.behavior },
+    'permission',
+  )
+  if (!sent) return
+  ctx.log.info(
+    `[permission] Rule conv=${conversationId?.slice(0, 8)} tool=${data.toolName} -> ${data.behavior} by=${ctx.ws.data.userName ?? 'anonymous'}`,
   )
 }
 
-// AskUserQuestion relay: dashboard -> agent host (forward + clear stored state)
-const askAnswer: MessageHandler = (ctx, data) => {
-  const conversationId = data.conversationId as string
-  const toolUseId = data.toolUseId as string
-  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
-  if (conversation) ctx.requirePermission('chat', conversation.project)
+// Agent host -> dashboard: a standing rule approved this with no human in the
+// loop. Stamped as a receipt too, so an unattended run's tool gates are as
+// auditable as an attended one's.
+const permissionAutoApproved: MessageHandler = (ctx, data) => {
+  const target = conversationForBroadcast(ctx, data, 'permission', 'auto-approved')
+  if (!target) return
+  const { conversationId, conversation } = target
+  const requestId = data.requestId as string
+  const toolName = data.toolName as string
 
-  // Forward the answer to the agent host that owns this conversation.
-  const targetWs = conversationId ? ctx.conversations.getConversationSocket(conversationId) : null
-  if (targetWs) {
-    targetWs.send(
-      JSON.stringify({
-        type: 'ask_answer',
-        conversationId: conversationId,
-        toolUseId,
-        answers: data.answers,
-        annotations: data.annotations,
-        skip: data.skip,
-      }),
-    )
-    ctx.log.debug(`[ask] Answer: ${toolUseId?.slice(0, 12)} ${data.skip ? 'SKIP' : 'answered'}`)
-  } else {
-    ctx.log.error(`[ask] No socket for conversation ${conversationId?.slice(0, 8)} (ask ${toolUseId?.slice(0, 12)})`)
-  }
+  emitPermissionDecisionEntry(ctx.conversations, conversationId, {
+    requestId,
+    toolName,
+    outcome: 'auto',
+  })
 
-  // Clear pending ask state (resolved by user) -- regardless of socket presence,
-  // so a reconnecting dashboard does not rehydrate a stale question card.
-  if (conversation) {
-    delete conversation.pendingAskQuestion
-    if (conversation.pendingAttention?.type === 'ask') {
-      delete conversation.pendingAttention
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
-
-  cancelAskNotify(conversationId)
-
-  // Broadcast dismiss to other dashboard subscribers so the question card
-  // disappears on every session, not just the one that answered.
-  if (conversation?.project) {
-    ctx.broadcastScoped(
-      { type: 'ask_dismiss', conversationId, toolUseId } satisfies AskQuestionDismiss,
-      conversation.project,
-    )
-  }
-}
-
-// AskUserQuestion timeout: agent host -> broker (headless, no user response within deadline)
-// Same cleanup as askAnswer(skip=true) but no forwarding needed -- agent host already
-// sent sendPermissionResponse(false) to CC before emitting this message.
-const askQuestionTimeout: MessageHandler = (ctx, data) => {
-  const conversationId = data.conversationId as string
-  const toolUseId = data.toolUseId as string
-  const conversation = conversationId ? ctx.conversations.getConversation(conversationId) : undefined
-
-  if (conversation) {
-    delete conversation.pendingAskQuestion
-    if (conversation.pendingAttention?.type === 'ask') {
-      delete conversation.pendingAttention
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
-
-  cancelAskNotify(conversationId)
-
-  if (conversation?.project) {
-    ctx.broadcastScoped(
-      { type: 'ask_dismiss', conversationId, toolUseId } satisfies AskQuestionDismiss,
-      conversation.project,
-    )
-  }
-
-  ctx.log.info(`[ask] Timeout: ${toolUseId?.slice(0, 12)} on ${conversationId?.slice(0, 8)} -- CC unblocked with skip`)
+  ctx.broadcastScoped(
+    {
+      type: 'permission_auto_approved',
+      conversationId,
+      requestId,
+      toolName,
+      description: data.description,
+    },
+    conversation.project,
+  )
 }
 
 export function registerPermissionHandlers(): void {
-  // Agent host -> dashboard.
   registerHandlers(
-    {
-      permission_request: permissionRequest,
-      permission_auto_approved: permissionAutoApproved,
-      clipboard_capture: clipboardCapture,
-      ask_question: askQuestion,
-      ask_question_timeout: askQuestionTimeout,
-    },
+    { permission_request: permissionRequest, permission_auto_approved: permissionAutoApproved },
     AGENT_HOST_ONLY,
   )
-  // Dashboard -> agent host.
-  registerHandlers(
-    {
-      permission_response: permissionResponse,
-      permission_rule: permissionRule,
-      ask_answer: askAnswer,
-    },
-    DASHBOARD_ROLES,
-  )
+  registerHandlers({ permission_response: permissionResponse, permission_rule: permissionRule }, DASHBOARD_ROLES)
 }
