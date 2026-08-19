@@ -6,7 +6,7 @@
  * bar this card ships the chrome for.
  */
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
@@ -26,13 +26,21 @@ export function pane(code: string, doc: Document = document): HTMLElement | null
   return doc.querySelector(`[data-pane="${code}"]`)
 }
 
-/** Open the surface and wait for every lazily-imported stub to land. */
+/**
+ * Open the surface and wait for every lazily-imported pane to land.
+ *
+ * The readiness signal is `[data-pane]` -- the one attribute every stub carries,
+ * including A5, which is a strip rather than a `.wall-pane`. It was the stub's
+ * "no feed yet" body, which made this rig go red the moment the first pane card
+ * shipped a real feed; twelve of those are landing, so it would have gone red
+ * twelve times for twelve reasons that were all this line.
+ */
 export async function openTheWall(): Promise<void> {
   act(() => {
     openWall()
   })
   render(<WallModal />)
-  await waitFor(() => expect(screen.getAllByText('no feed yet')).toHaveLength(WALL_PANE_CODES.length))
+  await waitFor(() => expect(wallRoot().querySelectorAll('[data-pane]')).toHaveLength(WALL_PANE_CODES.length))
 }
 
 /** Registered by each suite so a leaked modal record or a stuck ambient flag

@@ -20,6 +20,7 @@ import { type NodeStatsReport, type NodeStatsSender, validateNodeStats } from '.
 import type { HandlerContext, MessageHandler } from '../handler-context'
 import { registerHandlers, type WsRole } from '../message-router'
 import { nodeStatsStore } from '../node-stats-store'
+import { recordWallHostVitals } from '../wall/host-vitals'
 
 /** The one message type a reporter credential may send. */
 export const NODE_STATS_MESSAGE = 'node_stats'
@@ -87,6 +88,11 @@ export const nodeStats: MessageHandler = (ctx, data) => {
   const receivedAt = Date.now()
   const machineOwner = nodeStatsStore.record(report, receivedAt)
   logSample(ctx, report, machineOwner)
+
+  // THE WALL's S1 pane rides the same accepted frame -- it gets no ingest path,
+  // no cadence and no validator of its own. The CPU ring behind it fills whether
+  // or not anyone is watching; the publish inside is the part that no-ops.
+  recordWallHostVitals(report)
 
   ctx.broadcast({ type: 'node_stats_update', report, receivedAt, machineOwner })
 }
