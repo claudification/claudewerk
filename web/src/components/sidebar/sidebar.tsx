@@ -70,23 +70,35 @@ export function Sidebar({ state }: { state: SidebarState }) {
         inert={!open}
         aria-label="Conversations"
         className={cn(
-          'bg-background flex shrink-0 flex-col',
+          // STEPPED DOWN A RUNG, not level with the page.
+          // This was `bg-background` -- the same fill as the transcript beside
+          // it -- separated by a 16px margin and nothing else. Measured off a
+          // screenshot: rail and transcript were ΔL 0.036 apart, under the
+          // 0.045 floor, and a pixel scan across the seam found no divider at
+          // all. The eye was inferring the boundary purely from where the cards
+          // stopped. The rail recedes now (ΔL 0.05) and the seam is a real
+          // line instead of a gap.
+          'bg-surface-sunken flex shrink-0 flex-col',
           // Overlay (below lg): off-canvas on a transform. NOT display:none.
-          'fixed inset-y-0 left-0 z-50 border-r border-border shadow-lg',
+          'fixed inset-y-0 left-0 z-50 border-r border-border-strong shadow-lg',
           'transition-transform duration-200 ease-out motion-reduce:transition-none',
           open ? 'translate-x-0' : '-translate-x-full',
           // Docked (lg and up): back into flow, collapse by clipping width so the
           // panel inside keeps its size and its scroll offset.
           'lg:static lg:z-auto lg:translate-x-0 lg:overflow-hidden lg:shadow-none',
           'lg:transition-[width,margin] lg:duration-200',
-          open ? 'lg:w-[350px] lg:mr-4 lg:border' : 'lg:w-0 lg:mr-0 lg:border-0',
+          open ? 'lg:w-[350px] lg:mr-0 lg:border-r' : 'lg:w-0 lg:mr-0 lg:border-0',
         )}
       >
         {/* Fixed inner width: the collapse animation clips this panel rather than
             reflowing it, so nothing inside relayouts on the way in or out. */}
         <div className="flex h-full w-[min(85vw,360px)] flex-col lg:w-[350px]">
           <SidebarTools canLocate={!!selectedConversationId} onCollapse={toggle} />
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-2 pt-0" data-perf-region="sidebar">
+          {/* O5: cards run FULL-BLEED to the rail edge. The horizontal p-2 made
+              every card a floating tile with a stripe of rail either side, so
+              the column read as a pile of objects rather than one list. Vertical
+              padding stays -- that is breathing room, not an inset. */}
+          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-0 pt-0 pb-2" data-perf-region="sidebar">
             <PanelBoundary name="Conversation list">
               <ProjectList />
             </PanelBoundary>
