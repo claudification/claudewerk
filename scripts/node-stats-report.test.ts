@@ -23,11 +23,11 @@ import { describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { ingestNodeStats } from '../src/broker/node-stats-ingest'
+import { nodeStatsStore } from '../src/broker/node-stats-store'
 import { hostId } from '../src/shared/host-id'
 import { validateNodeStats } from '../src/shared/node-stats'
 import { cpuPercentFromDelta, cpuTotals, createMachineSampler, osArchLabel } from '../src/shared/node-stats-sample'
-import { ingestNodeStats } from '../src/broker/node-stats-ingest'
-import { nodeStatsStore } from '../src/broker/node-stats-store'
 
 const SCRIPT = join(import.meta.dirname, 'node-stats-report.sh')
 
@@ -121,7 +121,16 @@ describe('CPU: the script and the Bun sampler compute the same number', () => {
     {
       name: 'huge counters (an uptime measured in months)',
       prev: { user: 9e8, nice: 1e7, system: 4e8, idle: 8e9, iowait: 3e8, irq: 5e6, softirq: 9e6, steal: 0 },
-      next: { user: 9.1e8, nice: 1e7, system: 4.02e8, idle: 8.05e9, iowait: 3.1e8, irq: 5.1e6, softirq: 9.4e6, steal: 0 },
+      next: {
+        user: 9.1e8,
+        nice: 1e7,
+        system: 4.02e8,
+        idle: 8.05e9,
+        iowait: 3.1e8,
+        irq: 5.1e6,
+        softirq: 9.4e6,
+        steal: 0,
+      },
     },
   ]
 
@@ -295,9 +304,10 @@ describe('refusals', () => {
 
 describe.skipIf(process.platform !== 'linux')('LIVE: script vs Bun sampler on this box', () => {
   it('agrees on memory, load, cores and disk against the real /proc', () => {
-    const frame = JSON.parse(
-      run(['--print', '--once', '--interval', '1', '--mount', process.cwd()]).out,
-    ) as Record<string, unknown>
+    const frame = JSON.parse(run(['--print', '--once', '--interval', '1', '--mount', process.cwd()]).out) as Record<
+      string,
+      unknown
+    >
     const machine = frame.machine as {
       memory: { usedBytes: number; totalBytes: number }
       load: { one: number; cores: number }
@@ -310,9 +320,7 @@ describe.skipIf(process.platform !== 'linux')('LIVE: script vs Bun sampler on th
     expect(machine.disk.totalBytes).toBe(sampled.disk.totalBytes)
     // Live values move between the two readings; these bound the DRIFT, not the
     // noise. 5% of RAM and 0.5 of load is far tighter than a method difference.
-    expect(Math.abs(machine.memory.usedBytes - sampled.memory.usedBytes)).toBeLessThan(
-      sampled.memory.totalBytes * 0.05,
-    )
+    expect(Math.abs(machine.memory.usedBytes - sampled.memory.usedBytes)).toBeLessThan(sampled.memory.totalBytes * 0.05)
     expect(Math.abs(machine.load.one - sampled.load.one)).toBeLessThan(0.5)
   })
 })

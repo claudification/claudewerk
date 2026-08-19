@@ -17,6 +17,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server'
+import { NODE_STATS_INGEST_PATH } from '../shared/node-stats'
 import {
   addCredential,
   consumeInvite,
@@ -38,8 +39,6 @@ import {
   validateConversation,
   validateInvite,
 } from './auth'
-
-import { NODE_STATS_INGEST_PATH } from '../shared/node-stats'
 import type { GatewayRegistry } from './gateway-registry'
 import { isGatewaySecret } from './gateway-registry'
 import { canAuthenticateHttpRoutes, canIngestNodeStatsHttp } from './node-capability'

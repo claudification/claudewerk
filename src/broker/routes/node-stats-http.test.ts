@@ -12,9 +12,9 @@
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { Hono } from 'hono'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { Hono } from 'hono'
 import { NODE_STATS_INGEST_PATH } from '../../shared/node-stats'
 import { FIXTURE_REPORTER_IDENTITY, FIXTURE_SENTINEL_IDENTITY, stubSampler } from '../../shared/node-stats-fixture'
 import { createNodeStatsReporter } from '../../shared/node-stats-reporting'
@@ -88,9 +88,7 @@ beforeAll(() => {
   app.route(
     '/',
     createNodeStatsHttpRouter({
-      getSubscribers: () => [
-        { send: (json: string) => broadcasts.push(JSON.parse(json)) } as unknown as never,
-      ],
+      getSubscribers: () => [{ send: (json: string) => broadcasts.push(JSON.parse(json)) } as unknown as never],
     } as never),
   )
 })
