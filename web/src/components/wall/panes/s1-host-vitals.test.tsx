@@ -87,6 +87,15 @@ describe('S1 host vitals', () => {
     expect(screen.queryByText('7 conv')).toBeNull()
   })
 
+  it('qualifies a stale meter tooltip -- the bar keeps its shape, not its claim', () => {
+    mount([host({ at: NOW - 360_000 })])
+    const meters = [...document.querySelectorAll('[data-node] [title^="cpu"], [data-node] [title^="dsk"]')]
+    expect(meters.map(m => m.getAttribute('title'))).toEqual([
+      'cpu 42% when last seen, 6m ago',
+      'dsk 99% when last seen, 6m ago',
+    ])
+  })
+
   it('crosses into stale on the CLOCK, with no frame arriving to say so', async () => {
     mount([host()])
     expect(row('n-studio')?.dataset.stale).toBeUndefined()

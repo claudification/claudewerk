@@ -16,13 +16,26 @@ interface MeterProps {
   label: string
   pct: number | undefined
   stale: boolean
+  /** How long ago the sample was taken, for a stale meter's tooltip. */
+  age: string
 }
 
-function Meter({ label, pct, stale }: MeterProps) {
+/**
+ * The bar of a STALE meter is kept at its last width, in the neutral track
+ * colour, while its number goes to `--`. That is the last known SHAPE of a box
+ * that stopped answering, which is worth seeing; what would be a lie is the
+ * number and the threshold colour, and those are the parts that go. The tooltip
+ * carries the age so the bar cannot be read as current either.
+ */
+function Meter({ label, pct, stale, age }: MeterProps) {
   const tone = stale ? 'unknown' : vitalsTone(pct)
   const width = pct === undefined ? 0 : Math.min(100, Math.max(0, pct))
+  const reading = pct === undefined ? 'unknown' : `${pct}%`
   return (
-    <div className="flex items-center gap-1 min-w-0" title={`${label} ${pct === undefined ? 'unknown' : `${pct}%`}`}>
+    <div
+      className="flex items-center gap-1 min-w-0"
+      title={stale ? `${label} ${reading} when last seen, ${age} ago` : `${label} ${reading}`}
+    >
       <span className="text-fg-faint uppercase shrink-0" style={{ fontSize: 9, letterSpacing: '0.08em' }}>
         {label}
       </span>
@@ -45,6 +58,7 @@ function Meter({ label, pct, stale }: MeterProps) {
 
 export function HostVitalsRowView({ row }: { row: HostVitalsRow }) {
   const line = vitalsLine(row)
+  const age = formatAge(row.ageMs)
   return (
     <div
       className={cn('group/host py-1 border-b border-border-subtle last:border-b-0', row.stale && 'opacity-55')}
@@ -64,7 +78,7 @@ export function HostVitalsRowView({ row }: { row: HostVitalsRow }) {
         <span className="flex-1" />
         {row.stale ? (
           <span className="text-fg-faint shrink-0" style={{ fontSize: 10 }}>
-            last seen {formatAge(row.ageMs)} ago
+            last seen {age} ago
           </span>
         ) : (
           row.load1 !== undefined && (
@@ -79,9 +93,9 @@ export function HostVitalsRowView({ row }: { row: HostVitalsRow }) {
       <div className="flex items-center gap-2 mt-0.5">
         <HostSparkline history={row.cpuHistory} stale={row.stale} label={row.alias} />
         <div className="grid grid-cols-3 gap-x-2 flex-1 min-w-0">
-          <Meter label="cpu" pct={row.cpuPct} stale={row.stale} />
-          <Meter label="ram" pct={row.memPct} stale={row.stale} />
-          <Meter label="dsk" pct={row.diskPct} stale={row.stale} />
+          <Meter label="cpu" pct={row.cpuPct} stale={row.stale} age={age} />
+          <Meter label="ram" pct={row.memPct} stale={row.stale} age={age} />
+          <Meter label="dsk" pct={row.diskPct} stale={row.stale} age={age} />
         </div>
       </div>
     </div>
