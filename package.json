@@ -87,24 +87,24 @@
     "sentinel": "./bin/sentinel"
   },
   "devDependencies": {
-    "@ast-grep/cli": "^0.44.0",
-    "@biomejs/biome": "^2.5.2",
+    "@ast-grep/cli": "^0.44.1",
+    "@biomejs/biome": "^2.5.9",
     "@types/bun": "^1.3.14",
     "@types/diff": "^8.0.0",
     "@types/web-push": "^3.6.4",
-    "fallow": "^2.103.0",
+    "fallow": "^2.104.0",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.2.0",
     "diff": "^9.0.0",
-    "hono": "^4.12.23",
-    "liquidjs": "^10.27.1",
-    "marked": "^18.0.5",
-    "microdiff": "^1.5.0",
+    "hono": "^4.12.27",
+    "liquidjs": "^10.29.0",
+    "marked": "^18.0.10",
+    "microdiff": "^1.6.0",
     "web-push": "^3.6.7",
     "yaml": "^2.9.0",
     "zod": "4.3.6"
