@@ -32,6 +32,7 @@ import type {
   NightshiftTaskMeta,
   NightshiftTaskPatchInput,
 } from './nightshift-types'
+import type { NodeStatsReport } from './node-stats'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type {
   QuestAcceptanceContract,
@@ -48,6 +49,18 @@ import type { RecapSuiteId } from './recap-suites'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
+// The node-stats contract lives in its own module (see `./node-stats`) because
+// BOTH the sentinel and the standalone reporter implement it. Re-exported here
+// so wire consumers keep importing message types from one place.
+export type {
+  HostMachineRow,
+  LoadAverage,
+  MachineStats,
+  NodeIdentity,
+  NodeStatsReport,
+  NodeStatsSender,
+  SentinelNodeExtras,
+} from './node-stats'
 
 /**
  * Wire protocol version.
@@ -5919,6 +5932,10 @@ export type SentinelMessage =
   | QuestResult
   | UsageUpdate
   | SentinelUsageReport
+  // Machine vitals. Declared in `./node-stats` because the standalone
+  // node-stats-reporter sends the identical frame -- one contract, two senders.
+  // Plan utilization is NOT on it; that stays on SentinelUsageReport above.
+  | NodeStatsReport
   | LaunchLog
   | DaemonRosterUpdate
   | DaemonJobState
