@@ -1,6 +1,14 @@
 /**
  * A8's arithmetic, as a pure fold. No React, no store, no I/O.
  *
+ * IT LIVES IN `shared/` BECAUSE THE SENTINEL RUNS IT. The wall watches every
+ * project at once, and the pin is a frontmatter key that only the FULL card
+ * carries -- folding in the browser meant hydrating every project's whole board
+ * over the wire to find a handful of booleans. The `pinned` board op
+ * (src/sentinel/project-handlers.ts) runs this beside the files and sends back
+ * only the rows. The browser still imports the same function for its types, and
+ * nothing about the arithmetic knows which side it is on.
+ *
  * THE PANE ANSWERS TWO QUESTIONS: how far along, and what is LEFT. So the row is
  * a progress bar WITH ITS COUNTS (`1/2` and `50/100` draw an identical bar and
  * only one of them means anything), and the list under it is every child that is
@@ -12,9 +20,9 @@
  * "0/0", not the lie "100%".
  */
 
-import { buildEpicIndex, type EpicChild } from '@shared/epic-cards'
-import { NEEDS_OVERSEER_TAG } from '@shared/epic-run-types'
-import type { ProjectTaskMeta } from '@shared/project-task-types'
+import { buildEpicIndex, type EpicChild } from './epic-cards'
+import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import type { ProjectTaskMeta } from './project-task-types'
 
 /** Row markers, straight off the mockup. */
 export const MARKER = {

@@ -120,6 +120,57 @@ describe('handleProjectBoardOp', () => {
 })
 
 /**
+ * THE WALL's A8 fold, run beside the files.
+ *
+ * What these lock down is the reason the op exists: the wire carries the ROWS,
+ * never the board. A `pinned` that answered with every card would be a `list`
+ * with extra steps, and the browser-side fold it replaced is exactly that.
+ */
+describe('the pinned op folds A8 on the sentinel', () => {
+  const URI = 'claude:///Users/j/remote-claude'
+
+  function pin(slug: string, children: { slug: string; status: 'open' | 'done' | 'archived' }[]) {
+    op({ op: 'create', input: { title: slug, body: 'b', status: 'open', tags: ['epic'], wallPinned: true } })
+    for (const c of children) {
+      op({ op: 'create', input: { title: c.slug, body: 'b', status: c.status, epic: slug } })
+    }
+  }
+
+  test('returns the pinned epics with their counts, stamped with the project URI', () => {
+    pin('watched', [
+      { slug: 'a', status: 'done' },
+      { slug: 'b', status: 'open' },
+    ])
+    const r = handleProjectBoardOp(
+      root,
+      { type: 'project_board_op', requestId: 'r1', projectRoot: root, project: URI, op: 'pinned' },
+      NOW,
+    )
+
+    expect(r.ok).toBe(true)
+    expect(r.pinned).toHaveLength(1)
+    expect(r.pinned?.[0]).toMatchObject({ project: URI, epicId: 'watched', done: 1, total: 2, pct: 50 })
+    expect(r.pinned?.[0].children.map(c => c.slug)).toEqual(['b'])
+  })
+
+  test('an unpinned epic never crosses the wire, and neither does the board', () => {
+    op({ op: 'create', input: { title: 'unwatched', body: 'b', tags: ['epic'] } })
+    op({ op: 'create', input: { title: 'loose card', body: 'b' } })
+
+    const r = op({ op: 'pinned' })
+    expect(r.ok).toBe(true)
+    expect(r.pinned).toEqual([])
+    // The whole point: no `tasks`, no `manifest`, no `batch` riding along.
+    expect(r.tasks).toBeUndefined()
+    expect(r.batch).toBeUndefined()
+  })
+
+  test('an empty board is an empty list, not a failure', () => {
+    expect(op({ op: 'pinned' })).toMatchObject({ ok: true, pinned: [] })
+  })
+})
+
+/**
  * `ProjectTaskInputWire` used to declare only title/body/priority/tags/refs, so
  * a caller writing `input: { epic: 'x' }` got a type error and reasonably
  * concluded the board could not be told. Nothing was dropped at runtime -- the

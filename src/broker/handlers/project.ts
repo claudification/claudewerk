@@ -97,6 +97,9 @@ const projectBoardRequest: MessageHandler = (ctx, data) => {
       requestId: d.requestId,
       projectRoot,
       op: d.op,
+      // The URI itself, not just the path it resolved to: `pinned` stamps it on
+      // every row it returns, and a wall row is an address you click.
+      project: d.project,
       status: d.status,
       slug: d.slug,
       filterStatus: d.filterStatus,

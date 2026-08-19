@@ -15,12 +15,12 @@
  * is the opposite of the row's (leave for the main window).
  */
 
+import { MARKER, type PinnedChildRow } from '@shared/pinned-epic-rows'
 import { useState } from 'react'
 import { formatAgeShort } from '@/lib/status-style'
 import { cn } from '@/lib/utils'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { ProjectTag } from '../project-tag'
-import { MARKER, type PinnedChildRow } from './pinned-epic-rows'
 import type { WallPinRow } from './use-wall-pins'
 import { navigateFromWall } from './wall-navigate'
 
