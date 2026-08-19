@@ -702,9 +702,12 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     group: 'System',
   })
 
+  // Gated to match `{canAdmin && <WallModal />}` in app.tsx. Without the guard
+  // the entry lists for every user and picking it opens nothing.
   useCommand('wall', () => openWall(), {
     label: 'THE WALL -- the whole fleet on one surface',
     group: 'System',
+    when: () => useConversationsStore.getState().permissions.canAdmin,
   })
 
   // Quick task opener. Registered HERE (eager, app-shell level) and NOT inside
