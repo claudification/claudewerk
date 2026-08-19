@@ -74,6 +74,17 @@ export interface EpicRunView {
 }
 
 /**
+ * One `get` result, folded into the view the engine consumes. Its own exported
+ * function so a test can drive the REAL sentinel handler through the REAL broker
+ * fold: the interesting epic bugs live in the shape of this answer, and a test
+ * that re-implements the mapping cannot catch one.
+ */
+export function toEpicRunView(res: EpicResult): EpicRunView {
+  if (!res.ok) return { run: null, baton: [], lease: null, error: res.error ?? 'epic get failed' }
+  return { run: res.run ?? null, baton: res.baton ?? [], lease: res.currentLease ?? null }
+}
+
+/**
  * Run + lease + baton in one call -- what a beat reads before deciding anything,
  * and what an inspect reads to explain the run.
  *
@@ -86,9 +97,7 @@ export async function fetchEpicRun(
   epicId: string,
   baton?: EpicBatonQuery,
 ): Promise<EpicRunView> {
-  const res = await sendEpicOp(deps, project, { op: 'get', epicId, ...(baton ? { baton } : {}) })
-  if (!res.ok) return { run: null, baton: [], lease: null, error: res.error ?? 'epic get failed' }
-  return { run: res.run ?? null, baton: res.baton ?? [], lease: res.currentLease ?? null }
+  return toEpicRunView(await sendEpicOp(deps, project, { op: 'get', epicId, ...(baton ? { baton } : {}) }))
 }
 
 /** Append one baton entry. Failures are logged by the caller, never thrown -- a
