@@ -1,8 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { BannerButton, BannerStack, ConversationBanner } from '@/components/ui/conversation-banner'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { useInlinePermissionRegistry } from '@/lib/inline-permission-registry'
 import { canTerminal, projectPath } from '@/lib/types'
 import { cn, haptic } from '@/lib/utils'
+import { formatPermissionInput } from './permission-input-preview'
 
 // ---------------------------------------------------------------------------
 // LinkRequestBanners
@@ -59,110 +61,20 @@ export function LinkRequestBanners({ conversationId }: { conversationId: string 
 }
 
 // ---------------------------------------------------------------------------
-// formatPermissionInput (helper used only by PermissionBanners)
-// ---------------------------------------------------------------------------
-
-function formatPermissionInput(toolName: string, inputPreview: string, root?: string): ReactNode {
-  const relativize = (p: string) => (root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p)
-  try {
-    const input = JSON.parse(inputPreview)
-
-    if (toolName === 'Write' || toolName === 'Edit') {
-      const path = input.file_path || input.path
-      const content = input.content || input.new_string
-      return (
-        <>
-          {path && <div className="text-amber-300 text-[11px] truncate">{relativize(path)}</div>}
-          {content && (
-            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded max-h-16 overflow-hidden whitespace-pre-wrap">
-              {content.length > 300 ? `${content.slice(0, 300)}...` : content}
-            </pre>
-          )}
-        </>
-      )
-    }
-
-    if (toolName === 'Bash') {
-      const cmd = input.command || input.cmd
-      return cmd ? (
-        <pre className="text-cyan-400 text-[11px] bg-background/50 px-2 py-1 rounded whitespace-pre-wrap">{cmd}</pre>
-      ) : null
-    }
-
-    if (toolName === 'Read') {
-      const path = input.file_path || input.path
-      return path ? <div className="text-amber-300 text-[11px]">{relativize(path)}</div> : null
-    }
-
-    // Generic: show parsed JSON nicely
-    const entries = Object.entries(input)
-    if (entries.length === 0) return null
-    return (
-      <div className="text-[10px] space-y-0.5">
-        {entries.map(([k, v]) => {
-          const val = typeof v === 'string' ? v : JSON.stringify(v)
-          const display = typeof v === 'string' && root ? relativize(val) : val
-          return (
-            <div key={k} className="flex gap-1.5">
-              <span className="text-muted-foreground shrink-0">{k}:</span>
-              <span className="text-foreground/80 truncate">{String(display).slice(0, 200)}</span>
-            </div>
-          )
-        })}
-      </div>
-    )
-  } catch {
-    // JSON parse failed (likely truncated). Try to extract known fields with regex.
-    const pathMatch = inputPreview.match(/"file_path"\s*:\s*"([^"]+)"/)
-    const cmdMatch = inputPreview.match(/"command"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
-    const oldStrMatch = inputPreview.match(/"old_string"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
-    const contentMatch = inputPreview.match(/"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)/)
-
-    if ((toolName === 'Write' || toolName === 'Edit') && pathMatch) {
-      const preview = oldStrMatch?.[1] || contentMatch?.[1]
-      return (
-        <>
-          <div className="text-amber-300 text-[11px] truncate">{relativize(pathMatch[1])}</div>
-          {preview && (
-            <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded max-h-16 overflow-hidden whitespace-pre-wrap">
-              {preview.replace(/\\n/g, '\n').replace(/\\"/g, '"').slice(0, 300)}
-            </pre>
-          )}
-        </>
-      )
-    }
-
-    if (toolName === 'Bash' && cmdMatch) {
-      return (
-        <pre className="text-cyan-400 text-[11px] bg-background/50 px-2 py-1 rounded whitespace-pre-wrap">
-          {cmdMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"')}
-        </pre>
-      )
-    }
-
-    if (toolName === 'Read' && pathMatch) {
-      return <div className="text-amber-300 text-[11px]">{relativize(pathMatch[1])}</div>
-    }
-
-    // Fallback: show raw
-    return (
-      <pre className="text-muted-foreground text-[10px] bg-background/50 px-2 py-1 rounded overflow-x-auto max-h-20 whitespace-pre-wrap break-all">
-        {inputPreview}
-      </pre>
-    )
-  }
-}
-
-// ---------------------------------------------------------------------------
 // PermissionBanners
 // ---------------------------------------------------------------------------
 
 export function PermissionBanners({ conversationId }: { conversationId: string }) {
   const permissions = useConversationsStore(s => s.pendingPermissions)
   const respond = useConversationsStore(s => s.respondToPermission)
-  const sendRule = useConversationsStore(s => s.sendPermissionRule)
+  const allowAlways = useConversationsStore(s => s.allowPermissionAlways)
   const conversationPath = useConversationsStore(s => projectPath(s.conversationsById[conversationId]?.project ?? ''))
-  const relevant = permissions.filter(p => p.conversationId === conversationId)
+  const coveredInline = useInlinePermissionRegistry(s => s.mounted)
+  // The gate is answerable from the inline card at the tool call whenever that
+  // card is mounted; showing the pinned banner too would ask the same question
+  // twice. Scroll the call out of view and the card unmounts -- the banner comes
+  // back, which is how you reach a gate you can no longer see.
+  const relevant = permissions.filter(p => p.conversationId === conversationId && !coveredInline.includes(p.requestId))
   return (
     <BannerStack
       items={relevant}
@@ -188,8 +100,7 @@ export function PermissionBanners({ conversationId }: { conversationId: string }
                 label="ALWAYS"
                 onClick={() => {
                   haptic('double')
-                  respond(perm.conversationId, perm.requestId, 'allow')
-                  sendRule(perm.conversationId, perm.toolName, 'allow')
+                  allowAlways(perm.conversationId, perm.requestId, perm.toolName)
                 }}
               />
               <BannerButton

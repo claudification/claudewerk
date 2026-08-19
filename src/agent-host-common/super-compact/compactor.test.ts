@@ -63,7 +63,7 @@ describe('superCompact', () => {
 
   test('preamble links back to the original session + anchors the fold', () => {
     const preamble = compact().entries[0]
-    const txt = (preamble.blocks?.[0] as { text: string }).text
+    const txt = (preamble.blocks?.[0] as { text: string } | undefined)?.text ?? ''
     expect(txt).toContain('super-compacted')
     expect(txt).toContain(ORIG_SESSION_ID)
     expect(txt).toContain('tu_read')

@@ -164,11 +164,13 @@ async function main() {
   // ─── NDJSON traffic log + JSON stream relay ──────────────────────────────
   // Write to disk (trace file), relay to dashboard viewers (JSON stream),
   // and buffer for backfill. All three share the same logic to avoid drift.
-  const writeDisk = !!traceFile
+  // Narrowing on the path itself, not a derived boolean -- a `!!x` flag does not
+  // carry the narrowing back to x, which is what forced a non-null assertion here.
+  const tracePath = traceFile
   function traceWrite(dir: 'send' | 'recv' | 'note', msg: object) {
-    if (writeDisk) {
+    if (tracePath) {
       try {
-        appendFileSync(traceFile!, `${JSON.stringify({ t: Date.now(), dir, msg })}\n`)
+        appendFileSync(tracePath, `${JSON.stringify({ t: Date.now(), dir, msg })}\n`)
       } catch {
         // Drop silently on disk error.
       }

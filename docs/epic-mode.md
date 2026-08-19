@@ -226,8 +226,11 @@ mechanism built to enforce it.
 and the broker actions live in the BROKER, so they need the image rebuilt and the
 container recreated -- which drops every live WebSocket. The deeper baton read
 and the lease-on-`get` are SENTINEL changes, and the sentinel ships as a frozen
-bundle, so they need `build:packages` plus a sentinel restart, which kills running
-work. Neither is covered by the standing web-deploy licence.
+bundle, so they need `build:packages` plus a sentinel restart. That restart does
+NOT kill running conversations -- agent hosts are spawned `detached` and unref'd,
+survive the bounce, and are re-adopted from the PID registry -- but it does kill
+every host shell (web terminal) and fails any spawn/revive in flight while the
+sentinel is down. Neither is covered by the standing web-deploy licence.
 
 ## 10. Running one
 

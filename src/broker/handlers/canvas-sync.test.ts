@@ -182,7 +182,7 @@ test('leave + disconnect remove the peer and broadcast presence', () => {
 
   // b still present -> a presence broadcast with 1 peer fired
   const lastPresence = [...store.broadcasts].reverse().find(x => x.msg.type === 'canvas_presence')
-  expect((lastPresence?.msg.peers as unknown[]).length).toBe(1)
+  expect((lastPresence?.msg.peers as unknown[] | undefined)?.length).toBe(1)
 
   // b disconnects via the close-path helper
   const store2 = { ...store, broadcasts: [] as Broadcast[] }

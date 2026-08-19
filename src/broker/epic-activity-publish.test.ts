@@ -50,10 +50,10 @@ describe('publishEpicActivity', () => {
 
     expect(target.sent).toHaveLength(2)
     const alpha = target.sent.find(s => s.project === ALPHA)
-    expect((alpha?.message.epicActivity as unknown[]).length).toBe(2)
+    expect((alpha?.message.epicActivity as unknown[] | undefined)?.length).toBe(2)
     expect(alpha?.message.type).toBe('epic_activity')
     const beta = target.sent.find(s => s.project === BETA)
-    expect((beta?.message.epicActivity as { epicId: string }[])[0]?.epicId).toBe('b1')
+    expect((beta?.message.epicActivity as { epicId: string }[] | undefined)?.[0]?.epicId).toBe('b1')
   })
 
   test('scopes each message to its own project so the existing gate does the filtering', async () => {
@@ -106,6 +106,6 @@ describe('publishEpicActivity', () => {
     await publishEpicActivity({ ...deps, log: (l: string) => void lines.push(l) } as SweepDeps, target)
 
     expect(target.sent).toHaveLength(1)
-    expect((target.sent[0]?.message.epicActivity as { status: null }[])[0]?.status).toBeNull()
+    expect((target.sent[0]?.message.epicActivity as { status: null }[] | undefined)?.[0]?.status).toBeNull()
   })
 })

@@ -136,6 +136,59 @@ export function cancelAskNotify(conversationId: string): void {
 }
 
 /**
+ * A tool-permission gate blocks CC dead until someone answers, and it was the
+ * ONE attention path that never buzzed: dialog and ask had timers, a permission
+ * request had only an in-panel banner. With the panel closed the session just
+ * sat there.
+ *
+ * Grace is 30s when a dashboard is subscribed to that conversation's transcript
+ * -- long enough that a gate you are already looking at never buzzes. With
+ * nobody watching there is no one to answer in-panel, so it fires immediately.
+ */
+const PERMISSION_GRACE_MS = 30 * 1000
+
+const permissionTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+export function schedulePermissionNotify(
+  params: BaseParams & { requestId: string; toolName: string; detail?: string; hasLiveViewer: boolean },
+): void {
+  cancelPermissionNotify(params.conversationId, 'rescheduled')
+  const { conversationId, project, requestId, toolName, detail, hasLiveViewer } = params
+  const label = extractProjectLabel(project) || short(conversationId)
+  const fire = () => {
+    permissionTimers.delete(conversationId)
+    if (!passesAttentionGates(conversationId, 'permission')) return
+    attentionLog(`permission FIRE conv=${short(conversationId)} tool=${toolName} project=${label}`)
+    const trimmed = detail?.trim().slice(0, 100)
+    sendPushToAll({
+      title: `Permission: ${toolName}`,
+      body: trimmed ? `${trimmed} -- ${label}` : label,
+      conversationId,
+      project,
+      tag: `attention-${conversationId}`,
+      // Presence of this id is what turns the notification into an answerable
+      // one (the service worker attaches Allow/Deny actions to it).
+      data: { permissionRequestId: requestId },
+    }).catch(() => {})
+  }
+  if (!hasLiveViewer) {
+    attentionLog(`permission ARM conv=${short(conversationId)} in=0ms tool=${toolName} reason=no-live-viewer`)
+    fire()
+    return
+  }
+  permissionTimers.set(conversationId, setTimeout(fire, PERMISSION_GRACE_MS))
+  attentionLog(`permission ARM conv=${short(conversationId)} in=${PERMISSION_GRACE_MS}ms tool=${toolName}`)
+}
+
+export function cancelPermissionNotify(conversationId: string, reason = 'resolved'): void {
+  const t = permissionTimers.get(conversationId)
+  if (t === undefined) return
+  clearTimeout(t)
+  permissionTimers.delete(conversationId)
+  attentionLog(`permission CANCEL conv=${short(conversationId)} reason=${reason}`)
+}
+
+/**
  * THE STATUS — the agent self-reported `needs_you` AND it's corroborated by a
  * real pending interaction (Option B: derived-gated, can't be faked). Fire an
  * IMMEDIATE debounced push so it pulls the user's attention to their phone.

@@ -48,6 +48,40 @@ function handleLaunch(entry: TranscriptEntry, state: GroupingState): void {
   }
 }
 
+/** How far back to look for the ASK a decision belongs to. A gate is answered
+ *  within a turn or two of being raised; scanning the whole transcript for a
+ *  match that isn't there would cost more than it can ever find. */
+const PERMISSION_FOLD_LOOKBACK = 200
+
+/**
+ * Fold a `permission_decision` into the `permission_request` group it answers,
+ * so one gate is one card that flips from pending to resolved.
+ *
+ * The matching group is REPLACED with a clone rather than mutated in place: it
+ * may be an object React is currently rendering, and mutating it would update
+ * the tree behind React's back (the same hazard the incremental grouping path
+ * guards against by cloning its tail group).
+ *
+ * No match -- the ASK scrolled out of the window, or nobody was ever prompted
+ * (`auto` / `expired`) -- and the receipt stands on its own card.
+ */
+function foldPermissionDecision(entry: TranscriptEntry, state: GroupingState): void {
+  const requestId = (entry as { requestId?: string }).requestId
+  const start = Math.max(0, state.groups.length - PERMISSION_FOLD_LOOKBACK)
+  for (let i = state.groups.length - 1; i >= start; i--) {
+    const group = state.groups[i]
+    if (group.type !== 'permission') continue
+    const head = group.entries[0] as { requestId?: string } | undefined
+    if (!requestId || head?.requestId !== requestId) continue
+    if (group.entries.length > 1) break // already resolved -- a duplicate receipt
+    state.groups[i] = { ...group, entries: [...group.entries, entry] }
+    if (state.current === group) state.current = state.groups[i]
+    return
+  }
+  state.current = null
+  state.groups.push({ type: 'permission', timestamp: entry.timestamp || '', entries: [entry] })
+}
+
 function handleCompact(entry: TranscriptEntry, state: GroupingState): void {
   state.current = null
   // When compacted arrives, replace the preceding compacting group
@@ -360,40 +394,50 @@ function mergeMessageEntry(entry: TranscriptEntry, state: GroupingState): void {
 }
 
 /**
+ * Entry types that always open a card of their own and never merge with a
+ * neighbour: each is a discrete receipt (a distinct shell lifecycle event, a
+ * separate advisor consult, one permission gate), so appending a second one to
+ * the same group would read as a single event.
+ */
+const OWN_CARD_GROUP: Record<string, DisplayGroup['type']> = {
+  spawn_notification: 'spawn_notification',
+  permission_request: 'permission',
+  shell: 'shell',
+  advisor: 'advisor',
+}
+
+function pushOwnCard(type: DisplayGroup['type'], entry: TranscriptEntry, state: GroupingState): void {
+  state.current = null
+  state.groups.push({ type, timestamp: entry.timestamp || '', entries: [entry] })
+}
+
+/** Entry types with dedicated handling, dispatched by type instead of walked
+ *  through as an if-chain. Everything not listed falls through to the queue /
+ *  system / message path below. */
+const TYPED_HANDLERS: Record<string, (entry: TranscriptEntry, state: GroupingState) => void> = {
+  boot: handleBoot,
+  launch: handleLaunch,
+  permission_decision: foldPermissionDecision,
+  compacting: handleCompact,
+  compacted: handleCompact,
+}
+
+/**
  * Apply one entry to the grouping state. Mutates state.
  *
- * Order of checks mirrors the original inline switch in groupEntries; do not
+ * Typed handlers run first, then the ordered checks (queue -> system ->
+ * message). That order is load-bearing for the fall-through cases; do not
  * reorder without updating both callers + the tests covering grouping.
  */
 export function processEntry(entry: TranscriptEntry, state: GroupingState): void {
-  if (entry.type === 'boot') {
-    handleBoot(entry, state)
+  const ownCard = OWN_CARD_GROUP[entry.type]
+  if (ownCard) {
+    pushOwnCard(ownCard, entry, state)
     return
   }
-  if (entry.type === 'launch') {
-    handleLaunch(entry, state)
-    return
-  }
-  if (entry.type === 'spawn_notification') {
-    state.current = null
-    state.groups.push({ type: 'spawn_notification', timestamp: entry.timestamp || '', entries: [entry] })
-    return
-  }
-  if (entry.type === 'shell') {
-    // One card per shell open/exit receipt -- never merged (each is a distinct
-    // lifecycle event, possibly for different shellIds).
-    state.current = null
-    state.groups.push({ type: 'shell', timestamp: entry.timestamp || '', entries: [entry] })
-    return
-  }
-  if (entry.type === 'advisor') {
-    // One card per advisor() consult event (message / result / tool_result).
-    state.current = null
-    state.groups.push({ type: 'advisor', timestamp: entry.timestamp || '', entries: [entry] })
-    return
-  }
-  if (entry.type === 'compacting' || entry.type === 'compacted') {
-    handleCompact(entry, state)
+  const handler = TYPED_HANDLERS[entry.type]
+  if (handler) {
+    handler(entry, state)
     return
   }
   if (isQueue(entry)) {

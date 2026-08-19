@@ -12,6 +12,7 @@ import { cancelDialogNotify, resetDialogNotifyTimer, scheduleDialogNotify } from
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
 import { showPersistentDialog } from './dialog-live'
+import { mirrorPendingInteraction } from './relay-helpers'
 
 type DialogHandlerContext = Parameters<MessageHandler>[0]
 
@@ -47,22 +48,16 @@ const dialogShow: MessageHandler = (ctx, data) => {
   }
 
   // Store pending dialog on the conversation for reconnect recovery + attention indicator
-  const conversation = ctx.conversations.getConversation(conversationId)
-  if (conversation) {
-    conversation.pendingDialog = {
-      dialogId,
-      layout: layout as unknown as DialogLayout,
-      timestamp: Date.now(),
-    }
-    conversation.pendingAttention = {
-      type: 'dialog',
-      question: (layout.title as string) || 'Dialog',
-      timestamp: Date.now(),
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
+  mirrorPendingInteraction(
+    ctx,
+    conversationId,
+    { type: 'dialog', question: (layout.title as string) || 'Dialog', timestamp: Date.now() },
+    conv => {
+      conv.pendingDialog = { dialogId, layout: layout as unknown as DialogLayout, timestamp: Date.now() }
+    },
+  )
 
+  const conversation = ctx.conversations.getConversation(conversationId)
   // Broadcast to dashboard subscribers with access to this conversation's project.
   // Drop on missing project -- a global broadcast would leak dialog content to
   // users without access. (Audit C2 class)

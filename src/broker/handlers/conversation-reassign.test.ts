@@ -156,7 +156,7 @@ describe('conversation_reassign handler', () => {
     expect(broadcasts).toHaveLength(2)
     expect(broadcasts.map(b => b.project).sort()).toEqual(['claude:///dest/proj', 'claude:///source/proj'].sort())
     expect(broadcasts[0]?.msg.type).toBe('conversation_reassigned')
-    expect((broadcasts[0]?.msg as { batchId?: string }).batchId).toBe('batch_test1234')
+    expect((broadcasts[0]?.msg as { batchId?: string } | undefined)?.batchId).toBe('batch_test1234')
     // Log includes prev->next, batch, initiator
     expect(logs.some(l => l.includes('batch=batch_test1234') && l.includes('->'))).toBe(true)
   })

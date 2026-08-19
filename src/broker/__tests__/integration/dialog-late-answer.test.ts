@@ -147,7 +147,7 @@ describe('dialog cancel re-displayable', () => {
 
     // The cancel still reaches the agent host so the blocking MCP call resolves.
     const forwarded = agent.messagesOfType('dialog_result').at(-1)
-    expect((forwarded?.result as Record<string, unknown>)._cancelled).toBe(true)
+    expect((forwarded?.result as Record<string, unknown> | undefined)?._cancelled).toBe(true)
   })
 
   it('a first user cancel broadcasts a dialog_dismiss reason=cancelled to other dashboards', async () => {

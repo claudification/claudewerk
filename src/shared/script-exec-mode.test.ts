@@ -53,14 +53,15 @@ describe('tracked shell scripts', () => {
     expect(scripts.length).toBeGreaterThan(10)
   })
 
-  it.each(
-    scripts.filter(s => !(s.path in EXEMPT)).map(s => [s.path, s.mode]),
-  )('%s is executable in the git index', (path, mode) => {
-    expect(
-      mode,
-      `${path} is ${mode} in the git index -- cron/exec will fail with EACCES. Fix with: git update-index --chmod=+x ${path}`,
-    ).toBe('100755')
-  })
+  it.each(scripts.filter(s => !(s.path in EXEMPT)).map(s => [s.path, s.mode]))(
+    '%s is executable in the git index',
+    (path, mode) => {
+      expect(
+        mode,
+        `${path} is ${mode} in the git index -- cron/exec will fail with EACCES. Fix with: git update-index --chmod=+x ${path}`,
+      ).toBe('100755')
+    },
+  )
 
   it('every exemption still names a script that exists', () => {
     const tracked = new Set(scripts.map(s => s.path))

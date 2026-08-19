@@ -48,7 +48,7 @@ export function useSheaf(windowH: number, active: boolean): SheafState & { reloa
     return () => {
       cancelled = true
     }
-  }, [windowH, tick, active])
+  }, [windowH, active])
 
   const reload = useCallback(() => setTick(t => t + 1), [])
   return { ...state, reload }
