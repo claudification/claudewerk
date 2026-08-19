@@ -26,6 +26,8 @@ import { refetchStaleTranscripts } from './transcript-refetch'
 import { handleBgTaskOutputMessage, resolveConfigResponse, useConversationsStore } from './use-conversations'
 import { dispatchShellData } from './use-shells'
 import { type DashboardMessage, handlers } from './use-websocket-handlers'
+import { resetWallFrames } from './wall-frame-store'
+import { resubscribeWall } from './wall-subscription'
 import { recordIn, recordOut } from './ws-stats'
 
 let _wsUrl: string | null = null
@@ -240,6 +242,14 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
         // through the seam so counts are preserved. `selectedSubagentId` is implied
         // by a held scope, so this subsumes the old single-agent re-subscribe.
         resubscribeAgentScopes(send)
+
+        // Same contract for THE WALL's single channel: the panes are still
+        // mounted, so the client still holds the refcount -- re-assert the
+        // subscription without touching it. The broker answers with a fresh
+        // `full: true` snapshot, which is why the local picture is dropped
+        // first rather than left to drift against a wall we are no longer on.
+        resetWallFrames()
+        resubscribeWall(send)
 
         // Re-advertise the web debug-control grant if one is active. The grant
         // lives in localStorage so it survives full reload / SW update; on every

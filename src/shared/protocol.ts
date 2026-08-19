@@ -6490,19 +6490,27 @@ export type SubscriptionChannel =
   // (NOT a conversationId). Managed by handlers/canvas-sync.ts, not the generic
   // channel_subscribe path (which assumes a conversation + chat:read).
   | 'canvas'
+  // THE WALL's single fleet-wide feed. Fixed `WALL_SCOPE` in the registry's id
+  // slot (NOT a conversationId): one subscription carries pulse, commits, card
+  // moves, host vitals, plan usage and fleet counters as one coalesced frame.
+  // Subscribed through the generic channel_subscribe with NO conversationId --
+  // see the `wall` branch in handlers/channel.ts. Types: shared/wall.ts.
+  | 'wall'
 
 // Control Panel -> Broker: channel subscription management
 export interface ChannelSubscribe {
   type: 'channel_subscribe'
   channel: SubscriptionChannel
-  conversationId: string
+  /** Omitted only for fleet-wide channels (`wall`), which have no conversation. */
+  conversationId?: string
   agentId?: string // required for session:subagent_transcript
 }
 
 export interface ChannelUnsubscribe {
   type: 'channel_unsubscribe'
   channel: SubscriptionChannel
-  conversationId: string
+  /** Omitted only for fleet-wide channels (`wall`). */
+  conversationId?: string
   agentId?: string
 }
 
