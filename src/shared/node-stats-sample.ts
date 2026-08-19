@@ -45,15 +45,33 @@ export function cpuTotals(
 }
 
 /**
- * Whole-box utilization between two cumulative readings, 0-100.
+ * The shortest summed-CPU-time window this will call a measurement, in the
+ * milliseconds `os.cpus()` reports.
  *
- * Returns 0 when no time has elapsed (the first sample after construction, or a
- * clock that did not move) rather than dividing by zero and shipping a NaN that
- * every downstream meter would have to special-case.
+ * Below it there is no reading to take, only quantization: both platforms
+ * account CPU time in 1/100s ticks, so a window of one tick can only ever come
+ * out as 0% or 100% depending on which column it landed in. That is exactly what
+ * the first tick after construction was shipping (`[0, 0, 100, 0, ...]` over ten
+ * cold starts on a box that was actually at ~40%).
+ *
+ * 100ms is ten ticks -- coarse, but a REAL fraction -- and it is 50x below the
+ * smallest window production ever hands over: one 5s cadence on a single core.
+ * No genuine tick can fall under it.
  */
-export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number {
+export const CPU_SAMPLE_FLOOR_MS = 100
+
+/**
+ * Whole-box utilization between two cumulative readings, 0-100, or UNDEFINED
+ * when the two readings are too close together to divide.
+ *
+ * Undefined rather than 0: a box that was idle and a box nobody measured are not
+ * the same fact, and 0 is the one that a meter paints green and a sparkline files
+ * away for five minutes. Everything downstream already knows how to render an
+ * absent percentage -- see `MachineStats.cpuPercent`.
+ */
+export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number | undefined {
   const totalDelta = next.total - prev.total
-  if (totalDelta <= 0) return 0
+  if (totalDelta < CPU_SAMPLE_FLOOR_MS) return undefined
   const idleDelta = next.idle - prev.idle
   const busy = ((totalDelta - idleDelta) / totalDelta) * 100
   return Math.min(100, Math.max(0, Math.round(busy * 10) / 10))
@@ -191,6 +209,12 @@ export function osArchLabel(): string {
  *
  * `dir` is the volume to measure -- the directory the agent runs in, so a
  * sentinel on an external disk reports that disk and not `/`.
+ *
+ * THE FIRST `sample()` CARRIES NO CPU. `prev` is seeded here, microseconds
+ * before the reporter's immediate first frame, so that frame's delta spans
+ * roughly nothing -- and `cpuPercentFromDelta` says so instead of inventing a
+ * number. Every other fact on that frame is a point-in-time reading and is
+ * perfectly good, which is why the immediate emit stays.
  */
 export interface MachineSampler {
   sample(): MachineStats
@@ -211,7 +235,9 @@ export function createMachineSampler(dir: string = process.cwd()): MachineSample
       // senders are wrong in exactly the same way rather than differently.
       const disk = readDisk(dir)
       return {
-        cpuPercent,
+        // OMITTED, not zeroed, when there was no window -- the key is absent from
+        // the wire exactly as `sentinel` is on a reporter frame.
+        ...(cpuPercent !== undefined ? { cpuPercent } : {}),
         load: { one, five, fifteen, cores: Math.max(1, cpus().length) },
         memory: { usedBytes: total - freemem(), totalBytes: total },
         disk,

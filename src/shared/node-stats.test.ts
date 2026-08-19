@@ -106,6 +106,22 @@ describe('validateNodeStats -- schema round-trip', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('accepts a frame with NO cpuPercent -- absent is how "no reading" is spelled', () => {
+    // The first frame after a sender starts has no CPU delta to divide (card
+    // `node-stats-first-tick-is-noise`). It is a valid frame carrying real ram,
+    // disk and load; the alternative was a fabricated 0 or 100 on the wire.
+    const { cpuPercent: _dropped, ...noCpu } = MACHINE
+    expect(validateNodeStats({ ...frame(), machine: noCpu }).ok).toBe(true)
+  })
+
+  it('still rejects a cpuPercent that is PRESENT and nonsense', () => {
+    // Absent is the only legal way to say "no reading". A null, a NaN or a string
+    // is a producer that fabricated something, and it fails like anything else.
+    for (const cpuPercent of [null, 'unknown', Number.NaN, -1]) {
+      expect(validateNodeStats({ ...frame(), machine: { ...MACHINE, cpuPercent } }).ok).toBe(false)
+    }
+  })
+
   it('rejects impossible machine numbers', () => {
     expect(validateNodeStats({ ...frame(), machine: { ...MACHINE, cpuPercent: 140 } }).ok).toBe(false)
     expect(validateNodeStats({ ...frame(), machine: { ...MACHINE, cpuPercent: Number.NaN } }).ok).toBe(false)

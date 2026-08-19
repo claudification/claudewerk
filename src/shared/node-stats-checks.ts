@@ -75,8 +75,12 @@ export function checkMachine(value: unknown, errors: string[]): void {
     errors.push('machine: expected an object')
     return
   }
-  if (!num(value.cpuPercent) || value.cpuPercent < 0 || value.cpuPercent > 100) {
-    errors.push('machine.cpuPercent: expected a number in 0..100')
+  // ABSENT IS LEGAL, and is the honest answer for a frame whose CPU delta spanned
+  // no measurable window (the first tick after a sender starts). A cpuPercent
+  // that is PRESENT still has to be a real percentage -- "we have no reading" is
+  // spelled by leaving the key off, never by a null or a NaN.
+  if (value.cpuPercent !== undefined && (!num(value.cpuPercent) || value.cpuPercent < 0 || value.cpuPercent > 100)) {
+    errors.push('machine.cpuPercent: expected a number in 0..100, or absent')
   }
   checkLoad(value.load, errors)
   checkUsedTotal(value.memory, 'machine.memory', errors)

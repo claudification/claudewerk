@@ -3,6 +3,7 @@ import { validateNodeStats } from './node-stats'
 import {
   buildNodeIdentity,
   buildNodeStatsReport,
+  CPU_SAMPLE_FLOOR_MS,
   cpuPercentFromDelta,
   cpuTotals,
   createMachineSampler,
@@ -33,8 +34,12 @@ describe('cpuPercentFromDelta', () => {
     expect(cpuPercentFromDelta({ idle: 1000, total: 2000 }, { idle: 1025, total: 2100 })).toBe(75)
   })
 
-  it('returns 0 when no time elapsed instead of dividing by zero', () => {
-    expect(cpuPercentFromDelta({ idle: 1000, total: 2000 }, { idle: 1000, total: 2000 })).toBe(0)
+  it('returns nothing when no time elapsed instead of dividing by zero', () => {
+    expect(cpuPercentFromDelta({ idle: 1000, total: 2000 }, { idle: 1000, total: 2000 })).toBeUndefined()
+  })
+
+  it('returns nothing when the counters went BACKWARDS (a reboot mid-interval)', () => {
+    expect(cpuPercentFromDelta({ idle: 1000, total: 5000 }, { idle: 900, total: 2000 })).toBeUndefined()
   })
 
   it('never leaves 0..100, so the meter never has to clamp', () => {
@@ -43,7 +48,67 @@ describe('cpuPercentFromDelta', () => {
   })
 
   it('rounds to one decimal', () => {
-    expect(cpuPercentFromDelta({ idle: 0, total: 0 }, { idle: 1, total: 3 })).toBe(66.7)
+    expect(cpuPercentFromDelta({ idle: 0, total: 0 }, { idle: 100, total: 300 })).toBe(66.7)
+  })
+})
+
+describe('the first tick has no window to measure (regression 2026-08-19)', () => {
+  // Measured on `studio` at load ~155: ten cold reporter starts, first tick of
+  // each, gave `[0, 0, 100, 0, 0, 0, 0, 0, 0, 0]` on a box whose true whole-box
+  // figure was ~40-45%. Neither value was a measurement -- it was whether a jiffy
+  // happened to tick between the constructor's seed and the first `sample()`.
+  // The consumers cannot fix that (S1 files it into a 60-sample ring, so one bogus
+  // reading sits in the sparkline for five minutes after every connect); the
+  // collector has to stop claiming a number it does not have.
+
+  it('has no reading below the floor, rather than a coin-flip 0 or 100', () => {
+    // One jiffy of delta on a pegged box: the old code called that 100%.
+    expect(cpuPercentFromDelta({ idle: 1000, total: 2000 }, { idle: 1000, total: 2001 })).toBeUndefined()
+    // ...and the same one jiffy landing in idle called it 0%.
+    expect(cpuPercentFromDelta({ idle: 1000, total: 2000 }, { idle: 1001, total: 2001 })).toBeUndefined()
+  })
+
+  it('reports a real number as soon as a measurable window HAS elapsed', () => {
+    const prev = { idle: 1000, total: 2000 }
+    const next = { idle: 1000 + CPU_SAMPLE_FLOOR_MS / 4, total: 2000 + CPU_SAMPLE_FLOOR_MS }
+    expect(cpuPercentFromDelta(prev, next)).toBe(75)
+  })
+
+  it('a cold sampler omits cpuPercent entirely -- absent, not zero', () => {
+    for (let i = 0; i < 10; i++) {
+      const machine = createMachineSampler(process.cwd()).sample()
+      expect(machine.cpuPercent).toBeUndefined()
+      // Absent from the wire, the same rule the contract already applies to
+      // `sentinel.conversationCount`: "we have no reading" must not be spellable
+      // as a number a meter would paint green.
+      expect('cpuPercent' in machine).toBe(false)
+    }
+  })
+
+  it('still carries every OTHER fact on that first frame', () => {
+    // The cure is not "drop the frame". A freshly connected node still shows up
+    // immediately, with its ram, disk, load and identity intact.
+    const machine = createMachineSampler(process.cwd()).sample()
+    expect(machine.memory.totalBytes).toBeGreaterThan(0)
+    expect(machine.disk.mount).toBe(process.cwd())
+    expect(machine.load.cores).toBeGreaterThan(0)
+    const identity = buildNodeIdentity({
+      nodeId: 'snt_cold',
+      hostId: 'host_cold',
+      agentVersion: '0.0.0-test',
+      sender: 'sentinel',
+    })
+    // ...and a frame with no cpuPercent is a VALID frame, not a rejected one.
+    expect(validateNodeStats(buildNodeStatsReport(identity, machine, Date.now())).ok).toBe(true)
+  })
+
+  it('the SECOND sample carries a number, once real time has passed', async () => {
+    const sampler = createMachineSampler(process.cwd())
+    sampler.sample()
+    await new Promise(resolve => setTimeout(resolve, 250))
+    const cpuPercent = sampler.sample().cpuPercent
+    expect(cpuPercent).toBeGreaterThanOrEqual(0)
+    expect(cpuPercent).toBeLessThanOrEqual(100)
   })
 })
 

@@ -62,7 +62,7 @@ function connect(config: ReporterConfig, attempt: number): void {
         if (config.verbose) {
           const { machine } = report
           log(
-            `sample cpu=${machine.cpuPercent.toFixed(1)}% ` +
+            `sample cpu=${machine.cpuPercent === undefined ? '-' : `${machine.cpuPercent.toFixed(1)}%`} ` +
               `load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
               `mem=${machine.memory.usedBytes}/${machine.memory.totalBytes} ` +
               `disk=${machine.disk.usedBytes}/${machine.disk.totalBytes}@${machine.disk.mount}`,

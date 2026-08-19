@@ -102,6 +102,26 @@ describe('node-stats cadence runner', () => {
     expect(sent.length).toBe(afterStop) // stop() actually stops
   })
 
+  it('the immediate frame carries NO cpu number off a real sampler', () => {
+    // The runner emits at once so a fresh node shows up without a 5s wait, and it
+    // keeps doing that -- but the sampler seeds its CPU baseline microseconds
+    // earlier, so that frame's delta spans nothing. It used to ship a coin-flip
+    // 0 or 100 which S1 then drew for five minutes (card
+    // `node-stats-first-tick-is-noise`). Everything else on the frame is real.
+    const sent: NodeStatsReport[] = []
+    const reporter = createNodeStatsReporter({
+      identity: FIXTURE_REPORTER_IDENTITY,
+      diskMount: process.cwd(),
+      send: f => void sent.push(f),
+    })
+    reporter.start()
+    reporter.stop()
+    expect(sent).toHaveLength(1)
+    expect(sent[0].machine.cpuPercent).toBeUndefined()
+    expect(sent[0].machine.memory.totalBytes).toBeGreaterThan(0)
+    expect(validateNodeStats(sent[0]).ok).toBe(true)
+  })
+
   it('start() twice does not stack two timers', () => {
     let calls = 0
     const reporter = runner({ intervalMs: 5, send: () => void calls++ })

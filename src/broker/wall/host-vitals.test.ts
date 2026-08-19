@@ -19,7 +19,9 @@ function report(
   over: {
     nodeId?: string
     hostname?: string
-    cpu?: number
+    /** `null` means the collector had no measurable window and left the field off
+     *  the wire -- what every first tick after a connect now looks like. */
+    cpu?: number | null
     memUsed?: number
     memTotal?: number
     diskUsed?: number
@@ -40,7 +42,7 @@ function report(
       sender: 'sentinel',
     },
     machine: {
-      cpuPercent: over.cpu ?? 42.06,
+      ...(over.cpu === null ? {} : { cpuPercent: over.cpu ?? 42.06 }),
       load: { one: 3.216, five: 2, fifteen: 1, cores: 12 },
       memory: { usedBytes: over.memUsed ?? 8, totalBytes: over.memTotal ?? 16 },
       disk: { usedBytes: over.diskUsed ?? 99, totalBytes: over.diskTotal ?? 100, mount: '/' },
@@ -85,6 +87,12 @@ describe('wallHostVitalsFrom', () => {
     expect(row.diskPct).toBeUndefined()
   })
 
+  test('a frame with no CPU reading leaves the meter ABSENT, never 0%', () => {
+    const row = wallHostVitalsFrom(report({ cpu: null }), [])
+    expect(row.cpuPct).toBeUndefined()
+    expect('cpuPct' in row).toBe(false)
+  })
+
   test('a reporter frame carries no conversation count rather than zero', () => {
     const row = wallHostVitalsFrom(report(), [])
     expect(row.conversations).toBeUndefined()
@@ -124,6 +132,34 @@ describe('the CPU ring', () => {
     expect(hosts.find(h => h.nodeId === 'b')?.cpuHistory).toEqual([90])
   })
 
+  // REGRESSION (card `node-stats-first-tick-is-noise`): the collector's very
+  // first frame after a connect used to carry a coin-flip 0 or 100 -- measured on
+  // `studio` at load ~155, ten cold starts gave [0, 0, 100, 0, 0, 0, 0, 0, 0, 0]
+  // on a box that was actually at ~40%. The ring is a five-minute window, so one
+  // of those sat at the head of the sparkline for five minutes after every
+  // connect and every reconnect. The collector now omits the field, and the ring
+  // must file NOTHING for it rather than a placeholder.
+  test('files nothing for a frame that carries no CPU reading', () => {
+    const { socket } = fakeSocket()
+    wallHub.subscribe(socket)
+    recordWallHostVitals(report({ cpu: null })) // the cold connect frame
+    expect(wallHub.state.snapshot().hosts[0]?.cpuHistory).toEqual([])
+
+    recordWallHostVitals(report({ cpu: 41 }))
+    recordWallHostVitals(report({ cpu: 43 }))
+    // No leading 0 and no leading 100: the series starts at the first REAL sample.
+    expect(wallHub.state.snapshot().hosts[0]?.cpuHistory).toEqual([41, 43])
+  })
+
+  test('a mid-series frame with no reading skips a point rather than dipping', () => {
+    const { socket } = fakeSocket()
+    wallHub.subscribe(socket)
+    recordWallHostVitals(report({ cpu: 41 }))
+    recordWallHostVitals(report({ cpu: null }))
+    recordWallHostVitals(report({ cpu: 43 }))
+    expect(wallHub.state.snapshot().hosts[0]?.cpuHistory).toEqual([41, 43])
+  })
+
   test('fills while NOBODY is watching, so a cold wall opens with history', () => {
     for (let i = 0; i < 4; i++) recordWallHostVitals(report({ cpu: i }))
     expect(wallHub.subscriberCount()).toBe(0)
@@ -157,5 +193,17 @@ describe('the seed', () => {
     wallHub.subscribe(socket)
     seedWallHostVitals()
     expect(wallHub.state.snapshot().hosts[0]?.cpuHistory).toEqual([12.3])
+  })
+
+  test('...but seeds NOTHING off a stored frame that had no CPU reading', () => {
+    // A node whose only stored frame is its cold connect frame has no series and
+    // no meter yet. That is one 5s cadence of a dash, not a fabricated point.
+    nodeStatsStore.record(report({ cpu: null }))
+    const { socket } = fakeSocket()
+    wallHub.subscribe(socket)
+    seedWallHostVitals()
+    const row = wallHub.state.snapshot().hosts[0]
+    expect(row?.cpuHistory).toEqual([])
+    expect(row?.cpuPct).toBeUndefined()
   })
 })
