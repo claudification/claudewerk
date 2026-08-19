@@ -93,7 +93,11 @@ async function runGeneration(store: ConversationStore, conversationId: string, o
 
   let intent: Awaited<ReturnType<typeof classifyConversation>> = null
   try {
-    intent = await classifyConversation(ctx, chat, { model: AWAY_SUMMARY_MODEL, feature: 'recap-away-summary', retries: 0 })
+    intent = await classifyConversation(ctx, chat, {
+      model: AWAY_SUMMARY_MODEL,
+      feature: 'recap-away-summary',
+      retries: 0,
+    })
   } catch (err) {
     const status = isHttpStatusError(err) ? err.status : undefined
     if (status != null) {
