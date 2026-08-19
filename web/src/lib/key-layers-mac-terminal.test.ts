@@ -42,12 +42,19 @@ if (typeof globalThis.document === 'undefined') {
     activeElement: null,
   } as unknown as Document
 }
-// Force Mac platform so isMac resolves true (metaKey = mod, ctrlKey = physical Ctrl)
+// Force Mac platform so isMac resolves true (metaKey = mod, ctrlKey = physical Ctrl).
+// defineProperty rather than assignment: under the VM pools `navigator` is an
+// accessor with no setter, so `globalThis.navigator = ...` throws "which has
+// only a getter" and takes the file down before a single test runs.
 const realNavigator = globalThis.navigator
-globalThis.navigator = {
-  platform: 'MacIntel',
-  userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
-} as unknown as Navigator
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    platform: 'MacIntel',
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+  } as unknown as Navigator,
+  configurable: true,
+  writable: true,
+})
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -56,7 +63,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // './key-layers' first would freeze module-level `isMac` for everyone; the query
 // suffix gives this file its own evaluation that sees the Mac navigator above.
 const { _test } = await import('./key-layers.ts?mac')
-globalThis.navigator = realNavigator
+Object.defineProperty(globalThis, 'navigator', {
+  value: realNavigator,
+  configurable: true,
+  writable: true,
+})
 
 const { pushLayer, popLayer, dispatch, normalizeEvent, layers, resetDoubleTap } = _test
 

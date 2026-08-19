@@ -37,8 +37,17 @@ export interface CaptureEngine {
 /** If the engine's own done-event never lands, don't hang the release forever. */
 const STOP_TIMEOUT_MS = 500
 
+/**
+ * Duck-typed on `byteLength` rather than `chunk instanceof ArrayBuffer`.
+ * `instanceof` compares against the constructor of ONE realm, so a buffer that
+ * arrived from another one -- a VM test context, a worker, an iframe -- answers
+ * false and falls through to `.size`, which a buffer does not have. The result
+ * is `undefined` bytes, silently, and the pre-roll ring then mis-accounts and
+ * drops frames. Raw PCM has no framing, so a hole is mis-decoded rather than
+ * rejected. Structural checks do not care which realm minted the object.
+ */
 export function chunkBytes(chunk: AudioChunk): number {
-  return chunk instanceof ArrayBuffer ? chunk.byteLength : chunk.size
+  return 'byteLength' in chunk ? chunk.byteLength : chunk.size
 }
 
 /**

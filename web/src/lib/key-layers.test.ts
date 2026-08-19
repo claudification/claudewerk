@@ -39,16 +39,27 @@ if (typeof globalThis.document === 'undefined') {
     activeElement: null,
   } as unknown as Document
 }
-// Force non-Mac platform so isMac resolves false (ctrlKey = mod, metaKey = ignored)
+// Force non-Mac platform so isMac resolves false (ctrlKey = mod, metaKey = ignored).
+// defineProperty rather than assignment: under the VM pools `navigator` is an
+// accessor with no setter, so `globalThis.navigator = ...` throws "which has
+// only a getter" and takes the file down before a single test runs.
 const realNavigator = globalThis.navigator
-globalThis.navigator = { platform: 'Linux', userAgent: 'bun-test' } as unknown as Navigator
+Object.defineProperty(globalThis, 'navigator', {
+  value: { platform: 'Linux', userAgent: 'bun-test' } as unknown as Navigator,
+  configurable: true,
+  writable: true,
+})
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Dynamic import so module-level isMac sees the mocked navigator
 const { _test } = await import('./key-layers')
 // Restore real navigator after module load
-globalThis.navigator = realNavigator
+Object.defineProperty(globalThis, 'navigator', {
+  value: realNavigator,
+  configurable: true,
+  writable: true,
+})
 
 const { pushLayer, popLayer, dispatch, normalizeEvent, layers, resetDoubleTap } = _test
 

@@ -6,6 +6,10 @@
 // that impossible: every file paid for jsdom whether it needed one or not.
 if (typeof window !== 'undefined') {
   Object.defineProperty(window, 'matchMedia', {
+    // `configurable` matters under the VM pools: there the window is reused
+    // across contexts, so a second defineProperty on a non-configurable slot
+    // throws "Cannot redefine property" and takes the whole file down.
+    configurable: true,
     writable: true,
     value: (query: string) => ({
       matches: false,
