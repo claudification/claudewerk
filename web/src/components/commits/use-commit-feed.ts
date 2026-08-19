@@ -33,9 +33,18 @@ interface FeedPage {
 }
 
 async function fetchPage(filters: FeedFilters, cursor: string | null): Promise<FeedPage | null> {
-  const res = await fetch(appendShareParam(feedQueryString(filters, cursor)))
-  if (!res.ok) return null
-  return (await res.json()) as FeedPage
+  try {
+    const res = await fetch(appendShareParam(feedQueryString(filters, cursor)))
+    if (!res.ok) return null
+    return (await res.json()) as FeedPage
+  } catch {
+    // A REQUEST THAT THROWS IS A PAGE THAT DID NOT ARRIVE, same as a 500.
+    // Offline, broker down, a body that is not JSON -- without this the rejection
+    // escapes `void fetchPage(...)`, `loading` never clears, and the surface says
+    // "Loading..." for the rest of the session. A feed stuck loading forever is
+    // indistinguishable from a slow one, which is the version you cannot debug.
+    return null
+  }
 }
 
 export interface CommitFeed {
