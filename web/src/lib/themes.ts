@@ -1,3 +1,5 @@
+import { deriveLadder } from './theme-ladder'
+
 export interface Theme {
   id: string
   name: string
@@ -8,51 +10,69 @@ const TOKYO_NIGHT: Theme = {
   id: 'tokyo-night',
   name: 'Tokyo Night',
   variables: {
-    background: 'oklch(0.15 0.02 260)',
-    foreground: 'oklch(0.85 0.02 260)',
-    card: 'oklch(0.18 0.02 260)',
-    'card-foreground': 'oklch(0.85 0.02 260)',
-    popover: 'oklch(0.18 0.02 260)',
-    'popover-foreground': 'oklch(0.85 0.02 260)',
-    primary: 'oklch(0.7 0.15 250)',
-    'primary-foreground': 'oklch(0.98 0 0)',
-    secondary: 'oklch(0.25 0.02 260)',
-    'secondary-foreground': 'oklch(0.85 0.02 260)',
-    muted: 'oklch(0.22 0.02 260)',
-    'muted-foreground': 'oklch(0.7 0.02 260)',
-    accent: 'oklch(0.75 0.15 85)',
-    'accent-foreground': 'oklch(0.15 0.02 260)',
-    destructive: 'oklch(0.6 0.2 20)',
-    'destructive-foreground': 'oklch(0.98 0 0)',
-    border: 'oklch(0.32 0.02 260)',
-    input: 'oklch(0.22 0.02 260)',
-    ring: 'oklch(0.7 0.15 250)',
-    'surface-inset': 'oklch(0.145 0.025 265)',
-    success: 'oklch(0.72 0.17 163)',
-    warning: 'oklch(0.82 0.15 85)',
-    info: 'oklch(0.74 0.12 200)',
-    comment: 'oklch(0.45 0.04 260)',
-    active: 'oklch(0.75 0.18 150)',
-    idle: 'oklch(0.75 0.15 85)',
-    ended: 'oklch(0.55 0.02 260)',
-    'event-conversation': 'oklch(0.75 0.18 150)',
-    'event-tool': 'oklch(0.7 0.15 250)',
-    'event-prompt': 'oklch(0.75 0.18 320)',
-    'event-stop': 'oklch(0.75 0.15 85)',
-    'event-notification': 'oklch(0.55 0.02 260)',
-    'chart-1': 'oklch(0.7 0.15 250)',
-    'chart-2': 'oklch(0.75 0.18 150)',
-    'chart-3': 'oklch(0.75 0.15 85)',
-    'chart-4': 'oklch(0.75 0.18 320)',
-    'chart-5': 'oklch(0.6 0.2 20)',
-    sidebar: 'oklch(0.12 0.02 260)',
-    'sidebar-foreground': 'oklch(0.85 0.02 260)',
-    'sidebar-primary': 'oklch(0.7 0.15 250)',
-    'sidebar-primary-foreground': 'oklch(0.98 0 0)',
-    'sidebar-accent': 'oklch(0.75 0.15 85)',
-    'sidebar-accent-foreground': 'oklch(0.15 0.02 260)',
-    'sidebar-border': 'oklch(0.28 0.02 260)',
-    'sidebar-ring': 'oklch(0.7 0.15 250)',
+    /* Seven-step ladder: black floor, Tokyo Night separation above it.
+       `surface-overlay` IS TN's bg_highlight, `border` its terminal_black,
+       `border-strong` its comment. See globals.css for the full rationale. */
+    'surface-sunken': 'oklch(0.115 0.018 275)',
+    background: 'oklch(0.165 0.022 275)',
+    'surface-raised': 'oklch(0.235 0.03 273)',
+    'surface-overlay': 'oklch(0.3 0.037 273)',
+    'surface-hover': 'oklch(0.355 0.045 273)',
+    'border-subtle': 'oklch(0.3 0.037 273)',
+    border: 'oklch(0.415 0.055 274)',
+    'border-strong': 'oklch(0.5 0.068 274)',
+
+    foreground: 'oklch(0.9 0.045 275)',
+    'fg-muted': 'oklch(0.76 0.05 275)',
+    'fg-dim': 'oklch(0.62 0.05 274)',
+    'fg-faint': 'oklch(0.52 0.05 274)',
+
+    card: 'oklch(0.235 0.03 273)',
+    'card-foreground': 'oklch(0.9 0.045 275)',
+    popover: 'oklch(0.3 0.037 273)',
+    'popover-foreground': 'oklch(0.9 0.045 275)',
+    secondary: 'oklch(0.355 0.045 273)',
+    'secondary-foreground': 'oklch(0.9 0.045 275)',
+    muted: 'oklch(0.235 0.03 273)',
+    'muted-foreground': 'oklch(0.76 0.05 275)',
+
+    primary: 'oklch(0.74 0.133 262)',
+    'primary-foreground': 'oklch(0.115 0.018 275)',
+    accent: 'oklch(0.8 0.165 85)',
+    'accent-foreground': 'oklch(0.115 0.018 275)',
+    destructive: 'oklch(0.68 0.208 25)',
+    'destructive-foreground': 'oklch(0.115 0.018 275)',
+    input: 'oklch(0.115 0.018 275)',
+    ring: 'oklch(0.74 0.133 262)',
+    'surface-inset': 'oklch(0.115 0.018 275)',
+
+    /* Neon: every hue below sits at the sRGB gamut edge for its lightness. */
+    success: 'oklch(0.85 0.223 152)',
+    warning: 'oklch(0.87 0.178 92)',
+    info: 'oklch(0.82 0.121 225)',
+    comment: 'oklch(0.55 0.05 274)',
+    active: 'oklch(0.86 0.27 145)',
+    idle: 'oklch(0.87 0.178 92)',
+    ended: 'oklch(0.6 0.05 274)',
+    'event-conversation': 'oklch(0.86 0.27 145)',
+    'event-tool': 'oklch(0.74 0.133 262)',
+    'event-prompt': 'oklch(0.72 0.251 322)',
+    'event-stop': 'oklch(0.87 0.178 92)',
+    'event-notification': 'oklch(0.6 0.05 274)',
+    'chart-1': 'oklch(0.74 0.133 262)',
+    'chart-2': 'oklch(0.86 0.27 145)',
+    'chart-3': 'oklch(0.87 0.178 92)',
+    'chart-4': 'oklch(0.72 0.251 322)',
+    'chart-5': 'oklch(0.68 0.208 25)',
+
+    sidebar: 'oklch(0.135 0.02 275)',
+    'sidebar-foreground': 'oklch(0.9 0.045 275)',
+    'sidebar-primary': 'oklch(0.74 0.133 262)',
+    'sidebar-primary-foreground': 'oklch(0.115 0.018 275)',
+    'sidebar-accent': 'oklch(0.8 0.165 85)',
+    'sidebar-accent-foreground': 'oklch(0.115 0.018 275)',
+    'sidebar-border': 'oklch(0.36 0.05 274)',
+    'sidebar-ring': 'oklch(0.74 0.133 262)',
   },
 }
 
@@ -704,7 +724,11 @@ export function findTheme(id: string): Theme {
 
 export function applyTheme(theme: Theme) {
   const root = document.documentElement
-  for (const [key, value] of Object.entries(theme.variables)) {
+  /* Derive the ladder for themes that predate it. `setProperty` only ever SETS,
+     so a theme that omits `--surface-raised` would otherwise keep whichever
+     theme was applied before it -- switching Tokyo Night -> Dracula would leave
+     Dracula wearing Tokyo Night's panels. Derivation makes that impossible. */
+  for (const [key, value] of Object.entries(deriveLadder(theme.variables))) {
     root.style.setProperty(`--${key}`, value)
   }
   const meta = document.querySelector('meta[name="theme-color"]')

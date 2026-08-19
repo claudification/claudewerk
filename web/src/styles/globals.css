@@ -73,77 +73,140 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * THE LADDER, PART TWO -- seven surfaces, so a window can say it is a window.
+ *
+ * The old ramp bunched every neutral at the bottom of the scale: background
+ * 0.15, card 0.18, muted 0.22, border 0.32. In sRGB that is #070b14 -> #0c121a,
+ * a 1.05:1 step. A modal painted `bg-background` over a page painted
+ * `bg-background` was separated by exactly one 1.55:1 hairline, so windows read
+ * as holes cut in the page rather than panes floating over it.
+ *
+ * Contrast RATIO is the wrong instrument down here -- it compresses so hard
+ * that a visible step and an invisible one both measure ~1.1:1. The metric that
+ * predicts "I can see the edge" is OKLCH ΔL, and the floor is 0.045 per step.
+ *
+ * So: keep the floor BLACK (the tightness is the point, and an OLED earns it),
+ * and take the SEPARATION from real Tokyo Night, whose panel step is ΔL 0.08
+ * (#1a1b26 -> #292e42) against our old 0.03. `surface-overlay` below IS Tokyo
+ * Night's bg_highlight; `border` is its terminal_black; `border-strong` is its
+ * comment. Chroma rises with lightness, the way theirs does -- a flat-chroma
+ * ramp goes muddy at the top.
+ *
+ *   sunken   0.115   wells you type into, code blocks, tab tracks
+ *   base     0.165   the page
+ *   raised   0.235   panels, cards, list rows
+ *   overlay  0.300   windows, menus, anything floating
+ *   hover    0.355   hover + active fills
+ *   border   0.415   ordinary rules
+ *   strong   0.500   window edges, focus, anything that must hold an edge
+ *
+ * Smallest adjacent step is ΔL 0.050. Verified by `.claude/temp/palette.ts`.
+ */
 :root {
-	/* Tokyo Night inspired palette */
-	--background: oklch(0.15 0.02 260);
-	--foreground: oklch(0.85 0.02 260);
-	--card: oklch(0.18 0.02 260);
-	--card-foreground: oklch(0.85 0.02 260);
-	--popover: oklch(0.18 0.02 260);
-	--popover-foreground: oklch(0.85 0.02 260);
-	--primary: oklch(0.7 0.15 250);
-	--primary-foreground: oklch(0.98 0 0);
-	--secondary: oklch(0.25 0.02 260);
-	--secondary-foreground: oklch(0.85 0.02 260);
-	--muted: oklch(0.22 0.02 260);
-	--muted-foreground: oklch(0.7 0.02 260);
-	--accent: oklch(0.75 0.15 85);
-	--accent-foreground: oklch(0.15 0.02 260);
-	--destructive: oklch(0.6 0.2 20);
-	--destructive-foreground: oklch(0.98 0 0);
-	--border: oklch(0.32 0.02 260);
-	--input: oklch(0.22 0.02 260);
-	--ring: oklch(0.7 0.15 250);
+	/* ── the seven-step neutral ladder ─────────────────────────────────── */
+	--surface-sunken: oklch(0.115 0.018 275);
+	--background: oklch(0.165 0.022 275);
+	--surface-raised: oklch(0.235 0.03 273);
+	--surface-overlay: oklch(0.3 0.037 273);
+	--surface-hover: oklch(0.355 0.045 273);
 
-	/* Surface layers */
-	--surface-inset: oklch(0.145 0.025 265);
+	/* ── edges. Three weights, because a window edge and a table rule are
+	   not the same thing and must not render the same. ─────────────────── */
+	--border-subtle: oklch(0.3 0.037 273);
+	--border: oklch(0.415 0.055 274);
+	--border-strong: oklch(0.5 0.068 274);
 
-	/* Semantic status */
-	--success: oklch(0.72 0.17 163);
-	--warning: oklch(0.82 0.15 85);
-	--info: oklch(0.74 0.12 200);
+	/* ── text. Four real tokens, measured against the page: 14.25 / 8.93 /
+	   5.27 / 3.48. These REPLACE opacity-stacking `text-muted-foreground/40`,
+	   which computed to 2.08:1 and was simply not legible. ─────────────── */
+	--foreground: oklch(0.9 0.045 275);
+	--fg-muted: oklch(0.76 0.05 275);
+	--fg-dim: oklch(0.62 0.05 274);
+	--fg-faint: oklch(0.52 0.05 274);
+
+	/* shadcn surface aliases, retargeted onto the ladder above */
+	--card: oklch(0.235 0.03 273);
+	--card-foreground: oklch(0.9 0.045 275);
+	--popover: oklch(0.3 0.037 273);
+	--popover-foreground: oklch(0.9 0.045 275);
+	--secondary: oklch(0.355 0.045 273);
+	--secondary-foreground: oklch(0.9 0.045 275);
+	--muted: oklch(0.235 0.03 273);
+	--muted-foreground: oklch(0.76 0.05 275);
+
+	/* An input must ANNOUNCE ITSELF. The old `--surface-inset` sat at 0.145
+	   against a 0.15 page -- a 1.01:1 step, i.e. nothing, which is why you
+	   could not tell where to type. It is a real well now, and inputs carry a
+	   visible border on top of it. */
+	--input: oklch(0.115 0.018 275);
+	--surface-inset: oklch(0.115 0.018 275);
+
+	--primary: oklch(0.74 0.133 262);
+	--primary-foreground: oklch(0.115 0.018 275);
+	--accent: oklch(0.8 0.165 85);
+	--accent-foreground: oklch(0.115 0.018 275);
+	--destructive: oklch(0.68 0.208 25);
+	--destructive-foreground: oklch(0.115 0.018 275);
+	--ring: oklch(0.74 0.133 262);
+
+	/*
+	 * NEON. Status is a signal light, not body text -- when a run goes red or a
+	 * conversation goes live, that must land in peripheral vision from across
+	 * the room. Every hue below sits at the sRGB GAMUT EDGE for its lightness:
+	 * chroma found by binary search in `.claude/temp/palette.ts`, so these are
+	 * the most saturated colours the display can physically produce. Push any
+	 * of them further and they clip (and silently desaturate).
+	 *
+	 * The neutrals stayed dark precisely so these can be this loud without the
+	 * screen turning into a fairground.
+	 */
+	--success: oklch(0.85 0.223 152);
+	--warning: oklch(0.87 0.178 92);
+	--info: oklch(0.82 0.121 225);
 
 	/* Subdued text */
-	--comment: oklch(0.45 0.04 260);
+	--comment: oklch(0.55 0.05 274);
 
-	/* Status colors - Tokyo Night accent colors */
-	--active: oklch(0.75 0.18 150);
-	--idle: oklch(0.75 0.15 85);
-	--ended: oklch(0.55 0.02 260);
+	/* Status colors */
+	--active: oklch(0.86 0.27 145);
+	--idle: oklch(0.87 0.178 92);
+	--ended: oklch(0.6 0.05 274);
 
 	/* THE UNATTENDED-RUN AMBER. One fixed hue for "a machine is working on this
 	   without you", used by the header run badge and the overseer window chrome.
 	   Deliberately NOT the per-epic --epic-solid: that hue is derived from the
 	   epic id so two epics look different, which is right on a board and wrong
 	   on a badge that must mean the same thing every time you glance at it. */
-	--epic-badge: oklch(0.72 0.15 55);
-	--epic-badge-tint: oklch(0.72 0.15 55 / 0.1);
-	--epic-badge-edge: oklch(0.72 0.15 55 / 0.35);
-	--epic-badge-hover: oklch(0.72 0.15 55 / 0.18);
+	--epic-badge: oklch(0.8 0.144 62);
+	--epic-badge-tint: oklch(0.8 0.144 62 / 0.14);
+	--epic-badge-edge: oklch(0.8 0.144 62 / 0.45);
+	--epic-badge-hover: oklch(0.8 0.144 62 / 0.24);
 
 	/* Event type colors */
-	--event-conversation: oklch(0.75 0.18 150);
-	--event-tool: oklch(0.7 0.15 250);
-	--event-prompt: oklch(0.75 0.18 320);
-	--event-stop: oklch(0.75 0.15 85);
-	--event-notification: oklch(0.55 0.02 260);
+	--event-conversation: oklch(0.86 0.27 145);
+	--event-tool: oklch(0.74 0.133 262);
+	--event-prompt: oklch(0.72 0.251 322);
+	--event-stop: oklch(0.87 0.178 92);
+	--event-notification: oklch(0.6 0.05 274);
 
-	/* Chart colors - Tokyo Night accent palette */
-	--chart-1: oklch(0.7 0.15 250);
-	--chart-2: oklch(0.75 0.18 150);
-	--chart-3: oklch(0.75 0.15 85);
-	--chart-4: oklch(0.75 0.18 320);
-	--chart-5: oklch(0.6 0.2 20);
+	/* Chart colors */
+	--chart-1: oklch(0.74 0.133 262);
+	--chart-2: oklch(0.86 0.27 145);
+	--chart-3: oklch(0.87 0.178 92);
+	--chart-4: oklch(0.72 0.251 322);
+	--chart-5: oklch(0.68 0.208 25);
 
-	/* Sidebar */
-	--sidebar: oklch(0.12 0.02 260);
-	--sidebar-foreground: oklch(0.85 0.02 260);
-	--sidebar-primary: oklch(0.7 0.15 250);
-	--sidebar-primary-foreground: oklch(0.98 0 0);
-	--sidebar-accent: oklch(0.75 0.15 85);
-	--sidebar-accent-foreground: oklch(0.15 0.02 260);
-	--sidebar-border: oklch(0.28 0.02 260);
-	--sidebar-ring: oklch(0.7 0.15 250);
+	/* Sidebar -- one step BELOW the page, the way it was, so the rail still
+	   recedes behind the content it is next to. */
+	--sidebar: oklch(0.135 0.02 275);
+	--sidebar-foreground: oklch(0.9 0.045 275);
+	--sidebar-primary: oklch(0.74 0.133 262);
+	--sidebar-primary-foreground: oklch(0.115 0.018 275);
+	--sidebar-accent: oklch(0.8 0.165 85);
+	--sidebar-accent-foreground: oklch(0.115 0.018 275);
+	--sidebar-border: oklch(0.36 0.05 274);
+	--sidebar-ring: oklch(0.74 0.133 262);
 
 	--font-sans: 'JetBrains Mono', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Menlo', monospace;
@@ -221,6 +284,21 @@
 	--color-warning: var(--warning);
 	--color-info: var(--info);
 	--color-comment: var(--comment);
+
+	/* the seven-step ladder, as utilities: bg-surface-raised, bg-surface-overlay… */
+	--color-surface-sunken: var(--surface-sunken);
+	--color-surface-raised: var(--surface-raised);
+	--color-surface-overlay: var(--surface-overlay);
+	--color-surface-hover: var(--surface-hover);
+
+	/* three edge weights: border-border-subtle | border-border | border-border-strong */
+	--color-border-subtle: var(--border-subtle);
+	--color-border-strong: var(--border-strong);
+
+	/* real text tokens -- use these INSTEAD of text-muted-foreground/40 */
+	--color-fg-muted: var(--fg-muted);
+	--color-fg-dim: var(--fg-dim);
+	--color-fg-faint: var(--fg-faint);
 
 	--color-active: var(--active);
 	--color-idle: var(--idle);
