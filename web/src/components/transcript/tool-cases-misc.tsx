@@ -71,12 +71,12 @@ export function renderWorktree(name: string, { input, result, toolUseResult }: T
       {wt ? (
         <span className="font-bold text-violet-300 truncate">{wt}</span>
       ) : (
-        <span className="text-muted-foreground/70">worktree</span>
+        <span className="text-fg-muted">worktree</span>
       )}
     </span>
   )
   const details = path ? (
-    <div className="text-[10px] text-muted-foreground/70 font-mono truncate" title={path}>
+    <div className="text-[10px] text-fg-muted font-mono truncate" title={path}>
       {path}
     </div>
   ) : null
@@ -117,7 +117,7 @@ function renderCronCreateRich(body: Record<string, unknown>, result?: string): T
   const summary = (
     <span className="flex items-center gap-1.5">
       <span className="text-sky-400 font-bold">{body.name as string}</span>
-      <span className="text-muted-foreground/60 text-[10px]">{body.cron_expression as string}</span>
+      <span className="text-fg-dim text-[10px]">{body.cron_expression as string}</span>
       {body.enabled === false && <span className="text-red-400/60 text-[9px] font-bold uppercase">disabled</span>}
     </span>
   )
@@ -132,7 +132,7 @@ function renderCronCreateRich(body: Record<string, unknown>, result?: string): T
 
   const details = (
     <div className="text-[10px] font-mono space-y-1.5">
-      <div className="px-2 py-1.5 rounded bg-muted/20 border border-border/20 space-y-1">
+      <div className="px-2 py-1.5 rounded bg-muted/20 border border-border-subtle space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
           {model && (
             <span className="bg-sky-400/10 text-sky-400/80 border border-sky-400/20 rounded px-1 py-0.5 text-[9px]">
@@ -148,11 +148,11 @@ function renderCronCreateRich(body: Record<string, unknown>, result?: string): T
             </span>
           ))}
           {allowedTools && allowedTools.length > 0 && (
-            <span className="text-muted-foreground/40 text-[9px]">+{allowedTools.length} tools</span>
+            <span className="text-fg-faint text-[9px]">+{allowedTools.length} tools</span>
           )}
         </div>
         {prompt && (
-          <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border/20 pt-1 mt-1 max-h-48 overflow-y-auto">
+          <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border-subtle pt-1 mt-1 max-h-48 overflow-y-auto">
             {prompt.length > 800 ? `${prompt.slice(0, 800)}...` : prompt}
           </div>
         )}
@@ -160,7 +160,7 @@ function renderCronCreateRich(body: Record<string, unknown>, result?: string): T
       {triggerResult && (
         <div className="text-green-400/80 bg-green-400/5 border border-green-400/20 rounded px-2.5 py-1.5 flex items-center gap-2">
           <span className="font-bold">{triggerResult.id}</span>
-          {triggerResult.nextRun && <span className="text-muted-foreground/50">next: {triggerResult.nextRun}</span>}
+          {triggerResult.nextRun && <span className="text-fg-dim">next: {triggerResult.nextRun}</span>}
         </div>
       )}
     </div>

@@ -187,7 +187,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
                 }, [])}
               </div>
               {(g.notBefore || g.notAfter) && (
-                <div className="text-muted-foreground/60 mt-0.5">
+                <div className="text-fg-dim mt-0.5">
                   {g.notBefore && `from ${new Date(g.notBefore).toLocaleDateString()}`}
                   {g.notBefore && g.notAfter && ' '}
                   {g.notAfter && `until ${new Date(g.notAfter).toLocaleDateString()}`}
@@ -208,7 +208,7 @@ function GrantEditor({ grants, onChange }: GrantEditorProps) {
 
           {/* Expanded edit mode */}
           {editingIdx === i && (
-            <div className="px-3 pb-3 pt-1 border-t border-border/50 space-y-2">
+            <div className="px-3 pb-3 pt-1 border-t border-border space-y-2">
               <input
                 aria-label="Project path for permission grant"
                 type="text"
@@ -381,7 +381,7 @@ function InviteDialog({ open, onClose }: { open: boolean; onClose: () => void })
 
             <div>
               <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Grants</div>
-              <p className="text-[10px] text-muted-foreground/60 mb-2">Leave empty for admin access.</p>
+              <p className="text-[10px] text-fg-dim mb-2">Leave empty for admin access.</p>
               <GrantEditor grants={grants} onChange={setGrants} />
             </div>
 
@@ -548,7 +548,7 @@ function UserEditPanel({ user, onSave, onClose }: { user: UserSummary; onSave: (
                     haptic('tick')
                     setConfirmDelete(cred.credentialId)
                   }}
-                  className="text-muted-foreground/40 hover:text-destructive p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="text-fg-faint hover:text-destructive p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Delete passkey"
                 >
                   <Trash2 className="size-3" />
@@ -684,7 +684,7 @@ export function UserAdminDialog({ open, onOpenChange }: { open: boolean; onOpenC
                           .join(' / ')}
                       </div>
                     </div>
-                    <div className="text-muted-foreground/40 text-[10px] shrink-0">
+                    <div className="text-fg-faint text-[10px] shrink-0">
                       {user.credentialCount} key{user.credentialCount !== 1 ? 's' : ''}
                     </div>
                   </button>

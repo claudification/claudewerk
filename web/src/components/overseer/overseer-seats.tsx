@@ -29,7 +29,7 @@ function Seat({ conv, onOpen }: { conv: EpicInspectConversation; onOpen: (id: st
         haptic('tap')
         onOpen(conv.id)
       }}
-      className="w-full flex items-center gap-2 px-1.5 py-1.5 mb-1 border border-border/60 hover:border-[color:var(--epic-badge-edge)] hover:bg-[color:var(--epic-badge-tint)] transition-colors text-left"
+      className="w-full flex items-center gap-2 px-1.5 py-1.5 mb-1 border border-border hover:border-[color:var(--epic-badge-edge)] hover:bg-[color:var(--epic-badge-tint)] transition-colors text-left"
     >
       <span
         className={cn(
@@ -40,7 +40,7 @@ function Seat({ conv, onOpen }: { conv: EpicInspectConversation; onOpen: (id: st
         {ROLE_LABEL[conv.role] ?? conv.role.slice(0, 5).toUpperCase()}
       </span>
       <span className="flex-1 min-w-0 text-[11px] truncate">{conv.cardId ?? conv.id.slice(0, 8)}</span>
-      <span className={cn('text-meta shrink-0', conv.live ? 'text-active' : 'text-muted-foreground/45')}>
+      <span className={cn('text-meta shrink-0', conv.live ? 'text-active' : 'text-fg-dim')}>
         {conv.live ? `gen ${conv.gen}` : conv.status}
       </span>
     </button>
@@ -63,7 +63,7 @@ export function OverseerSeats({
     <>
       <Block title="Seats" extra={<span>{`${working.length} / ${concurrency}`}</span>}>
         {working.length === 0 ? (
-          <div className="text-[11px] text-muted-foreground/50 italic">No seat is working right now.</div>
+          <div className="text-[11px] text-fg-dim italic">No seat is working right now.</div>
         ) : (
           working.map(c => <Seat key={c.id} conv={c} onOpen={onOpenConversation} />)
         )}
@@ -78,7 +78,7 @@ export function OverseerSeats({
           </div>
         )}
         {!overseer && (
-          <div className="text-meta text-muted-foreground/55 mt-1.5">
+          <div className="text-meta text-fg-dim mt-1.5">
             Seats are working with nothing planning above them. BEAT NOW forces the engine to take the lease and wake
             one.
           </div>

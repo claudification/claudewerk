@@ -13,11 +13,11 @@ import { DialogTitle } from '@/components/ui/dialog'
 export function RunDialogHeader({ rollup, resuming }: { rollup: EpicRollup; resuming: boolean }) {
   const title = rollup.card?.title
   return (
-    <div className="px-5 pt-5 pb-3 border-b border-border/50">
+    <div className="px-5 pt-5 pb-3 border-b border-border">
       <DialogTitle className="font-mono text-sm">
         {resuming ? 'RESUME' : 'RUN'} <span className="text-[color:var(--epic-solid)]">{title ?? rollup.epicId}</span>
       </DialogTitle>
-      {title && <p className="mt-0.5 font-mono text-chrome text-muted-foreground/55">{rollup.epicId}</p>}
+      {title && <p className="mt-0.5 font-mono text-chrome text-fg-dim">{rollup.epicId}</p>}
     </div>
   )
 }
@@ -45,11 +45,11 @@ export function RunDialogFooter({
   onConfirm: () => void
 }) {
   return (
-    <div className="px-5 py-3 border-t border-border/50 flex justify-end gap-2">
+    <div className="px-5 py-3 border-t border-border flex justify-end gap-2">
       <button
         type="button"
         onClick={onCancel}
-        className="px-3 py-1 text-[11px] font-mono border border-border/60 text-muted-foreground hover:text-foreground"
+        className="px-3 py-1 text-[11px] font-mono border border-border text-muted-foreground hover:text-foreground"
       >
         cancel
       </button>

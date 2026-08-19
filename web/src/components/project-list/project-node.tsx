@@ -164,7 +164,7 @@ const ProjectConversationGroup = memo(
                 >
                   {displayName}
                 </span>
-                {ps?.pinned && <Pin className="size-2.5 text-muted-foreground/30 shrink-0" />}
+                {ps?.pinned && <Pin className="size-2.5 text-fg-faint shrink-0" />}
                 <span className="text-[10px] text-muted-foreground font-mono">
                   {conversations.length} conversation{conversations.length === 1 ? '' : 's'}
                 </span>
@@ -199,7 +199,7 @@ const ProjectConversationGroup = memo(
                 <div className="flex items-center gap-2 px-3 py-1">
                   <span className="flex-1 h-px bg-border" />
                   <span
-                    className="text-[9px] text-muted-foreground/40 uppercase tracking-wider"
+                    className="text-[9px] text-fg-faint uppercase tracking-wider"
                     title="A conversation in this project was spawned from a different project. Click to jump to the spawn root."
                   >
                     spawned from elsewhere
@@ -237,7 +237,7 @@ const ProjectConversationGroup = memo(
             {adhoc.length > 0 && normal.length > 0 && (
               <div className="flex items-center gap-2 px-3 py-1">
                 <span className="flex-1 h-px bg-border" />
-                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">ad-hoc</span>
+                <span className="text-[9px] text-fg-faint uppercase tracking-wider">ad-hoc</span>
                 <span className="flex-1 h-px bg-border" />
               </div>
             )}
@@ -255,8 +255,8 @@ const ProjectConversationGroup = memo(
             {worktrees.length > 0 && (normal.length > 0 || adhoc.length > 0) && (
               <div className="flex items-center gap-2 px-3 py-1">
                 <span className="flex-1 h-px bg-border" />
-                <GitBranch className="size-2.5 text-muted-foreground/40" />
-                <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">worktrees</span>
+                <GitBranch className="size-2.5 text-fg-faint" />
+                <span className="text-[9px] text-fg-faint uppercase tracking-wider">worktrees</span>
                 <span className="flex-1 h-px bg-border" />
               </div>
             )}
@@ -329,7 +329,7 @@ export function PinnedProjectNode({ project }: { project: string }) {
             >
               {displayName}
             </span>
-            <Pin className="size-2.5 text-muted-foreground/30 shrink-0" />
+            <Pin className="size-2.5 text-fg-faint shrink-0" />
           </div>
         </button>
         <ProjectChecklist project={project} />

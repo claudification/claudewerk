@@ -66,7 +66,7 @@ export const ProjectBoard = memo(function ProjectBoard({ conversationId }: { con
 
   if (loading && tasks.length === 0) {
     return (
-      <div className="flex items-center justify-center h-32 text-muted-foreground/80 text-read font-mono">Loading…</div>
+      <div className="flex items-center justify-center h-32 text-fg-muted text-read font-mono">Loading…</div>
     )
   }
 

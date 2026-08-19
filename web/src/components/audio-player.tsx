@@ -65,7 +65,7 @@ export function AudioPlayer() {
       className={cn(
         'fixed top-2 left-1/2 -translate-x-1/2 z-[90]',
         'w-[min(92vw,30rem)] flex items-center gap-2.5 px-3 py-2',
-        'rounded-lg border border-border/60 bg-background/95 backdrop-blur shadow-2xl',
+        'rounded-lg border border-border bg-background/95 backdrop-blur shadow-2xl',
       )}
     >
       {/* biome-ignore lint/a11y/useMediaCaption: user-supplied audio, no captions */}

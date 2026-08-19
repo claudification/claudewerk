@@ -15,7 +15,7 @@ export function AwaySummaryCard({ entry, ts }: { entry: SystemEntry; ts?: string
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-[9px] font-bold font-mono uppercase tracking-widest text-zinc-400/70">recap</span>
           <span className="flex-1 h-px bg-zinc-600/30" />
-          <TimeStamp ts={ts} className="text-muted-foreground/40 text-[10px]" />
+          <TimeStamp ts={ts} className="text-fg-faint text-[10px]" />
           <JsonInspector title="away_summary" data={entry} raw={entry} />
         </div>
         <div className="text-[11px] text-zinc-300/80 leading-relaxed">

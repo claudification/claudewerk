@@ -35,7 +35,7 @@ export const ConversationItemRail = memo(function ConversationItemRail({
     >
       <RailTitleRow conversation={conversation} isSelected={isSelected} isGhost={isGhost} ctx={ctx} />
       {subtitle && (
-        <div className="mt-0.5 pl-[18px] text-[9px] text-muted-foreground/70 truncate" title={subtitle}>
+        <div className="mt-0.5 pl-[18px] text-[9px] text-fg-muted truncate" title={subtitle}>
           {subtitle}
         </div>
       )}

@@ -119,7 +119,7 @@ export function SharedConversationView({ token: _token }: { token: string }) {
           <p className="text-sm text-muted-foreground">
             The person who shared this conversation has either revoked the link or it has reached its time limit.
           </p>
-          <p className="text-xs text-muted-foreground/60 font-mono">{randomQuote(expiredQuotes)}</p>
+          <p className="text-xs text-fg-dim font-mono">{randomQuote(expiredQuotes)}</p>
         </div>
       </div>
     )

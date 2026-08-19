@@ -67,7 +67,7 @@ export function CardHoverLayer() {
     >
       <div
         style={{ maxHeight: coords.maxHeight }}
-        className="overflow-y-auto rounded-md bg-background/95 shadow-xl backdrop-blur border border-border/60"
+        className="overflow-y-auto rounded-md bg-background/95 shadow-xl backdrop-blur border border-border"
       >
         <CardHoverPanel cardRef={cardRef} />
       </div>

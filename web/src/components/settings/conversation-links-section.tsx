@@ -60,7 +60,7 @@ export function ProjectLinksSection() {
           <span className="text-teal-400 font-mono truncate">{link.nameA}</span>
           <span className="text-muted-foreground">-</span>
           <span className="text-sky-400 font-mono truncate">{link.nameB}</span>
-          <span className="text-[9px] text-muted-foreground/50 ml-auto shrink-0">{formatAge(link.lastUsed)}</span>
+          <span className="text-[9px] text-fg-dim ml-auto shrink-0">{formatAge(link.lastUsed)}</span>
           <button
             type="button"
             onClick={() => removeLink(link.projectA, link.projectB)}

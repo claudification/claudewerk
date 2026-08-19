@@ -17,7 +17,7 @@ import { EpicIndexRow } from './epic-index-row'
 
 function SectionLabel({ children, count }: { children: React.ReactNode; count?: number }) {
   return (
-    <div className="flex items-center gap-2 px-3 pt-3.5 pb-1 font-mono text-chrome text-muted-foreground/58">
+    <div className="flex items-center gap-2 px-3 pt-3.5 pb-1 font-mono text-chrome text-fg-dim">
       <span>{children}</span>
       <span className="flex-1 h-px bg-border/60" />
       {count !== undefined && <span className="tabular-nums">{count}</span>}
@@ -44,14 +44,14 @@ function LooseRow({
     <div
       className={cn(
         'grid grid-cols-[auto_minmax(0,1fr)_auto_64px] gap-3 items-center px-3 py-2',
-        'border-b border-border/40 border-l-[3px] border-l-dashed border-l-muted-foreground/35',
+        'border-b border-border-subtle border-l-[3px] border-l-dashed border-l-muted-foreground/35',
         dimmed && 'opacity-60',
       )}
     >
-      <span aria-hidden className="w-[1.15rem] text-center font-mono text-meta text-muted-foreground/55">
+      <span aria-hidden className="w-[1.15rem] text-center font-mono text-meta text-fg-dim">
         ●
       </span>
-      <span className="font-mono text-read text-muted-foreground/90 truncate">{label}</span>
+      <span className="font-mono text-read text-fg-muted truncate">{label}</span>
       {action && onAction ? (
         <button
           type="button"
@@ -67,7 +67,7 @@ function LooseRow({
         <span />
       )}
       <span className="font-mono text-tally tabular-nums text-right text-foreground">{count}</span>
-      <span className="col-start-2 col-span-3 font-mono text-meta text-muted-foreground/75 truncate -mt-0.5">
+      <span className="col-start-2 col-span-3 font-mono text-meta text-fg-muted truncate -mt-0.5">
         {detail}
       </span>
     </div>

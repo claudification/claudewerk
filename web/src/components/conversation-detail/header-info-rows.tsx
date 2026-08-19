@@ -56,7 +56,7 @@ export function ProjectPathRow({ project }: { project: string }) {
           navigator.clipboard.writeText(projectPath(project))
           haptic('tap')
         }}
-        className="shrink-0 text-muted-foreground/30 hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/project:opacity-100 transition-opacity"
+        className="shrink-0 text-fg-faint hover:text-muted-foreground [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/project:opacity-100 transition-opacity"
         title="Copy path"
       >
         <Copy className="size-3" />
@@ -85,7 +85,7 @@ export function CurrentPathRow({ conversation }: { conversation: Conversation })
         <GitBranch className="size-3" />
         {wt ? wt : 'cwd'}
       </span>
-      <span className="text-muted-foreground/60 truncate" title={cur}>
+      <span className="text-fg-dim truncate" title={cur}>
         {wt ? cur : leaf}
       </span>
     </div>
@@ -95,7 +95,7 @@ export function CurrentPathRow({ conversation }: { conversation: Conversation })
 export function SummaryRow({ summary }: { summary: string | undefined }) {
   if (!summary) return null
   return (
-    <div className="text-[10px] text-muted-foreground/70 truncate" title={summary}>
+    <div className="text-[10px] text-fg-muted truncate" title={summary}>
       {summary}
     </div>
   )
@@ -109,7 +109,7 @@ export function RecapRow({ recap, recapFresh }: { recap: Conversation['recap']; 
         'text-[10px] transition-all duration-700',
         recapFresh
           ? 'text-zinc-300/70 border-l-2 border-zinc-500/40 pl-2 py-1 bg-zinc-800/15 rounded-r leading-relaxed'
-          : 'text-muted-foreground/40 italic truncate',
+          : 'text-fg-faint italic truncate',
       )}
       title={recap.content}
     >
@@ -195,7 +195,7 @@ export function LaunchConfigRow({ conversation }: { conversation: Conversation }
   const rows = buildLaunchConfigRows(transport, lc)
 
   return (
-    <div className="border border-border/60 rounded">
+    <div className="border border-border rounded">
       <button
         type="button"
         onClick={() => {
@@ -214,7 +214,7 @@ export function LaunchConfigRow({ conversation }: { conversation: Conversation }
         <div className="px-2 pb-1.5 pt-0.5 space-y-0.5">
           {rows.map(row => (
             <div key={row.k} className="flex items-start gap-2 text-[10px]">
-              <span className="text-muted-foreground/70 w-32 shrink-0">{row.k}</span>
+              <span className="text-fg-muted w-32 shrink-0">{row.k}</span>
               <span className={cn('text-foreground/90 truncate', row.mono && 'font-mono')} title={row.v}>
                 {row.v}
               </span>
@@ -346,7 +346,7 @@ export function SpawnLineageRow({ conversation }: { conversation: Conversation }
     <div className="flex items-center gap-2 text-[10px] font-mono flex-wrap">
       {parentId && (
         <span className="inline-flex items-center gap-1">
-          <span className="text-muted-foreground/60">spawned from</span>
+          <span className="text-fg-dim">spawned from</span>
           <button
             type="button"
             disabled={!!deleted}
@@ -364,7 +364,7 @@ export function SpawnLineageRow({ conversation }: { conversation: Conversation }
           </button>
         </span>
       )}
-      {childCount > 0 && <span className="text-muted-foreground/60">{childCount} spawned</span>}
+      {childCount > 0 && <span className="text-fg-dim">{childCount} spawned</span>}
     </div>
   )
 }

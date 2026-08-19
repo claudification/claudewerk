@@ -27,7 +27,7 @@ export function EpicSelfChip({ rollup }: { rollup: EpicRollup }) {
       <span>◈</span>
       <span>EPIC</span>
       {rollup.total > 0 && (
-        <span className="text-muted-foreground/60">
+        <span className="text-fg-dim">
           {rollup.done}/{rollup.total}
         </span>
       )}

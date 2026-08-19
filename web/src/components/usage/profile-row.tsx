@@ -40,7 +40,7 @@ export function ProfileRow({ snap, alias }: { snap: ProfileUsageSnapshot; alias:
   if (snap.error || !fiveHour || !sevenDay) {
     const label = snap.error ? `${snap.error.kind === 'no_token' ? 'not authed' : snap.error.kind}` : 'no data'
     return (
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
+      <div className="flex items-center gap-2 text-[10px] text-fg-dim">
         <ProfileHeading alias={alias} profile={snap.profile} />
         <span className="italic">{label}</span>
       </div>

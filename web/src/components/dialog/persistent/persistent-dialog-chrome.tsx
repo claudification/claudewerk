@@ -13,6 +13,6 @@ export const READONLY_NOTE: Record<string, string> = {
 
 export function FooterNote({ text }: { text: string }) {
   return (
-    <div className="rounded border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{text}</div>
+    <div className="rounded border border-border-subtle bg-muted/30 px-3 py-2 text-xs text-muted-foreground">{text}</div>
   )
 }

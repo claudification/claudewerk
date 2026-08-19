@@ -44,8 +44,8 @@ function Entry({
   nowMs: number
 }) {
   return (
-    <div className="flex gap-2.5 py-1.5 border-b border-border/25">
-      <span className="text-meta text-muted-foreground/40 shrink-0 w-14" title={ts}>
+    <div className="flex gap-2.5 py-1.5 border-b border-border-subtle">
+      <span className="text-meta text-fg-faint shrink-0 w-14" title={ts}>
         {ago(ts, nowMs)}
       </span>
       <span className={cn('text-chrome uppercase shrink-0 w-16', tone)}>{kind}</span>
@@ -72,7 +72,7 @@ export function OverseerTabStrip({
   ]
 
   return (
-    <div className="flex border-b border-border/50 shrink-0">
+    <div className="flex border-b border-border shrink-0">
       {tabs.map(t => (
         <button
           key={t.key}
@@ -85,11 +85,11 @@ export function OverseerTabStrip({
             'px-3 py-1.5 text-chrome uppercase border-b-2 transition-colors',
             tab === t.key
               ? 'text-[color:var(--epic-badge)] border-[color:var(--epic-badge)]'
-              : 'text-muted-foreground/50 border-transparent hover:text-foreground',
+              : 'text-fg-dim border-transparent hover:text-foreground',
           )}
         >
           {t.label}
-          {t.n !== undefined && <span className="ml-1.5 text-muted-foreground/40">{t.n}</span>}
+          {t.n !== undefined && <span className="ml-1.5 text-fg-faint">{t.n}</span>}
         </button>
       ))}
     </div>
@@ -107,7 +107,7 @@ export function OverseerBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: 
           key={`${e.ts}-${i}`}
           ts={e.ts}
           kind={e.kind}
-          tone={KIND_TONE[e.kind] ?? 'text-muted-foreground/60'}
+          tone={KIND_TONE[e.kind] ?? 'text-fg-dim'}
           body={e.cardId ? `${e.cardId}: ${e.body}` : e.body}
           nowMs={nowMs}
         />
@@ -127,7 +127,7 @@ export function OverseerBeats({ beats, nowMs }: { beats: EpicBeatRecord[]; nowMs
           key={`${b.at}-${i}`}
           ts={b.at}
           kind={`gen ${b.gen}`}
-          tone="text-muted-foreground/50"
+          tone="text-fg-dim"
           body={`${b.note}${b.spawned.length > 0 ? ` (${b.spawned.length} spawned)` : ''}${b.error ? ` -- ${b.error}` : ''}`}
           nowMs={nowMs}
         />

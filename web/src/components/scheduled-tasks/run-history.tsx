@@ -35,7 +35,7 @@ function RunRow({ run, tz }: { run: ScheduledRun; tz: string }) {
   const select = useConversationsStore(s => s.selectConversation)
 
   return (
-    <div className="flex items-baseline gap-2 py-1 border-b border-border/50 last:border-b-0 text-[10px] font-mono">
+    <div className="flex items-baseline gap-2 py-1 border-b border-border last:border-b-0 text-[10px] font-mono">
       <span className="w-16 shrink-0 tabular-nums">
         <span className={style.className}>{style.label}</span>
       </span>

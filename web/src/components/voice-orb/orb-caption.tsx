@@ -12,7 +12,7 @@ const TONE: Record<CaptionTone, string> = {
   speech: 'border-border bg-card/85 text-muted-foreground',
   // What it HEARD you say -- dimmer and italic, so it never reads as the orb
   // talking. This is also the read-back you check before it acts on a detail.
-  heard: 'border-border/60 bg-muted/60 text-muted-foreground/80 italic',
+  heard: 'border-border bg-muted/60 text-fg-muted italic',
   error: 'border-destructive/40 bg-destructive/15 text-destructive-foreground',
   leaving: 'border-accent/50 bg-accent/15 text-foreground',
 }

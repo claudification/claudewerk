@@ -57,9 +57,9 @@ export function VoiceStatusLine({
           so it is shown then rather than left to be discovered in settings.
           `warming up` wins the slot when both apply -- a mic that is not ready
           yet is the more urgent thing to know. */}
-      {!offline && !backendReady && <span className={cn(LABEL, 'text-muted-foreground/50 ml-auto')}>warming up</span>}
+      {!offline && !backendReady && <span className={cn(LABEL, 'text-fg-dim ml-auto')}>warming up</span>}
       {!offline && backendReady && (
-        <span className={cn(LABEL, 'text-muted-foreground/40 ml-auto normal-case tracking-normal')}>{ABORT_HINT}</span>
+        <span className={cn(LABEL, 'text-fg-faint ml-auto normal-case tracking-normal')}>{ABORT_HINT}</span>
       )}
     </>
   )

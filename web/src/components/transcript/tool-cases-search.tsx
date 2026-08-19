@@ -10,7 +10,7 @@ export function renderWebSearch({ input, result }: ToolCaseInput): ToolCaseResul
   let details = null
   if (result) {
     details = (
-      <div className="max-h-96 overflow-y-auto rounded border border-border/30 bg-black/20 px-3 py-2 text-[11px]">
+      <div className="max-h-96 overflow-y-auto rounded border border-border-subtle bg-black/20 px-3 py-2 text-[11px]">
         <Markdown>{result}</Markdown>
       </div>
     )

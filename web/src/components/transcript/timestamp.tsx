@@ -56,7 +56,7 @@ export function TimeStamp({ ts, className }: { ts?: string | number; className?:
           <div className="mt-0.5 text-[12px] text-muted-foreground whitespace-nowrap leading-tight tabular-nums">
             {time}
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground/70 whitespace-nowrap leading-tight">
+          <div className="mt-0.5 text-[11px] text-fg-muted whitespace-nowrap leading-tight">
             {formatAge(epoch)}
           </div>
         </Popover.Content>

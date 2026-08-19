@@ -344,7 +344,7 @@ export function ShellCommand({ command, maxLines = 10 }: { command: string; maxL
         ) : (
           <span className="text-foreground/80">{display}</span>
         )}
-        {truncated && <span className="text-muted-foreground/40">{`\n... ${lines.length - maxLines} more lines`}</span>}
+        {truncated && <span className="text-fg-faint">{`\n... ${lines.length - maxLines} more lines`}</span>}
       </pre>
       <CopyIconButton text={command} title="Copy the raw command" className="absolute top-1 right-1" />
     </div>
@@ -376,7 +376,7 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
               // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               <div key={i} className="hover:bg-muted/20">
                 <span
-                  className="text-muted-foreground/40 select-none inline-block text-right mr-3"
+                  className="text-fg-faint select-none inline-block text-right mr-3"
                   style={{ width: `${gutterWidth + 1}ch` }}
                 >
                   {i + 1}
@@ -396,7 +396,7 @@ export function WritePreview({ content, filePath }: { content: string; filePath?
               // biome-ignore lint/suspicious/noArrayIndexKey: file lines are positional, no stable IDs
               <div key={i} className="hover:bg-muted/20">
                 <span
-                  className="text-muted-foreground/40 select-none inline-block text-right mr-3"
+                  className="text-fg-faint select-none inline-block text-right mr-3"
                   style={{ width: `${gutterWidth + 1}ch` }}
                 >
                   {i + 1}
@@ -607,7 +607,7 @@ export function ReplResult({ result, extra }: { result?: string; extra?: Record<
       {resultContent}
       {hasStdout && (
         <div>
-          <div className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-wider mb-0.5">stdout</div>
+          <div className="text-[9px] font-mono text-fg-dim uppercase tracking-wider mb-0.5">stdout</div>
           <pre className="text-[10px] font-mono bg-black/20 rounded px-2.5 py-1.5 overflow-x-auto whitespace-pre-wrap text-foreground/70">
             <AnsiText text={stdout} />
           </pre>

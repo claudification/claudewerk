@@ -88,8 +88,8 @@ export function EpicsView({
   if (rollups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-40 gap-1">
-        <div className="text-read font-mono text-muted-foreground/80">No epics on this board</div>
-        <div className="text-meta font-mono text-muted-foreground/60">
+        <div className="text-read font-mono text-fg-muted">No epics on this board</div>
+        <div className="text-meta font-mono text-fg-dim">
           tag a card `epic`, then put `epic: &lt;that-id&gt;` on its children
         </div>
       </div>
@@ -146,7 +146,7 @@ export function EpicsView({
             />
           ) : (
             <div className="flex-1 flex items-center justify-center px-6 text-center">
-              <p className="font-mono text-meta text-muted-foreground/60 max-w-[30ch]">
+              <p className="font-mono text-meta text-fg-dim max-w-[30ch]">
                 Pick an epic to read it -- its body, refs and every card under it.
               </p>
             </div>

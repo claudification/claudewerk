@@ -22,7 +22,7 @@ function canvasAge(updatedAt: number, now = Date.now()): string {
 function Thumb({ canvas }: { canvas: CanvasSummary }) {
   if (!canvas.hasThumb) {
     return (
-      <span className="w-10 h-8 grid place-items-center text-sky-400/40 border border-border/60 shrink-0 text-sm">
+      <span className="w-10 h-8 grid place-items-center text-sky-400/40 border border-border shrink-0 text-sm">
         ◳
       </span>
     )
@@ -31,7 +31,7 @@ function Thumb({ canvas }: { canvas: CanvasSummary }) {
     <img
       src={appendShareParam(`/api/canvases/${canvas.id}/thumb`)}
       alt=""
-      className="w-10 h-8 object-cover border border-border/60 shrink-0 bg-background"
+      className="w-10 h-8 object-cover border border-border shrink-0 bg-background"
     />
   )
 }
@@ -50,7 +50,7 @@ export function CanvasListRow({ canvas, onOpen }: { canvas: CanvasSummary; onOpe
           {canvas.shared && (
             <span className="text-[9px] uppercase tracking-wide text-emerald-400/80 shrink-0">shared</span>
           )}
-          <span className="text-[10px] text-muted-foreground/70 shrink-0">{canvasAge(canvas.updatedAt)}</span>
+          <span className="text-[10px] text-fg-muted shrink-0">{canvasAge(canvas.updatedAt)}</span>
         </span>
       </button>
     </CanvasRowMenu>

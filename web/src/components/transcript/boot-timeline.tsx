@@ -56,7 +56,7 @@ function BootLine({ entry, startTs }: { entry: TranscriptBootEntry; startTs: num
           hasRaw ? (
             <button
               type="button"
-              className="text-muted-foreground/40 hover:text-accent transition-colors"
+              className="text-fg-faint hover:text-accent transition-colors"
               title="Show raw payload"
               onClick={() => {
                 haptic('tap')
@@ -75,7 +75,7 @@ function BootLine({ entry, startTs }: { entry: TranscriptBootEntry; startTs: num
               <div className="flex items-center gap-2 text-[11px]">
                 <span className={stepColor(step)}>●</span>
                 <span>{STEP_LABEL[step]}</span>
-                {elapsedSec && <span className="text-muted-foreground/50">+{elapsedSec}s</span>}
+                {elapsedSec && <span className="text-fg-dim">+{elapsedSec}s</span>}
               </div>
             </DialogTitle>
             <pre className="text-[10px] overflow-auto max-h-[60vh] p-3 bg-muted/30 rounded whitespace-pre-wrap break-all">
@@ -101,7 +101,7 @@ export function BootTimeline({ group }: { group: DisplayGroup }) {
     <div className="mb-3 border-l-2 border-sky-500/30 pl-3 py-1.5 bg-sky-950/10 rounded-r">
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-[9px] uppercase tracking-wider text-sky-400/70 font-bold">boot</span>
-        <span className="text-[9px] text-muted-foreground/50">
+        <span className="text-[9px] text-fg-dim">
           {entries.length} step{entries.length === 1 ? '' : 's'}
         </span>
       </div>

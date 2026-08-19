@@ -71,7 +71,7 @@ export function ChecklistArchiveModal() {
               onChange={e => setFilter(e.currentTarget.value)}
               aria-label="Filter completed"
               placeholder="Filter…"
-              className="flex-1 min-w-0 bg-muted/30 border border-border/60 rounded px-2 py-1 text-xs outline-none focus:border-accent/60"
+              className="flex-1 min-w-0 bg-muted/30 border border-border rounded px-2 py-1 text-xs outline-none focus:border-accent/60"
             />
             <button
               type="button"
@@ -93,7 +93,7 @@ export function ChecklistArchiveModal() {
             )}
             {groups.map(g => (
               <div key={g.label} className="mb-2">
-                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground/50">{g.label}</div>
+                <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-fg-dim">{g.label}</div>
                 {g.items.map(i => (
                   <div key={i.id} className="group/ar flex items-center gap-2 px-2 py-0.5 text-xs">
                     <span className="flex-1 min-w-0 truncate text-muted-foreground line-through [&_p]:inline">
@@ -103,7 +103,7 @@ export function ChecklistArchiveModal() {
                       type="button"
                       title="Re-open"
                       onClick={() => reopen(i.id)}
-                      className="shrink-0 text-muted-foreground/50 hover:text-foreground opacity-0 group-hover/ar:opacity-100 transition-opacity"
+                      className="shrink-0 text-fg-dim hover:text-foreground opacity-0 group-hover/ar:opacity-100 transition-opacity"
                     >
                       <RotateCcw className="size-3" />
                     </button>

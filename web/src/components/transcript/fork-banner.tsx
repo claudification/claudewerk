@@ -56,7 +56,7 @@ export function ForkBanner({
           <button
             type="button"
             onClick={() => setOpen(v => !v)}
-            className="ml-auto shrink-0 text-[9px] font-mono text-muted-foreground/70 hover:text-foreground transition-colors"
+            className="ml-auto shrink-0 text-[9px] font-mono text-fg-muted hover:text-foreground transition-colors"
           >
             {open ? 'hide details' : 'what was folded'}
           </button>

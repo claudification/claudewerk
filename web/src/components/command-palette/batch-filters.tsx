@@ -9,7 +9,7 @@ import { ChevronDown } from 'lucide-react'
 import type { FilterState } from './batch-filter'
 
 const FIELD =
-  'h-7 bg-muted/20 px-2 border border-border/40 outline-none rounded-sm transition-colors focus:border-accent placeholder:text-muted-foreground/40'
+  'h-7 bg-muted/20 px-2 border border-border-subtle outline-none rounded-sm transition-colors focus:border-accent placeholder:text-fg-faint'
 
 const STATUS_OPTIONS: { value: FilterState['status']; label: string }[] = [
   { value: 'any', label: 'any status' },
@@ -46,7 +46,7 @@ export function BatchFilters({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
+        <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-fg-dim" />
       </div>
       <input
         aria-label="Filter conversations by sentinel"

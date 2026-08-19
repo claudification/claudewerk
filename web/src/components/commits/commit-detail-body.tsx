@@ -63,7 +63,7 @@ export function CommitDetailBody({ hash }: { hash: string }) {
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] text-muted-foreground">{commit.shortHash}</span>
-          <span className="text-[10px] text-muted-foreground/50">{new Date(commit.committedAt).toLocaleString()}</span>
+          <span className="text-[10px] text-fg-dim">{new Date(commit.committedAt).toLocaleString()}</span>
         </div>
         <h2 className={cn('text-sm font-medium', commitTypeColor(commit.ccType))}>{commit.subject}</h2>
         {commit.body && (
@@ -76,14 +76,14 @@ export function CommitDetailBody({ hash }: { hash: string }) {
       <div className="flex flex-wrap gap-x-4 gap-y-1">
         {facts(commit).map(([label, value]) => (
           <div key={label} className="text-[10px]">
-            <span className="text-muted-foreground/50 uppercase tracking-wide">{label} </span>
+            <span className="text-fg-dim uppercase tracking-wide">{label} </span>
             <span className="font-mono">{value}</span>
           </div>
         ))}
       </div>
 
       <div className="space-y-1">
-        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground/60">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-fg-dim">
           <span>
             {commit.fileCount} file{commit.fileCount === 1 ? '' : 's'}
           </span>
@@ -93,7 +93,7 @@ export function CommitDetailBody({ hash }: { hash: string }) {
         <div className="space-y-0.5 max-h-[40vh] overflow-y-auto">
           {commit.files.map(f => (
             <div key={`${f.status}:${f.path}`} className="flex items-center gap-2 text-[10px] font-mono">
-              <span className="w-8 shrink-0 text-muted-foreground/60">{f.status}</span>
+              <span className="w-8 shrink-0 text-fg-dim">{f.status}</span>
               <span className="truncate">{f.path}</span>
             </div>
           ))}

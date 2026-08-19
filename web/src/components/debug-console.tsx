@@ -20,8 +20,8 @@ function LogLine({ entry }: { entry: LogEntry }) {
     <div
       className={`flex gap-2 font-mono text-[11px] leading-relaxed ${LEVEL_COLORS[entry.level] || 'text-foreground'}`}
     >
-      <span className="text-muted-foreground/50 shrink-0 select-none">{ts}</span>
-      <span className="text-muted-foreground/50 shrink-0 w-10 select-none">{entry.level.toUpperCase()}</span>
+      <span className="text-fg-dim shrink-0 select-none">{ts}</span>
+      <span className="text-fg-dim shrink-0 w-10 select-none">{entry.level.toUpperCase()}</span>
       <span className="whitespace-pre-wrap break-all">{entry.args}</span>
     </div>
   )
@@ -63,7 +63,7 @@ export function DebugConsole({ onClose }: { onClose: () => void }) {
       />
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 min-h-0 overflow-auto px-3 py-1">
         {entries.length === 0 && (
-          <div className="text-muted-foreground/50 text-xs font-mono py-4 text-center">No log entries yet</div>
+          <div className="text-fg-dim text-xs font-mono py-4 text-center">No log entries yet</div>
         )}
         {entries.map((entry, i) => (
           // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key

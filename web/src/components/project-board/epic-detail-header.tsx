@@ -26,7 +26,7 @@ function Stat({ value, label, tone }: { value: number; label: string; tone: stri
   return (
     <span className="flex flex-col gap-0.5">
       <span className={cn('text-loud tabular-nums leading-none', tone)}>{value}</span>
-      <span className="text-chrome text-muted-foreground/62">{label}</span>
+      <span className="text-chrome text-fg-dim">{label}</span>
     </span>
   )
 }
@@ -52,7 +52,7 @@ export function EpicDetailHeader({
   const title = rollup.card?.title ?? rollup.epicId
 
   return (
-    <div className="px-3.5 py-3 border-b border-border/50 border-l-[3px] border-l-[color:var(--epic-solid)] bg-[color:var(--epic-tint)] shrink-0">
+    <div className="px-3.5 py-3 border-b border-border border-l-[3px] border-l-[color:var(--epic-solid)] bg-[color:var(--epic-tint)] shrink-0">
       <div className="flex items-start gap-2.5">
         {onBack && (
           <button
@@ -63,7 +63,7 @@ export function EpicDetailHeader({
               onBack()
             }}
             // Desktop shows index and pane side by side, so there is nowhere to go back TO.
-            className="shrink-0 mt-0.5 text-muted-foreground/70 hover:text-foreground transition-colors md:hidden"
+            className="shrink-0 mt-0.5 text-fg-muted hover:text-foreground transition-colors md:hidden"
           >
             <ArrowLeft className="size-4" />
           </button>
@@ -82,7 +82,7 @@ export function EpicDetailHeader({
         <Stat value={rollup.done} label="DONE" tone="text-active" />
         <Stat value={rollup.notStarted + rollup.inProgress} label="OPEN" tone="text-foreground" />
         {blocked > 0 && <Stat value={blocked} label="BLOCKED" tone="text-event-prompt" />}
-        {rollup.dropped > 0 && <Stat value={rollup.dropped} label="DROPPED" tone="text-muted-foreground/70" />}
+        {rollup.dropped > 0 && <Stat value={rollup.dropped} label="DROPPED" tone="text-fg-muted" />}
         <span className="flex items-center gap-1.5 ml-auto">
           <EpicRunButton rollup={rollup} onOpenDialog={onRunEpic} />
           <EpicWorkButton rollup={rollup} onWork={onWorkOnEpic} />

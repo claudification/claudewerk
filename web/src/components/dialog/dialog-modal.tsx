@@ -225,7 +225,7 @@ export const DialogModal = memo(function DialogModal({
     ? 'text-destructive animate-pulse'
     : urgent
       ? 'text-amber-500'
-      : 'text-muted-foreground/50'
+      : 'text-fg-dim'
 
   // Minimized: thin vertical strip on the right edge
   if (minimized) {
@@ -245,7 +245,7 @@ export const DialogModal = memo(function DialogModal({
         {/* Background strip */}
         <div
           className={cn(
-            'absolute inset-0 border-l border-border/50 backdrop-blur-md transition-colors',
+            'absolute inset-0 border-l border-border backdrop-blur-md transition-colors',
             critical ? 'bg-destructive/20' : urgent ? 'bg-amber-950/30' : 'bg-background/80',
           )}
         />
@@ -309,7 +309,7 @@ export const DialogModal = memo(function DialogModal({
       {/* Modal */}
       <div
         className={cn(
-          'relative flex flex-col bg-background border border-border/50 shadow-2xl',
+          'relative flex flex-col bg-background border border-border shadow-2xl',
           'w-full h-full sm:max-h-[85vh] sm:h-auto sm:rounded-lg',
           DIALOG_WIDTH_CLASS[layout.width ?? 'normal'],
         )}
@@ -323,7 +323,7 @@ export const DialogModal = memo(function DialogModal({
         </div>
 
         {/* Header */}
-        <div className="flex items-start gap-3 px-4 pt-3 pb-2 border-b border-border/30 shrink-0">
+        <div className="flex items-start gap-3 px-4 pt-3 pb-2 border-b border-border-subtle shrink-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-semibold text-foreground truncate">{layout.title}</h2>
@@ -362,7 +362,7 @@ export const DialogModal = memo(function DialogModal({
 
         {/* Page tabs (if multi-page) */}
         {isMultiPage && (
-          <div className="flex gap-1 px-4 py-2 border-b border-border/20 shrink-0 overflow-x-auto">
+          <div className="flex gap-1 px-4 py-2 border-b border-border-subtle shrink-0 overflow-x-auto">
             {pages.map((page, i) => (
               <button
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
@@ -406,7 +406,7 @@ export const DialogModal = memo(function DialogModal({
                   onInteraction()
                 }}
                 rows={2}
-                className="w-full text-sm bg-muted/20 border border-border/30 rounded px-3 py-2 placeholder:text-muted-foreground/30 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-y min-h-10"
+                className="w-full text-sm bg-muted/20 border border-border-subtle rounded px-3 py-2 placeholder:text-fg-faint focus:outline-none focus:ring-1 focus:ring-primary/30 resize-y min-h-10"
               />
             </div>
           )}
@@ -414,7 +414,7 @@ export const DialogModal = memo(function DialogModal({
 
         {/* Footer */}
         <div
-          className="flex items-center justify-between gap-2 px-4 pt-3 sm:pb-3 border-t border-border/30 shrink-0"
+          className="flex items-center justify-between gap-2 px-4 pt-3 sm:pb-3 border-t border-border-subtle shrink-0"
           style={{ paddingBottom: 'max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))' }}
         >
           {secondary && isLastPage ? (

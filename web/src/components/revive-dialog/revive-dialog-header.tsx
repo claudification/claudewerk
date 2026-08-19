@@ -50,13 +50,13 @@ export function ReviveDialogHeader({
           {forking ? 'FORK CONVERSATION' : reviveTitle(status)}
         </DialogTitle>
         {!forking && status.launching && (
-          <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums">{status.elapsed}s</span>
+          <span className="text-[10px] font-mono text-fg-dim tabular-nums">{status.elapsed}s</span>
         )}
       </div>
 
       <div className="shrink-0 space-y-0.5">
         {title && <div className="text-[11px] font-mono text-foreground truncate">{title}</div>}
-        <div className="text-[10px] font-mono text-muted-foreground/60 truncate">{path}</div>
+        <div className="text-[10px] font-mono text-fg-dim truncate">{path}</div>
       </div>
     </>
   )

@@ -55,8 +55,8 @@ export function EpicModeButtons({
           className={cn(
             'shrink-0 flex items-center gap-1 px-2 py-1 text-[10px] font-mono border transition-colors',
             disabled
-              ? 'border-border/45 text-muted-foreground/60 cursor-not-allowed'
-              : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-[color:var(--epic-edge)]',
+              ? 'border-border text-fg-dim cursor-not-allowed'
+              : 'border-border text-muted-foreground hover:text-foreground hover:border-[color:var(--epic-edge)]',
           )}
         >
           {!disabled && <Icon className="size-2.5" />}

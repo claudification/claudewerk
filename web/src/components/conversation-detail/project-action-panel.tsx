@@ -47,7 +47,7 @@ function ContextBar({ conversation }: { conversation: Conversation }) {
 
   return (
     <div className="flex items-center gap-1.5 mt-1">
-      <span className="text-[9px] font-mono text-muted-foreground/60 shrink-0">{formatModel(conversation.model)}</span>
+      <span className="text-[9px] font-mono text-fg-dim shrink-0">{formatModel(conversation.model)}</span>
       <div className="flex-1 h-1 bg-muted/30 rounded-full overflow-hidden">
         <div
           className={cn(
@@ -105,7 +105,7 @@ function RecentConversationItem({ conversation }: { conversation: Conversation }
       <div className="px-3 py-2 border border-border hover:border-primary transition-colors space-y-1">
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono text-primary truncate flex-1">{name}</span>
-          <span className="text-[10px] text-muted-foreground/70 shrink-0">{ago}</span>
+          <span className="text-[10px] text-fg-muted shrink-0">{ago}</span>
           {!hasRecap && <RecapButton conversationId={conversation.id} />}
           <button
             type="button"
@@ -267,7 +267,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
             {displayName}
           </h2>
           <div className="text-xs font-mono text-muted-foreground">{path}</div>
-          {ps?.description && <div className="text-xs text-muted-foreground/80">{ps.description}</div>}
+          {ps?.description && <div className="text-xs text-fg-muted">{ps.description}</div>}
         </div>
 
         {/* Actions */}
@@ -334,7 +334,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
               if (e.target.value) setShowAllRecent(true)
             }}
             placeholder="Filter by name or recap..."
-            className="w-full px-3 py-1.5 text-xs font-mono bg-background border border-border focus:border-primary outline-none transition-colors placeholder:text-muted-foreground/40"
+            className="w-full px-3 py-1.5 text-xs font-mono bg-background border border-border focus:border-primary outline-none transition-colors placeholder:text-fg-faint"
           />
         )}
 
@@ -354,7 +354,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
         {/* Recent conversations */}
         {filteredRecent.length > 0 && (
           <div className="space-y-1">
-            <div className="text-[10px] text-muted-foreground/70 font-bold uppercase tracking-wider px-1 flex items-center gap-2">
+            <div className="text-[10px] text-fg-muted font-bold uppercase tracking-wider px-1 flex items-center gap-2">
               <span>Recent conversations</span>
               <span className="flex-1 h-px bg-border" />
               <RecapAllButton conversations={filteredRecent} />
@@ -365,7 +365,7 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
             {!filter && recentEnded.length > 5 && !showAllRecent && (
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1 transition-colors"
+                className="text-[10px] text-fg-dim hover:text-muted-foreground px-1 transition-colors"
                 onClick={() => setShowAllRecent(true)}
               >
                 + {recentEnded.length - 5} more
@@ -374,9 +374,9 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
           </div>
         )}
 
-        {!hasAny && <div className="text-center text-xs text-muted-foreground/40">No conversations</div>}
+        {!hasAny && <div className="text-center text-xs text-fg-faint">No conversations</div>}
         {hasAny && filteredActive.length === 0 && filteredRecent.length === 0 && filter && (
-          <div className="text-center text-xs text-muted-foreground/40">No matches for "{filter}"</div>
+          <div className="text-center text-xs text-fg-faint">No matches for "{filter}"</div>
         )}
 
         {/* Project README (sentinel-fetched, no live conversation needed) */}

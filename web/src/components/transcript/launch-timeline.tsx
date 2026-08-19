@@ -101,7 +101,7 @@ export function LaunchTimeline({ group }: { group: DisplayGroup }) {
     <div className={cn('mb-3 border-l-2 pl-3 py-1.5 rounded-r', borderClass)}>
       <div className="flex items-center gap-2 mb-1.5">
         <span className={cn('text-[9px] uppercase tracking-wider font-bold', labelClass)}>{label}</span>
-        <span className="text-[9px] text-muted-foreground/50">
+        <span className="text-[9px] text-fg-dim">
           {entries.length} step{entries.length === 1 ? '' : 's'}
         </span>
       </div>

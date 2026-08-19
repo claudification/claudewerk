@@ -87,7 +87,7 @@ export function ConversationView({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border/50">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
         <button type="button" onClick={onBack} className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" />
         </button>
@@ -144,12 +144,12 @@ export function ConversationView({
                 </div>
                 <div className="text-xs text-foreground/90 whitespace-pre-wrap break-words">{msg.preview}</div>
                 {msg.fullLength > msg.preview.length && (
-                  <span className="text-[9px] text-muted-foreground/50 mt-1 block">
+                  <span className="text-[9px] text-fg-dim mt-1 block">
                     +{msg.fullLength - msg.preview.length} chars truncated
                   </span>
                 )}
               </div>
-              <span className="text-[8px] text-muted-foreground/40 mt-0.5 px-1">{msg.from.name}</span>
+              <span className="text-[8px] text-fg-faint mt-0.5 px-1">{msg.from.name}</span>
             </div>
           )
         })}

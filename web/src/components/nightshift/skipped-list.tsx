@@ -21,7 +21,7 @@ export function SkippedList({ items }: Props) {
         <li key={item.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
           <span className="font-mono text-xs text-muted-foreground shrink-0">#{item.id}</span>
           <span className="text-muted-foreground">{item.title}</span>
-          <span className="text-xs text-muted-foreground/70">-- {item.reason}</span>
+          <span className="text-xs text-fg-muted">-- {item.reason}</span>
           <FeasibilityBadge f={item.feasibility} />
         </li>
       ))}

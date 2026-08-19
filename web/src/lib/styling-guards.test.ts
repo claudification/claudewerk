@@ -45,6 +45,47 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   return acc
 }
 
+/**
+ * Opacity is not a colour token.
+ *
+ * `text-muted-foreground/40` measured 2.08:1 against the page -- under every
+ * WCAG floor and simply not readable. There were 628 of these, plus 239 faded
+ * borders where `border-border/30` came out at 1.10:1, i.e. an invisible
+ * divider. The alpha was standing in for tokens that did not exist.
+ *
+ * They exist now: --fg-muted / --fg-dim / --fg-faint, and --border-subtle.
+ * Use them. An alpha suffix hides the contrast from anyone reading the class,
+ * which is how 628 illegible sites accumulated without anyone noticing.
+ *
+ * Exception: `/0` is not faded text, it is HIDDEN text revealed on hover.
+ */
+const STACKED_TEXT = /\btext-muted-foreground\/(?!0\b)\d+/
+const STACKED_BORDER = /\bborder(-[trblxyse])?-border\/\d+/
+
+function scan(pattern: RegExp): string[] {
+  const offenders: string[] = []
+  for (const file of sourceFiles(SRC)) {
+    const text = stripComments(readFileSync(file, 'utf8'))
+    if (!pattern.test(text)) continue
+    for (const [i, line] of text.split('\n').entries()) {
+      if (pattern.test(line)) offenders.push(`${relative(SRC, file)}:${i + 1}`)
+    }
+  }
+  return offenders
+}
+
+describe('no opacity-stacked colour tokens', () => {
+  it('foreground text uses a real token, not an alpha suffix', () => {
+    const offenders = scan(STACKED_TEXT)
+    expect(offenders, `use text-fg-muted / text-fg-dim / text-fg-faint:\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('borders use a real weight, not an alpha suffix', () => {
+    const offenders = scan(STACKED_BORDER)
+    expect(offenders, `use border-border-subtle / border-border / border-border-strong:\n${offenders.join('\n')}`).toEqual([])
+  })
+})
+
 describe('no dead dark: variants', () => {
   it('the dark variant is still class-based (this test is pointless if it is not)', () => {
     const css = readFileSync(join(SRC, 'styles/globals.css'), 'utf8')
@@ -52,14 +93,7 @@ describe('no dead dark: variants', () => {
   })
 
   it('no source file uses a dark: utility while no .dark ancestor exists', () => {
-    const offenders: string[] = []
-    for (const file of sourceFiles(SRC)) {
-      const text = stripComments(readFileSync(file, 'utf8'))
-      if (!TAILWIND_DARK.test(text)) continue
-      for (const [i, line] of text.split('\n').entries()) {
-        if (TAILWIND_DARK.test(line)) offenders.push(`${relative(SRC, file)}:${i + 1}`)
-      }
-    }
+    const offenders = scan(TAILWIND_DARK)
     expect(offenders, `dark: utilities never match -- write the state directly:\n${offenders.join('\n')}`).toEqual([])
   })
 })

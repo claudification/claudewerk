@@ -74,7 +74,7 @@ const ACTIONS: Action[] = [
 ]
 
 function buttonClass(disabled: boolean, danger?: boolean): string {
-  if (disabled) return 'border-border/40 text-muted-foreground/40 cursor-not-allowed'
+  if (disabled) return 'border-border-subtle text-fg-faint cursor-not-allowed'
   return danger
     ? 'border-border text-foreground hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive'
     : 'border-border text-foreground hover:border-[color:var(--epic-badge-edge)] hover:bg-[color:var(--epic-badge-tint)]'
@@ -107,7 +107,7 @@ export function OverseerControls({
   }
 
   return (
-    <div className="px-3 py-2 border-b border-border/50 shrink-0">
+    <div className="px-3 py-2 border-b border-border shrink-0">
       <div className="flex items-center gap-1.5 flex-wrap">
         {ACTIONS.map(action => {
           const disabled = busy !== null || !action.enabled(run, leaseHeld)
@@ -131,7 +131,7 @@ export function OverseerControls({
           )
         })}
       </div>
-      {note && <div className="text-meta text-muted-foreground/70 mt-1.5">{note}</div>}
+      {note && <div className="text-meta text-fg-muted mt-1.5">{note}</div>}
     </div>
   )
 }

@@ -42,10 +42,10 @@ function subtitle(rollup: EpicRollup): React.ReactNode {
   return (
     <>
       {blocked > 0 && <span className="text-event-prompt">{blocked} blocked</span>}
-      {blocked > 0 && next && <span className="text-muted-foreground/55"> · </span>}
+      {blocked > 0 && next && <span className="text-fg-dim"> · </span>}
       {next && (
         <>
-          <span className="text-muted-foreground/60">next </span>
+          <span className="text-fg-dim">next </span>
           <span className="text-accent">{next.card.slug}</span>
         </>
       )}
@@ -79,14 +79,14 @@ export function EpicIndexRow({
       }}
       className={cn(
         'w-full grid grid-cols-[auto_minmax(0,1fr)_78px_64px] gap-3 items-center text-left',
-        'px-3 py-2 border-b border-border/40 border-l-[3px] transition-colors',
+        'px-3 py-2 border-b border-border-subtle border-l-[3px] transition-colors',
         empty ? 'border-l-muted-foreground/25' : 'border-l-[color:var(--epic-solid)]',
         selected ? 'bg-[color:var(--epic-tint)]' : 'hover:bg-muted/30',
       )}
     >
       <EpicMarkBadge epicId={rollup.epicId} variant={selected ? 'solid' : 'quiet'} />
 
-      <span className={cn('font-mono truncate', empty ? 'text-read text-muted-foreground/90' : 'text-loud')}>
+      <span className={cn('font-mono truncate', empty ? 'text-read text-fg-muted' : 'text-loud')}>
         {title}
       </span>
 
@@ -114,17 +114,17 @@ export function EpicIndexRow({
 
       <span className="font-mono text-right">
         {empty ? (
-          <span className="text-read text-muted-foreground/55">--</span>
+          <span className="text-read text-fg-dim">--</span>
         ) : (
           <span className="text-tally tabular-nums text-foreground">
             {rollup.done}
-            <span className="text-chrome font-normal text-muted-foreground/65">/{rollup.total}</span>
+            <span className="text-chrome font-normal text-fg-dim">/{rollup.total}</span>
           </span>
         )}
       </span>
 
       <span className="col-start-2 col-span-3 font-mono text-meta truncate -mt-0.5">
-        {empty ? <span className="text-muted-foreground/70">nothing points at it yet</span> : subtitle(rollup)}
+        {empty ? <span className="text-fg-muted">nothing points at it yet</span> : subtitle(rollup)}
       </span>
     </button>
   )

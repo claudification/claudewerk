@@ -67,7 +67,7 @@ export function BatchTable({
           <col key={k} style={WIDTH[k] ? { width: WIDTH[k] } : undefined} />
         ))}
       </colgroup>
-      <thead className="sticky top-0 bg-surface-inset border-b border-border/40 text-[10px] text-muted-foreground uppercase tracking-wider z-10">
+      <thead className="sticky top-0 bg-surface-inset border-b border-border-subtle text-[10px] text-muted-foreground uppercase tracking-wider z-10">
         <tr>
           <th className="px-2 py-1.5">
             <span className="sr-only">Selection</span>

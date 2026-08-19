@@ -82,7 +82,7 @@ export function EfficiencyWidget() {
           onOpenAutoFocus={e => e.preventDefault()}
         >
           <div className="space-y-2">
-            <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Burn Rate</div>
+            <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Burn Rate</div>
 
             <div className="flex items-center gap-2">
               <span className={`text-[11px] font-medium ${effTextColor(pct)}`}>{Math.round(pct)}% efficiency</span>
@@ -102,14 +102,14 @@ export function EfficiencyWidget() {
               </span>
             </div>
 
-            <div className="text-[10px] text-muted-foreground/50">
+            <div className="text-[10px] text-fg-dim">
               baseline {eff.baselineDrainPp}pp -- current {eff.currentDrainPp}pp per request
             </div>
 
             {eff.forecast.length > 0 && (
               <>
-                <div className="border-t border-border/50 my-2" />
-                <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">
+                <div className="border-t border-border my-2" />
+                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">
                   Forecast (UTC blocks)
                 </div>
 
@@ -122,7 +122,7 @@ export function EfficiencyWidget() {
                         className={`flex-1 flex flex-col items-center gap-0.5 py-1 rounded ${isCurrent ? 'ring-1 ring-foreground/30' : ''}`}
                         title={`${block.hourUtc}:00 UTC -- ${block.efficiency}% (${block.level})`}
                       >
-                        <span className="text-[8px] text-muted-foreground/40">{formatHour(block.hourUtc)}</span>
+                        <span className="text-[8px] text-fg-faint">{formatHour(block.hourUtc)}</span>
                         <div className="w-full h-3 bg-muted rounded-sm overflow-hidden">
                           <div
                             className={`h-full ${effColor(block.efficiency)} rounded-sm transition-all duration-500`}
@@ -139,15 +139,15 @@ export function EfficiencyWidget() {
               </>
             )}
 
-            <div className="border-t border-border/50 mt-2 pt-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] text-muted-foreground/40">
+            <div className="border-t border-border mt-2 pt-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] text-fg-faint">
                 Polled {new Date(eff.polledAt).toLocaleTimeString()}
               </span>
               <a
                 href="https://usage.report"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground/80 hover:underline"
+                className="text-[9px] text-fg-faint hover:text-fg-muted hover:underline"
                 title="Data source -- click for details"
               >
                 usage.report ↗

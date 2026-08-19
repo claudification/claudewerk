@@ -158,7 +158,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
                   {projectName}
                 </span>
               )}
-              <span className="text-[9px] text-muted-foreground/50 truncate ml-auto">{conversationName}</span>
+              <span className="text-[9px] text-fg-dim truncate ml-auto">{conversationName}</span>
             </button>
             {groupItems
               .sort((a, b) => b.timestamp - a.timestamp)

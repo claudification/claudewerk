@@ -14,12 +14,12 @@ interface GatewayEntry {
 function GatewayRow({ gateway, onRevoke }: { gateway: GatewayEntry; onRevoke: () => void }) {
   return (
     <div className="flex items-center gap-2 p-2 border border-border rounded text-xs font-mono">
-      <span className={`text-sm ${gateway.connected ? 'text-active' : 'text-muted-foreground/40'}`}>
+      <span className={`text-sm ${gateway.connected ? 'text-active' : 'text-fg-faint'}`}>
         {gateway.connected ? '●' : '○'}
       </span>
       <span className="font-bold text-foreground">{gateway.alias}</span>
-      <span className="text-muted-foreground/50">{gateway.gatewayType}</span>
-      {gateway.label && <span className="text-muted-foreground/40">{gateway.label}</span>}
+      <span className="text-fg-dim">{gateway.gatewayType}</span>
+      {gateway.label && <span className="text-fg-faint">{gateway.label}</span>}
       <span className="flex-1" />
       <button
         type="button"
@@ -149,14 +149,14 @@ function GatewayList() {
           <GatewayRow key={g.gatewayId} gateway={g} onRevoke={() => handleRevoke(g.gatewayId, g.alias)} />
         ))}
         {gateways.length === 0 && (
-          <div className="text-xs text-muted-foreground/50 text-center py-2">
+          <div className="text-xs text-fg-dim text-center py-2">
             No gateways registered. Create one below.
           </div>
         )}
       </div>
 
-      <div className="border-t border-border/50 pt-3">
-        <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Create Gateway</div>
+      <div className="border-t border-border pt-3">
+        <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Create Gateway</div>
         <div className="flex items-center gap-2">
           <input
             aria-label="New gateway alias"
@@ -164,7 +164,7 @@ function GatewayList() {
             value={newAlias}
             onChange={e => setNewAlias(e.target.value)}
             placeholder="alias (e.g. hermes-prod)"
-            className="flex-1 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring rounded"
+            className="flex-1 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-fg-faint focus:outline-none focus:border-ring rounded"
             onKeyDown={e => {
               if (e.key === 'Enter') handleCreate()
             }}
@@ -175,7 +175,7 @@ function GatewayList() {
             value={newType}
             onChange={e => setNewType(e.target.value)}
             placeholder="type"
-            className="w-20 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring rounded"
+            className="w-20 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-fg-faint focus:outline-none focus:border-ring rounded"
           />
           <button
             type="button"

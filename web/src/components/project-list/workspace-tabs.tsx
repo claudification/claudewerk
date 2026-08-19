@@ -8,7 +8,7 @@ import { useWorkspaceActions } from './workspace-actions'
 import { InlineNameInput, WorkspaceTabItem } from './workspace-tab-item'
 
 const stripButton =
-  'shrink-0 size-6 grid place-items-center rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer select-none'
+  'shrink-0 size-6 grid place-items-center rounded text-fg-dim hover:text-foreground hover:bg-accent/10 transition-colors cursor-pointer select-none'
 
 export function WorkspaceTabs() {
   const projectOrder = useConversationsStore(s => s.projectOrder) as ProjectOrder
@@ -37,11 +37,11 @@ export function WorkspaceTabs() {
               'hover:bg-accent/10 select-none',
               activeId === null
                 ? 'bg-accent/20 ring-1 ring-accent/30 text-foreground'
-                : 'text-muted-foreground/60 hover:text-muted-foreground',
+                : 'text-fg-dim hover:text-muted-foreground',
             )}
           >
             All
-            <span className="text-[8px] text-muted-foreground/40">^1</span>
+            <span className="text-[8px] text-fg-faint">^1</span>
           </button>
           <span className="shrink-0 w-px h-3.5 bg-border/60 mx-0.5" />
         </>

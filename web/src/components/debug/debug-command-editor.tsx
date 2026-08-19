@@ -38,7 +38,7 @@ export function DebugCommandEditor({
         >
           Send{spec.danger ? ' (DANGER)' : ''}
         </button>
-        <span className="text-[10px] text-muted-foreground/60">
+        <span className="text-[10px] text-fg-dim">
           {spec.channel} · {spec.transports.join(',')}
         </span>
       </div>

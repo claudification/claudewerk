@@ -46,7 +46,7 @@ export function ProjectCommitsSection({ projectUri }: { projectUri: string }) {
             {commits.length > PREVIEW && (
               <button
                 type="button"
-                className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                className="text-[10px] text-fg-dim hover:text-muted-foreground transition-colors"
                 onClick={() => {
                   haptic('tap')
                   setExpanded(e => !e)
@@ -57,7 +57,7 @@ export function ProjectCommitsSection({ projectUri }: { projectUri: string }) {
             )}
             <button
               type="button"
-              className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+              className="text-[10px] text-fg-dim hover:text-muted-foreground transition-colors"
               onClick={() => {
                 haptic('tap')
                 openCommitBrowser(projectUri)

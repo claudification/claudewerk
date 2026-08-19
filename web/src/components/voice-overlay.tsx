@@ -105,7 +105,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
               {holdMode ? 'Release to send...' : 'Listening...'}
             </span>
             {!voice.backendReady && (
-              <span className="text-xs text-muted-foreground/40 font-mono uppercase tracking-wider">(warming up)</span>
+              <span className="text-xs text-fg-faint font-mono uppercase tracking-wider">(warming up)</span>
             )}
           </>
         )}
@@ -147,7 +147,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
           )}
         >
           {!displayText && !displayInterim && voice.state !== 'error' && (
-            <span className="text-muted-foreground/40 italic text-lg">
+            <span className="text-fg-faint italic text-lg">
               {voice.state === 'connecting' ? 'Starting mic...' : 'Speak now...'}
             </span>
           )}
@@ -185,7 +185,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
             </button>
           )}
           {voice.state === 'recording' && holdMode && (
-            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">
+            <span className="text-xs text-fg-dim font-mono uppercase tracking-wider">
               Release to stop recording
             </span>
           )}
@@ -201,7 +201,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
             </button>
           )}
           {(voice.state === 'refining' || voice.state === 'connecting') && holdMode && (
-            <span className="text-xs text-muted-foreground/60 font-mono uppercase tracking-wider">Processing…</span>
+            <span className="text-xs text-fg-dim font-mono uppercase tracking-wider">Processing…</span>
           )}
           {isDone && !holdMode && (
             <>

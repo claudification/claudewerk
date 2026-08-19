@@ -35,7 +35,7 @@ function formatDate(ts: number): string {
 
 function TaskRow({ task, onToggleDesc, expanded }: { task: TaskInfo; onToggleDesc: () => void; expanded: boolean }) {
   return (
-    <div className="px-3 py-2 border-b border-border/50 hover:bg-muted/20 transition-colors">
+    <div className="px-3 py-2 border-b border-border hover:bg-muted/20 transition-colors">
       <div className="flex items-start gap-2">
         <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{task.id}</span>
         <span className={cn('text-[10px] font-mono shrink-0', statusColors[task.status])}>
@@ -166,7 +166,7 @@ export function TasksView({ conversationId, pendingCount }: TasksViewProps) {
           <button
             type="button"
             onClick={toggleArchived}
-            className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            className="text-fg-dim hover:text-muted-foreground transition-colors"
           >
             {loadingArchived ? '...' : `${totalArchived} archived`} {showArchived ? '\u25B4' : '\u25BE'}
           </button>
@@ -192,16 +192,16 @@ export function TasksView({ conversationId, pendingCount }: TasksViewProps) {
 
       {/* Archived tasks - fetched on demand */}
       {showArchived && archivedGroups.length > 0 && (
-        <div className="border-t border-border/50 mt-2">
-          <div className="px-3 py-1.5 text-[10px] text-muted-foreground/60 uppercase tracking-wider font-bold bg-muted/10">
+        <div className="border-t border-border mt-2">
+          <div className="px-3 py-1.5 text-[10px] text-fg-dim uppercase tracking-wider font-bold bg-muted/10">
             Archived ({archivedGroups.reduce((s, g) => s + g.tasks.length, 0)})
           </div>
           {archivedGroups
             .slice()
             .sort((a, b) => b.archivedAt - a.archivedAt)
             .map((group, gi) => (
-              <div key={group.archivedAt} className={cn(gi > 0 && 'border-t border-border/30')}>
-                <div className="px-3 py-1 text-[9px] text-muted-foreground/40 font-mono">
+              <div key={group.archivedAt} className={cn(gi > 0 && 'border-t border-border-subtle')}>
+                <div className="px-3 py-1 text-[9px] text-fg-faint font-mono">
                   archived {formatDate(group.archivedAt)}
                 </div>
                 {group.tasks.map(task => (

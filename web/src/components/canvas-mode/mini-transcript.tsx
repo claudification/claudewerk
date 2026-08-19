@@ -10,7 +10,7 @@ import { buildMiniRows, type MiniRow } from './transcript-snippets'
 const ROLE_CLASS: Record<MiniRow['role'], string> = {
   user: 'text-foreground border-l-2 border-info pl-1.5',
   assistant: 'text-muted-foreground',
-  tool: 'text-muted-foreground/60 font-mono',
+  tool: 'text-fg-dim font-mono',
   channel: 'text-warning/80',
 }
 

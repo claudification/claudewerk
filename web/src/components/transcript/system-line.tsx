@@ -38,7 +38,7 @@ export function SystemLine({ group, ts }: { group: DisplayGroup; ts?: string | n
   return (
     <div className="mb-1 flex items-center justify-center gap-2 text-[10px]">
       <EventBody entry={described} />
-      <TimeStamp ts={ts} className="text-muted-foreground/40" />
+      <TimeStamp ts={ts} className="text-fg-faint" />
       <JsonInspector title={group.systemSubtype || wireKey(entry) || 'system'} data={entry} raw={entry} />
     </div>
   )
@@ -55,7 +55,7 @@ export function SystemLineInline({ entry, subtype, ts }: { entry: Entry; subtype
   return (
     <div className="flex items-center gap-2 text-[10px]">
       <EventBody entry={described} />
-      <TimeStamp ts={ts} className="text-muted-foreground/40" />
+      <TimeStamp ts={ts} className="text-fg-faint" />
       <JsonInspector title={subtype || wireKey(entry) || 'system'} data={entry} raw={entry} />
     </div>
   )

@@ -160,7 +160,7 @@ export function CopyMenu({ text, className, iconClassName = 'w-3 h-3', copyAsIma
     }
   }
 
-  const buttonClass = cn('text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5', className)
+  const buttonClass = cn('text-fg-faint hover:text-muted-foreground transition-colors p-0.5', className)
   const icon = copied ? <Check className={cn(iconClassName, 'text-emerald-400')} /> : <Copy className={iconClassName} />
 
   // Mobile: tap opens dropdown menu with format options

@@ -88,7 +88,7 @@ const LABEL_STYLES: Record<string, string> = {
 
 function LabelBadge({ label }: { label: string }) {
   const clean = label.replace(/^CATEGORY_/, '')
-  const style = LABEL_STYLES[label] || 'bg-muted/50 text-muted-foreground border-border/30'
+  const style = LABEL_STYLES[label] || 'bg-muted/50 text-muted-foreground border-border-subtle'
   return (
     <span className={cn('px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider border rounded', style)}>
       {clean.toLowerCase()}
@@ -130,17 +130,17 @@ export function GmailSearchResults({ result, extra }: { result: string; extra?: 
     <div className="text-[10px] font-mono space-y-0.5">
       {threads.map(t => (
         <div key={t.id} className="flex items-baseline gap-2 px-2 py-1 rounded hover:bg-muted/30">
-          <span className="text-muted-foreground/60 shrink-0 w-[52px] text-right">{formatDate(t.date)}</span>
+          <span className="text-fg-dim shrink-0 w-[52px] text-right">{formatDate(t.date)}</span>
           <span className="text-blue-400/80 shrink-0 w-[100px] truncate" title={t.from}>
             {extractName(t.from)}
           </span>
           <span className="text-foreground/80 truncate flex-1" title={t.subject}>
             {t.subject}
           </span>
-          <span className="text-muted-foreground/30 shrink-0 font-mono text-[8px]">{t.id.slice(0, 8)}</span>
+          <span className="text-fg-faint shrink-0 font-mono text-[8px]">{t.id.slice(0, 8)}</span>
         </div>
       ))}
-      <div className="text-muted-foreground/40 text-[9px] px-2 pt-1">
+      <div className="text-fg-faint text-[9px] px-2 pt-1">
         {threads.length} thread{threads.length !== 1 ? 's' : ''}
       </div>
     </div>
@@ -158,25 +158,25 @@ export function GmailThreadView({ result, extra }: { result: string; extra?: unk
 
   return (
     <div className="text-[10px] font-mono space-y-1.5">
-      <div className="flex items-center gap-2 px-2 text-muted-foreground/60">
+      <div className="flex items-center gap-2 px-2 text-fg-dim">
         <span className="font-bold text-foreground/70 truncate flex-1">{messages[0]?.subject}</span>
         <span>
           {thread.messageCount} msg{thread.messageCount !== 1 ? 's' : ''}
         </span>
       </div>
       {messages.map(msg => (
-        <div key={msg.messageId} className="px-2 py-1.5 rounded bg-muted/20 border border-border/20 space-y-1">
+        <div key={msg.messageId} className="px-2 py-1.5 rounded bg-muted/20 border border-border-subtle space-y-1">
           <div className="flex items-center gap-2">
             <span className="text-blue-400/80 font-bold truncate" title={msg.from}>
               {extractName(msg.from)}
             </span>
-            <span className="text-muted-foreground/40">-{'>'}</span>
+            <span className="text-fg-faint">-{'>'}</span>
             <span className="text-foreground/60 truncate" title={msg.to}>
               {extractName(msg.to)}
             </span>
-            <span className="text-muted-foreground/50 ml-auto shrink-0">{formatDateTime(msg.date)}</span>
+            <span className="text-fg-dim ml-auto shrink-0">{formatDateTime(msg.date)}</span>
           </div>
-          {msg.cc && <div className="text-muted-foreground/40">cc: {msg.cc}</div>}
+          {msg.cc && <div className="text-fg-faint">cc: {msg.cc}</div>}
           {msg.labelIds.length > 0 && (
             <div className="flex gap-1 flex-wrap">
               {msg.labelIds.map(l => (
@@ -185,17 +185,17 @@ export function GmailThreadView({ result, extra }: { result: string; extra?: unk
             </div>
           )}
           {msg.body && (
-            <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border/20 pt-1 mt-1">
+            <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border-subtle pt-1 mt-1">
               {msg.body.length > 500 ? `${msg.body.slice(0, 500)}...` : msg.body}
             </div>
           )}
           {msg.attachments.length > 0 && (
-            <div className="flex items-center gap-1.5 flex-wrap text-muted-foreground/50">
+            <div className="flex items-center gap-1.5 flex-wrap text-fg-dim">
               {msg.attachments.map(a => (
                 <span key={a.filename} className="inline-flex items-center gap-0.5 bg-muted/30 rounded px-1 py-0.5">
                   <span className="text-cyan-400/60">{a.filename}</span>
                   {a.size > 0 && (
-                    <span className="text-muted-foreground/30">
+                    <span className="text-fg-faint">
                       {a.size >= 1_000_000 ? `${(a.size / 1_000_000).toFixed(1)}MB` : `${Math.round(a.size / 1000)}KB`}
                     </span>
                   )}
@@ -248,34 +248,34 @@ export function GmailSendResult({
 
   return (
     <div className="text-[10px] font-mono space-y-1.5">
-      <div className="px-2 py-1.5 rounded bg-muted/20 border border-border/20 space-y-1">
+      <div className="px-2 py-1.5 rounded bg-muted/20 border border-border-subtle space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground/50">to:</span>
+          <span className="text-fg-dim">to:</span>
           <span className="text-blue-400/80 font-bold">{to}</span>
         </div>
         {cc && (
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground/50">cc:</span>
+            <span className="text-fg-dim">cc:</span>
             <span className="text-foreground/60">{cc}</span>
           </div>
         )}
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground/50">subj:</span>
+          <span className="text-fg-dim">subj:</span>
           <span className="text-foreground/80">{subject}</span>
         </div>
         {threadId && (
           <div className="flex items-center gap-2">
-            <span className="text-muted-foreground/50">thread:</span>
-            <span className="text-muted-foreground/60 font-mono">{threadId.slice(0, 12)}</span>
+            <span className="text-fg-dim">thread:</span>
+            <span className="text-fg-dim font-mono">{threadId.slice(0, 12)}</span>
           </div>
         )}
         {body && (
-          <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border/20 pt-1 mt-1 max-h-48 overflow-y-auto">
+          <div className="text-foreground/70 whitespace-pre-wrap break-words border-t border-border-subtle pt-1 mt-1 max-h-48 overflow-y-auto">
             {body.length > 800 ? `${body.slice(0, 800)}...` : body}
           </div>
         )}
         {attachments.length > 0 && (
-          <div className="flex items-center gap-1.5 border-t border-border/20 pt-1 mt-1 text-muted-foreground/60">
+          <div className="flex items-center gap-1.5 border-t border-border-subtle pt-1 mt-1 text-fg-dim">
             <span>
               {attachments.length} attachment{attachments.length !== 1 ? 's' : ''}:
             </span>

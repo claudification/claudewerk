@@ -26,7 +26,7 @@ export function SotuProjectStrip({ sotu }: { sotu: SheafProjectSotu | undefined 
     sotu.branches.some(b => b.aheadOrigin > 0 || b.integration === 'conflicts')
   if (!hasAnything) return null
   return (
-    <div className="mx-1 mb-1 rounded border border-border/50 bg-muted/20 px-3 py-2 space-y-1">
+    <div className="mx-1 mb-1 rounded border border-border bg-muted/20 px-3 py-2 space-y-1">
       <div className="flex flex-wrap items-center gap-1.5">
         {sotu.contended > 0 && <ContendedPill count={sotu.contended} />}
         {sotu.alerts.map(a => (
@@ -35,7 +35,7 @@ export function SotuProjectStrip({ sotu }: { sotu: SheafProjectSotu | undefined 
         {sotu.grounding && <GroundingChip g={sotu.grounding} />}
         {!sotu.enabled && (
           <span
-            className="text-[10px] text-muted-foreground/50 italic"
+            className="text-[10px] text-fg-dim italic"
             title="SOTU paid distill not enabled -- free floor only"
           >
             floor only
@@ -43,7 +43,7 @@ export function SotuProjectStrip({ sotu }: { sotu: SheafProjectSotu | undefined 
         )}
         {sotu.scannedAt !== undefined && (
           <span
-            className="text-[10px] text-muted-foreground/50 font-mono"
+            className="text-[10px] text-fg-dim font-mono"
             title="Age of the git-fabric scan behind these alerts. Opening the sheaf schedules a fresh scan; refresh again to pick it up."
           >
             scanned {formatAgo(Date.now() - sotu.scannedAt)}
@@ -71,7 +71,7 @@ export function FleetSotuStats({ sotu }: { sotu: SheafFleetSotu | undefined }) {
     parts.push(
       <span
         key="f"
-        className="text-[10px] text-muted-foreground/60 italic"
+        className="text-[10px] text-fg-dim italic"
         title="Projects hidden by per-project visibility"
       >
         {sotu.filteredProjects} hidden

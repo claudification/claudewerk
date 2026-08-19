@@ -75,7 +75,7 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
         <span className="text-foreground text-[10px]">{conversation.title || conversation.agentName}</span>
       )}
       {conversation.description && (
-        <span className="text-muted-foreground/70 text-[10px] italic">{conversation.description}</span>
+        <span className="text-fg-muted text-[10px] italic">{conversation.description}</span>
       )}
       <span
         className="text-muted-foreground text-[10px]"
@@ -83,7 +83,7 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
       >
         {conversation.id.slice(0, 8)}
         {conversation.connectionIds?.[0] && conversation.connectionIds[0] !== conversation.id && (
-          <span className="text-muted-foreground/50"> c:{conversation.connectionIds[0].slice(0, 6)}</span>
+          <span className="text-fg-dim"> c:{conversation.connectionIds[0].slice(0, 6)}</span>
         )}
       </span>
       {conversation.capabilities &&

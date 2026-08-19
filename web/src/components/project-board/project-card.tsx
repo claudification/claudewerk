@@ -65,7 +65,7 @@ export function ProjectCard({
       ref={setNodeRef}
       style={style}
       className={cn(
-        'group bg-surface-inset border border-border/70 hover:border-primary/45 transition-colors cursor-pointer',
+        'group bg-surface-inset border border-border hover:border-primary/45 transition-colors cursor-pointer',
         role.kind === 'child' && 'border-l-2 border-l-[color:var(--epic-solid)]',
         // Thicker rail on the epic itself: same hue as its children, but it is
         // the head of the group, not another member of it.
@@ -86,7 +86,7 @@ export function ProjectCard({
         <CardBody task={task} view={view} role={role} onOpenSlug={onOpenSlug} />
         <button
           type="button"
-          className="shrink-0 p-0.5 text-muted-foreground/60 hover:text-foreground transition-colors"
+          className="shrink-0 p-0.5 text-fg-dim hover:text-foreground transition-colors"
           onClick={e => {
             e.stopPropagation()
             haptic('tap')

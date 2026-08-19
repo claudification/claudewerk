@@ -14,7 +14,7 @@ export function HoverFrame({ children }: { children: React.ReactNode }) {
 }
 
 export function HoverSection({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn('px-3 py-2 border-b border-border/40 last:border-b-0', className)}>{children}</div>
+  return <div className={cn('px-3 py-2 border-b border-border-subtle last:border-b-0', className)}>{children}</div>
 }
 
 export function CardHoverHeader({ summary }: { summary: CardSummary }) {

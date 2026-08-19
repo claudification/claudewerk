@@ -63,7 +63,7 @@ export function GroundingChip({ g }: { g: SheafGrounding }) {
   return (
     <span
       className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-        lying ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'border-border/60 text-muted-foreground'
+        lying ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'border-border text-muted-foreground'
       }`}
       title={`Citation grounding: ${pct}% precision, ${Math.round(g.coverage * 100)}% coverage, ${g.unknownCited} ungrounded of ${g.citedConvs} cited`}
     >
@@ -84,7 +84,7 @@ export function BranchRisk({ branches }: { branches: SheafProjectSotu['branches'
           <span
             key={b.branch}
             className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
-              conflicts ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'border-border/50 text-muted-foreground'
+              conflicts ? 'bg-rose-500/15 border-rose-500/40 text-rose-300' : 'border-border text-muted-foreground'
             }`}
             title={
               conflicts

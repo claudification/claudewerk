@@ -33,7 +33,7 @@ export function MemoryEditorModal() {
         </div>
         <textarea
           aria-label="Dispatch memory editor"
-          className="min-h-[300px] w-full resize-y rounded-lg border border-border/70 bg-card/40 p-3 font-mono text-[12px] leading-relaxed text-foreground focus:border-accent focus:outline-none"
+          className="min-h-[300px] w-full resize-y rounded-lg border border-border bg-card/40 p-3 font-mono text-[12px] leading-relaxed text-foreground focus:border-accent focus:outline-none"
           value={draft}
           onChange={e => setDraft(e.target.value)}
           spellCheck={false}
@@ -88,7 +88,7 @@ export function RefinePreviewModal() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <span className="mb-1 block text-[10px] uppercase tracking-[0.2em] text-comment">Before</span>
-            <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-lg border border-border/70 bg-card/40 p-3 font-mono text-[11px] leading-relaxed text-comment">
+            <pre className="max-h-[400px] overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-card/40 p-3 font-mono text-[11px] leading-relaxed text-comment">
               {preview.before || '(empty)'}
             </pre>
           </div>

@@ -45,7 +45,7 @@ function Shell({
 }) {
   const style = epicId ? epicColorVars(epicHue(epicId)) : undefined
   const className = cn(
-    'w-full flex items-center gap-2.5 px-4 py-1.5 shrink-0 text-left border-b border-border/40 border-l-[3px]',
+    'w-full flex items-center gap-2.5 px-4 py-1.5 shrink-0 text-left border-b border-border-subtle border-l-[3px]',
     epicId ? 'border-l-[color:var(--epic-solid)] bg-[color:var(--epic-tint)]' : 'border-l-destructive/50',
     onClick && 'hover:bg-[color:var(--epic-solid)]/15 transition-colors cursor-pointer',
   )
@@ -95,10 +95,10 @@ export function CardEpicStrip({
         <EpicMarkBadge epicId={task.slug} variant="solid" />
         <span className="text-chrome font-mono text-[color:var(--epic-solid)]">EPIC</span>
         <EpicProgressBar rollup={r} className="w-16 shrink-0" />
-        <span className="font-mono text-meta tabular-nums text-muted-foreground/85">
+        <span className="font-mono text-meta tabular-nums text-fg-muted">
           {r.done}/{r.total} done
         </span>
-        <span className="ml-auto font-mono text-chrome text-muted-foreground/60">
+        <span className="ml-auto font-mono text-chrome text-fg-dim">
           {r.children.length === 0 ? 'no cards point at it yet' : `${r.children.length} cards`}
         </span>
       </Shell>
@@ -120,7 +120,7 @@ export function CardEpicStrip({
           ◈
         </span>
         <span className="font-mono text-meta text-destructive/80">{role.epicId}</span>
-        <span className="font-mono text-chrome text-muted-foreground/60">is not on this board</span>
+        <span className="font-mono text-chrome text-fg-dim">is not on this board</span>
       </Shell>
     )
   }
@@ -131,10 +131,10 @@ export function CardEpicStrip({
       <EpicMarkBadge epicId={role.epicId} variant="solid" />
       <span className="font-mono text-read text-foreground truncate">{r.card?.title ?? role.epicId}</span>
       <EpicProgressBar rollup={r} className="w-16 shrink-0" />
-      <span className="font-mono text-meta tabular-nums text-muted-foreground/85 shrink-0">
+      <span className="font-mono text-meta tabular-nums text-fg-muted shrink-0">
         {r.done}/{r.total}
       </span>
-      <span className="ml-auto font-mono text-chrome text-muted-foreground/55 shrink-0">open epic →</span>
+      <span className="ml-auto font-mono text-chrome text-fg-dim shrink-0">open epic →</span>
     </Shell>
   )
 }

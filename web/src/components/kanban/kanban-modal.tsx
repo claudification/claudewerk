@@ -17,7 +17,7 @@ import { ProjectBoard } from '../project-board'
 
 function EmptyState() {
   return (
-    <div className="flex-1 min-h-0 flex items-center justify-center text-xs font-mono text-muted-foreground/50 p-8 text-center">
+    <div className="flex-1 min-h-0 flex items-center justify-center text-xs font-mono text-fg-dim p-8 text-center">
       No conversation is loaded for this project yet -- open or launch one to use its board.
     </div>
   )

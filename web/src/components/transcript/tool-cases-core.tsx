@@ -76,7 +76,7 @@ function renderBinaryRead(path: string, readPath: string, toolUseResult: Record<
       <span className="truncate text-foreground/90">{readPath}</span>
       {!isImage && <span className="text-violet-400/70 shrink-0">{binType}</span>}
       {dimStr && <span className="text-cyan-400/70 shrink-0">{dimStr}</span>}
-      {sizeKB && <span className="text-muted-foreground/50 shrink-0">({sizeKB})</span>}
+      {sizeKB && <span className="text-fg-dim shrink-0">({sizeKB})</span>}
     </span>
   )
   let details = null
@@ -87,7 +87,7 @@ function renderBinaryRead(path: string, readPath: string, toolUseResult: Record<
           <img
             src={binFile.url}
             alt={path?.split('/').pop() || 'image'}
-            className="max-w-sm max-h-64 rounded border border-border/50 hover:border-primary/50 transition-colors"
+            className="max-w-sm max-h-64 rounded border border-border hover:border-primary/50 transition-colors"
             loading="lazy"
           />
         </div>
@@ -141,17 +141,17 @@ function renderTextRead(
     <span className="flex items-center gap-1.5 min-w-0">
       <span className="truncate text-foreground/90">{readPath}</span>
       {isPartial && startLine && endLine && totalLines ? (
-        <span className="text-muted-foreground/70 shrink-0">
+        <span className="text-fg-muted shrink-0">
           lines <span className="text-sky-400">{startLine}</span>
-          <span className="text-muted-foreground/50">-</span>
+          <span className="text-fg-dim">-</span>
           <span className="text-sky-400">{endLine}</span>
-          <span className="text-muted-foreground/50"> of </span>
+          <span className="text-fg-dim"> of </span>
           <span className="text-foreground/70">{totalLines.toLocaleString()}</span>
         </span>
       ) : totalLines ? (
-        <span className="text-muted-foreground/70 shrink-0">
+        <span className="text-fg-muted shrink-0">
           <span className="text-foreground/70">{totalLines.toLocaleString()}</span>{' '}
-          <span className="text-muted-foreground/50">lines</span>
+          <span className="text-fg-dim">lines</span>
         </span>
       ) : null}
     </span>

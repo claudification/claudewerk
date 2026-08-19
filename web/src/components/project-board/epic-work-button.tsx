@@ -49,7 +49,7 @@ export function EpicWorkButton({
       className={cn(
         'shrink-0 flex items-center gap-1 px-2 py-1 text-[10px] font-mono border transition-colors',
         disabled
-          ? 'border-border/45 text-muted-foreground/60 cursor-not-allowed'
+          ? 'border-border text-fg-dim cursor-not-allowed'
           : 'border-[color:var(--epic-edge)] text-[color:var(--epic-solid)] hover:bg-[color:var(--epic-tint)]',
       )}
     >

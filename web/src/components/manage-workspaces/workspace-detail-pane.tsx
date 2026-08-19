@@ -20,7 +20,7 @@ function ViewTab({ active, onClick, children }: { active: boolean; onClick: () =
         'h-6 px-2.5 rounded-md text-[10px] font-mono transition-colors',
         active
           ? 'bg-accent/20 text-foreground ring-1 ring-accent/30'
-          : 'text-muted-foreground/60 hover:text-foreground',
+          : 'text-fg-dim hover:text-foreground',
       )}
     >
       {children}
@@ -41,7 +41,7 @@ function PaneBody({
 
   if (view === 'matrix') return <WorkspaceMatrixPane inventory={inventory} onToggle={actions.toggleProject} />
   if (!selected) {
-    return <p className="text-[10px] text-muted-foreground/50 py-2">Create a workspace to start filing projects.</p>
+    return <p className="text-[10px] text-fg-dim py-2">Create a workspace to start filing projects.</p>
   }
   return (
     <WorkspaceMembersPane
@@ -63,7 +63,7 @@ export function WorkspaceDetailPane({
   const [view, setView] = useState<View>('members')
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col gap-2 border-l border-border/60 pl-3">
+    <div className="flex-1 min-w-0 flex flex-col gap-2 border-l border-border pl-3">
       <div className="flex items-center gap-1 shrink-0">
         <ViewTab active={view === 'members'} onClick={() => setView('members')}>
           Members

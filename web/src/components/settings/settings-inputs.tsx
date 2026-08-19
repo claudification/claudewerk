@@ -22,7 +22,7 @@ export function SizePicker({ value, onChange }: { value: string; onChange: (v: s
           className={`px-2 py-0.5 text-[9px] font-mono border transition-colors ${
             value === s.id
               ? 'border-white text-foreground bg-muted'
-              : 'border-border/50 text-muted-foreground hover:border-border'
+              : 'border-border text-muted-foreground hover:border-border'
           }`}
         >
           {s.label}

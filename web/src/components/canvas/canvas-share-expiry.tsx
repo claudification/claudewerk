@@ -22,7 +22,7 @@ export function formatRemaining(expiresAt: number, now = Date.now()): string | n
 function DurationPicker({ s }: { s: CanvasShareState }) {
   return (
     <label className="flex items-center gap-1.5 px-1">
-      <span className="text-[10px] text-muted-foreground/70 shrink-0">Link lasts</span>
+      <span className="text-[10px] text-fg-muted shrink-0">Link lasts</span>
       <select
         value={s.hours === null ? 'never' : String(s.hours)}
         disabled={s.busy}
@@ -44,11 +44,11 @@ function DurationPicker({ s }: { s: CanvasShareState }) {
 
 /** Countdown + extend for a live link. Silent when the share never expires. */
 function ExpiryRow({ s }: { s: CanvasShareState }) {
-  if (s.expiresAt == null) return <span className="text-[10px] text-muted-foreground/60 px-1">Never expires</span>
+  if (s.expiresAt == null) return <span className="text-[10px] text-fg-dim px-1">Never expires</span>
   const remaining = formatRemaining(s.expiresAt)
   return (
     <div className="flex items-center gap-2 px-1">
-      <span className={`text-[10px] ${remaining ? 'text-muted-foreground/70' : 'text-red-400/90'}`}>
+      <span className={`text-[10px] ${remaining ? 'text-fg-muted' : 'text-red-400/90'}`}>
         {remaining ?? 'Expired'}
       </span>
       <span className="flex-1" />

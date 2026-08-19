@@ -43,7 +43,7 @@ function IdChip({ id }: { id: string }) {
   return (
     <button
       type="button"
-      className="shrink-0 text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground transition-colors cursor-pointer"
+      className="shrink-0 text-[10px] font-mono text-fg-faint hover:text-muted-foreground transition-colors cursor-pointer"
       title={`${id} -- click to copy`}
       onClick={() => {
         navigator.clipboard.writeText(id).then(() => {

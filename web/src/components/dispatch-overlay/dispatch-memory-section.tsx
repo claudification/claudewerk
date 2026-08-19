@@ -9,7 +9,7 @@ export function MemorySection() {
   return (
     <div>
       <span className="text-[11px] uppercase tracking-[0.2em] text-comment">what I remember</span>
-      <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-border/70 bg-card/40 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-comment">
+      <pre className="mt-3 whitespace-pre-wrap rounded-xl border border-border bg-card/40 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-comment">
         {memory}
       </pre>
     </div>
@@ -26,7 +26,7 @@ export function WorkspaceSection() {
       <span className="text-[11px] uppercase tracking-[0.2em] text-comment">workspace</span>
       <div className="mt-3 flex flex-col gap-2">
         {active.map(w => (
-          <div key={w.workspace} className="rounded-xl border border-border/70 bg-card/40 px-3.5 py-2.5">
+          <div key={w.workspace} className="rounded-xl border border-border bg-card/40 px-3.5 py-2.5">
             <span className="font-mono text-[12px] text-foreground/90">/work/{w.workspace}</span>
             <span className="mt-0.5 block font-mono text-[11px] leading-snug text-comment">
               {w.files.join('  ·  ')}

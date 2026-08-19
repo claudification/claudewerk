@@ -38,14 +38,14 @@ function total(sample: LatencySample): number {
 
 function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
   return (
-    <div className={`py-2 border-b border-border/40 last:border-0 ${sample.available ? '' : 'opacity-60'}`}>
+    <div className={`py-2 border-b border-border-subtle last:border-0 ${sample.available ? '' : 'opacity-60'}`}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="text-xs font-medium">
           {sample.label}
           {/* A number for a path that does not exist is useful -- measure before
               you build -- but it must never look selectable. */}
           {!sample.available && (
-            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-muted-foreground/50">
+            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-fg-dim">
               not built
             </span>
           )}
@@ -53,7 +53,7 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
         {sample.samples.length > 0 ? (
           <span className="text-xs font-mono tabular-nums">
             <span className="text-foreground">{total(sample)}ms</span>
-            <span className="text-muted-foreground/60">
+            <span className="text-fg-dim">
               {' '}
               {sample.upstreamMs === undefined
                 ? `(${sample.min}-${sample.max})`
@@ -69,7 +69,7 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
           <Bar value={total(sample)} worst={worst} />
         </div>
       )}
-      <p className="mt-1 text-[10px] leading-snug text-muted-foreground/70">{sample.note}</p>
+      <p className="mt-1 text-[10px] leading-snug text-fg-muted">{sample.note}</p>
       {sample.error && sample.samples.length > 0 && (
         <p className="mt-0.5 text-[10px] text-amber-400/80">some pings failed: {sample.error}</p>
       )}
@@ -132,7 +132,7 @@ export function VoiceLatencyModal({ open, onClose }: { open: boolean; onClose: (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-md p-5 gap-2 overflow-y-auto">
         <DialogTitle className="pr-8">Speech transport latency</DialogTitle>
-        <p className="text-[10px] text-muted-foreground/70 pr-8">
+        <p className="text-[10px] text-fg-muted pr-8">
           {ROUNDS} round trips each, measured from THIS browser, sequentially. This is how far away each option is, not
           how fast it transcribes.
         </p>
@@ -148,7 +148,7 @@ export function VoiceLatencyModal({ open, onClose }: { open: boolean; onClose: (
         </div>
         {!running && results.length > 0 && <CopyStats results={results} />}
         {!running && results.length > 0 && (
-          <p className="text-[10px] leading-snug text-muted-foreground/70">
+          <p className="text-[10px] leading-snug text-fg-muted">
             Lower is better. The Cloudflare edge stays ~45ms from anywhere in the world; the broker is close on the home
             LAN and a round trip to the house from anywhere else.
           </p>

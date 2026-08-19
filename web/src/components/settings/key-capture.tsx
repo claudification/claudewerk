@@ -55,7 +55,7 @@ export function KeyCapture({ value, onChange }: { value: string | null; onChange
             ? 'border-blue-500 bg-blue-500/20 text-blue-400 animate-pulse'
             : value
               ? 'border-border bg-muted text-foreground'
-              : 'border-border/50 bg-muted/50 text-muted-foreground',
+              : 'border-border bg-muted/50 text-muted-foreground',
         )}
       >
         {capturing ? 'Press a key...' : value ? formatKeyCode(value) : 'Not set'}

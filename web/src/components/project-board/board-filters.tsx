@@ -36,11 +36,11 @@ export function BoardFilters(props: BoardFiltersProps) {
     <div className="flex items-center gap-1.5">
       {props.showGrouping && (
         <>
-          <span className="text-chrome font-mono text-muted-foreground/60 shrink-0">GROUP</span>
+          <span className="text-chrome font-mono text-fg-dim shrink-0">GROUP</span>
           <Select value={props.groupBy} onValueChange={v => props.onGroupBy(v as GroupBy)}>
             <SelectTrigger
               size="sm"
-              className="h-6 w-auto gap-1.5 px-2 py-0 font-mono text-meta border-border/70 shrink-0"
+              className="h-6 w-auto gap-1.5 px-2 py-0 font-mono text-meta border-border shrink-0"
             >
               <SelectValue />
             </SelectTrigger>

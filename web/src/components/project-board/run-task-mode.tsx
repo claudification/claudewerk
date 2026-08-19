@@ -56,7 +56,7 @@ export function RunModeTabs({ mode, onChange }: { mode: TaskMode; onChange: (mod
             'px-2 py-0.5 text-[10px] font-mono border transition-colors',
             mode === spec.id
               ? 'border-amber-500/40 bg-amber-500/15 text-amber-400 font-bold'
-              : 'border-border/40 text-muted-foreground/70 hover:text-foreground hover:border-border/70',
+              : 'border-border-subtle text-fg-muted hover:text-foreground hover:border-border',
           )}
         >
           {spec.label}
@@ -71,7 +71,7 @@ export function RunModeHint({ mode }: { mode: TaskMode }) {
   const spec = taskMode(mode)
   if (spec.flipsStatus) return null
   return (
-    <div className="text-[10px] font-mono text-muted-foreground/70">
+    <div className="text-[10px] font-mono text-fg-muted">
       {spec.id === 'refine'
         ? 'rewrites this card, does not implement it -- status unchanged'
         : 'reports only, changes nothing on disk -- status unchanged'}

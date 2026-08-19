@@ -66,7 +66,7 @@ export function BoardLaneColumn({
 
   return (
     <DroppableColumn status={status} width={width}>
-      <div className="px-3 py-2 border-b border-border/50 flex items-baseline gap-2 shrink-0">
+      <div className="px-3 py-2 border-b border-border flex items-baseline gap-2 shrink-0">
         <span className={cn('text-chrome font-mono uppercase', labelClass)}>{label}</span>
         <span className="ml-auto text-tally font-mono tabular-nums text-foreground">{count}</span>
       </div>

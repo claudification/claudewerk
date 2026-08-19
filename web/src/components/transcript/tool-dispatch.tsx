@@ -218,7 +218,7 @@ export function renderPersistedOutput(result: string): ReactNode | null {
       <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-400/5 border border-amber-400/15 rounded-t text-amber-400/80">
         <span className="font-bold">{size}</span>
         <span className="text-muted-foreground">output truncated</span>
-        {path && <span className="text-muted-foreground/50 truncate ml-auto">{path.split('/').pop()}</span>}
+        {path && <span className="text-fg-dim truncate ml-auto">{path.split('/').pop()}</span>}
       </div>
       {previewMatch?.[1] && (
         <pre className="bg-black/30 p-2 rounded-b whitespace-pre-wrap break-words text-foreground/70 max-h-32 overflow-y-auto">

@@ -43,14 +43,14 @@ export function BoardTabs({
             'flex items-center gap-2 px-3 font-mono text-read transition-colors',
             view === v
               ? 'text-foreground font-bold shadow-[inset_0_-2px_0_var(--accent)]'
-              : 'text-muted-foreground/80 hover:text-foreground',
+              : 'text-fg-muted hover:text-foreground',
           )}
         >
           {TAB_LABEL[v]}
           <span
             className={cn(
               'text-chrome tabular-nums',
-              view === v ? 'text-muted-foreground/85' : 'text-muted-foreground/60',
+              view === v ? 'text-fg-muted' : 'text-fg-dim',
             )}
           >
             {counts[v]}

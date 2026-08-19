@@ -21,7 +21,7 @@ export function PersistentDialogTabs({
   onSelect: (i: number) => void
 }) {
   return (
-    <div className="sticky top-0 z-10 mb-3 flex gap-1 overflow-x-auto border-b border-border/20 bg-card pb-2">
+    <div className="sticky top-0 z-10 mb-3 flex gap-1 overflow-x-auto border-b border-border-subtle bg-card pb-2">
       {pages.map((page, i) => (
         <button
           // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key

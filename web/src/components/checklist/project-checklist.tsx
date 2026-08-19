@@ -29,7 +29,7 @@ import { ChecklistRow } from './checklist-row'
 // The conversation list around us is `select-none` (see project-list.tsx) -- this
 // block is the one carve-out, because the items ARE the user's own prose and he
 // should be able to drag across them and copy.
-const BLOCK = 'border-t border-border/40 bg-muted/10 py-1 select-text'
+const BLOCK = 'border-t border-border-subtle bg-muted/10 py-1 select-text'
 
 export function ProjectChecklist({ project }: { project: string }) {
   const { open } = useChecklist(project)
@@ -45,7 +45,7 @@ export function ProjectChecklist({ project }: { project: string }) {
 
   const addField = (
     <div className="flex items-center gap-1.5 pl-3 pr-2 py-0.5">
-      <Plus className="size-3.5 shrink-0 text-muted-foreground/50" />
+      <Plus className="size-3.5 shrink-0 text-fg-dim" />
       <input
         value={text}
         aria-label="Add checklist item"
@@ -62,13 +62,13 @@ export function ProjectChecklist({ project }: { project: string }) {
           }
         }}
         placeholder="Add a note..."
-        className="flex-1 min-w-0 bg-transparent outline-none text-xs text-foreground placeholder:text-muted-foreground/40"
+        className="flex-1 min-w-0 bg-transparent outline-none text-xs text-foreground placeholder:text-fg-faint"
       />
     </div>
   )
 
   const footer = (
-    <div className="flex items-center gap-3 pl-3 pr-2 pt-0.5 text-[10px] text-muted-foreground/50">
+    <div className="flex items-center gap-3 pl-3 pr-2 pt-0.5 text-[10px] text-fg-dim">
       <button
         type="button"
         onClick={() => openChecklistBulkEdit(project)}

@@ -36,7 +36,7 @@ export function ColorInput({
             aria-label={`Select color ${hex}`}
             onClick={() => pickColor(hex)}
             className={`w-5 h-5 border transition-transform hover:scale-125 ${
-              currentHex === hex ? 'border-white scale-110' : 'border-border/50'
+              currentHex === hex ? 'border-white scale-110' : 'border-border'
             }`}
             style={{ backgroundColor: hex }}
             title={hex}
@@ -54,7 +54,7 @@ export function ColorInput({
               className={`flex-1 h-5 text-[8px] font-mono border transition-colors ${
                 currentOpacity === op
                   ? 'border-white text-foreground'
-                  : 'border-border/50 text-muted-foreground hover:border-border'
+                  : 'border-border text-muted-foreground hover:border-border'
               }`}
               style={{ backgroundColor: hexToRgba(currentHex || parseRgbaHex(defaultColor) || PALETTE[0], op) }}
             >

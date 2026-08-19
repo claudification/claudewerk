@@ -26,7 +26,7 @@ export function BatchGroupHeader({
   onToggle: () => void
 }) {
   return (
-    <tr className="bg-muted/25 border-y border-border/40">
+    <tr className="bg-muted/25 border-y border-border-subtle">
       <td colSpan={columnCount(cols)} className="px-2 py-1.5">
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider">
           <input
@@ -46,7 +46,7 @@ export function BatchGroupHeader({
             </span>
           )}
           <span className="text-foreground font-bold truncate">{row.label}</span>
-          <span className="text-muted-foreground/60 shrink-0">({row.count})</span>
+          <span className="text-fg-dim shrink-0">({row.count})</span>
         </div>
       </td>
     </tr>
@@ -81,7 +81,7 @@ export function BatchRow({
   return (
     <tr
       className={cn(
-        'border-b border-border/20 cursor-pointer transition-colors align-middle',
+        'border-b border-border-subtle cursor-pointer transition-colors align-middle',
         checked ? 'bg-accent/10 hover:bg-accent/15' : 'hover:bg-muted/10',
         focused && 'ring-1 ring-accent/40 ring-inset',
       )}
@@ -111,7 +111,7 @@ export function BatchRow({
         <td className="px-2 py-1">
           <span className="flex items-center gap-1.5 min-w-0" title={conv.project}>
             {ps?.icon && (
-              <span className="text-muted-foreground/80 shrink-0">
+              <span className="text-fg-muted shrink-0">
                 <ProjectIcon iconId={ps.icon} className="size-3" />
               </span>
             )}
@@ -127,7 +127,7 @@ export function BatchRow({
         </td>
       )}
       {cols.recap && (
-        <td className="px-2 py-1 text-muted-foreground/70">
+        <td className="px-2 py-1 text-fg-muted">
           <div className="truncate" title={recap ?? undefined}>
             <MutedDefault value={recap} />
           </div>
@@ -137,7 +137,7 @@ export function BatchRow({
         <StatusIcon status={conv.liveStatus} lastInputAt={conv.lastInputAt} />
       </td>
       <td
-        className="px-2 py-1 text-right whitespace-nowrap text-muted-foreground/70 tabular-nums"
+        className="px-2 py-1 text-right whitespace-nowrap text-fg-muted tabular-nums"
         title={formatAge(conv.lastActivity)}
       >
         {formatAgeShort(conv.lastActivity)}

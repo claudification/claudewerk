@@ -7,9 +7,9 @@ import type { DiffComponent } from '../types'
 
 export function DiffBlock({ content, filename }: Pick<DiffComponent, 'content' | 'filename'>) {
   return (
-    <div className="rounded border border-border/30 overflow-hidden">
+    <div className="rounded border border-border-subtle overflow-hidden">
       {filename && (
-        <div className="px-3 py-1.5 bg-muted/40 border-b border-border/30 text-xs font-mono text-muted-foreground">
+        <div className="px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-xs font-mono text-muted-foreground">
           {filename}
         </div>
       )}

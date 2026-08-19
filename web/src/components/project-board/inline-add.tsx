@@ -33,7 +33,7 @@ export function InlineAdd({ onAdd }: { onAdd: (text: string) => void }) {
     return (
       <button
         type="button"
-        className="w-full px-3 py-1.5 text-[10px] text-muted-foreground/60 hover:text-foreground hover:bg-surface-inset/50 transition-colors font-mono text-left"
+        className="w-full px-3 py-1.5 text-[10px] text-fg-dim hover:text-foreground hover:bg-surface-inset/50 transition-colors font-mono text-left"
         onClick={() => {
           haptic('tap')
           setAdding(true)
@@ -45,7 +45,7 @@ export function InlineAdd({ onAdd }: { onAdd: (text: string) => void }) {
   }
 
   return (
-    <div className="px-2 py-1.5 border-t border-border/60">
+    <div className="px-2 py-1.5 border-t border-border">
       <InputEditor value={text} onChange={setText} onSubmit={commit} placeholder="Description..." autoFocus inline />
       <div className="flex items-center gap-2 mt-1">
         <button type="button" className="text-[10px] text-accent font-mono hover:text-accent/80" onClick={commit}>

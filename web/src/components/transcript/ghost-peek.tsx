@@ -43,7 +43,7 @@ function NoTranscriptBox() {
 function MetaRow({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-muted-foreground/60 text-[10px] uppercase tracking-wider w-16 shrink-0">{label}</span>
+      <span className="text-fg-dim text-[10px] uppercase tracking-wider w-16 shrink-0">{label}</span>
       <span className={cn('truncate', valueClass ?? 'text-foreground/80')}>{value}</span>
     </div>
   )
@@ -98,7 +98,7 @@ function GhostPeek({ entry, conversationId }: { entry: DaemonRosterEntry; conver
           <span className={cn('text-[11px] font-bold uppercase shrink-0', stateClass(entry.state))}>{entry.state}</span>
         </div>
 
-        <p className="text-[10px] text-muted-foreground/70 leading-snug">
+        <p className="text-[10px] text-fg-muted leading-snug">
           Discovered daemon worker -- claudewerk is mirroring it read-only. Attach to stream its live transcript and
           drive it interactively.
         </p>
@@ -114,7 +114,7 @@ function GhostPeek({ entry, conversationId }: { entry: DaemonRosterEntry; conver
           {entry.sentinelAlias && entry.sentinelAlias !== 'default' && (
             <MetaRow label="via" value={entry.sentinelAlias} />
           )}
-          <MetaRow label="worker" value={entry.short} valueClass="text-muted-foreground/60" />
+          <MetaRow label="worker" value={entry.short} valueClass="text-fg-dim" />
         </div>
 
         <PeekAttachButton conversationId={conversationId} />

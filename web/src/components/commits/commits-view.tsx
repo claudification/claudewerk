@@ -33,7 +33,7 @@ export function CommitsView({ conversationId, projectUris, showProject, emptyHin
       <CommitSearchBar
         onApply={setApplied}
         trailing={
-          <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">
+          <span className="text-[10px] font-mono text-fg-dim shrink-0">
             {commits.length}
             {total > commits.length ? ` / ${total}` : ''}
           </span>
@@ -44,7 +44,7 @@ export function CommitsView({ conversationId, projectUris, showProject, emptyHin
         {loading && <div className="text-[11px] text-muted-foreground px-1 py-2">Loading commits...</div>}
         {!loading && commits.length === 0 && (
           <div className="px-1 py-6 text-center space-y-1">
-            <GitCommitHorizontal className="size-5 mx-auto text-muted-foreground/40" />
+            <GitCommitHorizontal className="size-5 mx-auto text-fg-faint" />
             <div className="text-[11px] text-muted-foreground">
               {applied ? `Nothing matches "${applied}".` : (emptyHint ?? 'No commits recorded yet.')}
             </div>

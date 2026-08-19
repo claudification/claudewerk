@@ -18,8 +18,8 @@ export function MultiProfileBody({ groups }: { groups: SentinelGroup[] }) {
       {groups.map(group => (
         <div key={group.sentinelId} className="space-y-2">
           <div className="flex items-baseline justify-between">
-            <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{group.alias}</div>
-            <div className="text-[9px] text-muted-foreground/40 tabular-nums">
+            <div className="text-[10px] text-fg-dim uppercase tracking-wider">{group.alias}</div>
+            <div className="text-[9px] text-fg-faint tabular-nums">
               {group.snaps[0]?.polledAt ? `polled ${new Date(group.snaps[0].polledAt).toLocaleTimeString()}` : ''}
             </div>
           </div>
@@ -36,25 +36,25 @@ export function MultiProfileBody({ groups }: { groups: SentinelGroup[] }) {
 export function LegacyBody({ usage }: { usage: UsageUpdate }) {
   return (
     <div className="space-y-2">
-      <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Plan Usage</div>
+      <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Plan Usage</div>
       <DetailBar window={usage.fiveHour} label="5h" />
       <DetailBar window={usage.sevenDay} label="7d" />
       {(usage.sevenDayOpus || usage.sevenDaySonnet) && (
         <>
-          <div className="border-t border-border/50 my-2" />
-          <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Per Model</div>
+          <div className="border-t border-border my-2" />
+          <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">Per Model</div>
           {usage.sevenDayOpus && <DetailBar window={usage.sevenDayOpus} label="opus" />}
           {usage.sevenDaySonnet && <DetailBar window={usage.sevenDaySonnet} label="sonnet" />}
         </>
       )}
       {usage.extraUsage?.isEnabled && (
         <>
-          <div className="border-t border-border/50 my-2" />
+          <div className="border-t border-border my-2" />
           <ExtraUsageRow extra={usage.extraUsage} />
         </>
       )}
-      <div className="border-t border-border/50 mt-2 pt-1">
-        <span className="text-[9px] text-muted-foreground/40">
+      <div className="border-t border-border mt-2 pt-1">
+        <span className="text-[9px] text-fg-faint">
           Polled {new Date(usage.polledAt).toLocaleTimeString()}
         </span>
       </div>

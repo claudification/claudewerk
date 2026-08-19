@@ -19,7 +19,7 @@ const STATUS_TONE: Record<string, string> = {
   aborted: 'text-destructive border-destructive/45 bg-destructive/10',
 }
 
-const UNKNOWN_TONE = 'text-muted-foreground/60 border-border/50'
+const UNKNOWN_TONE = 'text-fg-dim border-border'
 
 export function StatusPill({ status }: { status: string | null }) {
   return (
@@ -36,8 +36,8 @@ export function StatusPill({ status }: { status: string | null }) {
 
 export function Block({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
   return (
-    <div className="px-3 py-2.5 border-b border-border/40">
-      <div className="flex items-center justify-between text-chrome uppercase text-muted-foreground/50 mb-1.5">
+    <div className="px-3 py-2.5 border-b border-border-subtle">
+      <div className="flex items-center justify-between text-chrome uppercase text-fg-dim mb-1.5">
         <span>{title}</span>
         {extra}
       </div>
@@ -50,13 +50,13 @@ export function Stat({ value, label, tone }: { value: string | number; label: st
   return (
     <span className="flex flex-col gap-0.5">
       <span className={cn('text-base font-bold leading-none tabular-nums', tone ?? 'text-foreground')}>{value}</span>
-      <span className="text-chrome text-muted-foreground/55">{label}</span>
+      <span className="text-chrome text-fg-dim">{label}</span>
     </span>
   )
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="px-4 py-6 text-[11px] text-muted-foreground/55 italic">{children}</div>
+  return <div className="px-4 py-6 text-[11px] text-fg-dim italic">{children}</div>
 }
 
 /** A run's short name for the rail and the heading. The project URI's tail is

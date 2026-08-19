@@ -148,7 +148,7 @@ function InviteInput({ onSubmit }: { onSubmit: (token: string) => void }) {
           value={value}
           onChange={e => setValue(e.target.value)}
           placeholder="Paste invite URL or code"
-          className="flex-1 bg-muted/30 border border-border px-3 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-accent"
+          className="flex-1 bg-muted/30 border border-border px-3 py-2 text-xs font-mono text-foreground placeholder:text-fg-dim focus:outline-none focus:border-accent"
         />
         <button
           type="submit"

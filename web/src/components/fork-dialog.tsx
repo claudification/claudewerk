@@ -86,7 +86,7 @@ export function ForkDialog() {
 
           <div className="shrink-0 space-y-0.5">
             <div className="text-[11px] font-mono text-foreground truncate">{title}</div>
-            <div className="text-[10px] font-mono text-muted-foreground/60 truncate">{shortPath}</div>
+            <div className="text-[10px] font-mono text-fg-dim truncate">{shortPath}</div>
           </div>
 
           <div className="overflow-y-auto flex-1 min-h-0 px-1.5 py-1">

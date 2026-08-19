@@ -68,7 +68,7 @@ function Subtitle() {
   const live = runs.filter(isLiveRun)
   const seats = live.reduce((n, r) => n + r.inFlight, 0)
   return (
-    <span className="text-meta text-muted-foreground/55">
+    <span className="text-meta text-fg-dim">
       {live.length} live . {seats} seat{seats === 1 ? '' : 's'}
     </span>
   )

@@ -8,8 +8,8 @@ import { STATUS_TEXT } from './block-status'
 
 export function DataModelBlock({ name, fields }: Pick<DataModelComponent, 'name' | 'fields'>) {
   return (
-    <div className="rounded border border-border/30 overflow-hidden">
-      <div className="px-3 py-1.5 bg-muted/40 border-b border-border/30 text-xs font-semibold">{name}</div>
+    <div className="rounded border border-border-subtle overflow-hidden">
+      <div className="px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-xs font-semibold">{name}</div>
       <table className="w-full text-xs">
         <tbody>
           {fields.map((field, i) => (
@@ -17,7 +17,7 @@ export function DataModelBlock({ name, fields }: Pick<DataModelComponent, 'name'
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
               // biome-ignore lint/suspicious/noArrayIndexKey: schema rows are positional
               key={i}
-              className="border-b border-border/20 last:border-0"
+              className="border-b border-border-subtle last:border-0"
             >
               <td
                 className={cn('px-3 py-1.5 font-mono font-medium align-top', field.status && STATUS_TEXT[field.status])}
@@ -25,7 +25,7 @@ export function DataModelBlock({ name, fields }: Pick<DataModelComponent, 'name'
                 {field.name}
               </td>
               <td className="px-3 py-1.5 font-mono text-muted-foreground align-top">{field.type}</td>
-              <td className="px-3 py-1.5 text-muted-foreground/70 align-top">{field.note}</td>
+              <td className="px-3 py-1.5 text-fg-muted align-top">{field.note}</td>
             </tr>
           ))}
         </tbody>

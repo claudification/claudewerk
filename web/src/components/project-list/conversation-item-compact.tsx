@@ -174,26 +174,26 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             )
             if (showHostAlias)
               mobileChips.push(
-                <span className="text-muted-foreground/60 font-medium">{conversation.hostSentinelAlias}</span>,
+                <span className="text-fg-dim font-medium">{conversation.hostSentinelAlias}</span>,
               )
             mobileChips.push(...mobilePrefix)
           }
           if (!subtitle && mobileChips.length === 0) return null
           const baseColor = conversation.description
-            ? 'text-muted-foreground/70'
+            ? 'text-fg-muted'
             : conversation.summary
-              ? 'text-muted-foreground/50'
+              ? 'text-fg-dim'
               : 'text-zinc-400/80'
           return (
             <div className={cn('mt-0.5 pl-4 text-[9px] truncate flex items-center gap-1', baseColor)} title={subtitle}>
               {mobileChips.map((node, i) => (
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
                 <span key={i} className="contents">
-                  {i > 0 && <span className="text-muted-foreground/30">·</span>}
+                  {i > 0 && <span className="text-fg-faint">·</span>}
                   {node}
                 </span>
               ))}
-              {subtitle && mobileChips.length > 0 && <span className="text-muted-foreground/30">·</span>}
+              {subtitle && mobileChips.length > 0 && <span className="text-fg-faint">·</span>}
               {subtitle && <span className="truncate">{subtitle}</span>}
             </div>
           )
@@ -201,7 +201,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       )}
       {/* Desktop-only: separate summary + recap lines (mobile collapses them into the single subtitle above) */}
       {!isMobile && conversation.description && conversation.summary && (
-        <div className="mt-0.5 pl-4 text-[9px] text-muted-foreground/50 truncate" title={conversation.summary}>
+        <div className="mt-0.5 pl-4 text-[9px] text-fg-dim truncate" title={conversation.summary}>
           {conversation.summary}
         </div>
       )}
@@ -215,7 +215,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
             'mt-1 pl-4 text-[9px] whitespace-pre-wrap overflow-hidden line-clamp-3 transition-all duration-700',
             conversation.recapFresh
               ? 'text-zinc-300/80 border-l-2 border-zinc-500/50 pl-2 ml-1 py-0.5 bg-zinc-800/20 rounded-r'
-              : 'text-muted-foreground/50 italic',
+              : 'text-fg-dim italic',
           )}
           title={conversation.recap.content}
         >
@@ -298,7 +298,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
               {items.map((node, i) => (
                 // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
                 <span key={i} className="contents">
-                  {i > 0 && <span className="text-muted-foreground/30">·</span>}
+                  {i > 0 && <span className="text-fg-faint">·</span>}
                   {node}
                 </span>
               ))}

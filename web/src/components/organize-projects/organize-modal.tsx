@@ -59,7 +59,7 @@ function OrganizeModalInner() {
                     onDelete={() => d.deleteGroup(g.id)}
                   >
                     {g.children.length === 0 ? (
-                      <p className="text-[10px] text-muted-foreground/50 px-1 py-0.5">Drop projects here</p>
+                      <p className="text-[10px] text-fg-dim px-1 py-0.5">Drop projects here</p>
                     ) : (
                       g.children.map(c => (
                         <ProjectRow
@@ -83,12 +83,12 @@ function OrganizeModalInner() {
                 <FolderPlus className="size-3.5" /> New group
               </button>
 
-              <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 pt-1">
+              <div className="text-[10px] text-fg-dim font-bold uppercase tracking-wider px-1 pt-1">
                 Ungrouped
               </div>
               <UngroupedDropZone>
                 {d.pool.length === 0 ? (
-                  <p className="text-[10px] text-muted-foreground/50 px-1 py-0.5">Everything is grouped.</p>
+                  <p className="text-[10px] text-fg-dim px-1 py-0.5">Everything is grouped.</p>
                 ) : (
                   d.pool.map(uri => <ProjectRow key={uri} id={uri} label={d.labelOf(uri)} count={d.countOf(uri)} />)
                 )}

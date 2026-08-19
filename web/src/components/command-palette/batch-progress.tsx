@@ -32,8 +32,8 @@ function ProgressRow({
       <span className="truncate w-40 shrink-0" title={conversationId}>
         {label}
       </span>
-      <span className="flex-1 truncate text-muted-foreground/70">{detail}</span>
-      {dur !== null && <span className="text-[10px] text-muted-foreground/50 tabular-nums">{dur}ms</span>}
+      <span className="flex-1 truncate text-fg-muted">{detail}</span>
+      {dur !== null && <span className="text-[10px] text-fg-dim tabular-nums">{dur}ms</span>}
     </div>
   )
 }
@@ -103,7 +103,7 @@ export function BatchProgress({ action, conversationIds, batchId, input, onRetry
         <div className="flex items-center gap-3">
           <span className="text-accent font-bold">{action.label}</span>
           <span className="text-muted-foreground text-[10px]">{batchId}</span>
-          <span className="text-muted-foreground/70 text-[10px]">
+          <span className="text-fg-muted text-[10px]">
             {settled.length}/{total} settled
           </span>
         </div>

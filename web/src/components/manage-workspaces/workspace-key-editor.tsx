@@ -28,7 +28,7 @@ function Chip({ children, muted }: { children: ReactNode; muted?: boolean }) {
     <span
       className={cn(
         'px-1.5 py-0.5 rounded border text-[9px] font-mono',
-        muted ? 'border-border/50 text-muted-foreground/50' : 'border-border text-foreground',
+        muted ? 'border-border text-fg-dim' : 'border-border text-foreground',
       )}
     >
       {children}
@@ -71,7 +71,7 @@ function IconButton({
       onClick={onClick}
       title={title}
       className={cn(
-        'p-1 rounded text-muted-foreground/50 hover:bg-accent/10',
+        'p-1 rounded text-fg-dim hover:bg-accent/10',
         danger ? 'hover:text-destructive' : 'hover:text-foreground',
       )}
     >

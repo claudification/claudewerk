@@ -79,7 +79,7 @@ function StatusIndicator() {
           onOpenAutoFocus={e => e.preventDefault()}
         >
           <div className="space-y-2">
-            <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Connection</div>
+            <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Connection</div>
 
             <div className="flex items-center gap-2">
               <span className={`text-xs ${isConnected ? 'text-active' : 'text-destructive'}`}>
@@ -102,8 +102,8 @@ function StatusIndicator() {
                     {s.connected ? '●' : '○'}
                   </span>
                   <span className="text-[11px] text-muted-foreground">{s.alias}</span>
-                  {s.hostname && <span className="text-[10px] text-muted-foreground/40">{s.hostname}</span>}
-                  <span className={`text-[10px] ml-auto ${s.connected ? 'text-active' : 'text-muted-foreground/50'}`}>
+                  {s.hostname && <span className="text-[10px] text-fg-faint">{s.hostname}</span>}
+                  <span className={`text-[10px] ml-auto ${s.connected ? 'text-active' : 'text-fg-dim'}`}>
                     {s.connected ? 'connected' : 'offline'}
                   </span>
                 </div>
@@ -115,7 +115,7 @@ function StatusIndicator() {
                 </span>
                 <span className="text-[11px] text-muted-foreground">Sentinel</span>
                 <span
-                  className={`text-[10px] ml-auto ${sentinelConnected ? 'text-active' : 'text-muted-foreground/50'}`}
+                  className={`text-[10px] ml-auto ${sentinelConnected ? 'text-active' : 'text-fg-dim'}`}
                 >
                   {sentinelConnected ? 'connected' : 'offline'}
                 </span>
@@ -124,11 +124,11 @@ function StatusIndicator() {
 
             {showStats && isConnected && (
               <>
-                <div className="border-t border-border/50 my-2" />
-                <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">
+                <div className="border-t border-border my-2" />
+                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">
                   Traffic (3s avg)
                 </div>
-                <div className="flex items-center gap-3 text-[10px] text-muted-foreground/70 tabular-nums">
+                <div className="flex items-center gap-3 text-[10px] text-fg-muted tabular-nums">
                   <span>
                     <span className="opacity-50">in</span> {rates.msgInPerSec.toFixed(0)}m/
                     {formatBytes(rates.bytesInPerSec)}s
@@ -190,7 +190,7 @@ export function Header() {
               haptic('tap')
               setShowStatsModal(true)
             }}
-            className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+            className="text-[10px] text-fg-dim hover:text-muted-foreground transition-colors cursor-pointer"
             title="Debug stats"
           >
             nerd

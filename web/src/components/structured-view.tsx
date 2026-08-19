@@ -58,13 +58,13 @@ export function FormatToggle({
           type="button"
           onClick={() => onChange(f)}
           className={`px-1.5 py-0.5 text-[9px] uppercase tracking-wider rounded transition-colors ${
-            fmt === f ? 'bg-accent/20 text-accent' : 'text-muted-foreground/50 hover:text-muted-foreground'
+            fmt === f ? 'bg-accent/20 text-accent' : 'text-fg-dim hover:text-muted-foreground'
           }`}
         >
           {f}
         </button>
       ))}
-      {note && <span className="text-[9px] text-muted-foreground/40 ml-1">{note}</span>}
+      {note && <span className="text-[9px] text-fg-faint ml-1">{note}</span>}
     </div>
   )
 }
@@ -94,7 +94,7 @@ export function StructuredBody({
 
   if (fmt === 'yaml') {
     return (
-      <Suspense fallback={<div className="text-[10px] text-muted-foreground/50 p-3">loading YAML view...</div>}>
+      <Suspense fallback={<div className="text-[10px] text-fg-dim p-3">loading YAML view...</div>}>
         <YamlHighlight data={coerced.data} maxHeight={maxHeight} />
       </Suspense>
     )

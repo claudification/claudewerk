@@ -43,7 +43,7 @@ export function CopyIconButton({
         'shrink-0 p-0.5 rounded transition-all',
         copied
           ? 'text-emerald-400'
-          : 'text-muted-foreground/0 group-hover:text-muted-foreground/50 hover:!text-foreground',
+          : 'text-muted-foreground/0 group-hover:text-fg-dim hover:!text-foreground',
         className,
       )}
     >

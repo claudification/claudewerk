@@ -131,7 +131,7 @@ export const VOICE_REFINEMENT_ITEMS: SettingItem[] = [
             onChange={e => ctx.setServer('voiceRefinementPrompt', e.target.value)}
             placeholder="Empty = refinement is off. Use the button below to start from the tested prompt."
             rows={4}
-            className={`${TEXT_INPUT_CLS} w-full px-3 py-2 placeholder:text-muted-foreground/30 resize-y min-h-[60px] ${
+            className={`${TEXT_INPUT_CLS} w-full px-3 py-2 placeholder:text-fg-faint resize-y min-h-[60px] ${
               over ? 'border-red-500' : ''
             }`}
           />
@@ -139,7 +139,7 @@ export const VOICE_REFINEMENT_ITEMS: SettingItem[] = [
             <button
               type="button"
               onClick={() => ctx.setServer('voiceRefinementPrompt', RECOMMENDED_VOICE_PROMPT)}
-              className="text-[10px] text-muted-foreground/70 hover:text-foreground underline underline-offset-2"
+              className="text-[10px] text-fg-muted hover:text-foreground underline underline-offset-2"
             >
               Use recommended prompt
             </button>
@@ -148,7 +148,7 @@ export const VOICE_REFINEMENT_ITEMS: SettingItem[] = [
                 Too long by {value.length - PROMPT_MAX} -- this will NOT save
               </span>
             )}
-            <span className={`text-[9px] ${over ? 'text-red-400' : 'text-muted-foreground/50'}`}>
+            <span className={`text-[9px] ${over ? 'text-red-400' : 'text-fg-dim'}`}>
               {value.length}/{PROMPT_MAX}
             </span>
           </div>

@@ -64,7 +64,7 @@ export function BatchSelectionBar({
   const overCap = matches > cap
 
   return (
-    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border/40 text-[10px] text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border-subtle text-[10px] text-muted-foreground">
       <div className="flex items-center gap-3">
         <span className="tabular-nums">
           {matches} matches{visibleSelected > 0 && ` · ${visibleSelected} sel`}
@@ -82,7 +82,7 @@ export function BatchSelectionBar({
               placeholder={`type "${phrase}"`}
               value={confirmText}
               onChange={e => setConfirm({ forCount: matches, text: e.target.value })}
-              className="h-6 w-36 bg-muted/20 px-2 border border-border/40 rounded-sm outline-none focus:border-accent"
+              className="h-6 w-36 bg-muted/20 px-2 border border-border-subtle rounded-sm outline-none focus:border-accent"
             />
             <button
               type="button"
@@ -99,7 +99,7 @@ export function BatchSelectionBar({
         ) : (
           <>
             <button type="button" onClick={onSelectVisible} className={BTN} title="Hotkey: a">
-              Select visible <span className="text-muted-foreground/50">(max {cap})</span>
+              Select visible <span className="text-fg-dim">(max {cap})</span>
             </button>
             <button type="button" onClick={onInvert} className={BTN} title="Hotkey: i">
               Invert

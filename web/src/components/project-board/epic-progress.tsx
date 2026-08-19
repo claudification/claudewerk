@@ -46,7 +46,7 @@ export function EpicProgressBar({ rollup, className }: { rollup: EpicRollup; cla
 export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   if (rollup.total === 0) {
     return (
-      <span className="text-chrome font-mono text-muted-foreground/60">
+      <span className="text-chrome font-mono text-fg-dim">
         {rollup.dropped > 0 ? `0/0 -- all ${rollup.dropped} dropped` : 'no cards yet'}
       </span>
     )
@@ -54,7 +54,7 @@ export function EpicProgressLabel({ rollup }: { rollup: EpicRollup }) {
   return (
     <span className="font-mono text-tally tabular-nums text-foreground">
       {rollup.done}
-      <span className="text-meta font-normal text-muted-foreground/70">/{rollup.total} done</span>
+      <span className="text-meta font-normal text-fg-muted">/{rollup.total} done</span>
     </span>
   )
 }

@@ -115,7 +115,7 @@ export const CONVERSATION_ITEMS: SettingItem[] = [
         value={(ctx.server.defaultModel as string) || ''}
         onChange={e => ctx.setServer('defaultModel', e.target.value)}
         placeholder="e.g. sonnet, opus"
-        className={`${TEXT_INPUT_CLS} w-40 placeholder:text-muted-foreground/50`}
+        className={`${TEXT_INPUT_CLS} w-40 placeholder:text-fg-dim`}
       />
     ),
   },
@@ -135,7 +135,7 @@ export const CONVERSATION_ITEMS: SettingItem[] = [
         placeholder="opencode-go/glm-5.1"
         spellCheck={false}
         autoCapitalize="off"
-        className={`${TEXT_INPUT_CLS} w-72 placeholder:text-muted-foreground/50`}
+        className={`${TEXT_INPUT_CLS} w-72 placeholder:text-fg-dim`}
       />
     ),
   },

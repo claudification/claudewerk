@@ -282,7 +282,7 @@ function LogTab() {
                 key={i}
                 className={`flex gap-2 font-mono text-[10px] leading-relaxed ${LEVEL_COLORS[entry.level] || 'text-foreground'}`}
               >
-                <span className="text-muted-foreground/40 shrink-0 select-none">{ts}</span>
+                <span className="text-fg-faint shrink-0 select-none">{ts}</span>
                 <span className="whitespace-pre-wrap break-all">{entry.args}</span>
               </div>
             )

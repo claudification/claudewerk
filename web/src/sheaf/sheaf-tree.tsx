@@ -60,7 +60,7 @@ export function SheafNodeRow({ node, depth, now, showRecaps = true, flat = false
           {node.status}
         </span>
         <NodeTags node={node} />
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 font-mono">{node.id.slice(0, 10)}</span>
+        <span className="ml-auto shrink-0 text-[10px] text-fg-dim font-mono">{node.id.slice(0, 10)}</span>
       </div>
 
       {/* Row 2: metrics grid */}
@@ -96,7 +96,7 @@ export function SheafNodeRow({ node, depth, now, showRecaps = true, flat = false
 
       {/* Tree-rollup row (only when this node has descendants) */}
       {showTree && (
-        <div className="mt-1 ml-4 text-[10px] text-muted-foreground/70 font-mono border-l border-foreground/10 pl-2">
+        <div className="mt-1 ml-4 text-[10px] text-fg-muted font-mono border-l border-foreground/10 pl-2">
           Σ {node.treeTotals.convCount} convs · {formatDuration(node.treeTotals.durationWallMs)} wall ·{' '}
           {formatTokens(node.treeTotals.tokens.input + node.treeTotals.tokens.output + node.treeTotals.tokens.cache)}{' '}
           tok
@@ -125,5 +125,5 @@ export function SheafTree({ root, now, showRecaps = true }: SheafTreeProps) {
   // react-doctor-disable-next-line react-doctor/prefer-module-scope-static-value
   const rows: React.ReactNode[] = []
   visit(root, 0, now, showRecaps, rows)
-  return <div className="border border-border/50 rounded">{rows}</div>
+  return <div className="border border-border rounded">{rows}</div>
 }

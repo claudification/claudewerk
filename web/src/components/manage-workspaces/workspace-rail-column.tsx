@@ -7,7 +7,7 @@ import { AddWorkspaceRow, WorkspaceRow } from './workspace-rail'
 
 function EmptyRail() {
   return (
-    <p className="text-[10px] text-muted-foreground/50 px-1 py-2">
+    <p className="text-[10px] text-fg-dim px-1 py-2">
       No workspaces yet. A workspace is a filtered view of the sidebar -- projects stay in All regardless.
     </p>
   )

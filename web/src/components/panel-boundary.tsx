@@ -108,7 +108,7 @@ export class PanelBoundary extends Component<Props, State> {
             {this.state.copied ? '✓ Copied' : '⎘ Copy details'}
           </button>
         </div>
-        <div className="text-muted-foreground/40 text-[10px]">The rest of the app is still working.</div>
+        <div className="text-fg-faint text-[10px]">The rest of the app is still working.</div>
       </div>
     )
 

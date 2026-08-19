@@ -36,7 +36,7 @@ function TaskRow({ c, now }: { c: Conversation; now: number }) {
   const tokens = (c.stats?.totalInputTokens ?? 0) + (c.stats?.totalOutputTokens ?? 0)
   const ds = diffstat(c)
   return (
-    <div className="flex items-center gap-2 border-t border-border/50 px-3 py-1.5 text-[11px]">
+    <div className="flex items-center gap-2 border-t border-border px-3 py-1.5 text-[11px]">
       <span className="w-8 shrink-0 font-mono text-muted-foreground">{c.nightshift?.taskId ?? '--'}</span>
       <StatusPill status={c.status} />
       <span className="min-w-0 flex-1 truncate" title={c.summary || c.id}>

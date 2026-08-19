@@ -100,7 +100,7 @@ export function MediaLightbox() {
               <img
                 src={src}
                 alt={displayLabel}
-                className="max-w-[92vw] max-h-[calc(100vh-7rem)] object-contain rounded border border-border/30 shadow-2xl"
+                className="max-w-[92vw] max-h-[calc(100vh-7rem)] object-contain rounded border border-border-subtle shadow-2xl"
               />
             )}
             {open && kind === 'video' && (
@@ -112,7 +112,7 @@ export function MediaLightbox() {
                 controls
                 autoPlay
                 playsInline
-                className="max-w-[92vw] max-h-[calc(100vh-7rem)] rounded border border-border/30 shadow-2xl bg-black"
+                className="max-w-[92vw] max-h-[calc(100vh-7rem)] rounded border border-border-subtle shadow-2xl bg-black"
               >
                 <track kind="captions" />
               </video>
@@ -123,7 +123,7 @@ export function MediaLightbox() {
           <div
             className={cn(
               'flex items-center gap-2 px-3 py-2 rounded',
-              'bg-background/80 backdrop-blur border border-border/50',
+              'bg-background/80 backdrop-blur border border-border',
               'font-mono text-[11px]',
             )}
           >

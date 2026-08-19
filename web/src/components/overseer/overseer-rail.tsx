@@ -39,16 +39,16 @@ function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: bool
         onPick()
       }}
       className={cn(
-        'w-full text-left px-2.5 py-2 border-l-[3px] border-b border-border/40 transition-colors',
+        'w-full text-left px-2.5 py-2 border-l-[3px] border-b border-border-subtle transition-colors',
         selected
           ? 'border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)]'
           : 'border-l-transparent hover:bg-muted/20',
       )}
     >
-      <div className={cn('text-[11px] truncate', live ? 'text-foreground' : 'text-muted-foreground/65')}>
+      <div className={cn('text-[11px] truncate', live ? 'text-foreground' : 'text-fg-dim')}>
         {run.epicId}
       </div>
-      <div className="text-meta text-muted-foreground/55 truncate mt-0.5">
+      <div className="text-meta text-fg-dim truncate mt-0.5">
         {projectTail(run.project)} . {run.status ?? 'no run'} . gen {run.gen}
         {run.maxGens > 0 && `/${run.maxGens}`}
         {run.inFlight > 0 && ` . ${run.inFlight} in flight`}
@@ -77,15 +77,15 @@ export function OverseerRail() {
   const liveCount = ordered.filter(isLiveRun).length
 
   return (
-    <aside className="w-52 shrink-0 border-r border-border/50 overflow-y-auto bg-muted/10">
-      <div className="px-2.5 py-2 text-chrome uppercase text-muted-foreground/50 flex justify-between">
+    <aside className="w-52 shrink-0 border-r border-border overflow-y-auto bg-muted/10">
+      <div className="px-2.5 py-2 text-chrome uppercase text-fg-dim flex justify-between">
         <span>Runs</span>
         <span>
           {liveCount}/{ordered.length}
         </span>
       </div>
       {ordered.length === 0 ? (
-        <div className="px-2.5 py-4 text-[11px] text-muted-foreground/50 italic">
+        <div className="px-2.5 py-4 text-[11px] text-fg-dim italic">
           Nothing has run yet. Arm one from a board epic's RUN button.
         </div>
       ) : (

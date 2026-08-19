@@ -16,7 +16,7 @@ function Section({ title, count, children }: { title: string; count?: number; ch
     <section className="rounded-lg border border-border bg-card/30">
       <h2 className="flex items-center gap-2 px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         {title}
-        {count !== undefined && <span className="tabular-nums text-muted-foreground/60">{count}</span>}
+        {count !== undefined && <span className="tabular-nums text-fg-dim">{count}</span>}
       </h2>
       {children}
     </section>
@@ -48,7 +48,7 @@ export function NightshiftStatusBody({ projectUri }: { projectUri: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="text-right font-mono text-[10px] text-muted-foreground/60">{liveCount} live</div>
+      <div className="text-right font-mono text-[10px] text-fg-dim">{liveCount} live</div>
       <Section title="Tasks" count={tasks.length}>
         <NightshiftStatusTasks tasks={tasks} now={now} />
       </Section>

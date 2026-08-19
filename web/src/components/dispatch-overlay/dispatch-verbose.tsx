@@ -23,7 +23,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
 /** One live state block (`<fleet>`, `<memory>`, `<pending>`, ...), collapsible. */
 function BlockPanel({ block }: { block: DispatchHistoryBlock }) {
   return (
-    <details className="rounded-lg border border-border/60 bg-card/40 px-3 py-2" open>
+    <details className="rounded-lg border border-border bg-card/40 px-3 py-2" open>
       <summary className="cursor-pointer font-mono text-[11px] text-comment">
         {`<${block.tag}${block.id !== block.tag ? ` id=${block.id}` : ''}>`}
       </summary>

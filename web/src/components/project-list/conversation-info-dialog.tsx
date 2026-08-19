@@ -48,7 +48,7 @@ function ConversationLineageSection({
               {parent.title || parent.agentName || parent.id.slice(0, 8)}
             </button>
           ) : (
-            <span className="ml-auto text-muted-foreground/60 italic">(deleted)</span>
+            <span className="ml-auto text-fg-dim italic">(deleted)</span>
           )}
         </div>
       )}
@@ -146,7 +146,7 @@ export function ConversationInfoDialog({
           <div className="flex items-center gap-2">
             <span className="text-accent">{'ⓘ'}</span>
             <span>Conversation Info</span>
-            <span className="text-[10px] text-muted-foreground/50 font-normal">{conversation.id.slice(0, 12)}</span>
+            <span className="text-[10px] text-fg-dim font-normal">{conversation.id.slice(0, 12)}</span>
           </div>
         </DialogTitle>
         <div className="space-y-2 text-[11px]">
@@ -250,8 +250,8 @@ export function ConversationInfoDialog({
           <ConversationLineageSection conversation={conversation} onNavigate={navigateToConversation} />
 
           {/* Conversation ID */}
-          <div className="border-t border-border/50" />
-          <div className="text-[9px] text-muted-foreground/50 select-all">{conversation.id}</div>
+          <div className="border-t border-border" />
+          <div className="text-[9px] text-fg-dim select-all">{conversation.id}</div>
         </div>
       </DialogContent>
     </Dialog>

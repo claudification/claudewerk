@@ -389,7 +389,7 @@ export function ClipboardBanners({ conversationId }: { conversationId: string })
             <img
               src={`data:${cap.mimeType || 'image/png'};base64,${cap.base64}`}
               alt="clipboard"
-              className="max-h-32 max-w-full rounded border border-border/30 object-contain"
+              className="max-h-32 max-w-full rounded border border-border-subtle object-contain"
             />
           )}
         </ConversationBanner>
@@ -569,7 +569,7 @@ function AskQuestionCard({
             placeholder="Other (type your answer)"
             value={notes[q.question] || ''}
             onChange={e => setNotes(prev => ({ ...prev, [q.question]: e.target.value }))}
-            className="w-full px-3 py-2 text-xs bg-background/40 border border-emerald-800/30 rounded-md text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-emerald-400/60"
+            className="w-full px-3 py-2 text-xs bg-background/40 border border-emerald-800/30 rounded-md text-foreground placeholder:text-fg-faint focus:outline-none focus:border-emerald-400/60"
           />
         </div>
       ))}
@@ -582,7 +582,7 @@ function AskQuestionCard({
             'px-6 py-2.5 font-bold text-sm rounded-md border-2 transition-all',
             allAnswered
               ? 'bg-emerald-400 text-emerald-950 border-emerald-300 hover:bg-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.4)] cursor-pointer'
-              : 'bg-muted/20 text-muted-foreground border-border/30 cursor-not-allowed',
+              : 'bg-muted/20 text-muted-foreground border-border-subtle cursor-not-allowed',
           )}
         >
           Send answers
@@ -595,7 +595,7 @@ function AskQuestionCard({
               ? 'Dismiss this card and answer in the terminal instead'
               : 'Cancel the question -- the agent is told you declined and continues'
           }
-          className="px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground border border-border/40 hover:border-border rounded-md transition-colors cursor-pointer"
+          className="px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground border border-border-subtle hover:border-border rounded-md transition-colors cursor-pointer"
         >
           {hasTty ? 'SKIP TO TERMINAL' : 'CANCEL'}
         </button>

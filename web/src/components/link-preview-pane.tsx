@@ -100,7 +100,7 @@ export function LinkPreviewPane() {
         <SheetTitle className="sr-only">{title}</SheetTitle>
 
         {/* Top bar: CLOSE (left) | title (center) | SHARE (right) */}
-        <div className="flex items-center gap-2 border-b border-border/60 px-2 py-2 bg-background">
+        <div className="flex items-center gap-2 border-b border-border px-2 py-2 bg-background">
           <button
             type="button"
             onClick={() => {
@@ -165,7 +165,7 @@ export function LinkPreviewPane() {
 function LinkCard({ data, host, onOpen }: { data: LinkPreviewData; host: string; onOpen: () => void }) {
   return (
     <div className="absolute inset-0 overflow-y-auto flex flex-col items-center px-5 py-8">
-      <div className="w-full max-w-md rounded-lg border border-border/60 overflow-hidden bg-card">
+      <div className="w-full max-w-md rounded-lg border border-border overflow-hidden bg-card">
         {data.image && <img src={data.image} alt="" className="w-full max-h-48 object-cover bg-muted" loading="lazy" />}
         <div className="p-4 flex flex-col gap-2">
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground font-mono">

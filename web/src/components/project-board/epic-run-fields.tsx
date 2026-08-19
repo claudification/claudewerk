@@ -45,7 +45,7 @@ function Choice<T extends string>({
   const active = options.find(o => o.value === value)
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-chrome font-mono text-muted-foreground/70">{label}</span>
+      <span className="text-chrome font-mono text-fg-muted">{label}</span>
       <div className="flex gap-1">
         {options.map(o => (
           <button
@@ -56,7 +56,7 @@ function Choice<T extends string>({
               'px-2 py-1 text-[10px] font-mono border transition-colors',
               o.value === value
                 ? 'border-[color:var(--epic-edge)] text-foreground bg-[color:var(--epic-tint)]'
-                : 'border-border/60 text-muted-foreground/80 hover:text-foreground',
+                : 'border-border text-fg-muted hover:text-foreground',
             )}
           >
             {o.label}
@@ -65,7 +65,7 @@ function Choice<T extends string>({
       </div>
       {active && (
         <span
-          className={cn('text-chrome leading-snug', active.alarming ? 'text-destructive' : 'text-muted-foreground/70')}
+          className={cn('text-chrome leading-snug', active.alarming ? 'text-destructive' : 'text-fg-muted')}
         >
           {active.hint}
         </span>
@@ -106,7 +106,7 @@ function PlanField({ value, onChange }: { value: boolean; onChange: (v: boolean)
         />
         <span className="text-chrome font-mono text-foreground">Analyze and create execution plan</span>
       </span>
-      <span className="text-chrome text-muted-foreground/70 leading-snug">
+      <span className="text-chrome text-fg-muted leading-snug">
         {value
           ? 'One generation reads the epic and every card first: closes what is already done, files what is ' +
             'missing, and writes the depends_on edges nobody declared -- so the ordering above is complete before ' +
@@ -128,18 +128,18 @@ function PlanField({ value, onChange }: { value: boolean; onChange: (v: boolean)
 function ConcurrencyField({ value, plan, onChange }: { value: number; plan: RunPlan; onChange: (v: number) => void }) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-chrome font-mono text-muted-foreground/70">concurrency</span>
+      <span className="text-chrome font-mono text-fg-muted">concurrency</span>
       <input
         type="number"
         min={1}
         max={10}
         value={value}
         onChange={e => onChange(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
-        className="w-20 px-2 py-1 text-[11px] font-mono bg-transparent border border-border/60 text-foreground"
+        className="w-20 px-2 py-1 text-[11px] font-mono bg-transparent border border-border text-foreground"
       />
       {/* What the number DOES to this epic, not what the field is called. Raising
           it past the ready count buys nothing, and the old copy hid that. */}
-      <span className="text-chrome text-muted-foreground/70 leading-snug">{beatLine(plan, value)}</span>
+      <span className="text-chrome text-fg-muted leading-snug">{beatLine(plan, value)}</span>
       {value > REVIEW_CEILING && (
         <span className="text-chrome text-destructive leading-snug">
           Past {REVIEW_CEILING} you are choosing to stop reviewing per-change. The ceiling is a property of review, not

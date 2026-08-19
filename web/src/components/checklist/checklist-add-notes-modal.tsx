@@ -71,7 +71,7 @@ export function ChecklistAddNotesModal() {
                 }
               }}
               placeholder={'check Caddy upstream\n- [ ] reply to Danielle\n- [x] shipped the thing'}
-              className="w-full h-44 resize-none bg-muted/20 border border-border/60 rounded p-2 text-xs text-foreground outline-none focus:border-accent/60 placeholder:text-muted-foreground/40"
+              className="w-full h-44 resize-none bg-muted/20 border border-border rounded p-2 text-xs text-foreground outline-none focus:border-accent/60 placeholder:text-fg-faint"
             />
           </div>
           <div className="px-4 py-2 border-t border-border flex items-center justify-between shrink-0">

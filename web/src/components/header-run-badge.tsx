@@ -56,9 +56,9 @@ function LiveLabel({ runs, seats, gen, stale }: { runs: number; seats: number; g
       <b className="font-bold">
         {runs} RUN{runs === 1 ? '' : 'S'}
       </b>
-      <span className="text-muted-foreground/45">.</span>
+      <span className="text-fg-dim">.</span>
       <span>gen {gen}</span>
-      <span className="text-muted-foreground/45">.</span>
+      <span className="text-fg-dim">.</span>
       <span>
         {seats} seat{seats === 1 ? '' : 's'}
       </span>
@@ -98,7 +98,7 @@ export function HeaderRunBadge() {
         'shrink-0 flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border transition-colors',
         live
           ? 'border-[color:var(--epic-badge-edge)] bg-[color:var(--epic-badge-tint)] text-foreground hover:bg-[color:var(--epic-badge-hover)]'
-          : 'border-border/45 text-muted-foreground/50 hover:text-muted-foreground hover:border-border',
+          : 'border-border text-fg-dim hover:text-muted-foreground hover:border-border',
       )}
     >
       <Pip live={live} stale={stale} />

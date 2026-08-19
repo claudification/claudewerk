@@ -29,23 +29,23 @@ function TreeRow({ member }: { member: LineageSubtreeMember }) {
       className="flex items-center gap-1.5 py-0.5 text-[11px] font-mono"
       style={{ paddingLeft: `${member.depth * 14}px` }}
     >
-      {member.depth > 0 && <span className="text-muted-foreground/40 shrink-0">{'↪'}</span>}
+      {member.depth > 0 && <span className="text-fg-faint shrink-0">{'↪'}</span>}
       <StatusIndicator status={member.conversation.status} />
-      <span className={cn('truncate', member.isActive ? 'text-foreground' : 'text-muted-foreground/50 line-through')}>
+      <span className={cn('truncate', member.isActive ? 'text-foreground' : 'text-fg-dim line-through')}>
         {memberTitle(member)}
       </span>
-      {member.depth === 0 && <span className="text-[9px] text-muted-foreground/60 shrink-0">root</span>}
+      {member.depth === 0 && <span className="text-[9px] text-fg-dim shrink-0">root</span>}
     </div>
   )
 }
 
 /** Right-aligned "N active · M ended" header badge. */
 function CountBadge({ activeCount, endedCount }: { activeCount: number; endedCount: number }) {
-  if (activeCount === 0) return <span className="text-muted-foreground/60">nothing active</span>
+  if (activeCount === 0) return <span className="text-fg-dim">nothing active</span>
   return (
     <>
       <span className="text-destructive font-bold">{activeCount}</span> active
-      {endedCount > 0 && <span className="text-muted-foreground/50"> · {endedCount} ended</span>}
+      {endedCount > 0 && <span className="text-fg-dim"> · {endedCount} ended</span>}
     </>
   )
 }
@@ -140,7 +140,7 @@ export function TerminateLineageConfirmDialog() {
             className={cn(
               'flex-1 py-1.5 text-xs font-bold border transition-colors flex items-center justify-center gap-2',
               activeCount === 0
-                ? 'border-border text-muted-foreground/40 cursor-not-allowed'
+                ? 'border-border text-fg-faint cursor-not-allowed'
                 : 'bg-destructive/20 border-destructive/40 text-destructive hover:bg-destructive/30',
             )}
           >

@@ -14,7 +14,7 @@ function Count({ value, label, tone }: { value: number; label: string; tone: str
   return (
     <span className="flex flex-col gap-0.5">
       <span className={cn('font-mono text-read tabular-nums leading-none', tone)}>{value}</span>
-      <span className="font-mono text-chrome text-muted-foreground/60">{label}</span>
+      <span className="font-mono text-chrome text-fg-dim">{label}</span>
     </span>
   )
 }
@@ -26,10 +26,10 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
       <div className="flex items-end gap-4">
         <Count value={plan.ready} label="READY" tone="text-active" />
         {plan.waiting > 0 && <Count value={plan.waiting} label="WAITING ON DEPS" tone="text-event-prompt" />}
-        {plan.done > 0 && <Count value={plan.done} label="DONE" tone="text-muted-foreground/70" />}
-        {plan.dropped > 0 && <Count value={plan.dropped} label="DROPPED" tone="text-muted-foreground/60" />}
+        {plan.done > 0 && <Count value={plan.done} label="DONE" tone="text-fg-muted" />}
+        {plan.dropped > 0 && <Count value={plan.dropped} label="DROPPED" tone="text-fg-dim" />}
       </div>
-      <p className="font-mono text-chrome text-muted-foreground/70 leading-relaxed">
+      <p className="font-mono text-chrome text-fg-muted leading-relaxed">
         Each beat dispatches one implementer per ready card in <code className="text-foreground">depends_on</code>{' '}
         order, sends an independent verifier over everything finished, then wakes one overseer. It runs unattended until
         the epic is done or it needs you.
@@ -50,9 +50,9 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
  */
 function OrderingCaveat({ waiting }: { waiting: number }) {
   return (
-    <p className="font-mono text-chrome text-muted-foreground/55 leading-relaxed">
+    <p className="font-mono text-chrome text-fg-dim leading-relaxed">
       Ordering is only as good as the declared edges: cards with no{' '}
-      <code className="text-muted-foreground/80">depends_on</code> between them dispatch together even if they collide.
+      <code className="text-fg-muted">depends_on</code> between them dispatch together even if they collide.
       {waiting > 0 ? ' The overseer can add a missing edge, but only between beats.' : ' Nothing here declares one.'}
     </p>
   )

@@ -31,7 +31,7 @@ export function StatusHoverPanel({
           <span className={cn('h-2 w-2 rounded-full', meta.dot)} />
           {meta.label}
         </span>
-        <span className="text-[10px] tracking-wide text-muted-foreground/60">
+        <span className="text-[10px] tracking-wide text-fg-dim">
           {formatAgeShort(status.updatedAt)} ago
         </span>
         {status.safe_to_close && (
@@ -43,7 +43,7 @@ export function StatusHoverPanel({
           </span>
         )}
         {lastInputAt != null && (
-          <span className="basis-full text-[10px] text-muted-foreground/60">
+          <span className="basis-full text-[10px] text-fg-dim">
             last input · {formatAgeShort(lastInputAt)} ago
           </span>
         )}

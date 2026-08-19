@@ -35,7 +35,7 @@ function headerState(conversation: Conversation): { label: string; tone: string;
     conversation.status === 'active'
       ? 'text-emerald-400'
       : conversation.status === 'ended'
-        ? 'text-muted-foreground/60'
+        ? 'text-fg-dim'
         : 'text-amber-400/80'
   const dot = conversation.status === 'active' ? 'bg-emerald-400' : 'bg-muted-foreground/50'
   return { label: conversation.status, tone, dot }
@@ -63,11 +63,11 @@ export function RunCard({ conversation, onOpenInfo }: { conversation: Conversati
 
   return (
     <div className="text-[10px]">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
         <span className={cn('h-2 w-2 rounded-full shrink-0', state.dot)} />
         <span className="font-mono text-[11px] font-semibold truncate flex-1">{rowTitle(conversation, 32)}</span>
         <span className={cn('text-[10px] shrink-0', state.tone)}>{state.label}</span>
-        <span className="text-[10px] text-muted-foreground/50 shrink-0">
+        <span className="text-[10px] text-fg-dim shrink-0">
           {'·'} {formatAgeShort(conversation.lastActivity)}
         </span>
       </div>
@@ -101,7 +101,7 @@ export function RunCard({ conversation, onOpenInfo }: { conversation: Conversati
 
       {prompt && (
         <ScopeSection>
-          <div className="text-[10px] text-muted-foreground/70 italic line-clamp-3 break-words">"{prompt}"</div>
+          <div className="text-[10px] text-fg-muted italic line-clamp-3 break-words">"{prompt}"</div>
         </ScopeSection>
       )}
 

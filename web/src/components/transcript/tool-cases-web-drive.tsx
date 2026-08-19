@@ -31,7 +31,7 @@ export function renderWebListClients(ctx: ToolCaseInput): ToolCaseResult {
         <div key={c.clientId} className="flex items-center gap-2">
           <span className="size-1.5 rounded-full bg-green-400 shrink-0" />
           <span className="text-foreground/80 truncate">{c.label || c.clientId}</span>
-          {c.userName && <span className="text-muted-foreground/70">{c.userName}</span>}
+          {c.userName && <span className="text-fg-muted">{c.userName}</span>}
           {typeof c.ttlMs === 'number' && <Meta>{Math.round(c.ttlMs / 60000)}m left</Meta>}
         </div>
       ))}

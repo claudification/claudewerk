@@ -108,7 +108,7 @@ export function renderMcpConfigureConversation({ input }: ToolCaseInput): ToolCa
     <span className="flex items-center gap-1.5">
       <span className="text-blue-400">configure</span>
       <span className="text-muted-foreground">{cfgTarget}</span>
-      <span className="text-muted-foreground/50 text-[10px]">[{cfgFields || 'no fields'}]</span>
+      <span className="text-fg-dim text-[10px]">[{cfgFields || 'no fields'}]</span>
     </span>
   )
   return { summary, details: null }
@@ -122,7 +122,7 @@ export function renderMcpDialog({ input }: ToolCaseInput): ToolCaseResult {
   const summary = (
     <span className="flex items-center gap-1.5">
       <span className="text-violet-400 font-bold">{title}</span>
-      <span className="text-muted-foreground/50 text-[10px]">{componentDesc}</span>
+      <span className="text-fg-dim text-[10px]">{componentDesc}</span>
     </span>
   )
   const details = (

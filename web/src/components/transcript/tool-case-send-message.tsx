@@ -35,7 +35,7 @@ export function renderMcpSendMessage({ input, result }: ToolCaseInput): ToolCase
           </span>
         ))
       ) : (
-        <span className="text-muted-foreground/50">(no recipient)</span>
+        <span className="text-fg-dim">(no recipient)</span>
       )}
       <IntentBadge intent={intent} />
     </span>

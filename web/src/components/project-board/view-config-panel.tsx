@@ -26,7 +26,7 @@ function ChipRow<T extends string>({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-meta font-mono text-muted-foreground/70 w-16 shrink-0">{label}</span>
+      <span className="text-meta font-mono text-fg-muted w-16 shrink-0">{label}</span>
       <div className="flex gap-1 flex-1">
         {options.map(o => (
           <button
@@ -65,7 +65,7 @@ function SliderRow({
 }) {
   return (
     <label className="flex items-center gap-2">
-      <span className="text-meta font-mono text-muted-foreground/70 w-16 shrink-0">{label}</span>
+      <span className="text-meta font-mono text-fg-muted w-16 shrink-0">{label}</span>
       <input
         type="range"
         min={min}
@@ -82,16 +82,16 @@ function SliderRow({
 
 export function ViewConfigPanel({ view, update, reset }: { view: BoardViewConfig; update: Update; reset: () => void }) {
   return (
-    <div className="border border-border/70 bg-surface-inset/60 px-3 py-2 space-y-2">
+    <div className="border border-border bg-surface-inset/60 px-3 py-2 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-chrome font-mono uppercase text-muted-foreground/60">View</span>
+        <span className="text-chrome font-mono uppercase text-fg-dim">View</span>
         <button
           type="button"
           onClick={() => {
             haptic('tap')
             reset()
           }}
-          className="flex items-center gap-1 text-chrome font-mono text-muted-foreground/60 hover:text-foreground transition-colors"
+          className="flex items-center gap-1 text-chrome font-mono text-fg-dim hover:text-foreground transition-colors"
           title="Reset to defaults"
         >
           <RotateCcw className="size-3" />

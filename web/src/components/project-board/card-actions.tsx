@@ -42,7 +42,7 @@ export function CardActions({
       role="toolbar"
       // biome-ignore lint/a11y/noNoninteractiveTabindex: roving-tabindex toolbar, focus is intentional
       tabIndex={0}
-      className="flex items-center gap-0.5 mt-2 pt-2 border-t border-border/60"
+      className="flex items-center gap-0.5 mt-2 pt-2 border-t border-border"
       onClick={e => e.stopPropagation()}
       onKeyDown={e => e.stopPropagation()}
     >

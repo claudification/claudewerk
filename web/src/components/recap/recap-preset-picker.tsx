@@ -47,7 +47,7 @@ export function RecapPresetPicker({ value, onPick }: { value: string; onPick: (i
                 type="button"
                 title="Delete preset"
                 onClick={() => remove(p.id)}
-                className="ml-0.5 text-[11px] text-muted-foreground/60 hover:text-red-400"
+                className="ml-0.5 text-[11px] text-fg-dim hover:text-red-400"
               >
                 ×
               </button>

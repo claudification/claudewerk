@@ -58,7 +58,7 @@ export function SheafToolbar({
             ))}
           </div>
           {generatedAt && (
-            <span className="text-[10px] text-muted-foreground/70 hidden md:inline">
+            <span className="text-[10px] text-fg-muted hidden md:inline">
               {/* react-doctor-disable-next-line react-doctor/rendering-hydration-mismatch-time */}
               generated {formatDateTime(generatedAt)} ({formatAgo(Date.now() - generatedAt)})
             </span>
@@ -77,7 +77,7 @@ export function SheafToolbar({
 export function SheafTotals({ data, windowH }: { data: SheafResponse | null; windowH: number }) {
   if (!data) {
     return (
-      <div className="shrink-0 border-b border-border/50 bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
+      <div className="shrink-0 border-b border-border bg-muted/10 px-4 py-2 text-xs text-muted-foreground">
         last {windowH}h - loading…
       </div>
     )
@@ -85,7 +85,7 @@ export function SheafTotals({ data, windowH }: { data: SheafResponse | null; win
   const t = data.totals
   const totalTokens = t.tokens.input + t.tokens.output + t.tokens.cache
   return (
-    <div className="shrink-0 border-b border-border/50 bg-muted/10 px-4 py-2">
+    <div className="shrink-0 border-b border-border bg-muted/10 px-4 py-2">
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
         <Stat label="window" value={`${windowH}h`} />
         <Stat label="projects" value={String(t.projects)} />
@@ -110,9 +110,9 @@ export function SheafTotals({ data, windowH }: { data: SheafResponse | null; win
 function Stat({ label, value, sub, heatClass }: { label: string; value: string; sub?: string; heatClass?: string }) {
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className="text-muted-foreground/60 uppercase tracking-wide text-[10px]">{label}</span>
+      <span className="text-fg-dim uppercase tracking-wide text-[10px]">{label}</span>
       <span className={`font-mono font-semibold ${heatClass ?? 'text-foreground'}`}>{value}</span>
-      {sub && <span className="text-[10px] text-muted-foreground/60 font-mono">{sub}</span>}
+      {sub && <span className="text-[10px] text-fg-dim font-mono">{sub}</span>}
     </div>
   )
 }

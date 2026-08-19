@@ -14,7 +14,7 @@ function MemberRow({ node, label, onRemove }: { node: ProjectOrderNode; label: s
   return (
     <SortableRow
       id={node.id}
-      className="flex items-center gap-2 py-1 px-2 rounded border border-border/60 bg-background text-xs"
+      className="flex items-center gap-2 py-1 px-2 rounded border border-border bg-background text-xs"
     >
       {isGroup && <Folder className="size-3 text-primary/60 shrink-0" />}
       <span className="flex-1 truncate" title={isGroup ? node.name : projectPath(node.id)}>
@@ -23,7 +23,7 @@ function MemberRow({ node, label, onRemove }: { node: ProjectOrderNode; label: s
       <button
         type="button"
         onClick={onRemove}
-        className="text-muted-foreground/40 hover:text-destructive shrink-0"
+        className="text-fg-faint hover:text-destructive shrink-0"
         title="Remove from this workspace (the project itself is untouched)"
       >
         <X className="size-3.5" />
@@ -52,7 +52,7 @@ export function WorkspaceMembersPane({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-2">
-      <p className="text-[10px] text-muted-foreground/60 shrink-0">
+      <p className="text-[10px] text-fg-dim shrink-0">
         Drag to set the order <span className="text-foreground/60">{wsName}</span> renders in. A project can sit in as
         many workspaces as you like -- removing it here never removes it anywhere else.
       </p>
@@ -60,7 +60,7 @@ export function WorkspaceMembersPane({
       <div className="space-y-1 shrink-0">
         <SortableContext items={members.map(n => n.id)} strategy={verticalListSortingStrategy}>
           {members.length === 0 ? (
-            <p className="text-[10px] text-muted-foreground/50 px-1 py-2 border border-dashed border-border/60 rounded text-center">
+            <p className="text-[10px] text-fg-dim px-1 py-2 border border-dashed border-border rounded text-center">
               Empty -- this workspace shows nothing in the sidebar yet.
             </p>
           ) : (
@@ -77,7 +77,7 @@ export function WorkspaceMembersPane({
       </div>
 
       <div className="flex items-center gap-2 pt-1 shrink-0">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">Add</span>
+        <span className="text-[10px] uppercase tracking-wider text-fg-dim">Add</span>
         <input
           value={filter}
           onChange={e => setFilter(e.target.value)}
@@ -93,11 +93,11 @@ export function WorkspaceMembersPane({
             type="button"
             onClick={() => onToggle(uri)}
             title={projectPath(uri)}
-            className="w-full flex items-center gap-2 py-1 px-2 rounded border border-transparent hover:border-border/60 hover:bg-accent/10 text-xs text-muted-foreground hover:text-foreground"
+            className="w-full flex items-center gap-2 py-1 px-2 rounded border border-transparent hover:border-border hover:bg-accent/10 text-xs text-muted-foreground hover:text-foreground"
           >
             <Plus className="size-3 shrink-0" />
             <span className="flex-1 truncate text-left">{inventory.labelOf(uri)}</span>
-            <span className="text-[10px] tabular-nums text-muted-foreground/40">
+            <span className="text-[10px] tabular-nums text-fg-faint">
               {inventory.memberOf.get(uri)?.size ?? 0} ws
             </span>
           </button>

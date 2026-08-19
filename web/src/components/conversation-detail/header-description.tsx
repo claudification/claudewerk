@@ -33,7 +33,7 @@ export function HeaderDescription({ conversation }: { conversation: Conversation
   if (isShareView()) {
     if (!conversation.description) return null
     return (
-      <span className="text-[10px] truncate text-muted-foreground/70 italic" title={conversation.description}>
+      <span className="text-[10px] truncate text-fg-muted italic" title={conversation.description}>
         {conversation.description}
       </span>
     )
@@ -73,12 +73,12 @@ export function HeaderDescription({ conversation }: { conversation: Conversation
       <span
         className={cn(
           'text-[10px] truncate',
-          conversation.description ? 'text-muted-foreground/70 italic' : 'text-muted-foreground/30 italic',
+          conversation.description ? 'text-fg-muted italic' : 'text-fg-faint italic',
         )}
       >
         {conversation.description || 'add description...'}
       </span>
-      <Pencil className="size-2.5 text-muted-foreground/20 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/desc:opacity-100 transition-opacity" />
+      <Pencil className="size-2.5 text-fg-faint [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/desc:opacity-100 transition-opacity" />
     </button>
   )
 }

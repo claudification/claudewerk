@@ -34,9 +34,9 @@ export function PlaceCard({ project }: { project: string }) {
 
   return (
     <div className="text-[10px]">
-      <div className="px-3 py-2 border-b border-border/50">
+      <div className="px-3 py-2 border-b border-border">
         <div className="font-mono text-[11px] font-semibold text-primary truncate">{label}</div>
-        <div className="text-[9px] text-muted-foreground/50 truncate" title={projectPath(project)}>
+        <div className="text-[9px] text-fg-dim truncate" title={projectPath(project)}>
           {projectPath(project)}
         </div>
       </div>
@@ -54,7 +54,7 @@ export function PlaceCard({ project }: { project: string }) {
         <ScopeStats>
           <ScopeStat label="active" value={convs.active} tone="text-emerald-400/90" />
           <ScopeStat label="idle" value={convs.idle} />
-          <ScopeStat label="ended" value={convs.ended} tone="text-muted-foreground/60" />
+          <ScopeStat label="ended" value={convs.ended} tone="text-fg-dim" />
         </ScopeStats>
       </ScopeSection>
 

@@ -94,7 +94,7 @@ export function ChatBubble({
               className="opacity-60 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/bubble:opacity-60 hover:!opacity-100 transition-opacity"
             />
           )}
-          <TimeStamp ts={ts} className="text-muted-foreground/50 text-[9px]" />
+          <TimeStamp ts={ts} className="text-fg-dim text-[9px]" />
           {channelServer === 'rclaude' && <span className="text-teal-400/40 text-[9px]">channel</span>}
           {effortBadge && <span className="text-orange-400/60 text-[9px]">{effortBadge.symbol}</span>}
         </div>

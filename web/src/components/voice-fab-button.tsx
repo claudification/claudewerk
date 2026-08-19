@@ -39,8 +39,8 @@ export function VoiceFabButton(props: VoiceFabButtonProps) {
         // A denied mic stays visible and tappable -- the OS setting can change
         // at any time and the next tap is how we find out.
         blocked && 'bg-red-950/40 border-red-500/40 text-red-400/70 active:scale-95',
-        !blocked && needsUnlock && 'bg-background/60 border-border/30 text-muted-foreground/50 active:scale-95',
-        !needsUnlock && state === 'idle' && 'bg-background/80 border-border/50 text-muted-foreground active:scale-95',
+        !blocked && needsUnlock && 'bg-background/60 border-border-subtle text-fg-dim active:scale-95',
+        !needsUnlock && state === 'idle' && 'bg-background/80 border-border text-muted-foreground active:scale-95',
         recording && !offline && !isCancelling && 'bg-red-500/20 border-red-500/50 text-red-400 scale-110',
         offline && !isCancelling && 'bg-amber-500/20 border-amber-500/50 text-amber-400 scale-110 animate-pulse',
         recording && isCancelling && 'bg-red-950/80 border-red-500/50 text-red-400',

@@ -64,7 +64,7 @@ export function VoiceFabBanner(props: VoiceFabBannerProps) {
           )}
 
           {!hasText && state === 'recording' && (
-            <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now…</span>
+            <span className="text-sm text-fg-faint italic font-mono">Speak now…</span>
           )}
 
           {showControls && (
@@ -129,7 +129,7 @@ function BannerButton({ onClick, children }: { onClick: () => void; children: Re
   return (
     <button
       type="button"
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono uppercase tracking-wider bg-white/5 hover:bg-white/10 text-muted-foreground border border-border/30 active:scale-95 transition-all"
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-mono uppercase tracking-wider bg-white/5 hover:bg-white/10 text-muted-foreground border border-border-subtle active:scale-95 transition-all"
       onClick={onClick}
     >
       {children}

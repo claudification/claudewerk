@@ -65,20 +65,20 @@ export const ThinkingPill = memo(function ThinkingPill({ conversationId }: Think
   if (show && entry && last) {
     if (mode === 'compact') {
       content = (
-        <div className="mt-1 flex items-center gap-1.5 px-4 py-1 text-[11px] font-mono text-muted-foreground/60">
+        <div className="mt-1 flex items-center gap-1.5 px-4 py-1 text-[11px] font-mono text-fg-dim">
           <span className="inline-block size-1.5 bg-accent rounded-full animate-pulse" />
           <span className="text-purple-400/70">thinking</span>
-          <span className="text-muted-foreground/50 tabular-nums">{formatCount(last.tokens)}</span>
+          <span className="text-fg-dim tabular-nums">{formatCount(last.tokens)}</span>
         </div>
       )
     } else {
       const rate = tokensPerSec(entry)
       content = (
-        <div className="mt-1 flex items-center gap-2 px-4 py-1 text-[11px] font-mono text-muted-foreground/60">
+        <div className="mt-1 flex items-center gap-2 px-4 py-1 text-[11px] font-mono text-fg-dim">
           <span className="text-purple-400/70">thinking</span>
           <span className="text-purple-400/70 tabular-nums leading-none">{sparkline(entry.samples)}</span>
-          {rate > 0 && <span className="text-muted-foreground/50 tabular-nums">{rate}/s</span>}
-          <span className="text-muted-foreground/70 tabular-nums">{formatCount(last.tokens)}</span>
+          {rate > 0 && <span className="text-fg-dim tabular-nums">{rate}/s</span>}
+          <span className="text-fg-muted tabular-nums">{formatCount(last.tokens)}</span>
         </div>
       )
     }

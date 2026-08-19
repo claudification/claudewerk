@@ -10,7 +10,7 @@ export function RenameFooter({ onSubmit }: RenameFooterProps) {
     <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
       <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
         <Kbd>Enter</Kbd> save
-        <span className="text-muted-foreground/40">·</span>
+        <span className="text-fg-faint">·</span>
         <Kbd>Esc</Kbd> cancel
       </span>
       <button

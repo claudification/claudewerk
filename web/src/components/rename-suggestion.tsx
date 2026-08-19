@@ -18,7 +18,7 @@ export function RenameSuggestion({ suggestion, onApply }: RenameSuggestionProps)
       className="group -mt-1 flex max-w-full items-center gap-1.5 self-start border border-dashed border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:border-accent"
     >
       <Sparkles className="size-3 shrink-0 text-accent/70 group-hover:text-accent" />
-      <span className="text-muted-foreground/60 group-hover:text-accent/70">suggested</span>
+      <span className="text-fg-dim group-hover:text-accent/70">suggested</span>
       <span className="truncate text-foreground group-hover:text-accent">{suggestion}</span>
     </button>
   )

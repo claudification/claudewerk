@@ -16,7 +16,7 @@ export function DebugCommandPicker({ grouped, activeKey, onSelect }: DebugComman
     <div className="w-56 border-r border-border overflow-y-auto shrink-0 text-[11px] font-mono">
       {(['cc_control', 'daemon_op'] as const).map(ch => (
         <div key={ch}>
-          <div className="px-2 py-1 text-[9px] uppercase tracking-wider text-muted-foreground/60 sticky top-0 bg-background">
+          <div className="px-2 py-1 text-[9px] uppercase tracking-wider text-fg-dim sticky top-0 bg-background">
             {ch === 'cc_control' ? 'cc_control (headless)' : 'daemon_op (daemon)'}
           </div>
           {grouped[ch].map(c => {

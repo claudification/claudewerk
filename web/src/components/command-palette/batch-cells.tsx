@@ -57,13 +57,13 @@ export function StatusDot({ status }: { status: Conversation['status'] }) {
       </span>
     )
   }
-  if (status === 'ended') return <span className="text-[9px] uppercase font-bold text-muted-foreground/60">end</span>
+  if (status === 'ended') return <span className="text-[9px] uppercase font-bold text-fg-dim">end</span>
   if (status === 'starting' || status === 'booting')
     return <span className="size-2 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: 'var(--idle)' }} />
   return <span className="size-2 rounded-full shrink-0 bg-idle" title={status} />
 }
 
 export function MutedDefault({ value }: { value: string | undefined | null }) {
-  if (!value || value === 'default') return <span className="text-muted-foreground/30">--</span>
+  if (!value || value === 'default') return <span className="text-fg-faint">--</span>
   return <span>{value}</span>
 }

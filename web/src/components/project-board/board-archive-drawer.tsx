@@ -25,7 +25,7 @@ export function BoardArchiveDrawer({
     <div className="border-t border-border shrink-0">
       <button
         type="button"
-        className="w-full flex items-center gap-2 px-3 py-2 text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-fg-dim hover:text-muted-foreground transition-colors"
         onClick={() => {
           haptic('tap')
           setExpanded(v => !v)
@@ -37,7 +37,7 @@ export function BoardArchiveDrawer({
         <span className="text-meta font-mono tabular-nums">{tasks.length}</span>
       </button>
       {expanded && (
-        <div className="max-h-[200px] overflow-y-auto border-t border-border/30">{tasks.map(renderCard)}</div>
+        <div className="max-h-[200px] overflow-y-auto border-t border-border-subtle">{tasks.map(renderCard)}</div>
       )}
     </div>
   )

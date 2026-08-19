@@ -36,7 +36,7 @@ function LevelFilter() {
             aria-pressed={on}
             className={cn(
               'px-1 py-px text-[9px] font-mono uppercase tracking-wider border transition-colors',
-              on ? LEVEL_ACTIVE[level] : 'text-muted-foreground/40 border-transparent hover:text-muted-foreground',
+              on ? LEVEL_ACTIVE[level] : 'text-fg-faint border-transparent hover:text-muted-foreground',
             )}
             title={on ? `Hide ${level} lines (view + copy)` : `Show ${level} lines`}
           >

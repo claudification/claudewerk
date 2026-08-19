@@ -26,7 +26,7 @@ const TIER_NOTE: Record<string, string> = {
 
 const SAVE_BADGE: Record<PublicCanvasDoc['saveState'], { text: string; cls: string } | null> = {
   idle: null,
-  saving: { text: 'saving...', cls: 'text-muted-foreground/60' },
+  saving: { text: 'saving...', cls: 'text-fg-dim' },
   saved: { text: 'saved', cls: 'text-emerald-400/70' },
   rejected: { text: 'change rejected - the design is locked in comment mode', cls: 'text-red-400/90' },
 }
@@ -56,7 +56,7 @@ function ViewerHeader({
   return (
     <div className="flex items-center gap-3 px-3 h-9 border-b border-border shrink-0 text-xs">
       <span className="font-mono text-sky-400/90 truncate">{name}</span>
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70 shrink-0">{TIER_NOTE[tier]}</span>
+      <span className="text-[10px] uppercase tracking-wide text-fg-muted shrink-0">{TIER_NOTE[tier]}</span>
       <span className="flex-1" />
       {badge && <span className={`text-[10px] ${badge.cls}`}>{badge.text}</span>}
       <PresenceDots peers={peers} />
@@ -64,7 +64,7 @@ function ViewerHeader({
         type="button"
         onClick={onRename}
         title="Change the name others see"
-        className="text-[10px] text-muted-foreground/70 hover:text-sky-300 shrink-0"
+        className="text-[10px] text-fg-muted hover:text-sky-300 shrink-0"
       >
         {guestName}
       </button>

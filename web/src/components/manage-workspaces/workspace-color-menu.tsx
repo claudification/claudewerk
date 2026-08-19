@@ -19,7 +19,7 @@ export function WorkspaceColorMenu({ value, onPick }: { value: string | undefine
         <button
           type="button"
           title="Workspace colour"
-          className="h-6 pl-1.5 pr-1 flex items-center gap-1.5 rounded border border-border/60 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:border-border transition-colors"
+          className="h-6 pl-1.5 pr-1 flex items-center gap-1.5 rounded border border-border text-[10px] font-mono text-muted-foreground hover:text-foreground hover:border-border transition-colors"
         >
           <span className={cn('size-2.5 rounded-full', colorDot(value))} />
           {value ?? 'none'}

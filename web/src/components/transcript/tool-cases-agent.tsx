@@ -19,7 +19,7 @@ export function renderAgentTask(name: string, ctx: ToolCaseInput): ToolCaseResul
     <>
       <span className="text-foreground font-medium">{desc}</span>
       {agentName && <span className="text-muted-foreground"> {agentName}</span>}
-      {agentType && <span className="text-muted-foreground/60"> {agentType}</span>}
+      {agentType && <span className="text-fg-dim"> {agentType}</span>}
     </>
   )
   let details = null

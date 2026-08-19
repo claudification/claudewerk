@@ -31,15 +31,15 @@ export interface EpicsToolbarProps {
 
 export function EpicsToolbar(props: EpicsToolbarProps) {
   return (
-    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-1.5 border-b border-border/60 shrink-0">
-      <span className="text-meta font-mono text-muted-foreground/70">
+    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap px-3 py-1.5 border-b border-border shrink-0">
+      <span className="text-meta font-mono text-fg-muted">
         <span className="text-foreground tabular-nums">{props.epicCount}</span> epics ·{' '}
         <span className="text-foreground tabular-nums">{props.parentedCount}</span> parented ·{' '}
         <span className="text-foreground tabular-nums">{props.looseLiveCount}</span> loose &amp; live
       </span>
 
       <div className="flex items-center gap-1 ml-auto">
-        <span className="text-chrome font-mono text-muted-foreground/60">SORT</span>
+        <span className="text-chrome font-mono text-fg-dim">SORT</span>
         {EPIC_SORTS.map(s => (
           <button
             key={s.key}
@@ -51,7 +51,7 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
             }}
             className={cn(
               'px-1.5 py-0.5 text-meta font-mono transition-colors',
-              props.sort === s.key ? 'bg-accent/20 text-accent' : 'text-muted-foreground/80 hover:text-foreground',
+              props.sort === s.key ? 'bg-accent/20 text-accent' : 'text-fg-muted hover:text-foreground',
             )}
           >
             {s.label}
@@ -69,7 +69,7 @@ export function EpicsToolbar(props: EpicsToolbarProps) {
           'px-1.5 py-0.5 text-meta font-mono border transition-colors',
           props.showComplete
             ? 'border-accent/40 text-accent bg-accent/10'
-            : 'border-border/60 text-muted-foreground/80 hover:text-foreground',
+            : 'border-border text-fg-muted hover:text-foreground',
         )}
       >
         show finished

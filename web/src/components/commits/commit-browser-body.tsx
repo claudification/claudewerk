@@ -57,7 +57,7 @@ export function CommitBrowserBody({ projectFilter }: { projectFilter?: string })
         {feed.loading && <div className="text-[11px] text-muted-foreground py-3">Loading commits...</div>}
         {!feed.loading && runs.length === 0 && (
           <div className="py-10 text-center space-y-1">
-            <GitCommitHorizontal className="size-5 mx-auto text-muted-foreground/40" />
+            <GitCommitHorizontal className="size-5 mx-auto text-fg-faint" />
             <div className="text-[11px] text-muted-foreground">
               {applied ? `Nothing matches "${applied}".` : 'No commits recorded yet.'}
             </div>

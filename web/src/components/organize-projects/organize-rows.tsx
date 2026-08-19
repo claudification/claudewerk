@@ -7,7 +7,7 @@ import { type ProjectOrderGroup, projectPath } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { SortableRow } from '../ui/sortable-row'
 
-const grip = 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground touch-none shrink-0'
+const grip = 'cursor-grab active:cursor-grabbing text-fg-faint hover:text-foreground touch-none shrink-0'
 
 export function ProjectRow({
   id,
@@ -23,17 +23,17 @@ export function ProjectRow({
   return (
     <SortableRow
       id={id}
-      className="flex items-center gap-2 py-1 px-2 rounded border border-border/60 bg-background text-xs"
+      className="flex items-center gap-2 py-1 px-2 rounded border border-border bg-background text-xs"
     >
       <span className="flex-1 truncate" title={projectPath(id)}>
         {label}
       </span>
-      {count > 0 && <span className="text-muted-foreground/40 tabular-nums">{count}</span>}
+      {count > 0 && <span className="text-fg-faint tabular-nums">{count}</span>}
       {onUngroup && (
         <button
           type="button"
           onClick={onUngroup}
-          className="text-muted-foreground/40 hover:text-foreground shrink-0"
+          className="text-fg-faint hover:text-foreground shrink-0"
           title="Move out of group"
         >
           <CornerUpLeft className="size-3.5" />
@@ -68,7 +68,7 @@ export function GroupRow({
         isOver && 'ring-1 ring-accent',
       )}
     >
-      <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border/60">
+      <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border">
         <button
           type="button"
           ref={setActivatorNodeRef}
@@ -93,11 +93,11 @@ export function GroupRow({
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
         />
-        <span className="text-muted-foreground/40 text-[10px] tabular-nums">{count}</span>
+        <span className="text-fg-faint text-[10px] tabular-nums">{count}</span>
         <button
           type="button"
           onClick={onDelete}
-          className="text-muted-foreground/40 hover:text-destructive shrink-0"
+          className="text-fg-faint hover:text-destructive shrink-0"
           title="Delete group (projects return to ungrouped)"
         >
           <Trash2 className="size-3.5" />
@@ -114,7 +114,7 @@ export function UngroupedDropZone({ children }: { children: ReactNode }) {
     <div
       ref={setNodeRef}
       className={cn(
-        'rounded border border-dashed border-border/60 p-1.5 space-y-1 min-h-[2.25rem]',
+        'rounded border border-dashed border-border p-1.5 space-y-1 min-h-[2.25rem]',
         isOver && 'border-accent bg-accent/10',
       )}
     >

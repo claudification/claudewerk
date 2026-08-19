@@ -95,7 +95,7 @@ function Header({ total, activeCount, pinnedCount, onResetLayout }: HeaderProps)
         <span className="hidden text-xs text-muted-foreground sm:inline">{fleetSummary(total, activeCount)}</span>
         <div className="ml-auto flex items-center gap-3">
           <ResetLayoutButton pinnedCount={pinnedCount} onResetLayout={onResetLayout} />
-          <span className="hidden items-center gap-1 text-[10px] text-muted-foreground/70 md:flex">
+          <span className="hidden items-center gap-1 text-[10px] text-fg-muted md:flex">
             <Kbd>Esc</Kbd> back
           </span>
         </div>

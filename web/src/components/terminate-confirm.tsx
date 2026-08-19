@@ -80,7 +80,7 @@ export function TerminateConfirmDialog() {
               <span className="text-muted-foreground">This conversation will be terminated.</span>
             )}
           </div>
-          <div className="text-[11px] text-muted-foreground/60 mt-1">Any running process will be killed.</div>
+          <div className="text-[11px] text-fg-dim mt-1">Any running process will be killed.</div>
         </div>
 
         {/* Actions */}

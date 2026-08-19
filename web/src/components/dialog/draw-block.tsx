@@ -123,7 +123,7 @@ export function DrawBlock({ id, content, contentUrl, readOnly, height = 420, lab
       />
       <div
         className={cn(
-          'relative overflow-hidden rounded border border-border/40',
+          'relative overflow-hidden rounded border border-border-subtle',
           showChrome && 'draw-chrome-hover',
           fullscreen ? 'min-h-0 flex-1' : 'bg-muted/10',
         )}

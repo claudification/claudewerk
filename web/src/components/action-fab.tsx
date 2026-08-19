@@ -123,7 +123,7 @@ export function ActionFab() {
           'touch-none select-none',
           expanded
             ? 'bg-primary/20 border-primary/20 text-primary rotate-45'
-            : 'bg-background/80 border-border/50 text-muted-foreground active:scale-95',
+            : 'bg-background/80 border-border text-muted-foreground active:scale-95',
         )}
         onClick={handleMainTap}
       >

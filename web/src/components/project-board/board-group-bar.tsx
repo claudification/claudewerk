@@ -34,20 +34,20 @@ export function BoardGroupBar({ group, rollup }: { group: CardGroup; rollup?: Ep
       {epicId ? (
         <EpicMarkBadge epicId={epicId} variant="solid" />
       ) : (
-        <span aria-hidden className="text-meta text-muted-foreground/55">
+        <span aria-hidden className="text-meta text-fg-dim">
           ●
         </span>
       )}
       <span
         className={cn(
           'font-mono truncate',
-          epicId ? 'text-loud text-foreground' : 'text-read text-muted-foreground/85',
+          epicId ? 'text-loud text-foreground' : 'text-read text-fg-muted',
         )}
         title={group.label}
       >
         {group.label}
       </span>
-      <span className="ml-auto font-mono text-tally tabular-nums text-muted-foreground/85">{group.cards.length}</span>
+      <span className="ml-auto font-mono text-tally tabular-nums text-fg-muted">{group.cards.length}</span>
     </div>
   )
 }

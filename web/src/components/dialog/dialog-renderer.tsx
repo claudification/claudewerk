@@ -61,7 +61,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ content, color }: { content:
 
 const DiagramBlock = memo(function DiagramBlock({ content }: { content: string }) {
   return (
-    <div className="w-full overflow-x-auto rounded border border-border/30 bg-muted/20 p-4">
+    <div className="w-full overflow-x-auto rounded border border-border-subtle bg-muted/20 p-4">
       <Markdown>{`\`\`\`mermaid\n${content}\n\`\`\``}</Markdown>
     </div>
   )
@@ -93,7 +93,7 @@ function CommentableDiagram({ content, id, form }: { content: string; id: string
 function ImageBlock({ url, alt }: { url: string; alt?: string }) {
   return (
     <div className="flex justify-center">
-      <img src={url} alt={alt || ''} className="max-w-full max-h-80 rounded border border-border/30 object-contain" />
+      <img src={url} alt={alt || ''} className="max-w-full max-h-80 rounded border border-border-subtle object-contain" />
     </div>
   )
 }
@@ -119,7 +119,7 @@ function AlertBlock({ intent, content }: { intent?: AlertIntent; content: string
 }
 
 function DividerBlock() {
-  return <hr className="border-border/40 my-1" />
+  return <hr className="border-border-subtle my-1" />
 }
 
 // ─── Input components ──────────────────────────────────────────────
@@ -166,7 +166,7 @@ function OptionsInput({
                 'flex items-start gap-3 px-3.5 py-3 rounded cursor-pointer border transition-colors text-sm',
                 selected
                   ? 'bg-primary/10 border-primary/40 text-foreground'
-                  : 'bg-muted/30 border-border/30 text-foreground/70 hover:bg-muted/50',
+                  : 'bg-muted/30 border-border-subtle text-foreground/70 hover:bg-muted/50',
               )}
             >
               {multi ? (
@@ -202,7 +202,7 @@ function OptionsInput({
                     }}
                     onClick={e => e.stopPropagation()}
                     onKeyDown={e => e.stopPropagation()}
-                    className="mt-1.5 w-full text-xs bg-background/50 border border-border/40 rounded px-2 py-1 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                    className="mt-1.5 w-full text-xs bg-background/50 border border-border-subtle rounded px-2 py-1 placeholder:text-fg-faint focus:outline-none focus:ring-1 focus:ring-primary/30"
                   />
                 )}
               </div>
@@ -246,8 +246,8 @@ function TextInputField({
         onDrop={onDrop}
         placeholder={placeholder}
         className={cn(
-          'w-full rounded border border-border/50 bg-background px-3 py-2 text-sm',
-          'placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50',
+          'w-full rounded border border-border bg-background px-3 py-2 text-sm',
+          'placeholder:text-fg-dim focus:outline-none focus:ring-1 focus:ring-primary/50',
           multiline && 'min-h-20 resize-y',
         )}
         rows={multiline ? 3 : undefined}
@@ -293,7 +293,7 @@ function ImagePickerInput({
               }}
               className={cn(
                 'relative cursor-pointer rounded border-2 overflow-hidden transition-all',
-                selected ? 'border-primary ring-1 ring-primary/30' : 'border-border/30 hover:border-border/60',
+                selected ? 'border-primary ring-1 ring-primary/30' : 'border-border-subtle hover:border-border',
               )}
             >
               <img src={img.url} alt={img.label || img.value} className="w-full h-24 object-cover" />
@@ -388,7 +388,7 @@ function SliderInput({
         onChange={e => form.setValue(id, Number(e.target.value))}
         className="w-full accent-primary"
       />
-      <div className="flex justify-between text-[10px] text-muted-foreground/60">
+      <div className="flex justify-between text-[10px] text-fg-dim">
         <span>{min}</span>
         <span>{max}</span>
       </div>
@@ -499,7 +499,7 @@ function GroupLayout({
   const [isCollapsed, setIsCollapsed] = useState(initialCollapsed)
 
   return (
-    <div className="rounded border border-border/30 overflow-hidden">
+    <div className="rounded border border-border-subtle overflow-hidden">
       <div
         role="button"
         tabIndex={0}

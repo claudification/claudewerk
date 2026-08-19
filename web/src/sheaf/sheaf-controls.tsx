@@ -22,7 +22,7 @@ function FilterBox({
 }) {
   return (
     <div className="relative flex items-center">
-      <Search className="absolute left-2 size-3.5 text-muted-foreground/60 pointer-events-none" />
+      <Search className="absolute left-2 size-3.5 text-fg-dim pointer-events-none" />
       <input
         ref={filterRef}
         aria-label="Filter projects"
@@ -36,7 +36,7 @@ function FilterBox({
         <button
           type="button"
           onClick={() => setFilter('')}
-          className="absolute right-1.5 text-muted-foreground/60 hover:text-foreground"
+          className="absolute right-1.5 text-fg-dim hover:text-foreground"
           aria-label="Clear filter"
         >
           <X className="size-3.5" />
@@ -48,7 +48,7 @@ function FilterBox({
 
 function SortSelect({ sort, setSort }: { sort: SortKey; setSort: (s: SortKey) => void }) {
   return (
-    <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground/60">
+    <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-fg-dim">
       sort
       <select
         value={sort}
@@ -86,7 +86,7 @@ function StatusChips({
             className={`flex items-center gap-1 px-1.5 py-1 rounded border text-[10px] uppercase tracking-wide transition-colors ${
               active
                 ? 'border-foreground/30 bg-foreground/10 text-foreground'
-                : 'border-transparent text-muted-foreground/60 hover:bg-foreground/5'
+                : 'border-transparent text-fg-dim hover:bg-foreground/5'
             }`}
           >
             <span className={STATUS_COLOR[s]}>{STATUS_GLYPH[s]}</span>
@@ -118,7 +118,7 @@ function ToggleBtn({
       className={`flex items-center gap-1 px-1.5 py-1 rounded border text-[10px] uppercase tracking-wide transition-colors ${
         active
           ? 'border-foreground/30 bg-foreground/10 text-foreground'
-          : 'border-transparent text-muted-foreground/60 hover:bg-foreground/5'
+          : 'border-transparent text-fg-dim hover:bg-foreground/5'
       }`}
     >
       {icon}
@@ -161,7 +161,7 @@ export function SheafControlsRow({
       <ViewToggles filters={filters} />
       <div className="ml-auto flex items-center gap-3">
         {filters.filtersActive && (
-          <span className="text-[10px] text-muted-foreground/70 font-mono">
+          <span className="text-[10px] text-fg-muted font-mono">
             {filters.visibleProjects.length} of {filters.totalCount} projects
           </span>
         )}

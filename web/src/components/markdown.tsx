@@ -81,7 +81,7 @@ function renderImageChip(href: string, alt: string): string {
   const name = resolveMediaLabel(href, alt)
   const safeAlt = escapeAttr(alt || name)
   const safeName = escapeAttr(name)
-  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-image inline-block align-middle max-w-full" data-lightbox-src="${safeHref}" data-lightbox-kind="image" data-lightbox-alt="${safeAlt}"><span class="inline-flex flex-col items-start gap-1 max-w-full"><img src="${safeHref}" alt="${safeAlt}" loading="lazy" class="max-h-32 max-w-full object-contain rounded border border-border/40 cursor-zoom-in hover:border-accent/60 transition-colors" /><span class="text-[10px] text-muted-foreground font-mono truncate max-w-full" title="${safeName}">${safeName}</span></span></a>`
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-image inline-block align-middle max-w-full" data-lightbox-src="${safeHref}" data-lightbox-kind="image" data-lightbox-alt="${safeAlt}"><span class="inline-flex flex-col items-start gap-1 max-w-full"><img src="${safeHref}" alt="${safeAlt}" loading="lazy" class="max-h-32 max-w-full object-contain rounded border border-border-subtle cursor-zoom-in hover:border-accent/60 transition-colors" /><span class="text-[10px] text-muted-foreground font-mono truncate max-w-full" title="${safeName}">${safeName}</span></span></a>`
 }
 
 // Video chip: no inline <video> (that would autoplay + explode layout); a
@@ -90,7 +90,7 @@ function renderImageChip(href: string, alt: string): string {
 function renderVideoChip(href: string, label: string): string {
   const safeHref = escapeAttr(href)
   const safeName = escapeAttr(resolveMediaLabel(href, label))
-  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-video" data-lightbox-src="${safeHref}" data-lightbox-kind="video"><span class="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border/50 rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M4 2.5v11l10-5.5-10-5.5z"/></svg><span class="font-mono">${safeName}</span></span></a>`
+  return `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" class="lightbox-chip lightbox-chip-video" data-lightbox-src="${safeHref}" data-lightbox-kind="video"><span class="inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M4 2.5v11l10-5.5-10-5.5z"/></svg><span class="font-mono">${safeName}</span></span></a>`
 }
 
 // Audio chip: a compact play-button pill (NOT an inline <audio>). Tapping it
@@ -102,7 +102,7 @@ function renderVideoChip(href: string, label: string): string {
 function renderAudioChip(href: string, label: string): string {
   const safeHref = escapeAttr(href)
   const safeName = escapeAttr(resolveMediaLabel(href, label))
-  return `<button type="button" class="audio-chip inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border/50 rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle" data-audio-src="${safeHref}" data-audio-label="${safeName}"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M3 6v4h2.5L7 12V4L5.5 6H3zm6.5-1.3a3.5 3.5 0 0 1 0 6.6v-1.4a2.1 2.1 0 0 0 0-3.8V4.7z"/></svg><span class="font-mono">${safeName}</span></button>`
+  return `<button type="button" class="audio-chip inline-flex items-center gap-1.5 px-2 py-1 bg-muted/40 border border-border rounded text-xs text-foreground/90 hover:bg-muted/60 hover:border-accent/60 transition-colors cursor-pointer align-middle" data-audio-src="${safeHref}" data-audio-label="${safeName}"><svg viewBox="0 0 16 16" aria-hidden="true" class="h-3 w-3 text-accent fill-current"><path d="M3 6v4h2.5L7 12V4L5.5 6H3zm6.5-1.3a3.5 3.5 0 0 1 0 6.6v-1.4a2.1 2.1 0 0 0 0-3.8V4.7z"/></svg><span class="font-mono">${safeName}</span></button>`
 }
 
 // Custom renderer

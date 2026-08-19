@@ -22,7 +22,7 @@ export function TaskNotificationLine({
         <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', statusColor)} />
         <span className="truncate flex-1">{n.summary}</span>
         {n.usage && (
-          <span className="text-[9px] text-muted-foreground/60 shrink-0">
+          <span className="text-[9px] text-fg-dim shrink-0">
             {Math.round(n.usage.totalTokens / 1000)}K tok
             {' / '}
             {n.usage.toolUses} tools
@@ -38,7 +38,7 @@ export function TaskNotificationLine({
               'w-4 h-4 shrink-0 flex items-center justify-center rounded-full border text-[9px] font-bold transition-colors',
               expanded
                 ? 'border-accent text-accent bg-accent/10'
-                : 'border-muted-foreground/40 text-muted-foreground/60 hover:border-accent hover:text-accent',
+                : 'border-muted-foreground/40 text-fg-dim hover:border-accent hover:text-accent',
             )}
             title="Show result"
           >

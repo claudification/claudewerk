@@ -49,7 +49,7 @@ export function StatusIcon({
           </span>
         )}
         {showAge && (
-          <span className={cn('text-[9px] text-muted-foreground/70', superseded && 'line-through')}>
+          <span className={cn('text-[9px] text-fg-muted', superseded && 'line-through')}>
             {formatAgeShort(status.updatedAt)}
           </span>
         )}

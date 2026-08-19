@@ -10,7 +10,7 @@ const SEVERITY_COLORS: Record<Severity, string> = {
   warn: 'text-amber-400',
   notice: 'text-orange-300/80',
   info: 'text-cyan-400/70',
-  muted: 'text-muted-foreground/70',
+  muted: 'text-fg-muted',
 }
 
 export function severityColor(severity: Severity): string {

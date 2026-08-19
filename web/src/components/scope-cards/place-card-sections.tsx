@@ -17,18 +17,18 @@ export function PlaceCommits({ stats }: { stats: ProjectCommitStats | null }) {
           <div className="text-[10px] text-foreground/85 font-mono">
             {stats.total} total {'·'} {stats.today} today
             {stats.lastCommittedAt != null && (
-              <span className="text-muted-foreground/60">
+              <span className="text-fg-dim">
                 {' · '}last {formatAgeShort(stats.lastCommittedAt)} ago
               </span>
             )}
           </div>
           <ScopeStats>
             <ScopeStat label="agent" value={stats.agent} tone="text-sky-400/90" />
-            <ScopeStat label="human" value={stats.human} tone="text-muted-foreground/80" />
+            <ScopeStat label="human" value={stats.human} tone="text-fg-muted" />
           </ScopeStats>
         </>
       ) : (
-        <div className="text-[10px] text-muted-foreground/40">loading…</div>
+        <div className="text-[10px] text-fg-faint">loading…</div>
       )}
     </ScopeSection>
   )
@@ -41,7 +41,7 @@ export function PlaceIntegration({ integration }: { integration: ProjectIntegrat
   if (integration.scannedAt == null) {
     return (
       <ScopeSection label="integration">
-        <div className="text-[10px] text-muted-foreground/40">no git scan yet</div>
+        <div className="text-[10px] text-fg-faint">no git scan yet</div>
       </ScopeSection>
     )
   }
@@ -57,7 +57,7 @@ export function PlaceIntegration({ integration }: { integration: ProjectIntegrat
       </div>
       {/* The card reads the last snapshot; it never triggers a scan, so the age
           is part of the answer rather than a detail. */}
-      <div className="text-[9px] text-muted-foreground/40">scanned {formatAgeShort(integration.scannedAt)} ago</div>
+      <div className="text-[9px] text-fg-faint">scanned {formatAgeShort(integration.scannedAt)} ago</div>
     </ScopeSection>
   )
 }

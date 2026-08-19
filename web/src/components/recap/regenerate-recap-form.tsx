@@ -111,7 +111,7 @@ export function RegenerateRecapForm({
             onChange={e => setInstructions(e.target.value)}
             rows={3}
             placeholder="e.g. focus on the auth migration; skip the testing troubles"
-            className="w-full resize-y rounded border border-input bg-background px-2 py-1 text-sm placeholder:text-muted-foreground/60"
+            className="w-full resize-y rounded border border-input bg-background px-2 py-1 text-sm placeholder:text-fg-dim"
           />
           <div className="mt-1.5">
             <RecapPresetPicker value={instructions} onPick={setInstructions} />

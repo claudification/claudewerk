@@ -134,7 +134,7 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
   // No shares and not expanded: show a subtle "Share" button as entry point
   if (shares.length === 0 && !expanded) {
     return (
-      <div className="shrink-0 border-b border-border/50">
+      <div className="shrink-0 border-b border-border">
         <button
           type="button"
           onClick={() => {
@@ -270,14 +270,14 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
                   className={`px-1.5 py-0.5 rounded text-[9px] transition-colors ${
                     newPerms[opt.key]
                       ? 'bg-teal-500/25 text-teal-400 border border-teal-500/40'
-                      : 'bg-secondary text-muted-foreground/50 border border-transparent hover:border-border'
+                      : 'bg-secondary text-fg-dim border border-transparent hover:border-border'
                   }`}
                 >
                   {opt.label}
                 </button>
               ))}
               {!newPerms.chat && !newPerms['files:read'] && !newPerms['terminal:read'] && (
-                <span className="text-[9px] text-muted-foreground/50 italic">read-only (transcript only)</span>
+                <span className="text-[9px] text-fg-dim italic">read-only (transcript only)</span>
               )}
               <span className="w-px h-3 bg-border/50 mx-0.5" />
               <button
@@ -287,7 +287,7 @@ export function ShareBanner({ conversationProject, conversationId }: SharePanelP
                 className={`px-1.5 py-0.5 rounded text-[9px] transition-colors ${
                   hideUserInput
                     ? 'bg-amber-500/25 text-amber-400 border border-amber-500/40'
-                    : 'bg-secondary text-muted-foreground/50 border border-transparent hover:border-border'
+                    : 'bg-secondary text-fg-dim border border-transparent hover:border-border'
                 }`}
               >
                 Hide user input

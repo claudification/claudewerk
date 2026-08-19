@@ -682,7 +682,7 @@ export function SpawnDialog() {
                     : 'LAUNCHING...'}
             </DialogTitle>
             {phase === 'launching' && (
-              <span className="text-[10px] font-mono text-muted-foreground/60 tabular-nums">{progress.elapsed}s</span>
+              <span className="text-[10px] font-mono text-fg-dim tabular-nums">{progress.elapsed}s</span>
             )}
           </div>
 
@@ -995,7 +995,7 @@ export function SpawnDialog() {
                         className="w-full bg-surface-inset border border-border rounded px-2 py-1.5 text-[11px] font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50"
                       />
                     ) : null}
-                    <div className="text-[10px] font-mono text-muted-foreground/70 pl-0.5 leading-relaxed">
+                    <div className="text-[10px] font-mono text-fg-muted pl-0.5 leading-relaxed">
                       <div>
                         OpenCode Go / Zen require <span className="text-foreground/80">opencode auth login</span> on the
                         sentinel host (~/.local/share/opencode/auth.json).
@@ -1023,7 +1023,7 @@ export function SpawnDialog() {
                         </option>
                       ))}
                     </select>
-                    <div className="text-[10px] font-mono text-muted-foreground/70 pl-0.5">
+                    <div className="text-[10px] font-mono text-fg-muted pl-0.5">
                       {OPENCODE_TOOL_PERMISSION_OPTIONS.find(o => o.value === openCodeToolPermission)?.info}
                     </div>
                   </div>

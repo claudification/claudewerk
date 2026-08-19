@@ -46,7 +46,7 @@ export function RenameDialogBody({ state }: { state: RenameModalState }) {
           id="rename-desc"
           label={
             <>
-              Description <span className="text-muted-foreground/50">(optional)</span>
+              Description <span className="text-fg-dim">(optional)</span>
             </>
           }
           value={description}

@@ -14,8 +14,8 @@ import { cn } from '@/lib/utils'
 
 export function ScopeSection({ label, children }: { label?: string; children: ReactNode }) {
   return (
-    <div className="border-t border-border/50 px-3 py-2 first:border-t-0">
-      {label && <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 mb-1">{label}</div>}
+    <div className="border-t border-border px-3 py-2 first:border-t-0">
+      {label && <div className="text-[9px] uppercase tracking-wider text-fg-dim mb-1">{label}</div>}
       {children}
     </div>
   )
@@ -29,7 +29,7 @@ export function ScopeStats({ children }: { children: ReactNode }) {
 export function ScopeStat({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
   return (
     <div className="flex items-baseline gap-1.5 text-[10px] min-w-0">
-      <span className="text-muted-foreground/60 shrink-0">{label}</span>
+      <span className="text-fg-dim shrink-0">{label}</span>
       <span className={cn('font-mono tabular-nums truncate', tone ?? 'text-foreground/85')}>{value}</span>
     </div>
   )
@@ -49,7 +49,7 @@ export function ScopeLine({
 }) {
   return (
     <div className="flex items-baseline gap-2 text-[10px] min-w-0" title={title}>
-      <span className="text-muted-foreground/60 shrink-0">{label}</span>
+      <span className="text-fg-dim shrink-0">{label}</span>
       <span className={cn('font-mono truncate ml-auto text-right', tone ?? 'text-foreground/85')}>{value}</span>
     </div>
   )
@@ -57,7 +57,7 @@ export function ScopeLine({
 
 /** Footer row of `label ►` seams. */
 export function ScopeLinks({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-3 border-t border-border/50 px-3 py-1.5">{children}</div>
+  return <div className="flex items-center gap-3 border-t border-border px-3 py-1.5">{children}</div>
 }
 
 export function ScopeLink({ children, onClick }: { children: ReactNode; onClick: () => void }) {

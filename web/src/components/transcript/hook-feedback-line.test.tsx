@@ -42,7 +42,8 @@ describe('hook feedback line', () => {
   test('our set_status nudge collapses to one muted label', () => {
     render(<SystemLine group={group(NUDGE)} ts="2026-08-05T13:44:02.083Z" />)
     const line = screen.getByText('Stop hook: set_status nudge')
-    expect(line.className).toContain('text-muted-foreground')
+    // `text-muted-foreground/70` before the opacity tokens landed.
+    expect(line.className).toContain('text-fg-muted')
     expect(screen.queryByText(/triage-worthy/)).toBeNull()
   })
 

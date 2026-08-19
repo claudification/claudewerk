@@ -104,7 +104,7 @@ function SectionRule({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 px-1 pt-2 pb-1">
       <span className="flex-1 h-px bg-border" />
-      <span className="text-[9px] text-muted-foreground/40 uppercase tracking-wider">{label}</span>
+      <span className="text-[9px] text-fg-faint uppercase tracking-wider">{label}</span>
       <span className="flex-1 h-px bg-border" />
     </div>
   )
@@ -131,7 +131,7 @@ export function UnorganizedSection({
   return (
     <div>
       {showHeading && (
-        <div className="text-[10px] text-muted-foreground/50 font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
+        <div className="text-[10px] text-fg-dim font-bold uppercase tracking-wider px-1 mb-1 flex items-center gap-2">
           <span>Unorganized</span>
           <span className="flex-1 h-px bg-border" />
         </div>

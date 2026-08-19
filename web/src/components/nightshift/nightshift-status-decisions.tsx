@@ -31,13 +31,13 @@ function Metrics({ d }: { d: WatchdogDecision }) {
   if (d.tokens !== undefined) chips.push(`${d.tokens.toLocaleString('en-US')} tok`)
   if (d.fiveHourPct !== undefined) chips.push(`${d.fiveHourPct}% 5h`)
   if (chips.length === 0) return null
-  return <span className="shrink-0 font-mono text-[9px] text-muted-foreground/70">{chips.join(' · ')}</span>
+  return <span className="shrink-0 font-mono text-[9px] text-fg-muted">{chips.join(' · ')}</span>
 }
 
 function DecisionRow({ d }: { d: WatchdogDecision }) {
   return (
-    <div className="flex items-start gap-2 border-t border-border/50 px-3 py-1.5 text-[11px]">
-      <span className="shrink-0 font-mono text-[9px] text-muted-foreground/60">{formatTime(d.at)}</span>
+    <div className="flex items-start gap-2 border-t border-border px-3 py-1.5 text-[11px]">
+      <span className="shrink-0 font-mono text-[9px] text-fg-dim">{formatTime(d.at)}</span>
       <VerdictPill verdict={d.verdict} kind={d.kind} />
       <span className="w-8 shrink-0 font-mono text-muted-foreground">{d.taskId}</span>
       <span className="min-w-0 flex-1 truncate" title={d.reason}>

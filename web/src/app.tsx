@@ -60,6 +60,7 @@ import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
 import { useBuildUpdate } from '@/hooks/use-build-update'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useEdgeSwipe } from '@/hooks/use-edge-swipe'
+import { useBackdropBypass } from '@/hooks/use-backdrop-bypass'
 import { useGlobalCommands } from '@/hooks/use-global-commands'
 import { useSyncEffects } from '@/hooks/use-sync-effects'
 import { useWebSocket } from '@/hooks/use-websocket'
@@ -327,6 +328,8 @@ function Dashboard() {
 
   useSyncEffects()
   useGlobalCommands(sidebar.toggle)
+  // Hold Option for 2s to see through every scrim at once.
+  useBackdropBypass()
 
   // Listen for user admin open event (from command palette)
   useEffect(() => {

@@ -9,7 +9,7 @@ function Trace({ decision }: { decision: DispatchDecision }) {
   const events = useDispatchStore(s => s.toolEvents[decision.traceId])
   if (!events?.length && !decision.toolCallCount) return null
   return (
-    <details className="rounded-lg border border-border/60 bg-card/40 px-3 py-2">
+    <details className="rounded-lg border border-border bg-card/40 px-3 py-2">
       <summary className="cursor-pointer truncate text-[11px] text-comment">
         {decision.intent || '(turn)'} · {decision.toolCallCount ?? events?.length ?? 0} tool calls
       </summary>

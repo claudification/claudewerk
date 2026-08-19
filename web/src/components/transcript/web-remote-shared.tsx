@@ -52,7 +52,7 @@ export function RemoteSummary({
 
 /** Muted count/detail suffix ("3 shells", "1.2 KB", ...). */
 export function Meta({ children }: { children: ReactNode }) {
-  return <span className="text-muted-foreground/50 text-[10px] shrink-0">{children}</span>
+  return <span className="text-fg-dim text-[10px] shrink-0">{children}</span>
 }
 
 export function ShellId({ id }: { id?: string }) {
@@ -67,7 +67,7 @@ export function ShotView({ url, label }: { url: string; label: string }) {
       <img
         src={url}
         alt={label}
-        className="max-w-sm max-h-64 rounded border border-border/50 hover:border-primary/50 transition-colors"
+        className="max-w-sm max-h-64 rounded border border-border hover:border-primary/50 transition-colors"
         loading="lazy"
       />
       <a

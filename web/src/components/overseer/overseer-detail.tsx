@@ -37,16 +37,16 @@ function RunHead({ data, nowMs }: { data: EpicInspectResult; nowMs: number }) {
   const { run, gen, maxGens, pct, lastBeat, target, concurrency } = headFacts(data)
 
   return (
-    <div className="px-3.5 py-2.5 border-b border-border/50 border-l-[3px] border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)] shrink-0">
+    <div className="px-3.5 py-2.5 border-b border-border border-l-[3px] border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)] shrink-0">
       <div className="flex items-center gap-2.5">
         <h3 className="text-[15px] font-bold text-foreground truncate">{data.epicId}</h3>
         <StatusPill status={run?.status ?? null} />
         <span className="flex-1" />
-        <span className="text-meta text-muted-foreground/60 shrink-0">
+        <span className="text-meta text-fg-dim shrink-0">
           target <b className="text-foreground">{target}</b> . concurrency {concurrency}
         </span>
       </div>
-      <div className="text-meta text-muted-foreground/50 truncate mt-0.5">{data.project}</div>
+      <div className="text-meta text-fg-dim truncate mt-0.5">{data.project}</div>
       <div className="flex items-center gap-2.5 mt-2">
         <span className="text-meta text-muted-foreground shrink-0">GEN {gen}</span>
         <span className="flex-1 h-[3px] bg-border/70">
@@ -65,13 +65,13 @@ function Stats({ data }: { data: EpicInspectResult }) {
   const done = plan ? plan.children - (plan.dispatch.length + plan.heldBack.length + plan.waitingOnDeps.length) : 0
 
   return (
-    <div className="flex gap-6 px-3.5 py-2.5 border-b border-border/50 shrink-0 flex-wrap">
+    <div className="flex gap-6 px-3.5 py-2.5 border-b border-border shrink-0 flex-wrap">
       <Stat value={Math.max(0, done)} label="DONE" tone="text-active" />
       <Stat value={plan?.dispatch.length ?? 0} label="READY" tone="text-foreground" />
       <Stat value={data.live.inFlight.length} label="IN FLIGHT" tone="text-idle" />
-      <Stat value={plan?.waitingOnDeps.length ?? 0} label="BLOCKED" tone="text-muted-foreground/60" />
+      <Stat value={plan?.waitingOnDeps.length ?? 0} label="BLOCKED" tone="text-fg-dim" />
       <Stat value={data.live.unacknowledged.length} label="UNACKED" tone="text-event-prompt" />
-      <Stat value={data.run?.dryGens ?? 0} label="DRY GENS" tone="text-muted-foreground/60" />
+      <Stat value={data.run?.dryGens ?? 0} label="DRY GENS" tone="text-fg-dim" />
     </div>
   )
 }
@@ -116,7 +116,7 @@ export function OverseerDetail({
       {data.error && <div className="px-3.5 py-1.5 text-[11px] text-destructive shrink-0">{data.error}</div>}
 
       <div className="flex-1 min-h-0 flex">
-        <div className="w-72 shrink-0 border-r border-border/50 overflow-y-auto">
+        <div className="w-72 shrink-0 border-r border-border overflow-y-auto">
           <OverseerSeats
             live={data.live}
             concurrency={data.run?.concurrency ?? 3}

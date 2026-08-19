@@ -45,7 +45,7 @@ export function CommitTranscriptLinkRow({ hash, conversationId, conversationName
         Open the conversation that made this{conversationName ? ` (${conversationName})` : ''}
       </button>
       {link?.anchor && (
-        <div className="text-[9px] font-mono text-muted-foreground/50 pl-[18px]">
+        <div className="text-[9px] font-mono text-fg-dim pl-[18px]">
           transcript position seq {link.anchor.seq} - {new Date(link.anchor.timestamp).toLocaleString()}
         </div>
       )}

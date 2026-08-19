@@ -34,7 +34,7 @@ export function TimelineStepRow({
   return (
     <div className="flex items-center gap-2 text-[10px] font-mono leading-snug">
       <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', color.replace('text-', 'bg-'))} />
-      <span className="text-muted-foreground/60 tabular-nums w-10 shrink-0">{elapsedSec && `+${elapsedSec}s`}</span>
+      <span className="text-fg-dim tabular-nums w-10 shrink-0">{elapsedSec && `+${elapsedSec}s`}</span>
       <span className={cn('font-bold uppercase tracking-wider shrink-0', color)}>{label}</span>
       {detail}
       {trailing && <span className="ml-auto shrink-0">{trailing}</span>}

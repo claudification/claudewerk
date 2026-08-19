@@ -192,7 +192,7 @@ function TaskPreviewPopover({ task, anchorRect }: { task: ProjectTask; anchorRec
       <div className="px-3 py-2 border-b border-primary/12">
         <div className="text-xs font-mono text-foreground font-bold">{task.title}</div>
         <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-          <span className="text-[9px] font-mono text-muted-foreground/50">{task.status}</span>
+          <span className="text-[9px] font-mono text-fg-dim">{task.status}</span>
           {task.priority && (
             <span
               className={cn(
@@ -219,7 +219,7 @@ function TaskPreviewPopover({ task, anchorRect }: { task: ProjectTask; anchorRec
             <Markdown>{task.body}</Markdown>
           </div>
         ) : (
-          <div className="text-[10px] text-muted-foreground/30 font-mono italic">No content</div>
+          <div className="text-[10px] text-fg-faint font-mono italic">No content</div>
         )}
       </div>
     </div>
@@ -438,7 +438,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     <Dialog open={open} onOpenChange={v => !v && handleClose()}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden rounded-lg p-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border/50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <div className="flex items-center gap-2">
             <ListChecks className="size-4 text-accent" />
             <DialogTitle className="text-sm">Select Tasks</DialogTitle>
@@ -457,9 +457,9 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
         </div>
 
         {/* Search + status chips */}
-        <div className="px-4 py-2 border-b border-border/30 space-y-2">
+        <div className="px-4 py-2 border-b border-border-subtle space-y-2">
           <div className="flex items-center gap-2">
-            <Search className="size-3.5 text-muted-foreground/40 shrink-0" />
+            <Search className="size-3.5 text-fg-faint shrink-0" />
             <input
               ref={searchRef}
               aria-label="Search tasks"
@@ -468,7 +468,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
               onChange={e => setQuery(e.target.value)}
               onFocus={() => haptic('tap')}
               placeholder="Search tasks... (#tag for filter)"
-              className="flex-1 bg-transparent text-xs font-mono text-foreground outline-none placeholder:text-muted-foreground/30"
+              className="flex-1 bg-transparent text-xs font-mono text-foreground outline-none placeholder:text-fg-faint"
             />
             {query && (
               <button
@@ -477,7 +477,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                   setQuery('')
                   searchRef.current?.focus()
                 }}
-                className="text-muted-foreground/40 hover:text-foreground"
+                className="text-fg-faint hover:text-foreground"
               >
                 <X className="size-3" />
               </button>
@@ -493,7 +493,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                   'px-2 py-0.5 text-[10px] font-mono border rounded transition-colors',
                   activeStatuses.has(chip.status)
                     ? 'border-accent/50 text-accent bg-accent/10'
-                    : 'border-border/40 text-muted-foreground/40 hover:text-muted-foreground/60',
+                    : 'border-border-subtle text-fg-faint hover:text-fg-dim',
                 )}
               >
                 {chip.label}
@@ -506,19 +506,19 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                   haptic('tap')
                   setScope(null)
                 }}
-                className="text-[10px] font-mono text-muted-foreground/40 hover:text-foreground"
+                className="text-[10px] font-mono text-fg-faint hover:text-foreground"
               >
                 show whole board
               </button>
             )}
-            <span className="ml-auto text-[10px] text-muted-foreground/30 font-mono">{visibleTasks.length} tasks</span>
+            <span className="ml-auto text-[10px] text-fg-faint font-mono">{visibleTasks.length} tasks</span>
           </div>
         </div>
 
         {/* Task list */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {visibleTasks.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground/30 text-xs font-mono">
+            <div className="flex items-center justify-center h-24 text-fg-faint text-xs font-mono">
               No tasks match
             </div>
           ) : (
@@ -528,7 +528,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                 <div
                   key={task.slug}
                   className={cn(
-                    'flex items-start border-b border-border/20 transition-colors',
+                    'flex items-start border-b border-border-subtle transition-colors',
                     'hover:bg-accent/5',
                     isSelected && 'bg-accent/10',
                   )}
@@ -544,7 +544,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                     <div
                       className={cn(
                         'w-4 h-4 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-colors',
-                        isSelected ? 'border-accent bg-accent/20 text-accent' : 'border-border/50 text-transparent',
+                        isSelected ? 'border-accent bg-accent/20 text-accent' : 'border-border text-transparent',
                       )}
                     >
                       {isSelected && <CheckSquare className="size-3" />}
@@ -561,7 +561,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                         <span className="text-xs font-mono text-foreground truncate">{task.title}</span>
                       </div>
                       <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                        <span className="text-[9px] font-mono text-muted-foreground/40">{task.status}</span>
+                        <span className="text-[9px] font-mono text-fg-faint">{task.status}</span>
                         {task.tags.map(tag => (
                           <span
                             key={tag}
@@ -579,7 +579,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                       e.stopPropagation()
                       handleInfoClick(task, e.currentTarget)
                     }}
-                    className="shrink-0 px-2 py-2.5 text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors"
+                    className="shrink-0 px-2 py-2.5 text-fg-faint hover:text-fg-muted transition-colors"
                     title="Preview task"
                   >
                     <Info className="size-3" />
@@ -591,10 +591,10 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
         </div>
 
         {/* Selected badge + prompt area */}
-        <div className="border-t border-border/50">
+        <div className="border-t border-border">
           {/* Selection count + expand */}
           {selected.size > 0 && (
-            <div className="px-4 py-2 border-b border-border/30">
+            <div className="px-4 py-2 border-b border-border-subtle">
               <button
                 type="button"
                 onClick={() => {
@@ -619,7 +619,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                           e.stopPropagation()
                           removeTask(task.slug)
                         }}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 text-fg-faint hover:text-red-400 transition-opacity"
                       >
                         <X className="size-3" />
                       </button>
@@ -650,7 +650,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                     <span
                       className={cn(
                         'text-[10px] font-mono',
-                        templateId === tmpl.id ? 'text-accent font-bold' : 'text-muted-foreground/60',
+                        templateId === tmpl.id ? 'text-accent font-bold' : 'text-fg-dim',
                       )}
                     >
                       {tmpl.label}
@@ -666,17 +666,17 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                 value={customInstructions}
                 onChange={e => setCustomInstructions(e.target.value)}
                 rows={4}
-                className="w-full bg-background border border-primary/15 rounded px-2.5 py-2 text-[11px] font-mono text-foreground/80 outline-none resize-y placeholder:text-muted-foreground/30 focus:border-accent/50"
+                className="w-full bg-background border border-primary/15 rounded px-2.5 py-2 text-[11px] font-mono text-foreground/80 outline-none resize-y placeholder:text-fg-faint focus:border-accent/50"
               />
 
               {/* Task list preview (read-only) */}
               <div className="bg-background border border-primary/12 rounded px-2.5 py-1.5 max-h-20 overflow-y-auto">
-                <div className="text-[10px] font-mono text-muted-foreground/40 mb-1">Tasks:</div>
+                <div className="text-[10px] font-mono text-fg-faint mb-1">Tasks:</div>
                 {selectedTasks.map(task => (
                   <div key={task.slug} className="text-[10px] font-mono text-foreground/60 leading-relaxed">
                     <span className="text-foreground/80">- {task.title}</span>
-                    {task.priority && <span className="text-muted-foreground/40"> ({task.priority})</span>}
-                    <div className="text-muted-foreground/30 pl-2">{cardRelPath(task.slug)}</div>
+                    {task.priority && <span className="text-fg-faint"> ({task.priority})</span>}
+                    <div className="text-fg-faint pl-2">{cardRelPath(task.slug)}</div>
                   </div>
                 ))}
               </div>
@@ -700,7 +700,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
                 'flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-xs font-mono font-bold transition-colors',
                 hasActiveConversation && selected.size > 0
                   ? 'bg-accent/20 text-accent border border-accent/40 hover:bg-accent/30 active:scale-[0.98]'
-                  : 'bg-background text-muted-foreground/30 border border-border/20 cursor-not-allowed',
+                  : 'bg-background text-fg-faint border border-border-subtle cursor-not-allowed',
               )}
             >
               <Send className="size-3.5" />
@@ -715,8 +715,8 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
               className={cn(
                 'flex items-center justify-center gap-2 px-3 py-2 rounded text-xs font-mono transition-colors',
                 selected.size > 0
-                  ? 'text-muted-foreground border border-border/40 hover:text-foreground hover:border-border/60 active:scale-[0.98]'
-                  : 'text-muted-foreground/20 border border-border/10 cursor-not-allowed',
+                  ? 'text-muted-foreground border border-border-subtle hover:text-foreground hover:border-border active:scale-[0.98]'
+                  : 'text-fg-faint border border-border-subtle cursor-not-allowed',
               )}
             >
               <Copy className="size-3.5" />

@@ -48,7 +48,7 @@ function createTaskSummary(
       </span>
     ),
     details: desc ? (
-      <div className="text-[10px] text-muted-foreground pl-1 border-l border-border/30 ml-1">{desc}</div>
+      <div className="text-[10px] text-muted-foreground pl-1 border-l border-border-subtle ml-1">{desc}</div>
     ) : null,
   }
 }
@@ -116,7 +116,7 @@ export function renderTodoWrite({ input }: ToolCaseInput): ToolCaseResult {
       <span className="flex items-center gap-1.5 min-w-0">
         {label}
         {!allDone && someStarted && (
-          <span className="shrink-0 text-muted-foreground/50 text-[10px] tabular-nums">
+          <span className="shrink-0 text-fg-dim text-[10px] tabular-nums">
             ({completed}/{total})
           </span>
         )}
@@ -139,7 +139,7 @@ export function renderTodoWrite({ input }: ToolCaseInput): ToolCaseResult {
             </span>
             <span
               className={cn(
-                t.status === 'completed' && 'text-muted-foreground/60 line-through',
+                t.status === 'completed' && 'text-fg-dim line-through',
                 t.status === 'in_progress' && 'text-foreground/85',
               )}
             >

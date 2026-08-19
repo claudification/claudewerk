@@ -23,10 +23,10 @@ export function CommitFeedRow({ commit }: { commit: CommitRow }) {
         commit={commit}
         trailing={
           <>
-            <span className="text-[10px] font-mono text-muted-foreground/50 shrink-0 hidden sm:inline">
+            <span className="text-[10px] font-mono text-fg-dim shrink-0 hidden sm:inline">
               {commit.branch}
             </span>
-            <span className="text-[10px] text-muted-foreground/70 shrink-0">{commitAge(commit.committedAt)}</span>
+            <span className="text-[10px] text-fg-muted shrink-0">{commitAge(commit.committedAt)}</span>
           </>
         }
       />

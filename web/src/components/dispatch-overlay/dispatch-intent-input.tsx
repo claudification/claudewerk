@@ -52,7 +52,7 @@ export function DispatchIntentInput() {
   const submit = useDispatchStore(s => s.submit)
 
   return (
-    <div className="flex-none border-t border-border/60 px-5 py-4">
+    <div className="flex-none border-t border-border px-5 py-4">
       <div
         className={cn(
           'flex items-end gap-2 rounded-2xl border bg-[var(--surface-inset)] px-3 py-2 transition-colors',

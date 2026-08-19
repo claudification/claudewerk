@@ -74,7 +74,7 @@ export function HtmlBlock({ content, url, height = 360, label }: HtmlBlockProps)
       </div>
       <div
         className={cn(
-          'relative overflow-hidden rounded border border-border/40 bg-white',
+          'relative overflow-hidden rounded border border-border-subtle bg-white',
           fullscreen ? 'min-h-0 flex-1' : '',
         )}
         style={fullscreen ? undefined : { height }}

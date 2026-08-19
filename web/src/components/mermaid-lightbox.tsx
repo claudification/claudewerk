@@ -127,7 +127,7 @@ export function MermaidLightbox() {
           <div
             className={cn(
               'absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1.5 rounded-lg',
-              'bg-background/80 backdrop-blur border border-border/50 font-mono text-[11px]',
+              'bg-background/80 backdrop-blur border border-border font-mono text-[11px]',
             )}
           >
             <button type="button" className={btn} onClick={() => zoomBy(1 / 1.25)} title="Zoom out">
@@ -152,7 +152,7 @@ export function MermaidLightbox() {
               haptic('tap')
               close()
             }}
-            className={cn(btn, 'absolute top-4 right-4 bg-background/80 backdrop-blur border border-border/50')}
+            className={cn(btn, 'absolute top-4 right-4 bg-background/80 backdrop-blur border border-border')}
             title="Close (Esc)"
           >
             <X className="size-4" />

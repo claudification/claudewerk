@@ -74,7 +74,7 @@ export const PRIORITY_COLORS: Record<string, string> = {
 }
 
 /**
- * THE BOARD'S CONTRAST FLOOR IS `text-muted-foreground/55`. Enforced by
+ * THE BOARD'S CONTRAST FLOOR IS `text-fg-dim`. Enforced by
  * `scripts/lint-patterns.ts`; that rule's message carries the ladder.
  *
  * MEASURED, not eyeballed. Panel background is `oklch(0.15 0.02 260)` and
@@ -94,7 +94,7 @@ export const PRIORITY_COLORS: Record<string, string> = {
  */
 /** The unselected state of a filter chip. One definition, because priority and
  *  tag chips drifting apart is how a filter row stops reading as one control. */
-export const CHIP_IDLE = 'border-border/60 text-muted-foreground/80 hover:text-foreground hover:border-border'
+export const CHIP_IDLE = 'border-border text-fg-muted hover:text-foreground hover:border-border'
 
 /** Column template for the epic child listing. Lives here rather than in either
  *  component because the header and the rows must agree, and having the row

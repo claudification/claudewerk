@@ -321,7 +321,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
         expanded
           ? 'fixed inset-0 z-[999] flex flex-col bg-background'
           : cn(
-              'relative w-full rounded-md border border-border/60 bg-transparent overflow-hidden',
+              'relative w-full rounded-md border border-border bg-transparent overflow-hidden',
               'focus-within:border-border transition-colors',
               props.className,
             ),
@@ -391,7 +391,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
 
       {/* Toolbar below the editor, above the keyboard. Matches legacy layout. */}
       {expanded && (
-        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t border-border/40">
+        <div className="shrink-0 flex items-center justify-between px-3 py-2 border-t border-border-subtle">
           <button
             type="button"
             onTouchStart={fireCancel}

@@ -46,6 +46,6 @@ export interface SettingItem {
 }
 
 export const TEXT_INPUT_CLS =
-  'px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40'
+  'px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-fg-faint'
 export const NUM_INPUT_CLS = `${TEXT_INPUT_CLS} text-right`
 export const SELECT_CLS = 'px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground'

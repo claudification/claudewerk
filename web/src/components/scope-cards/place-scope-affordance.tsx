@@ -18,7 +18,7 @@ export function PlaceScopeAffordance({ project }: { project: string }) {
       <span
         role="button"
         tabIndex={0}
-        className="text-[10px] text-muted-foreground/40 hover:text-accent cursor-pointer transition-colors"
+        className="text-[10px] text-fg-faint hover:text-accent cursor-pointer transition-colors"
         title="Project overview"
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()

@@ -26,9 +26,9 @@ export function FileTreeBlock({ label, entries }: Pick<FileTreeComponent, 'label
   const dirSegments = entries.map(e => e.path.split('/').filter(Boolean).slice(0, -1))
   const common = commonDirDepth(dirSegments)
   return (
-    <div className="rounded border border-border/30 overflow-hidden">
+    <div className="rounded border border-border-subtle overflow-hidden">
       {label && (
-        <div className="px-3 py-1.5 bg-muted/40 border-b border-border/30 text-xs font-medium text-muted-foreground">
+        <div className="px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-xs font-medium text-muted-foreground">
           {label}
         </div>
       )}
@@ -48,7 +48,7 @@ export function FileTreeBlock({ label, entries }: Pick<FileTreeComponent, 'label
             >
               <span className={cn('size-1.5 rounded-full shrink-0', STATUS_DOT[status])} />
               <span className={cn('truncate', STATUS_TEXT[status])}>{name}</span>
-              {entry.note && <span className="text-muted-foreground/60 truncate">— {entry.note}</span>}
+              {entry.note && <span className="text-fg-dim truncate">— {entry.note}</span>}
             </div>
           )
         })}

@@ -105,7 +105,7 @@ export function GroupNode({
             {group.name}
           </span>
         )}
-        {collapsed && <span className="text-muted-foreground/40 font-normal normal-case">({childCount})</span>}
+        {collapsed && <span className="text-fg-faint font-normal normal-case">({childCount})</span>}
         <span className="flex-1 h-px bg-border/50" />
       </div>
     </GroupContextMenu>

@@ -25,7 +25,7 @@ export function CommitSummaryLine({ commit, trailing }: { commit: CommitRow; tra
   return (
     <div className="flex items-center gap-2 min-w-0">
       <GitCommitHorizontal className={cn('size-3 shrink-0', commitTypeColor(commit.ccType))} />
-      <span className="font-mono text-[10px] text-muted-foreground/70 shrink-0">{commit.shortHash}</span>
+      <span className="font-mono text-[10px] text-fg-muted shrink-0">{commit.shortHash}</span>
       <span className="text-xs truncate flex-1">{commit.subject}</span>
       {badge && <span className={cn('px-1 text-[9px] font-bold uppercase shrink-0', badge)}>{commit.kind}</span>}
       {trailing}

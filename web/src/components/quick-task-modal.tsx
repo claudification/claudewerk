@@ -101,13 +101,13 @@ export function QuickTaskModal() {
           <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
             <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
               <Kbd>↵</Kbd> add
-              <span className="text-muted-foreground/40">·</span>
+              <span className="text-fg-faint">·</span>
               <KbdGroup>
                 <Kbd>⇧</Kbd>
                 <Kbd>↵</Kbd>
               </KbdGroup>{' '}
               newline
-              <span className="text-muted-foreground/40">·</span>
+              <span className="text-fg-faint">·</span>
               <Kbd>Esc</Kbd> close
             </span>
             <button

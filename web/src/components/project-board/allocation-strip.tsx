@@ -31,7 +31,7 @@ function Stat({ value, label }: { value: string; label: string }) {
   return (
     <span className="flex items-baseline gap-1.5">
       <span className="text-read font-bold tabular-nums text-foreground">{value}</span>
-      <span className="text-chrome text-muted-foreground/70">{label}</span>
+      <span className="text-chrome text-fg-muted">{label}</span>
     </span>
   )
 }

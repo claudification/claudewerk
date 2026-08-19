@@ -17,7 +17,7 @@ export function DetailBar({ window: w, label }: { window: UsageWindow; label: st
         />
       </div>
       <span className={`text-[11px] tabular-nums font-medium w-8 ${usageTextColor(pct)}`}>{Math.round(pct)}%</span>
-      <span className="text-[10px] text-muted-foreground/50 w-12 tabular-nums" title={formatResetAbsolute(w.resetAt)}>
+      <span className="text-[10px] text-fg-dim w-12 tabular-nums" title={formatResetAbsolute(w.resetAt)}>
         {formatReset(w.resetAt)}
       </span>
     </div>
@@ -42,7 +42,7 @@ export function ExtraUsageRow({ extra }: { extra: ExtraUsage }) {
       <span className={`text-[11px] tabular-nums font-medium ${usageTextColor(pct)}`}>
         ${used}/${limit}
       </span>
-      <span className="text-[10px] text-muted-foreground/50 w-12 tabular-nums" title={formatResetAbsolute(resetIso)}>
+      <span className="text-[10px] text-fg-dim w-12 tabular-nums" title={formatResetAbsolute(resetIso)}>
         {formatReset(resetIso)}
       </span>
     </div>

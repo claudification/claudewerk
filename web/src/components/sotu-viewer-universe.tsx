@@ -30,7 +30,7 @@ export function UniverseView({
             type="button"
             key={p.projectUri}
             onClick={() => onSelect(p.projectUri)}
-            className="w-full text-left rounded-lg border border-border/50 p-3 transition-colors hover:border-accent/60 hover:bg-accent/5"
+            className="w-full text-left rounded-lg border border-border p-3 transition-colors hover:border-accent/60 hover:bg-accent/5"
           >
             <div className="flex items-center gap-2 mb-1">
               <span className={`h-1.5 w-1.5 rounded-full ${p.enabled ? 'bg-accent' : 'bg-comment/30'}`} />

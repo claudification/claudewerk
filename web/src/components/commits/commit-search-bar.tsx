@@ -31,7 +31,7 @@ export function CommitSearchBar({ onApply, trailing }: Props) {
           }
         }}
         placeholder="Search messages and touched paths, then Enter"
-        className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/50"
+        className="flex-1 bg-transparent text-xs outline-none placeholder:text-fg-dim"
       />
       {trailing}
     </div>

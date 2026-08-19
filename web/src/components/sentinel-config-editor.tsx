@@ -121,7 +121,7 @@ function ProfileEditRow({
       <span className="text-foreground font-bold min-w-[64px]" style={draft.color ? { color: draft.color } : undefined}>
         {name}
       </span>
-      <label className="flex items-center gap-1 text-muted-foreground/70">
+      <label className="flex items-center gap-1 text-fg-muted">
         w
         <input
           type="number"
@@ -132,7 +132,7 @@ function ProfileEditRow({
           className="w-12 px-1 py-0.5 bg-muted border border-border text-foreground rounded text-[10px]"
         />
       </label>
-      <label className="flex items-center gap-1 text-muted-foreground/70">
+      <label className="flex items-center gap-1 text-fg-muted">
         pool
         <select
           value={draft.pool === null ? POOL_NONE : draft.pool}
@@ -155,7 +155,7 @@ function ProfileEditRow({
         value={draft.label}
         placeholder="label"
         onChange={e => onChange({ ...draft, label: e.target.value })}
-        className="w-24 px-1 py-0.5 bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 rounded text-[10px]"
+        className="w-24 px-1 py-0.5 bg-muted border border-border text-foreground placeholder:text-fg-faint rounded text-[10px]"
       />
       <input
         aria-label="Sentinel color"
@@ -163,7 +163,7 @@ function ProfileEditRow({
         value={draft.color}
         placeholder="#color"
         onChange={e => onChange({ ...draft, color: e.target.value })}
-        className="w-20 px-1 py-0.5 bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 rounded text-[10px]"
+        className="w-20 px-1 py-0.5 bg-muted border border-border text-foreground placeholder:text-fg-faint rounded text-[10px]"
       />
     </div>
   )
@@ -250,8 +250,8 @@ export function SentinelConfigEditor({
   }
 
   return (
-    <div className="border-t border-border/40 pt-1 pb-2">
-      <div className="px-2 pb-1 text-[9px] text-muted-foreground/50 uppercase tracking-wider">Tune (live)</div>
+    <div className="border-t border-border-subtle pt-1 pb-2">
+      <div className="px-2 pb-1 text-[9px] text-fg-dim uppercase tracking-wider">Tune (live)</div>
 
       {Object.entries(draft.profiles).map(([name, d]) => (
         <ProfileEditRow
@@ -265,7 +265,7 @@ export function SentinelConfigEditor({
 
       {/* Sentinel-wide selectors. */}
       <div className="flex flex-wrap items-center gap-2 pl-6 pr-2 py-1 text-[10px]">
-        <label className="flex items-center gap-1 text-muted-foreground/70">
+        <label className="flex items-center gap-1 text-fg-muted">
           selection
           <select
             value={draft.defaultSelection}
@@ -277,7 +277,7 @@ export function SentinelConfigEditor({
             <option value="random">random</option>
           </select>
         </label>
-        <label className="flex items-center gap-1 text-muted-foreground/70">
+        <label className="flex items-center gap-1 text-fg-muted">
           default pool
           <select
             value={draft.defaultPool}
@@ -307,7 +307,7 @@ export function SentinelConfigEditor({
       {error && <div className="pl-6 pr-2 pt-1 text-[10px] text-destructive">{error}</div>}
 
       {/* Read-only boundary hint: secrets + filesystem + profile CRUD stay on host. */}
-      <div className="pl-6 pr-2 pt-1 text-[9px] text-muted-foreground/50 leading-snug">
+      <div className="pl-6 pr-2 pt-1 text-[9px] text-fg-dim leading-snug">
         <code className="text-foreground/70">configDir</code>, env vars, and adding/removing profiles are configured via
         CLI on the host (<code className="text-foreground/70">sentinel profile add/set/auth</code>) -- secrets stay on
         the host and never traverse the wire.

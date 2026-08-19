@@ -18,7 +18,7 @@ export function VoiceBannerShell({
         <div
           className={cn(
             'px-4 py-2.5 rounded-xl backdrop-blur-xl shadow-lg border pointer-events-auto',
-            tone === 'amber' ? 'bg-amber-950/80 border-amber-500/30' : 'bg-background/90 border-border/50',
+            tone === 'amber' ? 'bg-amber-950/80 border-amber-500/30' : 'bg-background/90 border-border',
           )}
         >
           {children}

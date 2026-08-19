@@ -160,7 +160,7 @@ export const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }:
   // poofing -- an instant unmount drops scrollHeight and jerks the viewport.
   return (
     <Collapse show={isActive}>
-      <div className="mt-2 flex flex-col items-start px-4 py-1.5 text-[11px] font-mono text-muted-foreground/60">
+      <div className="mt-2 flex flex-col items-start px-4 py-1.5 text-[11px] font-mono text-fg-dim">
         <div className="flex items-center gap-2">
           <span className="inline-block size-2 bg-accent rounded-full animate-pulse" />
           <span className="text-accent/70">
@@ -169,7 +169,7 @@ export const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }:
           </span>
         </div>
         {turnTokens > 0 && (
-          <span className="text-muted-foreground/40 tabular-nums pl-4 text-[10px]">
+          <span className="text-fg-faint tabular-nums pl-4 text-[10px]">
             {(turnTokens / 1000).toFixed(1)}K tokens
           </span>
         )}

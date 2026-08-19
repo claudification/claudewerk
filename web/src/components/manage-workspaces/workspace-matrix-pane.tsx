@@ -23,7 +23,7 @@ function Cell({
   color: string | undefined
   onToggle: () => void
 }) {
-  const style = member ? `border-transparent ${colorDot(color)}` : 'border-border/50 hover:border-foreground/40'
+  const style = member ? `border-transparent ${colorDot(color)}` : 'border-border hover:border-foreground/40'
   return (
     <td className="text-center px-0.5">
       <button
@@ -61,7 +61,7 @@ export function WorkspaceMatrixPane({
         <table className="w-full text-xs border-collapse">
           <thead className="sticky top-0 bg-background z-10">
             <tr>
-              <th className="text-left font-normal text-[10px] uppercase tracking-wider text-muted-foreground/50 py-1">
+              <th className="text-left font-normal text-[10px] uppercase tracking-wider text-fg-dim py-1">
                 Project
               </th>
               {inventory.workspaces.map((ws: Workspace) => (
@@ -80,14 +80,14 @@ export function WorkspaceMatrixPane({
             {rows.map(uri => {
               const memberOf = inventory.memberOf.get(uri) ?? new Set<string>()
               return (
-                <tr key={uri} className="border-t border-border/40 hover:bg-accent/5">
+                <tr key={uri} className="border-t border-border-subtle hover:bg-accent/5">
                   <td className="py-1 pr-2 max-w-0 w-full">
                     <div className="flex items-center gap-2">
                       <span className="truncate" title={projectPath(uri)}>
                         {inventory.labelOf(uri)}
                       </span>
                       {memberOf.size === 0 && (
-                        <span className="text-[9px] text-muted-foreground/40 shrink-0">All only</span>
+                        <span className="text-[9px] text-fg-faint shrink-0">All only</span>
                       )}
                     </div>
                   </td>

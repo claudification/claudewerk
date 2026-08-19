@@ -217,7 +217,7 @@ function TotalsLine({ totals }: { totals: Totals }) {
     <div className="flex items-center gap-3 text-[10px] tabular-nums">
       <span style={{ color: COLOR_OUTPUT }}>out {formatTokens(totals.output)}</span>
       <span style={{ color: COLOR_INPUT }}>in {formatTokens(totals.input)}</span>
-      <span className="text-muted-foreground/60">cache {formatTokens(totals.cacheRead)}</span>
+      <span className="text-fg-dim">cache {formatTokens(totals.cacheRead)}</span>
     </div>
   )
 }
@@ -235,7 +235,7 @@ function TokenFlowPanel() {
   return (
     <div className="space-y-2 font-mono">
       <div className="flex items-center justify-between">
-        <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">Token flow</div>
+        <div className="text-[10px] text-fg-dim uppercase tracking-wider">Token flow</div>
         <div className="flex gap-0.5">
           {WINDOWS.map(w => (
             <button
@@ -268,10 +268,10 @@ function TokenFlowPanel() {
       )}
 
       {perProfile && !RING_WINDOWS.has(windowKey) && (
-        <div className="text-[9px] text-muted-foreground/50">per-profile breakdown: 5m / 30m / 2h windows</div>
+        <div className="text-[9px] text-fg-dim">per-profile breakdown: 5m / 30m / 2h windows</div>
       )}
       {profileRows.length > 0 && (
-        <div className="space-y-1 border-t border-border/50 pt-1">
+        <div className="space-y-1 border-t border-border pt-1">
           {profileRows.map(r => (
             <div key={`${r.sentinelId}\0${r.profile}`} className="flex items-center gap-2 text-[10px] tabular-nums">
               <span className="text-muted-foreground truncate max-w-24">{r.profile}</span>
@@ -323,11 +323,11 @@ export function TokenFlowBar() {
             setOpen(o => !o)
           }}
         >
-          <span className="inline-flex items-center border border-border/25 rounded-[3px] px-1 py-0.5">
+          <span className="inline-flex items-center border border-border-subtle rounded-[3px] px-1 py-0.5">
             {hasData ? (
               <StackedBars buckets={miniBuckets} width={108} height={16} />
             ) : (
-              <span className="text-[10px] text-muted-foreground/40">tok</span>
+              <span className="text-[10px] text-fg-faint">tok</span>
             )}
           </span>
         </button>

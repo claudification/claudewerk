@@ -28,8 +28,8 @@ import { taskAge } from './board-constants'
  */
 const CARD_PRIORITY: Record<string, string> = {
   high: 'text-destructive font-bold',
-  medium: 'text-muted-foreground/55',
-  low: 'text-muted-foreground/55',
+  medium: 'text-fg-dim',
+  low: 'text-fg-dim',
 }
 
 const PRIORITY_MARK: Record<string, string> = { high: 'HI', medium: 'md', low: 'lo' }
@@ -63,7 +63,7 @@ export function CardBody({
         className={cn('font-mono text-foreground truncate flex items-center gap-1.5', TITLE_SIZE_CLASS[view.titleSize])}
       >
         <span className="truncate">{task.title}</span>
-        {task.created && <span className="text-[9px] text-muted-foreground/65 shrink-0">{taskAge(task.created)}</span>}
+        {task.created && <span className="text-[9px] text-fg-dim shrink-0">{taskAge(task.created)}</span>}
       </div>
       {task.bodyPreview && view.bodyLines > 0 && (
         <div className={cn('text-[10px] text-muted-foreground mt-0.5', CLAMP_CLASS[view.bodyLines])}>
@@ -81,7 +81,7 @@ export function CardBody({
         {task.tags.map(tag => (
           <span
             key={tag}
-            className="text-chrome px-1 py-0.5 border border-muted-foreground/28 text-muted-foreground/78 font-mono"
+            className="text-chrome px-1 py-0.5 border border-muted-foreground/28 text-fg-muted font-mono"
           >
             {tag}
           </span>

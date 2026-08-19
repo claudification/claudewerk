@@ -59,7 +59,7 @@ export function BatchFooter({
             aria-label="Batch action"
             value={action.id}
             onChange={e => onActionChange(e.target.value)}
-            className="h-7 bg-muted/20 pl-2 pr-6 border border-border/40 rounded-sm outline-none appearance-none cursor-pointer transition-colors focus:border-accent"
+            className="h-7 bg-muted/20 pl-2 pr-6 border border-border-subtle rounded-sm outline-none appearance-none cursor-pointer transition-colors focus:border-accent"
           >
             {ALL_BATCH_ACTIONS.map(a => (
               <option key={a.id} value={a.id}>
@@ -67,10 +67,10 @@ export function BatchFooter({
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-muted-foreground/50" />
+          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-3 text-fg-dim" />
         </div>
-        <span className="flex-1 min-w-0 truncate text-[10px] text-muted-foreground/70">{action.description}</span>
-        <span className="hidden sm:flex items-center gap-2 shrink-0 text-[9px] text-muted-foreground/50">
+        <span className="flex-1 min-w-0 truncate text-[10px] text-fg-muted">{action.description}</span>
+        <span className="hidden sm:flex items-center gap-2 shrink-0 text-[9px] text-fg-dim">
           {HINTS.map(h => (
             <span key={h.keys} className="flex items-center gap-1">
               <Kbd className="text-[9px]">{h.keys}</Kbd>

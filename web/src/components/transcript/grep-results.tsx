@@ -125,7 +125,7 @@ export function FileListResults({
   const total = numFiles ?? filenames.length
 
   if (total === 0) {
-    return <div className="text-[10px] font-mono text-muted-foreground/60 px-2 py-1">{emptyLabel}</div>
+    return <div className="text-[10px] font-mono text-fg-dim px-2 py-1">{emptyLabel}</div>
   }
 
   // Flatten with group dividers, then truncate at file count
@@ -151,11 +151,11 @@ export function FileListResults({
             {g.dir && (
               <div className="text-purple-400/70 truncate">
                 {g.dir}
-                <span className="text-muted-foreground/40">/</span>
-                <span className="ml-1.5 text-muted-foreground/40">({g.files.length})</span>
+                <span className="text-fg-faint">/</span>
+                <span className="ml-1.5 text-fg-faint">({g.files.length})</span>
               </div>
             )}
-            <ul className={g.dir ? 'pl-3 border-l border-border/30' : ''}>
+            <ul className={g.dir ? 'pl-3 border-l border-border-subtle' : ''}>
               {g.files.map(name => {
                 const dotIdx = name.lastIndexOf('.')
                 const stem = dotIdx > 0 ? name.slice(0, dotIdx) : name
@@ -163,7 +163,7 @@ export function FileListResults({
                 return (
                   <li key={name} className="hover:bg-muted/20 px-1.5 leading-tight">
                     <span className="text-foreground/85">{stem}</span>
-                    {ext && <span className="text-muted-foreground/50">{ext}</span>}
+                    {ext && <span className="text-fg-dim">{ext}</span>}
                   </li>
                 )
               })}
@@ -299,7 +299,7 @@ export function GrepContentResults({
   const totalLines = numLines ?? content.split('\n').filter(Boolean).length
 
   if (totalLines === 0 || fileGroups.length === 0) {
-    return <div className="text-[10px] font-mono text-muted-foreground/60 px-2 py-1">No matches</div>
+    return <div className="text-[10px] font-mono text-fg-dim px-2 py-1">No matches</div>
   }
 
   // Truncate by displayed lines, not files
@@ -325,9 +325,9 @@ export function GrepContentResults({
           <div key={g.file || '_unnamed'}>
             {g.file && (
               <div className="flex items-baseline gap-1.5 px-2 py-0.5 bg-purple-500/5 border-l-2 border-purple-400/40">
-                {dir && <span className="text-muted-foreground/60 truncate">{dir}/</span>}
+                {dir && <span className="text-fg-dim truncate">{dir}/</span>}
                 <span className="text-purple-300/90 font-semibold">{name}</span>
-                <span className="text-muted-foreground/40 text-[9px]">
+                <span className="text-fg-faint text-[9px]">
                   {g.matches.length} {g.matches.length === 1 ? 'match' : 'matches'}
                 </span>
               </div>
@@ -408,7 +408,7 @@ export function GrepCountResults({
   if (rows.length === 0) {
     const total = numMatches ?? 0
     return (
-      <div className="text-[10px] font-mono text-muted-foreground/60 px-2 py-1">
+      <div className="text-[10px] font-mono text-fg-dim px-2 py-1">
         {total === 0 ? 'No matches' : `${total} ${total === 1 ? 'match' : 'matches'}`}
       </div>
     )
@@ -430,7 +430,7 @@ export function GrepCountResults({
             className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 hover:bg-muted/20 px-2 py-0.5"
           >
             <div className="min-w-0 truncate">
-              {dir && <span className="text-muted-foreground/50">{dir}/</span>}
+              {dir && <span className="text-fg-dim">{dir}/</span>}
               <span className="text-foreground/85">{name}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -456,7 +456,7 @@ export function GrepCountResults({
             </button>
           )}
           {numMatches !== undefined && (
-            <span className="text-[9px] text-muted-foreground/50 ml-auto">
+            <span className="text-[9px] text-fg-dim ml-auto">
               {numMatches.toLocaleString()} total across {(numFiles ?? rows.length).toLocaleString()} files
             </span>
           )}
@@ -496,23 +496,23 @@ export function GrepSummary({
         {pattern}
       </code>
       {relPath && (
-        <span className="text-muted-foreground/60 truncate">
+        <span className="text-fg-dim truncate">
           in <span className="text-foreground/70">{relPath}</span>
         </span>
       )}
       {glob && <span className="text-cyan-400/70 shrink-0">{glob}</span>}
       {!isError && numFiles !== undefined && (
         <span
-          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-muted-foreground/50' : 'text-foreground/70')}
+          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}
         >
-          <span className={numFiles === 0 ? 'text-muted-foreground/50' : 'text-emerald-400/80 font-semibold'}>
+          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>
             {numFiles}
           </span>{' '}
           {numFiles === 1 ? 'file' : 'files'}
         </span>
       )}
       {!isError && totalMatches !== undefined && totalMatches > 0 && (
-        <span className="text-muted-foreground/50 shrink-0 text-[10px]">
+        <span className="text-fg-dim shrink-0 text-[10px]">
           <span className="text-amber-400/80">{totalMatches.toLocaleString()}</span>{' '}
           {totalMatches === 1 ? 'match' : 'matches'}
         </span>
@@ -542,15 +542,15 @@ export function GlobSummary({
         {pattern}
       </code>
       {relPath && (
-        <span className="text-muted-foreground/60 truncate">
+        <span className="text-fg-dim truncate">
           in <span className="text-foreground/70">{relPath}</span>
         </span>
       )}
       {!isError && numFiles !== undefined && (
         <span
-          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-muted-foreground/50' : 'text-foreground/70')}
+          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}
         >
-          <span className={numFiles === 0 ? 'text-muted-foreground/50' : 'text-emerald-400/80 font-semibold'}>
+          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>
             {numFiles}
           </span>{' '}
           {numFiles === 1 ? 'file' : 'files'}

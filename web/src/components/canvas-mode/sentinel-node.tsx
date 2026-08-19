@@ -14,7 +14,7 @@ function usageTone(pct: number): string {
 function UsageBar({ label, pct }: { label: string; pct?: number }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-4 shrink-0 text-[8px] uppercase text-muted-foreground/60">{label}</span>
+      <span className="w-4 shrink-0 text-[8px] uppercase text-fg-dim">{label}</span>
       <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
         {typeof pct === 'number' && (
           <div className={cn('h-full rounded-full', usageTone(pct))} style={{ width: `${Math.min(100, pct)}%` }} />
@@ -29,7 +29,7 @@ function UsageBar({ label, pct }: { label: string; pct?: number }) {
 
 function ProfileBadge({ p }: { p: SentinelProfileRow }) {
   if (p.error) return <span className="ml-auto shrink-0 text-[9px] text-destructive">{p.error}</span>
-  if (!p.authed) return <span className="ml-auto shrink-0 text-[9px] text-muted-foreground/60">not authed</span>
+  if (!p.authed) return <span className="ml-auto shrink-0 text-[9px] text-fg-dim">not authed</span>
   return null
 }
 
@@ -40,7 +40,7 @@ function PoolChip({ pool }: { pool?: string }) {
 
 function ProfileRow({ p }: { p: SentinelProfileRow }) {
   return (
-    <div className="border-t border-border/50 px-3 py-1.5">
+    <div className="border-t border-border px-3 py-1.5">
       <div className="flex items-center gap-1.5">
         <span className="truncate font-mono text-[10px] font-medium">{p.name}</span>
         <PoolChip pool={p.pool} />
@@ -76,7 +76,7 @@ export function SentinelNode({ data }: NodeProps) {
   return (
     <div className="w-[280px] overflow-hidden rounded-xl border border-border bg-card/90 shadow-sm">
       <SentinelHeader d={d} />
-      {d.hostname && <div className="px-3 pb-1 text-[9px] text-muted-foreground/60">{d.hostname}</div>}
+      {d.hostname && <div className="px-3 pb-1 text-[9px] text-fg-dim">{d.hostname}</div>}
       {d.profiles.map(p => (
         <ProfileRow key={p.name} p={p} />
       ))}

@@ -11,7 +11,7 @@ import { positionalWorkspaceKey } from '../project-list/workspace-hooks'
 import { WorkspaceColorMenu } from './workspace-color-menu'
 import { WorkspaceKeyEditor } from './workspace-key-editor'
 
-const grip = 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground touch-none shrink-0'
+const grip = 'cursor-grab active:cursor-grabbing text-fg-faint hover:text-foreground touch-none shrink-0'
 
 export interface WorkspaceRowActions {
   onSelect: () => void
@@ -46,7 +46,7 @@ export function WorkspaceRow({
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
         'rounded border bg-background px-2 py-1.5 space-y-1.5',
-        selected ? 'border-primary/60 bg-primary/5' : 'border-border/60',
+        selected ? 'border-primary/60 bg-primary/5' : 'border-border',
         isDragging && 'opacity-40 z-10 relative',
       )}
     >
@@ -84,7 +84,7 @@ export function WorkspaceRow({
           title="Show this workspace's projects"
           className={cn(
             'text-[10px] tabular-nums px-1.5 py-0.5 rounded',
-            selected ? 'text-primary' : 'text-muted-foreground/50 hover:text-foreground',
+            selected ? 'text-primary' : 'text-fg-dim hover:text-foreground',
           )}
         >
           {memberCount}
@@ -92,7 +92,7 @@ export function WorkspaceRow({
         <button
           type="button"
           onClick={actions.onDelete}
-          className="text-muted-foreground/40 hover:text-destructive shrink-0"
+          className="text-fg-faint hover:text-destructive shrink-0"
           title="Delete workspace (projects are untouched)"
         >
           <Trash2 className="size-3.5" />

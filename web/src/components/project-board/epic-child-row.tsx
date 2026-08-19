@@ -14,8 +14,8 @@ import { EPIC_CHILD_GRID } from './board-constants'
 const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string; label: string }> = {
   done: { glyph: '●', className: 'text-active', label: 'done' },
   inProgress: { glyph: '◐', className: 'text-accent', label: 'in progress' },
-  notStarted: { glyph: '○', className: 'text-muted-foreground/70', label: 'not started' },
-  dropped: { glyph: '⊘', className: 'text-muted-foreground/60', label: 'dropped' },
+  notStarted: { glyph: '○', className: 'text-fg-muted', label: 'not started' },
+  dropped: { glyph: '⊘', className: 'text-fg-dim', label: 'dropped' },
 }
 
 /**
@@ -25,8 +25,8 @@ const BUCKET_GLYPH: Record<EpicBucket, { glyph: string; className: string; label
  */
 const PRIORITY_STYLE: Record<string, { short: string; className: string }> = {
   high: { short: 'HI', className: 'text-destructive font-bold' },
-  medium: { short: 'md', className: 'text-muted-foreground/60' },
-  low: { short: 'lo', className: 'text-muted-foreground/60' },
+  medium: { short: 'md', className: 'text-fg-dim' },
+  low: { short: 'lo', className: 'text-fg-dim' },
 }
 
 export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (slug: string) => void }) {
@@ -47,13 +47,13 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
         'hover:border-l-[color:var(--epic-solid)] hover:bg-[color:var(--epic-tint)] transition-colors',
       )}
     >
-      <span className="text-meta font-mono text-muted-foreground/55 truncate" title={child.card.slug}>
+      <span className="text-meta font-mono text-fg-dim truncate" title={child.card.slug}>
         {child.card.slug}
       </span>
       <span
         className={cn(
           'text-read font-mono truncate',
-          child.bucket === 'dropped' ? 'text-muted-foreground/60 line-through' : 'text-foreground',
+          child.bucket === 'dropped' ? 'text-fg-dim line-through' : 'text-foreground',
         )}
       >
         {child.card.title}
@@ -71,7 +71,7 @@ export function EpicChildRow({ child, onOpen }: { child: EpicChild; onOpen?: (sl
         </span>
       ) : (
         // contrast-decor-next-line: filler punctuation for "nothing to say", not a word to read
-        <span className="text-meta font-mono text-muted-foreground/35">--</span>
+        <span className="text-meta font-mono text-fg-faint">--</span>
       )}
     </button>
   )

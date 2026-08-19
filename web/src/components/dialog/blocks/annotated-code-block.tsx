@@ -13,9 +13,9 @@ export function AnnotatedCodeBlock({
 }: Pick<AnnotatedCodeComponent, 'code' | 'language' | 'filename' | 'annotations'>) {
   const sorted = annotations ? annotations.toSorted((a, b) => a.line - b.line) : []
   return (
-    <div className="rounded border border-border/30 overflow-hidden">
+    <div className="rounded border border-border-subtle overflow-hidden">
       {filename && (
-        <div className="px-3 py-1.5 bg-muted/40 border-b border-border/30 text-xs font-mono text-muted-foreground">
+        <div className="px-3 py-1.5 bg-muted/40 border-b border-border-subtle text-xs font-mono text-muted-foreground">
           {filename}
         </div>
       )}
@@ -23,7 +23,7 @@ export function AnnotatedCodeBlock({
         <Markdown>{`\`\`\`${language || ''}\n${code}\n\`\`\``}</Markdown>
       </div>
       {sorted.length > 0 && (
-        <ul className="border-t border-border/30 p-2 space-y-1 text-xs">
+        <ul className="border-t border-border-subtle p-2 space-y-1 text-xs">
           {sorted.map((ann, i) => (
             <li
               // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
@@ -31,7 +31,7 @@ export function AnnotatedCodeBlock({
               key={i}
               className="flex gap-2"
             >
-              <span className="font-mono text-muted-foreground/70 shrink-0">L{ann.line}</span>
+              <span className="font-mono text-fg-muted shrink-0">L{ann.line}</span>
               <span className="text-foreground/80">{ann.note}</span>
             </li>
           ))}

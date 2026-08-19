@@ -52,14 +52,14 @@ export function CommitRunHeader({
         }}
         className={cn(
           'flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider transition-colors hover:text-foreground',
-          continuesProject ? 'text-muted-foreground/50' : 'text-sky-400/80',
+          continuesProject ? 'text-fg-dim' : 'text-sky-400/80',
         )}
       >
         <FolderGit2 className="size-3" />
         {project?.label ?? projectUri}
       </button>
 
-      <span className="text-muted-foreground/30">/</span>
+      <span className="text-fg-faint">/</span>
 
       {conversationId ? (
         <button
@@ -76,7 +76,7 @@ export function CommitRunHeader({
           {label}
         </button>
       ) : (
-        <span className="text-[11px] text-muted-foreground/70">terminal (human)</span>
+        <span className="text-[11px] text-fg-muted">terminal (human)</span>
       )}
 
       <span className={cn('px-1 text-[9px] font-bold uppercase', STATUS_PILL[status] ?? STATUS_PILL.gone)}>

@@ -10,7 +10,7 @@ const TRUST_OPTIONS = [
 
 function trustButtonClass(opt: string, current: string): string {
   if (current !== opt) {
-    return 'border-border/50 text-muted-foreground hover:text-foreground'
+    return 'border-border text-muted-foreground hover:text-foreground'
   }
   if (opt === 'open') return 'border-green-500 bg-green-500/20 text-green-400'
   if (opt === 'benevolent') return 'border-amber-500 bg-amber-500/20 text-amber-400'

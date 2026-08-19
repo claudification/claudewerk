@@ -78,7 +78,7 @@ function typeColor(type: string | null): string {
       return 'text-rose-400'
     case 'stream_event':
     case 'rate_limit_event':
-      return 'text-muted-foreground/60'
+      return 'text-fg-dim'
     case 'session_update':
     case 'session_update:agent_message_chunk':
     case 'session_update:agent_thought_chunk':
@@ -87,7 +87,7 @@ function typeColor(type: string | null): string {
     case 'session_update:tool_call_update':
       return 'text-amber-400'
     case 'session_update:usage_update':
-      return 'text-muted-foreground/60'
+      return 'text-fg-dim'
     case 'request':
       return 'text-blue-400'
     case 'response':
@@ -117,7 +117,7 @@ function CopyButton({ text }: { text: string }) {
         'shrink-0 p-0.5 rounded transition-all',
         copied
           ? 'text-emerald-400'
-          : 'text-muted-foreground/0 group-hover:text-muted-foreground/50 hover:!text-foreground',
+          : 'text-muted-foreground/0 group-hover:text-fg-dim hover:!text-foreground',
       )}
       title="Copy JSON"
     >
@@ -131,18 +131,18 @@ function StreamLine({ line, index }: { line: ParsedLine; index: number }) {
   const jsonText = line.parsed ? JSON.stringify(line.parsed, null, 2) : line.raw
 
   return (
-    <div className="group border-b border-border/30 hover:bg-muted/30">
+    <div className="group border-b border-border-subtle hover:bg-muted/30">
       <div className="flex items-start gap-2 px-3 py-1 font-mono text-[11px]">
         <button
           type="button"
           className="flex-1 min-w-0 text-left flex items-start gap-2"
           onClick={() => line.parsed && setExpanded(!expanded)}
         >
-          <span className="shrink-0 text-muted-foreground/50 w-8 text-right tabular-nums select-none">{index + 1}</span>
+          <span className="shrink-0 text-fg-dim w-8 text-right tabular-nums select-none">{index + 1}</span>
           {line.parsed ? (
             <ChevronRight
               className={cn(
-                'shrink-0 w-3 h-3 mt-0.5 transition-transform text-muted-foreground/50',
+                'shrink-0 w-3 h-3 mt-0.5 transition-transform text-fg-dim',
                 expanded && 'rotate-90',
               )}
             />
@@ -151,7 +151,7 @@ function StreamLine({ line, index }: { line: ParsedLine; index: number }) {
           )}
           <span className={cn('shrink-0', typeColor(line.type))}>{line.type || 'raw'}</span>
           {!expanded && (
-            <span className="truncate text-muted-foreground/70">
+            <span className="truncate text-fg-muted">
               {line.parsed ? summarizeLine(line.parsed) : line.raw}
             </span>
           )}
@@ -281,14 +281,14 @@ export function JsonStreamPanel({ conversationId }: JsonStreamPanelProps) {
       {/* Toolbar */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-border bg-muted/30">
         <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Raw JSON Stream</span>
-        <span className="text-[10px] text-muted-foreground/60 tabular-nums">{lines.length} lines</span>
+        <span className="text-[10px] text-fg-dim tabular-nums">{lines.length} lines</span>
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             onClick={() => setHideNoise(!hideNoise)}
             className={cn(
               'flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors text-[10px] font-mono',
-              hideNoise ? 'bg-muted text-foreground' : 'text-muted-foreground/50 hover:text-muted-foreground',
+              hideNoise ? 'bg-muted text-foreground' : 'text-fg-dim hover:text-muted-foreground',
             )}
             title="Hide stream_event and rate_limit_event noise"
           >
@@ -339,7 +339,7 @@ export function JsonStreamPanel({ conversationId }: JsonStreamPanelProps) {
             </button>
           ))}
           {(filter !== 'all' || (hideNoise && filtered.length !== lines.length)) && (
-            <span className="text-[10px] text-muted-foreground/50 ml-1">
+            <span className="text-[10px] text-fg-dim ml-1">
               {filtered.length}/{lines.length}
             </span>
           )}
@@ -357,7 +357,7 @@ export function JsonStreamPanel({ conversationId }: JsonStreamPanelProps) {
       {/* Lines */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground/50 text-xs font-mono">
+          <div className="flex items-center justify-center h-full text-fg-dim text-xs font-mono">
             {lines.length === 0 ? 'Waiting for stream data...' : 'No matching lines'}
           </div>
         ) : (

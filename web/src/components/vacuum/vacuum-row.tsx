@@ -28,7 +28,7 @@ export function VacuumRow(props: VacuumRowProps) {
   return (
     <div
       className={cn(
-        'flex items-start gap-3 py-2 px-1 border-b border-border/50 last:border-0',
+        'flex items-start gap-3 py-2 px-1 border-b border-border last:border-0',
         disabled && 'opacity-60',
       )}
     >

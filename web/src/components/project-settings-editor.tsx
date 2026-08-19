@@ -217,7 +217,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
         {/* ── General tab ──────────────────────────────────────────── */}
         {activeTab === 'general' && (
           <>
-            <div className="text-[10px] text-muted-foreground/60 font-mono truncate mb-2" title={project}>
+            <div className="text-[10px] text-fg-dim font-mono truncate mb-2" title={project}>
               {project}
             </div>
             <GroupHeader label="Identity" />
@@ -228,7 +228,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 value={label}
                 onChange={e => setLabel(e.target.value)}
                 placeholder={extractProjectLabel(project) || 'project name'}
-                className="w-40 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                className="w-40 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim"
                 style={{ fontSize: '16px' }}
               />
             </SettingRow>
@@ -243,7 +243,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 onChange={e => setDescription(e.target.value)}
                 placeholder="e.g. Send all music generation requests here"
                 rows={2}
-                className="w-full bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50 resize-none mt-1"
+                className="w-full bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim resize-none mt-1"
                 style={{ fontSize: '16px' }}
               />
             </div>
@@ -261,7 +261,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                   value={iconSearch}
                   onChange={e => setIconSearch(e.target.value)}
                   placeholder="Search icons..."
-                  className="w-full bg-background border border-border pl-6 pr-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                  className="w-full bg-background border border-border pl-6 pr-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim"
                   style={{ fontSize: '16px' }}
                 />
               </div>
@@ -380,7 +380,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                     }
                   }}
                   placeholder="Add term..."
-                  className="flex-1 bg-background border border-border px-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                  className="flex-1 bg-background border border-border px-2 py-1 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim"
                   style={{ fontSize: '16px' }}
                 />
                 <button
@@ -414,7 +414,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                         ? opt.value
                           ? 'border-green-500 bg-green-500/20 text-green-400'
                           : 'border-border bg-muted text-foreground'
-                        : 'border-border/50 text-muted-foreground hover:text-foreground',
+                        : 'border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
                     {opt.label}
@@ -437,7 +437,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                         'px-2 py-1 text-[10px] font-mono border rounded transition-colors',
                         recapSuite === opt.value
                           ? 'border-accent bg-accent/20 text-foreground'
-                          : 'border-border/50 text-muted-foreground hover:text-foreground',
+                          : 'border-border text-muted-foreground hover:text-foreground',
                       )}
                     >
                       {opt.label}
@@ -470,7 +470,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                         ? opt.value === 'headless'
                           ? 'border-cyan-500 bg-cyan-500/20 text-cyan-400'
                           : 'border-purple-500 bg-purple-500/20 text-purple-400'
-                        : 'border-border/50 text-muted-foreground hover:text-foreground',
+                        : 'border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
                     {opt.label}
@@ -505,7 +505,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                               : opt.value === 'high'
                                 ? 'border-orange-500 bg-orange-500/20 text-orange-400'
                                 : 'border-red-500 bg-red-500/20 text-red-400'
-                        : 'border-border/50 text-muted-foreground hover:text-foreground',
+                        : 'border-border text-muted-foreground hover:text-foreground',
                     )}
                   >
                     {opt.label}
@@ -521,7 +521,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 value={model}
                 onChange={e => setModel(e.target.value)}
                 placeholder="e.g. sonnet, opus"
-                className="w-36 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                className="w-36 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim"
                 style={{ fontSize: '16px' }}
               />
             </SettingRow>
@@ -538,7 +538,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
                 placeholder="opencode-go/glm-5.1"
                 spellCheck={false}
                 autoCapitalize="off"
-                className="w-72 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/50"
+                className="w-72 bg-background border border-border px-2 py-1.5 text-foreground text-xs font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-dim"
                 style={{ fontSize: '16px' }}
               />
             </SettingRow>

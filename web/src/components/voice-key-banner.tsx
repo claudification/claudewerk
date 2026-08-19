@@ -76,7 +76,7 @@ export function VoiceKeyBanner({
       )}
 
       {!displayText && !displayInterim && state === 'recording' && (
-        <span className="text-sm text-muted-foreground/40 italic font-mono">Speak now…</span>
+        <span className="text-sm text-fg-faint italic font-mono">Speak now…</span>
       )}
     </VoiceBannerShell>
   )

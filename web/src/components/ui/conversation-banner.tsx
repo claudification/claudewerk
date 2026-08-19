@@ -11,7 +11,7 @@ const ACCENT_CARD: Record<BannerAccent, string> = {
   emerald: 'bg-emerald-500/10 border-emerald-500/30',
   red: 'bg-red-500/10 border-red-500/30',
   blue: 'bg-blue-500/10 border-blue-500/30',
-  muted: 'bg-muted/20 border-border/30',
+  muted: 'bg-muted/20 border-border-subtle',
 }
 
 const ACCENT_LABEL: Record<BannerAccent, string> = {
@@ -33,7 +33,7 @@ const ACCENT_BUTTON: Record<BannerAccent, string> = {
   emerald: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30',
   red: 'bg-red-500/20 text-red-400 border-red-500/40 hover:bg-red-500/30',
   blue: 'bg-blue-500/20 text-blue-400 border-blue-500/40 hover:bg-blue-500/30',
-  muted: 'bg-muted/20 text-muted-foreground border-border/30 hover:bg-muted/30',
+  muted: 'bg-muted/20 text-muted-foreground border-border-subtle hover:bg-muted/30',
 }
 
 interface ConversationBannerProps {
@@ -107,7 +107,7 @@ const BUTTON_SIZE: Record<'sm' | 'md' | 'lg', string> = {
 
 export function BannerButton({ accent, label, onClick, disabled, size = 'md', className }: BannerButtonProps) {
   const accentClasses = disabled
-    ? 'bg-muted/20 text-muted-foreground border-border/30 cursor-not-allowed'
+    ? 'bg-muted/20 text-muted-foreground border-border-subtle cursor-not-allowed'
     : ACCENT_BUTTON[accent]
   return (
     <button

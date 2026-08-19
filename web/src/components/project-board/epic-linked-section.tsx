@@ -38,8 +38,8 @@ function Row({
   const moving = Boolean(link.ownedBy)
 
   return (
-    <div className="flex items-center gap-2 py-1 border-b border-border/25 last:border-0">
-      <CornerDownRight className="size-3 shrink-0 text-muted-foreground/55" />
+    <div className="flex items-center gap-2 py-1 border-b border-border-subtle last:border-0">
+      <CornerDownRight className="size-3 shrink-0 text-fg-dim" />
       <button
         type="button"
         onClick={() => onOpenCard(link.card.slug)}
@@ -48,7 +48,7 @@ function Row({
         {link.card.title || link.card.slug}
       </button>
 
-      <span className="shrink-0 text-chrome text-muted-foreground/60">
+      <span className="shrink-0 text-chrome text-fg-dim">
         {KIND_LABEL[link.kind]}
         {link.kind === 'family' && ` ${link.via}`}
       </span>
@@ -74,7 +74,7 @@ function Row({
         className={cn(
           'shrink-0 px-1.5 py-0.5 text-chrome border transition-colors',
           busy
-            ? 'border-border/40 text-muted-foreground/60 cursor-not-allowed'
+            ? 'border-border-subtle text-fg-dim cursor-not-allowed'
             : 'border-[color:var(--epic-edge)] text-foreground hover:bg-[color:var(--epic-tint)]',
         )}
       >
@@ -116,8 +116,8 @@ export function EpicLinkedSection({
   return (
     <div className="px-3.5 pb-4">
       <div className="flex items-baseline gap-2 mb-1.5">
-        <span className="text-chrome uppercase text-muted-foreground/55">Linked, not adopted</span>
-        <span className="text-chrome text-muted-foreground/60">{pending.length}</span>
+        <span className="text-chrome uppercase text-fg-dim">Linked, not adopted</span>
+        <span className="text-chrome text-fg-dim">{pending.length}</span>
         {done.length > 0 && (
           <span className="text-chrome text-active flex items-center gap-1">
             <Check className="size-2.5" />
@@ -126,12 +126,12 @@ export function EpicLinkedSection({
         )}
       </div>
 
-      <p className="text-chrome text-muted-foreground/70 mb-2 leading-relaxed">
+      <p className="text-chrome text-fg-muted mb-2 leading-relaxed">
         These reference the epic or one of its cards, but carry no <code className="text-foreground/70">epic:</code> key
         -- so they are outside the DAG and <b className="text-foreground/70">the engine will never dispatch them</b>.
       </p>
 
-      <div className="border border-border/40 px-2 py-1">
+      <div className="border border-border-subtle px-2 py-1">
         {pending.map(link => (
           <Row
             key={link.card.slug}

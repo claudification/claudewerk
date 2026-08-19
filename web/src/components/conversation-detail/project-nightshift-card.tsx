@@ -35,7 +35,7 @@ export function ProjectNightshiftCard({ projectUri }: { projectUri: string }) {
           {ready} ready{blocked > 0 ? ` · ${blocked} need you` : ''}
         </div>
       </div>
-      <span className="text-[10px] font-mono text-muted-foreground/60 shrink-0">VIEW</span>
+      <span className="text-[10px] font-mono text-fg-dim shrink-0">VIEW</span>
     </button>
   )
 }

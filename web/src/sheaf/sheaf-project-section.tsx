@@ -27,7 +27,7 @@ function ProjectHeader({ project, expanded, onToggle }: Omit<ProjectSectionProps
   return (
     <button
       type="button"
-      className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-background/90 backdrop-blur border-b border-l-2 border-border/60 flex flex-wrap items-baseline gap-x-4 gap-y-1 cursor-pointer select-none w-[calc(100%+2rem)] text-left appearance-none text-inherit"
+      className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-background/90 backdrop-blur border-b border-l-2 border-border flex flex-wrap items-baseline gap-x-4 gap-y-1 cursor-pointer select-none w-[calc(100%+2rem)] text-left appearance-none text-inherit"
       style={{
         borderLeftColor: accent.border,
         backgroundImage: `linear-gradient(90deg, ${accent.tint}, transparent 280px)`,
@@ -44,7 +44,7 @@ function ProjectHeader({ project, expanded, onToggle }: Omit<ProjectSectionProps
       <h2 className="text-base font-semibold tracking-tight truncate" title={project.projectUri}>
         {project.label}
       </h2>
-      <span className="text-[10px] text-muted-foreground/70 font-mono truncate hidden sm:inline">
+      <span className="text-[10px] text-fg-muted font-mono truncate hidden sm:inline">
         {project.projectUri}
       </span>
       <div className="ml-auto flex items-baseline gap-x-4 text-xs">
@@ -75,14 +75,14 @@ function WorktreePills({ project }: { project: SheafProject }) {
         return (
           <div
             key={key}
-            className="text-[10px] px-2 py-0.5 rounded border border-border/60 bg-muted/30 flex items-baseline gap-1.5"
+            className="text-[10px] px-2 py-0.5 rounded border border-border bg-muted/30 flex items-baseline gap-1.5"
           >
             <span className="font-mono">{wt.name ? `worktree:${wt.name}` : '(main)'}</span>
-            <span className="text-muted-foreground/60">·</span>
+            <span className="text-fg-dim">·</span>
             <span className="font-mono text-foreground">{wt.convCount} convs</span>
-            <span className="text-muted-foreground/60">·</span>
+            <span className="text-fg-dim">·</span>
             <span className="font-mono text-muted-foreground">{formatTokens(tokens)}</span>
-            <span className="text-muted-foreground/60">·</span>
+            <span className="text-fg-dim">·</span>
             <span className="font-mono">{formatCost(wt.cost.amount, wt.cost.estimated)}</span>
           </div>
         )
@@ -112,7 +112,7 @@ function ProjectFlatList({ project, now, showRecaps, tint }: ProjectViewProps) {
   const nodes = useMemo(() => flattenForest(project.forest), [project.forest])
   return (
     <div className="border-l-2 pl-2 ml-1" style={{ borderLeftColor: tint }}>
-      <div className="border border-border/50 rounded">
+      <div className="border border-border rounded">
         {nodes.map(n => (
           <SheafNodeRow key={n.id} node={n} depth={0} now={now} showRecaps={showRecaps} flat />
         ))}

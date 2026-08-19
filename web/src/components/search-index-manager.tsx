@@ -26,10 +26,10 @@ function fmtDuration(ms: number): string {
 
 function StatRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="flex items-baseline gap-3 py-1.5 border-b border-border/30 last:border-b-0">
-      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 w-32 shrink-0">{label}</span>
+    <div className="flex items-baseline gap-3 py-1.5 border-b border-border-subtle last:border-b-0">
+      <span className="text-[10px] uppercase tracking-wider text-fg-muted w-32 shrink-0">{label}</span>
       <span className="text-sm font-mono font-bold text-foreground">{value}</span>
-      {hint && <span className="text-[10px] text-muted-foreground/50 ml-auto">{hint}</span>}
+      {hint && <span className="text-[10px] text-fg-dim ml-auto">{hint}</span>}
     </div>
   )
 }
@@ -92,7 +92,7 @@ function SearchIndexManager() {
 
   return (
     <div className="space-y-4 text-foreground">
-      <div className="text-[10px] text-muted-foreground/80 leading-relaxed">
+      <div className="text-[10px] text-fg-muted leading-relaxed">
         FTS5 full-text index over <code className="font-mono">transcript_entries</code>. The index is kept in sync via
         triggers on every insert. Use rebuild after a restore or if you suspect drift.
       </div>

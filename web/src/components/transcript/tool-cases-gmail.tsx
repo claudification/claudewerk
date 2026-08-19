@@ -13,7 +13,7 @@ export function renderGmailSearchEmails({ input, result, toolUseResult }: ToolCa
   const summary = (
     <span className="flex items-center gap-1.5">
       <span className="truncate">{q || 'search'}</span>
-      {max && <span className="text-muted-foreground/50 text-[10px]">max {max}</span>}
+      {max && <span className="text-fg-dim text-[10px]">max {max}</span>}
     </span>
   )
   const details = result ? <GmailSearchResults result={result} extra={toolUseResult} /> : null
@@ -25,8 +25,8 @@ export function renderGmailGetThread({ input, result, toolUseResult }: ToolCaseI
   const fmt = (input.format as string) || 'full'
   const summary = (
     <span className="flex items-center gap-1.5">
-      <span className="text-muted-foreground/60 font-mono text-[10px]">{tid.slice(0, 10)}</span>
-      <span className="text-muted-foreground/40 text-[10px]">{fmt}</span>
+      <span className="text-fg-dim font-mono text-[10px]">{tid.slice(0, 10)}</span>
+      <span className="text-fg-faint text-[10px]">{fmt}</span>
     </span>
   )
   const details = result ? <GmailThreadView result={result} extra={toolUseResult} /> : null
@@ -47,7 +47,7 @@ export function renderGmailLabelOp({ input, result, toolUseResult }: ToolCaseInp
   const summary = (
     <span className="flex items-center gap-1.5">
       {labelName && <span className="text-amber-400/80">{labelName}</span>}
-      {msgId && <span className="text-muted-foreground/50 font-mono text-[10px]">{msgId.slice(0, 10)}</span>}
+      {msgId && <span className="text-fg-dim font-mono text-[10px]">{msgId.slice(0, 10)}</span>}
     </span>
   )
   const details = result ? <GmailLabelResult result={result} extra={toolUseResult} /> : null

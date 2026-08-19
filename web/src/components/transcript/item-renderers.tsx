@@ -122,7 +122,7 @@ export function ProjectTaskItem({ item }: { item: Extract<RenderItem, { kind: 'p
       className={cn('rounded-lg border border-primary/15 bg-primary/[0.06] border-l-[3px] overflow-hidden', prioColor)}
     >
       <div className="px-3 py-2 flex items-center gap-2 border-b border-primary/12">
-        <span className="text-xs font-mono text-muted-foreground/50">TASK</span>
+        <span className="text-xs font-mono text-fg-dim">TASK</span>
         <span className="text-sm font-bold text-foreground/90 flex-1 truncate">{item.title}</span>
         {item.taskStatus && (
           <span className={cn('px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded', sColor)}>
@@ -130,7 +130,7 @@ export function ProjectTaskItem({ item }: { item: Extract<RenderItem, { kind: 'p
           </span>
         )}
         {item.priority && item.priority !== 'medium' && (
-          <span className="text-[9px] font-mono text-muted-foreground/40 uppercase">{item.priority}</span>
+          <span className="text-[9px] font-mono text-fg-faint uppercase">{item.priority}</span>
         )}
       </div>
       {item.tags && item.tags.length > 0 && (
@@ -148,7 +148,7 @@ export function ProjectTaskItem({ item }: { item: Extract<RenderItem, { kind: 'p
         </div>
       )}
       <div className="px-3 pb-1.5">
-        <span className="text-[9px] font-mono text-muted-foreground/30">{item.id}.md</span>
+        <span className="text-[9px] font-mono text-fg-faint">{item.id}.md</span>
       </div>
     </div>
   )

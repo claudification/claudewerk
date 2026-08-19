@@ -33,13 +33,13 @@ function RibbonChip({
         onSelect(rollup.epicId)
       }}
       className={cn(
-        'flex items-center gap-2 px-2.5 py-1.5 min-w-0 shrink-0 border-r border-border/50 transition-colors',
+        'flex items-center gap-2 px-2.5 py-1.5 min-w-0 shrink-0 border-r border-border transition-colors',
         selected ? 'bg-[color:var(--epic-tint)] shadow-[inset_0_-2px_0_var(--epic-solid)]' : 'hover:bg-muted/40',
       )}
     >
       <EpicMarkBadge epicId={rollup.epicId} variant={selected ? 'solid' : 'quiet'} />
       <span className="font-mono text-read text-foreground truncate max-w-[11rem]">{title}</span>
-      <span className="font-mono text-meta tabular-nums text-muted-foreground/80">
+      <span className="font-mono text-meta tabular-nums text-fg-muted">
         {rollup.done}/{rollup.total}
       </span>
     </button>
@@ -76,7 +76,7 @@ export function EpicRibbon({
 
       {emptyCount > 0 && (
         <span
-          className="flex items-center px-2.5 py-1.5 shrink-0 border-r border-border/50 font-mono text-meta text-muted-foreground/60"
+          className="flex items-center px-2.5 py-1.5 shrink-0 border-r border-border font-mono text-meta text-fg-dim"
           title="Tagged `epic`, nothing points at them yet"
         >
           {emptyCount} empty
@@ -84,12 +84,12 @@ export function EpicRibbon({
       )}
 
       {looseCount > 0 && (
-        <span className="flex items-center gap-2 ml-auto px-2.5 py-1.5 shrink-0 border-l border-border/50">
-          <span aria-hidden className="text-meta text-muted-foreground/55">
+        <span className="flex items-center gap-2 ml-auto px-2.5 py-1.5 shrink-0 border-l border-border">
+          <span aria-hidden className="text-meta text-fg-dim">
             ●
           </span>
-          <span className="font-mono text-read text-muted-foreground/85">no epic</span>
-          <span className="font-mono text-meta tabular-nums text-muted-foreground/80">{looseCount}</span>
+          <span className="font-mono text-read text-fg-muted">no epic</span>
+          <span className="font-mono text-meta tabular-nums text-fg-muted">{looseCount}</span>
         </span>
       )}
     </div>

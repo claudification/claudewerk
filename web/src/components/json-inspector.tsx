@@ -48,7 +48,7 @@ export function JsonInspector({ title, data, result, extra, raw }: JsonInspector
   return (
     <button
       type="button"
-      className="text-muted-foreground/40 hover:text-muted-foreground transition-colors p-0.5"
+      className="text-fg-faint hover:text-muted-foreground transition-colors p-0.5"
       title="Inspect raw data"
       onClick={e => {
         e.stopPropagation()

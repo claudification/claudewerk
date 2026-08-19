@@ -37,7 +37,7 @@ function BoolBadge({ val }: { val: boolean }) {
         'px-1.5 py-0.5 rounded text-[9px] font-bold border',
         val
           ? 'bg-green-500/15 text-green-400 border-green-500/30'
-          : 'bg-zinc-500/15 text-muted-foreground/50 border-zinc-500/20',
+          : 'bg-zinc-500/15 text-fg-dim border-zinc-500/20',
       )}
     >
       {String(val)}
@@ -84,7 +84,7 @@ function ValueCell({ val }: { val: unknown }) {
   if (Array.isArray(val)) return <ArrayBadges items={val} />
   if (typeof val === 'string' && val.length > 0) return <span className="text-foreground/90">{val}</span>
   if (val !== null && typeof val === 'object') return <NestedObject obj={val as Record<string, unknown>} />
-  return <span className="text-muted-foreground/50">{String(val)}</span>
+  return <span className="text-fg-dim">{String(val)}</span>
 }
 
 /** Render a submitted form's values as a compact key/value list. */

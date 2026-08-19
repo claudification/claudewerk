@@ -44,7 +44,7 @@ function fmtUsd(n: number): string {
 
 function ProfilePoolBadge({ pool }: { pool: string | null }) {
   if (pool === null) {
-    return <span className="px-1 py-0.5 text-[8px] text-muted-foreground/40 rounded uppercase">pinned</span>
+    return <span className="px-1 py-0.5 text-[8px] text-fg-faint rounded uppercase">pinned</span>
   }
   return <span className="px-1 py-0.5 text-[8px] bg-accent/12 text-accent/80 rounded lowercase">#{pool}</span>
 }
@@ -52,7 +52,7 @@ function ProfilePoolBadge({ pool }: { pool: string | null }) {
 function ProfileUsageSpan({ usage }: { usage?: ProfileUsageRow }) {
   if (!usage) return null
   return (
-    <span className="text-muted-foreground/60">
+    <span className="text-fg-dim">
       {usage.turns} turn{usage.turns === 1 ? '' : 's'} · {fmtUsd(usage.costUsd)}
     </span>
   )
@@ -72,14 +72,14 @@ function ProfileBreakdownLine({ profile, usage }: { profile: SentinelProfileInfo
   const authGlyph = profile.authed ? '✓' : '?'
   const colorStyle = profile.color ? { color: profile.color } : undefined
   return (
-    <div className="flex items-center gap-2 pl-6 py-0.5 text-[10px] text-muted-foreground/80 font-mono">
+    <div className="flex items-center gap-2 pl-6 py-0.5 text-[10px] text-fg-muted font-mono">
       <span className={`text-sm ${authClass}`} title={profile.authed ? 'Credentials file present' : AUTH_UNKNOWN_TIP}>
         {authGlyph}
       </span>
       <span className="text-foreground" style={colorStyle}>
         {profile.name}
       </span>
-      {profile.label && <span className="text-muted-foreground/50">{profile.label}</span>}
+      {profile.label && <span className="text-fg-dim">{profile.label}</span>}
       <ProfilePoolBadge pool={profile.pool} />
       <span className="flex-1" />
       <ProfileUsageSpan usage={usage} />
@@ -100,11 +100,11 @@ function SentinelHeader({
   const showDefaultPool = sentinel.defaultPool && sentinel.defaultPool !== 'default'
   return (
     <div className="flex items-center gap-2 p-2">
-      <span className={`text-sm ${sentinel.connected ? 'text-active' : 'text-muted-foreground/40'}`}>
+      <span className={`text-sm ${sentinel.connected ? 'text-active' : 'text-fg-faint'}`}>
         {sentinel.connected ? '●' : '○'}
       </span>
       <span className="font-bold text-foreground">{sentinel.alias}</span>
-      {sentinel.hostname && <span className="text-muted-foreground/50">{sentinel.hostname}</span>}
+      {sentinel.hostname && <span className="text-fg-dim">{sentinel.hostname}</span>}
       {sentinel.isDefault && (
         <span className="px-1 py-0.5 text-[8px] bg-accent/20 text-accent rounded uppercase font-bold">default</span>
       )}
@@ -141,10 +141,10 @@ function SentinelHeader({
 
 function OrphanProfileLine({ row }: { row: ProfileUsageRow }) {
   return (
-    <div className="flex items-center gap-2 pl-6 py-0.5 text-[10px] text-muted-foreground/50 font-mono">
-      <span className="text-sm text-muted-foreground/30">·</span>
+    <div className="flex items-center gap-2 pl-6 py-0.5 text-[10px] text-fg-dim font-mono">
+      <span className="text-sm text-fg-faint">·</span>
       <span className="italic">{row.profile}</span>
-      <span className="px-1 py-0.5 text-[8px] text-muted-foreground/40 uppercase">history</span>
+      <span className="px-1 py-0.5 text-[8px] text-fg-faint uppercase">history</span>
       <span className="flex-1" />
       <span>
         {row.turns} turn{row.turns === 1 ? '' : 's'} · {fmtUsd(row.costUsd)}
@@ -187,10 +187,10 @@ function CcVersionBanner({ change }: { change: CcVersionChange }) {
       ? `First seen: ${change.toVersion}${protoSuffix}`
       : `${change.fromVersion} -> ${change.toVersion}${protoSuffix}`
   return (
-    <div className="px-2 py-1 border-t border-border/40 bg-warning/10 text-[10px] text-warning-foreground/90 font-mono">
+    <div className="px-2 py-1 border-t border-border-subtle bg-warning/10 text-[10px] text-warning-foreground/90 font-mono">
       <span className="font-bold uppercase tracking-wider text-warning">CC binary changed</span>{' '}
       <span className="text-foreground">{headline}</span>{' '}
-      <span className="text-muted-foreground/80">-- drain in-flight workers</span>
+      <span className="text-fg-muted">-- drain in-flight workers</span>
     </div>
   )
 }
@@ -220,7 +220,7 @@ function SentinelRow({
       <SentinelHeader sentinel={sentinel} onSetDefault={onSetDefault} onRevoke={onRevoke} />
       {ccVersionChange && <CcVersionBanner change={ccVersionChange} />}
       {profiles.length > 0 && (
-        <div className="border-t border-border/40 py-1">
+        <div className="border-t border-border-subtle py-1">
           {/* Read-only usage / auth breakdown -- one line per profile. */}
           {profiles.map(p => (
             <ProfileBreakdownLine key={p.name} profile={p} usage={usage.get(p.name)} />
@@ -420,14 +420,14 @@ function SentinelList() {
           )
         })}
         {sentinels.length === 0 && (
-          <div className="text-xs text-muted-foreground/50 text-center py-2">
+          <div className="text-xs text-fg-dim text-center py-2">
             No sentinels registered. Create one below.
           </div>
         )}
       </div>
 
-      <div className="border-t border-border/50 pt-3">
-        <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Create Sentinel</div>
+      <div className="border-t border-border pt-3">
+        <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Create Sentinel</div>
         <div className="flex items-center gap-2">
           <input
             aria-label="New sentinel alias"
@@ -435,7 +435,7 @@ function SentinelList() {
             value={newAlias}
             onChange={e => setNewAlias(e.target.value)}
             placeholder="alias (e.g. beast)"
-            className="flex-1 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring rounded"
+            className="flex-1 px-2 py-1 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-fg-faint focus:outline-none focus:border-ring rounded"
             onKeyDown={e => {
               if (e.key === 'Enter') handleCreate()
             }}

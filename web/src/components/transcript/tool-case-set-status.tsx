@@ -35,7 +35,7 @@ function HandoffCard({ input, state }: { input: Record<string, unknown>; state: 
           <span className={cn('h-2 w-2 rounded-full', meta.dot)} />
           {meta.label}
         </span>
-        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/50">status handoff</span>
+        <span className="text-[10px] uppercase tracking-[0.18em] text-fg-dim">status handoff</span>
         {safeToClose && (
           <span
             className="ml-auto text-[10px] font-bold text-muted-foreground"

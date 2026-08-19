@@ -51,7 +51,7 @@ export function LaunchStepList({ steps }: { steps: LaunchProgressStep[] }) {
               <span
                 className={cn(
                   'text-[10px] ml-2',
-                  step.status === 'warn' ? 'text-amber-300/80' : 'text-muted-foreground/60',
+                  step.status === 'warn' ? 'text-amber-300/80' : 'text-fg-dim',
                 )}
               >
                 {step.detail}

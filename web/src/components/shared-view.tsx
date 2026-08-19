@@ -102,11 +102,11 @@ export function SharedView({ projectPath }: { projectPath: string }) {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] text-muted-foreground/50 font-mono">{files.length} items</span>
+        <span className="text-[10px] text-fg-dim font-mono">{files.length} items</span>
         <button
           type="button"
           onClick={handleClearAll}
-          className="text-[10px] font-mono text-muted-foreground/50 hover:text-destructive transition-colors"
+          className="text-[10px] font-mono text-fg-dim hover:text-destructive transition-colors"
         >
           Clear all
         </button>
@@ -127,14 +127,14 @@ export function SharedView({ projectPath }: { projectPath: string }) {
               <img
                 src={f.url}
                 alt={f.filename}
-                className="size-16 object-cover rounded border border-border/30 shrink-0"
+                className="size-16 object-cover rounded border border-border-subtle shrink-0"
               />
             </a>
           ) : (
             <div
               className={cn(
                 'w-16 h-16 flex items-center justify-center rounded border shrink-0',
-                f.type === 'clipboard' ? 'bg-cyan-500/10 border-cyan-500/20' : 'bg-muted/30 border-border/30',
+                f.type === 'clipboard' ? 'bg-cyan-500/10 border-cyan-500/20' : 'bg-muted/30 border-border-subtle',
               )}
             >
               <span className="text-lg">{f.type === 'clipboard' ? '\uD83D\uDCCB' : '\uD83D\uDCC4'}</span>
@@ -153,7 +153,7 @@ export function SharedView({ projectPath }: { projectPath: string }) {
                 {f.type === 'clipboard' ? 'copy' : 'shared'}
               </span>
               <span className="text-[10px] text-muted-foreground">{formatTime(f.createdAt)}</span>
-              {f.type === 'file' && <span className="text-[10px] text-muted-foreground/50">{formatSize(f.size)}</span>}
+              {f.type === 'file' && <span className="text-[10px] text-fg-dim">{formatSize(f.size)}</span>}
             </div>
 
             {f.type === 'file' && (
@@ -185,7 +185,7 @@ export function SharedView({ projectPath }: { projectPath: string }) {
                     href={f.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-2 py-0.5 text-[10px] font-bold bg-muted/20 text-muted-foreground border border-border/30 hover:bg-muted/30 transition-colors"
+                    className="px-2 py-0.5 text-[10px] font-bold bg-muted/20 text-muted-foreground border border-border-subtle hover:bg-muted/30 transition-colors"
                   >
                     OPEN
                   </a>
@@ -206,7 +206,7 @@ export function SharedView({ projectPath }: { projectPath: string }) {
               <button
                 type="button"
                 onClick={() => handleDelete(f.hash)}
-                className="px-2 py-0.5 text-[10px] font-bold bg-muted/10 text-muted-foreground/50 border border-border/20 hover:text-destructive hover:border-destructive/30 transition-colors"
+                className="px-2 py-0.5 text-[10px] font-bold bg-muted/10 text-fg-dim border border-border-subtle hover:text-destructive hover:border-destructive/30 transition-colors"
               >
                 DELETE
               </button>

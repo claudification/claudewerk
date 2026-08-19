@@ -41,7 +41,7 @@ export function RunScopeAffordance({ conversation, visible }: { conversation: Co
               role="button"
               tabIndex={0}
               className={cn(
-                'text-[10px] text-muted-foreground/50 hover:text-accent cursor-pointer transition-all shrink-0',
+                'text-[10px] text-fg-dim hover:text-accent cursor-pointer transition-all shrink-0',
                 visible ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100',
               )}
               title="Conversation info"

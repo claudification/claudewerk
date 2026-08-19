@@ -64,7 +64,7 @@ export function HealthWidget() {
           }}
         >
           <span className={`text-[10px] ${dotColor}`}>{'●'}</span>
-          <span className="text-[10px] text-muted-foreground/70">api</span>
+          <span className="text-[10px] text-fg-muted">api</span>
           <span className={`text-[10px] tabular-nums ${health.isUp ? 'text-emerald-400' : 'text-red-400'}`}>
             {health.isUp ? `${Math.round(health.uptime24h)}%` : 'down'}
           </span>
@@ -81,7 +81,7 @@ export function HealthWidget() {
           onOpenAutoFocus={e => e.preventDefault()}
         >
           <div className="space-y-2">
-            <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-2">Claude API</div>
+            <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-2">Claude API</div>
 
             <div className="flex items-center gap-2">
               <span className={`text-xs ${dotColor}`}>{'●'}</span>
@@ -106,8 +106,8 @@ export function HealthWidget() {
               </span>
             </div>
 
-            <div className="border-t border-border/50 my-2" />
-            <div className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Risk Forecast</div>
+            <div className="border-t border-border my-2" />
+            <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">Risk Forecast</div>
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">now</span>
@@ -120,28 +120,28 @@ export function HealthWidget() {
               <span className={`text-[11px] tabular-nums font-medium w-8 ${riskTextColor(health.riskScore)}`}>
                 {health.riskScore}%
               </span>
-              <span className="text-[10px] text-muted-foreground/50">{trendArrow(health.riskTrend)}</span>
+              <span className="text-[10px] text-fg-dim">{trendArrow(health.riskTrend)}</span>
             </div>
 
-            <div className="flex items-center gap-3 text-[10px] text-muted-foreground/70">
+            <div className="flex items-center gap-3 text-[10px] text-fg-muted">
               <span>{health.incidents7d} incidents / 7d</span>
             </div>
 
             {health.lastIncidentTitle && (
-              <div className="text-[10px] text-muted-foreground/50 truncate" title={health.lastIncidentTitle}>
+              <div className="text-[10px] text-fg-dim truncate" title={health.lastIncidentTitle}>
                 {health.lastIncidentTitle}
               </div>
             )}
 
-            <div className="border-t border-border/50 mt-2 pt-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] text-muted-foreground/40">
+            <div className="border-t border-border mt-2 pt-1 flex items-center justify-between gap-2">
+              <span className="text-[9px] text-fg-faint">
                 Polled {new Date(health.polledAt).toLocaleTimeString()}
               </span>
               <a
                 href="https://clanker.watch/status/claude"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[9px] text-muted-foreground/40 hover:text-muted-foreground/80 hover:underline"
+                className="text-[9px] text-fg-faint hover:text-fg-muted hover:underline"
                 title="Data source -- click for details"
               >
                 clanker.watch ↗

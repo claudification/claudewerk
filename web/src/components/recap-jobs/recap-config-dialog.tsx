@@ -355,7 +355,7 @@ export function RecapConfigDialog() {
                 onChange={e => setInstructions(e.target.value)}
                 rows={2}
                 placeholder="e.g. focus on the auth migration; skip the testing troubles"
-                className="w-full resize-y rounded border border-input bg-background px-2 py-1 text-sm placeholder:text-muted-foreground/60"
+                className="w-full resize-y rounded border border-input bg-background px-2 py-1 text-sm placeholder:text-fg-dim"
               />
               <span className="block mt-1 text-[11px] text-muted-foreground">
                 A free-text steer for how the recap is <span className="text-foreground">written</span> -- emphasise a

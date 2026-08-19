@@ -40,8 +40,8 @@ export function BgTasksHint({ entry, ts }: { entry: Record<string, unknown>; ts?
   if (tasks.length === 0) {
     return (
       <div className="mb-1 flex items-center justify-center gap-2 text-[10px]">
-        <span className="text-muted-foreground/60">Background tasks finished</span>
-        <TimeStamp ts={ts} className="text-muted-foreground/40" />
+        <span className="text-fg-dim">Background tasks finished</span>
+        <TimeStamp ts={ts} className="text-fg-faint" />
       </div>
     )
   }
@@ -54,7 +54,7 @@ export function BgTasksHint({ entry, ts }: { entry: Record<string, unknown>; ts?
             {tasks.length} background {tasks.length === 1 ? 'task' : 'tasks'} running
           </span>
           <span className="flex-1 h-px bg-emerald-400/20" />
-          <TimeStamp ts={ts} className="text-muted-foreground/40 text-[10px]" />
+          <TimeStamp ts={ts} className="text-fg-faint text-[10px]" />
           <JsonInspector title="background_tasks_changed" data={entry} raw={entry} />
         </div>
         <div className="space-y-1">

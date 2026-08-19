@@ -16,7 +16,7 @@ export function RecapBlock({ node }: { node: SheafNode }) {
   return (
     <>
       {description && (
-        <div className="mt-0.5 text-[10px] text-muted-foreground/60 truncate italic" title={description}>
+        <div className="mt-0.5 text-[10px] text-fg-dim truncate italic" title={description}>
           {description}
         </div>
       )}
@@ -31,7 +31,7 @@ export function RecapBlock({ node }: { node: SheafNode }) {
             className={`mt-1.5 text-[10px] whitespace-pre-wrap overflow-hidden ${
               recapFresh
                 ? 'text-zinc-300/80 border-l-2 border-zinc-500/50 pl-2 py-0.5 bg-zinc-800/20 rounded-r'
-                : 'text-muted-foreground/50 italic pl-1'
+                : 'text-fg-dim italic pl-1'
             }`}
             title={recap.content}
           >

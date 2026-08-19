@@ -84,7 +84,7 @@ function AllowAllBanner({
       {allowAll ? (
         <ShieldCheck className="size-4 text-green-400 shrink-0" />
       ) : (
-        <ShieldOff className="size-4 text-muted-foreground/50 shrink-0 group-hover:text-amber-400" />
+        <ShieldOff className="size-4 text-fg-dim shrink-0 group-hover:text-amber-400" />
       )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
@@ -95,7 +95,7 @@ function AllowAllBanner({
             <span className="text-[8px] text-green-400/60 border border-green-500/30 px-1 uppercase">auto</span>
           )}
         </div>
-        <span className="text-[9px] text-muted-foreground/60">
+        <span className="text-[9px] text-fg-dim">
           {allowAll
             ? 'Auto-approving all permission requests for this project'
             : 'Click to auto-approve all tool permissions'}
@@ -144,10 +144,10 @@ function ToolSection({
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">{tool}</span>
         {isLinkedSecondary && (
-          <span className="text-[8px] text-muted-foreground/40 border border-border/50 px-1">synced</span>
+          <span className="text-[8px] text-fg-faint border border-border px-1">synced</span>
         )}
         <span className="flex-1 h-px bg-border" />
-        <span className="text-[10px] text-muted-foreground/50 tabular-nums">
+        <span className="text-[10px] text-fg-dim tabular-nums">
           {BUILTINS.length + rules[tool].length}
         </span>
       </div>
@@ -155,9 +155,9 @@ function ToolSection({
       {/* Built-in rules */}
       {BUILTINS.map(pattern => (
         <div key={pattern} className="flex items-center gap-1 px-1.5 py-0.5">
-          <Shield className="size-3 text-muted-foreground/20 shrink-0" />
-          <span className="text-[10px] font-mono text-muted-foreground/40 flex-1">{pattern}</span>
-          <span className="text-[8px] text-muted-foreground/30 border border-border/50 px-1 uppercase">built-in</span>
+          <Shield className="size-3 text-fg-faint shrink-0" />
+          <span className="text-[10px] font-mono text-fg-faint flex-1">{pattern}</span>
+          <span className="text-[8px] text-fg-faint border border-border px-1 uppercase">built-in</span>
         </div>
       ))}
 
@@ -169,7 +169,7 @@ function ToolSection({
           <button
             type="button"
             onClick={() => onRemove(tool, pattern)}
-            className="text-muted-foreground/30 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+            className="text-fg-faint hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
           >
             <X className="size-3" />
           </button>
@@ -177,7 +177,7 @@ function ToolSection({
       ))}
 
       {rules[tool].length === 0 && (
-        <div className="text-[10px] text-muted-foreground/30 italic px-1.5 py-0.5 pl-6">no custom rules</div>
+        <div className="text-[10px] text-fg-faint italic px-1.5 py-0.5 pl-6">no custom rules</div>
       )}
 
       {/* Add input */}
@@ -191,7 +191,7 @@ function ToolSection({
             if (e.key === 'Enter') onAdd(tool, inputValue)
           }}
           placeholder={tool === 'Read' ? '.secret/**' : '.claude/settings/**'}
-          className="flex-1 bg-background border border-border px-1.5 py-0.5 text-foreground text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted-foreground/30"
+          className="flex-1 bg-background border border-border px-1.5 py-0.5 text-foreground text-[10px] font-mono focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-faint"
         />
         <button
           type="button"
@@ -211,7 +211,7 @@ function ToolSection({
               key={g}
               type="button"
               onClick={() => onAdd(tool, g)}
-              className="text-[9px] font-mono px-1 py-px border border-border/50 text-muted-foreground/40 hover:text-accent hover:border-accent/50 transition-colors"
+              className="text-[9px] font-mono px-1 py-px border border-border text-fg-faint hover:text-accent hover:border-accent/50 transition-colors"
             >
               {g}
             </button>
@@ -355,7 +355,7 @@ export function PermissionRulesEditor({ project }: PermissionRulesEditorProps) {
 
   if (!hasConfigRw) {
     return (
-      <div className="text-[10px] text-muted-foreground/50 py-2">
+      <div className="text-[10px] text-fg-dim py-2">
         Agent not connected or does not support config read/write.
       </div>
     )

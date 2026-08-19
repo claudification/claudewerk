@@ -32,7 +32,7 @@ export function SotuViewerBody({
 }: SotuViewerBodyProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex border-b border-border/50 px-4">
+      <div className="flex border-b border-border px-4">
         <button type="button" className={tabCls(tab === 'project')} onClick={() => setTab('project')}>
           <Layers className="size-3 inline mr-1" />
           Project

@@ -51,7 +51,7 @@ function IconToggle({
       title={title}
       className={cn(
         'p-0.5 transition-colors',
-        active ? 'text-accent' : 'text-muted-foreground/60 hover:text-foreground',
+        active ? 'text-accent' : 'text-fg-dim hover:text-foreground',
       )}
       onClick={() => {
         haptic('tap')
@@ -129,12 +129,12 @@ export function BoardHeader(props: BoardHeaderProps) {
               onChange={e => filters.setSearchQuery(e.target.value)}
               onFocus={() => haptic('tap')}
               placeholder="Filter by title..."
-              className="flex-1 bg-surface-inset border border-border/70 px-2 py-1 text-read font-mono text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-accent/50"
+              className="flex-1 bg-surface-inset border border-border px-2 py-1 text-read font-mono text-foreground outline-none placeholder:text-fg-dim focus:border-accent/50"
             />
             {filters.active && (
               <button
                 type="button"
-                className="text-chrome text-muted-foreground/60 hover:text-foreground font-mono shrink-0"
+                className="text-chrome text-fg-dim hover:text-foreground font-mono shrink-0"
                 onClick={filters.clear}
               >
                 Clear

@@ -115,12 +115,12 @@ export function DebugControlModal() {
           )}
 
           <div className="flex items-center justify-between mt-1">
-            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50">Traces</div>
+            <div className="text-[9px] uppercase tracking-wider text-fg-dim">Traces</div>
             {traces.length > 0 && (
               <button
                 type="button"
                 onClick={() => clearDebugTraces(selectedConversationId)}
-                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-fg-muted hover:text-foreground hover:bg-muted/50 transition-colors"
                 title="Clear all traces"
               >
                 <Trash2 className="size-3" />
@@ -130,7 +130,7 @@ export function DebugControlModal() {
           </div>
           <div className="flex flex-col gap-2">
             {traces.length === 0 && (
-              <div className="text-[10px] text-muted-foreground/50">No traces yet -- send a command.</div>
+              <div className="text-[10px] text-fg-dim">No traces yet -- send a command.</div>
             )}
             {traces.map(t => (
               <DebugTraceWaterfall key={t.traceId} trace={t} />

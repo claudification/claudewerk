@@ -211,11 +211,11 @@ export const InputBar = memo(function InputBar({ conversationId }: { conversatio
         <button
           type="button"
           onClick={popStash}
-          className="mb-2 px-2.5 py-1 flex items-center gap-1.5 rounded text-[11px] font-mono text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted border border-border/50 transition-colors cursor-pointer w-fit"
+          className="mb-2 px-2.5 py-1 flex items-center gap-1.5 rounded text-[11px] font-mono text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted border border-border transition-colors cursor-pointer w-fit"
         >
           <Layers className="size-3" />
           <span>{stashCount} stashed</span>
-          <span className="text-muted-foreground/60 ml-1">Ctrl+S to pop</span>
+          <span className="text-fg-dim ml-1">Ctrl+S to pop</span>
         </button>
       )}
       <div className="flex gap-2 items-stretch">

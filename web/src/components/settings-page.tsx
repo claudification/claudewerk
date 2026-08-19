@@ -106,7 +106,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           value={filter}
           onChange={e => setFilter(e.target.value)}
           placeholder="Filter settings..."
-          className="w-full px-3 py-1.5 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-ring"
+          className="w-full px-3 py-1.5 text-xs font-mono bg-muted border border-border text-foreground placeholder:text-fg-faint focus:outline-none focus:border-ring"
         />
       }
       footer={
@@ -118,7 +118,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono border transition-colors ${
               dirty
                 ? 'border-active/50 text-active hover:bg-active/20'
-                : 'border-border text-muted-foreground/40 cursor-not-allowed'
+                : 'border-border text-fg-faint cursor-not-allowed'
             }`}
           >
             <Save className="size-3" />

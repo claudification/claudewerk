@@ -96,12 +96,12 @@ export function WorkspaceTabItem({
             'shrink-0 h-6 px-2.5 rounded-md text-[10px] font-mono transition-all cursor-pointer flex items-center gap-1.5',
             'hover:bg-accent/10 select-none',
             activeCls,
-            !active && 'text-muted-foreground/60 hover:text-muted-foreground',
+            !active && 'text-fg-dim hover:text-muted-foreground',
           )}
         >
           <span className={cn('size-1.5 rounded-full shrink-0', colorDot(ws.color))} />
           {ws.name}
-          {shortcut && <span className="text-[8px] text-muted-foreground/40">{formatShortcut(shortcut)}</span>}
+          {shortcut && <span className="text-[8px] text-fg-faint">{formatShortcut(shortcut)}</span>}
         </button>
       </ContextMenu.Trigger>
       <WorkspaceTabMenu

@@ -11,7 +11,7 @@ export function BatchBroadcastInput({ value, onChange }: { value: string; onChan
       onChange={e => onChange(e.target.value)}
       placeholder="Message to broadcast to all selected conversations..."
       rows={3}
-      className="w-full bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent text-xs font-mono"
+      className="w-full bg-muted/20 px-2 py-1 border border-border-subtle outline-none focus:border-accent text-xs font-mono"
     />
   )
 }
@@ -44,13 +44,13 @@ export function BatchReassignInputs({
         placeholder="target projectUri (optional)"
         value={project}
         onChange={e => onProjectChange(e.target.value)}
-        className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
+        className="bg-muted/20 px-2 py-1 border border-border-subtle outline-none focus:border-accent"
       />
       <select
         aria-label="Target sentinel"
         value={sentinel}
         onChange={e => onSentinelChange(e.target.value)}
-        className="bg-muted/20 px-2 py-1 border border-border/40"
+        className="bg-muted/20 px-2 py-1 border border-border-subtle"
       >
         <option value="">leave sentinel unchanged</option>
         <option value="__clear__">clear sentinel (use default)</option>
@@ -65,7 +65,7 @@ export function BatchReassignInputs({
         placeholder="target profile (blank=unchanged, __clear__=default)"
         value={profile}
         onChange={e => onProfileChange(e.target.value)}
-        className="bg-muted/20 px-2 py-1 border border-border/40 outline-none focus:border-accent"
+        className="bg-muted/20 px-2 py-1 border border-border-subtle outline-none focus:border-accent"
       />
     </div>
   )

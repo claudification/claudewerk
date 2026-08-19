@@ -68,7 +68,7 @@ export function DiagramCommentPopover({
       style={{ position: 'fixed', left, top, width }}
       className={cn(
         'z-[110] flex flex-col gap-2 p-2.5 rounded-lg',
-        'bg-background/95 backdrop-blur border border-border/60 shadow-xl',
+        'bg-background/95 backdrop-blur border border-border shadow-xl',
       )}
     >
       <div className="text-[11px] font-mono text-muted-foreground truncate" title={node.label}>
@@ -88,8 +88,8 @@ export function DiagramCommentPopover({
         placeholder="Add a note..."
         rows={2}
         className={cn(
-          'w-full resize-y min-h-14 text-sm rounded border border-border/50 bg-background px-2 py-1.5',
-          'placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/50',
+          'w-full resize-y min-h-14 text-sm rounded border border-border bg-background px-2 py-1.5',
+          'placeholder:text-fg-dim focus:outline-none focus:ring-1 focus:ring-primary/50',
         )}
       />
       <div className="flex items-center justify-between gap-2">

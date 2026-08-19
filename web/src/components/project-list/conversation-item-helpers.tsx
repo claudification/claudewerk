@@ -20,7 +20,7 @@ export function InterpunctRow({ items }: { items: ReactNode[] }) {
       {items.filter(Boolean).map((node, i) => (
         // react-doctor-disable-next-line react-doctor/no-array-index-key, react-doctor/no-array-index-as-key
         <span key={i} className="contents">
-          {i > 0 && <span className="text-muted-foreground/30">·</span>}
+          {i > 0 && <span className="text-fg-faint">·</span>}
           {node}
         </span>
       ))}
@@ -116,7 +116,7 @@ export function SpawnedFromSubtext({
   if (!parentId) return null
   const deleted = parentTitle === null
   return (
-    <div className={cn('mt-0.5 text-[9px] text-muted-foreground/60 truncate', padClass)}>
+    <div className={cn('mt-0.5 text-[9px] text-fg-dim truncate', padClass)}>
       <button
         type="button"
         disabled={deleted}
@@ -155,7 +155,7 @@ export const SpawnRootStub = memo(function SpawnRootStub({ conversationId }: { c
         haptic('tap')
         selectConversation(conversation.id, 'click')
       }}
-      className="w-full text-left border border-border/60 p-2 pl-4 transition-colors cursor-pointer hover:border-primary/40 appearance-none bg-transparent text-inherit"
+      className="w-full text-left border border-border p-2 pl-4 transition-colors cursor-pointer hover:border-primary/40 appearance-none bg-transparent text-inherit"
       title={`Spawn root -- ${projectPath(conversation.project)}`}
     >
       <div className="flex items-center gap-1.5">
@@ -207,7 +207,7 @@ export function ResultTextModal({ conversation }: { conversation: Conversation }
             <div className="flex items-center gap-2">
               <span className="text-teal-400">{'\u26A1'}</span>
               <span>Ad-hoc Result</span>
-              <span className="text-[10px] text-muted-foreground/50 font-normal">{conversation.id.slice(0, 12)}</span>
+              <span className="text-[10px] text-fg-dim font-normal">{conversation.id.slice(0, 12)}</span>
               <button
                 type="button"
                 className="ml-auto mr-6 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer px-2 py-1 border border-border hover:border-primary"
@@ -245,7 +245,7 @@ export function DismissButton({ conversationId }: { conversationId: string }) {
           onKeyDown={e => {
             if (e.key === 'Enter' || e.key === ' ') requestConfirm(e)
           }}
-          className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-muted-foreground/40 hover:text-destructive transition-opacity cursor-pointer px-0.5"
+          className="opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 text-fg-faint hover:text-destructive transition-opacity cursor-pointer px-0.5"
           title="Dismiss conversation"
         >
           {'\u2715'}
@@ -490,7 +490,7 @@ export function ConversationItemTasksBlock({
       ))}
       {overflow > 0 && <div className="text-[10px] text-muted-foreground pl-1 font-mono">..{overflow} more</div>}
       {completedTasks.map(task => (
-        <div key={task.id} className="text-[11px] text-muted-foreground/50 font-mono truncate pl-1">
+        <div key={task.id} className="text-[11px] text-fg-dim font-mono truncate pl-1">
           <span className="text-active/40 mr-1">{'✓'}</span>
           <span className="line-through">{task.subject}</span>
         </div>

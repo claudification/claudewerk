@@ -26,7 +26,7 @@ function ShareLink({ url, busy, revoke }: { url: string; busy: boolean; revoke: 
     setTimeout(() => setCopied(false), 1500)
   }
   return (
-    <div className="space-y-1 pt-1 border-t border-border/60">
+    <div className="space-y-1 pt-1 border-t border-border">
       <div className="flex items-center gap-1">
         <input
           readOnly
@@ -77,7 +77,7 @@ function SharePanel({ s }: { s: CanvasShareState }) {
             }`}
           >
             <span className="font-mono">{t.label}</span>
-            <span className="block text-[10px] text-muted-foreground/70">{t.hint}</span>
+            <span className="block text-[10px] text-fg-muted">{t.hint}</span>
           </button>
         )
       })}

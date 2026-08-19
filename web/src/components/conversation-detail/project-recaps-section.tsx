@@ -92,12 +92,12 @@ export function ProjectRecapsSection({ projectUri }: { projectUri: string }) {
             >
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-amber-400/90 truncate flex-1">{r.title || r.id}</span>
-                <span className="text-[10px] text-muted-foreground/70 shrink-0">{recapAge(r.createdAt)}</span>
+                <span className="text-[10px] text-fg-muted shrink-0">{recapAge(r.createdAt)}</span>
               </div>
               {r.subtitle && (
                 <div className="text-[11px] leading-relaxed text-muted-foreground truncate">{r.subtitle}</div>
               )}
-              <div className="text-[9px] font-mono text-muted-foreground/50 uppercase tracking-wide">
+              <div className="text-[9px] font-mono text-fg-dim uppercase tracking-wide">
                 {r.periodLabel}
                 {r.llmCostUsd > 0 && ` - $${r.llmCostUsd.toFixed(2)}`}
               </div>
@@ -105,7 +105,7 @@ export function ProjectRecapsSection({ projectUri }: { projectUri: string }) {
           ))}
           <button
             type="button"
-            className="text-[10px] text-muted-foreground/50 hover:text-muted-foreground px-1 transition-colors"
+            className="text-[10px] text-fg-dim hover:text-muted-foreground px-1 transition-colors"
             onClick={() => openHistory(projectUri)}
           >
             See all recaps

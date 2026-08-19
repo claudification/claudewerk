@@ -38,16 +38,16 @@ function MetaLine({ rollup }: { rollup: EpicRollup }) {
 
   return (
     <div className="px-3.5 pb-2.5 flex items-center gap-x-4 gap-y-1 flex-wrap font-mono text-chrome">
-      <span className="text-muted-foreground/60">{rollup.epicId}</span>
+      <span className="text-fg-dim">{rollup.epicId}</span>
       {tags.length > 0 && (
-        <span className="text-muted-foreground/90">
-          <span className="text-muted-foreground/60">tags </span>
+        <span className="text-fg-muted">
+          <span className="text-fg-dim">tags </span>
           {tags.join(' ')}
         </span>
       )}
       {refs.length > 0 && (
-        <span className="text-muted-foreground/90 truncate">
-          <span className="text-muted-foreground/60">refs </span>
+        <span className="text-fg-muted truncate">
+          <span className="text-fg-dim">refs </span>
           {refs.join(' · ')}
         </span>
       )}
@@ -93,7 +93,7 @@ export function EpicDetailPane({
       />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {body && <p className="px-3.5 py-2.5 font-mono text-read text-muted-foreground/95 leading-relaxed">{body}</p>}
+        {body && <p className="px-3.5 py-2.5 font-mono text-read text-fg-muted leading-relaxed">{body}</p>}
 
         <MetaLine rollup={rollup} />
 
@@ -101,13 +101,13 @@ export function EpicDetailPane({
           {rollup.children.length > 0 ? (
             <EpicChildTable rows={rollup.children} onOpenCard={onOpenCard} />
           ) : (
-            <p className="font-mono text-meta text-muted-foreground/70">
+            <p className="font-mono text-meta text-fg-muted">
               Nothing points at this epic yet. Put <code className="text-foreground">epic: {rollup.epicId}</code> in a
               card's frontmatter to adopt it.
             </p>
           )}
           {rollup.dropped > 0 && (
-            <p className="mt-2 font-mono text-chrome text-muted-foreground/60">
+            <p className="mt-2 font-mono text-chrome text-fg-dim">
               ⊘ {rollup.dropped} dropped -- excluded from the percentage
             </p>
           )}

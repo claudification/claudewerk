@@ -64,7 +64,7 @@ export function ReportArtifactModal({
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
           <FileText className="size-4 text-teal-400 shrink-0" />
           <DialogTitle className="text-xs truncate">{title}</DialogTitle>
-          <span className="text-[10px] text-muted-foreground/60 font-mono ml-1 truncate">{relPath}</span>
+          <span className="text-[10px] text-fg-dim font-mono ml-1 truncate">{relPath}</span>
           <a
             href={url}
             target="_blank"

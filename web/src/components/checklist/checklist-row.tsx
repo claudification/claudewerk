@@ -12,13 +12,13 @@ import { Markdown } from '../markdown'
 
 const ICON = 'size-3.5 shrink-0'
 const HOVER_BTN =
-  'shrink-0 text-muted-foreground/50 hover:text-foreground opacity-0 group-hover/ci:opacity-100 transition-opacity'
+  'shrink-0 text-fg-dim hover:text-foreground opacity-0 group-hover/ci:opacity-100 transition-opacity'
 
 // Status-dependent presentation, picked with a single branch in the row.
 const VARIANT = {
   active: {
     box: Square,
-    boxCls: 'text-muted-foreground/60',
+    boxCls: 'text-fg-dim',
     labelCls: 'text-foreground/90',
     toggleTitle: 'Mark in progress',
     next: 'in_progress' as ChecklistStatus,
@@ -58,7 +58,7 @@ function ChecklistRowEditor({ initial, onCommit }: { initial: string; onCommit: 
         if (e.key === 'Enter') finish(draft.trim() || null)
         else if (e.key === 'Escape') finish(null)
       }}
-      className="flex-1 min-w-0 bg-transparent border-b border-border/60 outline-none text-foreground"
+      className="flex-1 min-w-0 bg-transparent border-b border-border outline-none text-foreground"
     />
   )
 }

@@ -115,7 +115,7 @@ export function LaunchParamsSection({ conversation }: { conversation: Conversati
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground text-[10px] uppercase tracking-wider">Launch</span>
           {!lc && (
-            <span className="text-[9px] text-muted-foreground/50" title="launch config not captured at spawn time">
+            <span className="text-[9px] text-fg-dim" title="launch config not captured at spawn time">
               (partial)
             </span>
           )}

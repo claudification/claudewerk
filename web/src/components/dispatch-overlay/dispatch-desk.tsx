@@ -15,7 +15,7 @@ function RosterSection() {
             key={c.conversationId}
             type="button"
             onClick={() => routeTo(c.conversationId)}
-            className="flex flex-col gap-0.5 rounded-xl border border-border/70 bg-card/40 px-3.5 py-2.5 text-left transition-colors hover:border-[color-mix(in_oklch,var(--accent)_45%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="flex flex-col gap-0.5 rounded-xl border border-border bg-card/40 px-3.5 py-2.5 text-left transition-colors hover:border-[color-mix(in_oklch,var(--accent)_45%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <span className="truncate text-[13px] font-medium text-foreground/90">
               {c.title || c.project || c.conversationId.slice(0, 8)}
@@ -70,7 +70,7 @@ function StatusSection() {
         {status.map(p => {
           const body = p.sotuNarrative || p.headline
           return (
-            <div key={p.project} className="rounded-xl border border-border/70 bg-card/40 px-3.5 py-2.5">
+            <div key={p.project} className="rounded-xl border border-border bg-card/40 px-3.5 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-[13px] font-medium text-foreground/90">{p.project}</span>
                 <span className="flex shrink-0 items-center gap-2 text-[11px] text-comment">

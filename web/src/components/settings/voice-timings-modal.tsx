@@ -34,7 +34,7 @@ export function VoiceTimingsModal({ open, onClose }: { open: boolean; onClose: (
     <Dialog open={open} onOpenChange={o => !o && onClose()}>
       <DialogContent className="max-w-2xl p-5 gap-2 overflow-y-auto">
         <DialogTitle className="pr-8">Dictation timings</DialogTitle>
-        <p className="text-[10px] text-muted-foreground/70 pr-8">
+        <p className="text-[10px] text-fg-muted pr-8">
           Every number is a mark taken at the seam it describes, on this device. NET LOST is the gap from the key going
           down to the first sample actually captured, minus what the pre-roll ring handed back.
         </p>
@@ -47,7 +47,7 @@ export function VoiceTimingsModal({ open, onClose }: { open: boolean; onClose: (
           <>
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {records.map(r => (
-                <span key={r.id} className="text-[10px] font-mono text-muted-foreground/70">
+                <span key={r.id} className="text-[10px] font-mono text-fg-muted">
                   #{r.id} <Verdict ms={lostMs(r)} />
                 </span>
               ))}

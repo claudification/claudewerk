@@ -13,7 +13,7 @@ import { GripVertical } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-const GRIP = 'cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-foreground touch-none shrink-0'
+const GRIP = 'cursor-grab active:cursor-grabbing text-fg-faint hover:text-foreground touch-none shrink-0'
 
 export function SortableRow({
   id,

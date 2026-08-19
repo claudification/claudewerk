@@ -26,10 +26,10 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
         <CommitSummaryLine
           commit={commit}
           trailing={
-            <span className="text-[10px] text-muted-foreground/70 shrink-0">{commitAge(commit.committedAt)}</span>
+            <span className="text-[10px] text-fg-muted shrink-0">{commitAge(commit.committedAt)}</span>
           }
         />
-        <div className="flex items-center gap-2 text-[9px] font-mono text-muted-foreground/50 uppercase tracking-wide">
+        <div className="flex items-center gap-2 text-[9px] font-mono text-fg-dim uppercase tracking-wide">
           <span className={commit.origin === 'agent' ? 'text-accent/70' : ''}>{commit.origin}</span>
           <span>{commit.branch}</span>
           <span>
@@ -48,7 +48,7 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
       </button>
 
       {open && (
-        <div className="px-3 pb-2 space-y-2 border-t border-border/50 pt-2">
+        <div className="px-3 pb-2 space-y-2 border-t border-border pt-2">
           {commit.body && (
             <pre className="text-[10px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-sans">
               {commit.body}
@@ -57,7 +57,7 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
           <div className="space-y-0.5">
             {commit.files.map(f => (
               <div key={`${f.status}:${f.path}`} className="flex items-center gap-2 text-[10px] font-mono">
-                <span className="w-6 shrink-0 text-muted-foreground/60">{f.status}</span>
+                <span className="w-6 shrink-0 text-fg-dim">{f.status}</span>
                 <span className="truncate">{f.path}</span>
               </div>
             ))}

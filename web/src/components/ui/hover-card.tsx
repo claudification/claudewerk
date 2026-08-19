@@ -89,7 +89,7 @@ export function HoverCard({
             <div
               style={{ maxHeight: coords.maxHeight }}
               className={cn(
-                'overflow-y-auto rounded-md bg-background/95 shadow-xl backdrop-blur border border-border/60',
+                'overflow-y-auto rounded-md bg-background/95 shadow-xl backdrop-blur border border-border',
                 panelClassName,
               )}
             >
