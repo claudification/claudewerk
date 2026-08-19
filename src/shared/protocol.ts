@@ -3588,6 +3588,12 @@ export interface Conversation {
   summary?: string // AI-generated conversation summary
   title?: string // custom conversation title (from /rename or auto-generated)
   titleUserSet?: boolean // true if title was explicitly set by user (spawn dialog) -- prevents auto-name overwrite
+  /** Did anybody MEAN this name? `true` = nobody chose it (a generated petname,
+   *  or the automatic renamer's own output) and it is fair game to replace.
+   *  `false` = INTENTIONAL (human, rename_conversation, control_conversation, or
+   *  a spawn that supplied a name) and never overwritten. Recorded on every
+   *  write from the writer's origin -- never re-derived from the text. */
+  titleEphemeral?: boolean
   /** WHO last set `title`, and WHEN by their own clock. Together they decide who
    *  wins when two writers disagree -- see `broker/conversation-store/title-authority.ts`.
    *  `titleSetAt` is what makes a REPLAYED rename lose to a newer one without

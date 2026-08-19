@@ -47,6 +47,19 @@ export interface TitleState {
   titleUserSet?: boolean
   titleOrigin?: TitleOrigin
   titleSetAt?: number
+  /**
+   * Did anybody MEAN this name?
+   *
+   * `true` -- nobody chose it: a generated petname, or the automatic renamer's
+   * own output. Fair game to replace.
+   * `false` -- an INTENTIONAL name: a human, `rename_conversation`,
+   * `control_conversation`, or a spawn request that supplied one. Never
+   * overwritten.
+   *
+   * Set explicitly on every write from the writer's origin, so it is a recorded
+   * fact rather than something re-derived (and re-derived wrongly) later.
+   */
+  titleEphemeral?: boolean
 }
 
 /** One attempt to set a title. `title: undefined` clears it back to the auto name.
@@ -61,8 +74,40 @@ export type TitleVerdict =
   | { accept: true; at: number | undefined; clamped: boolean }
   | { accept: false; reason: 'unchanged' | 'pinned' | 'stale' }
 
-/** True once a title has been claimed by a human or an agent acting for one. */
+/**
+ * A name NOBODY CHOSE -- the only thing the automatic renamer may replace.
+ *
+ * This is the question flipped on purpose. Asking "was this set by a user"
+ * meant trusting `titleUserSet`, and 1194 live conversations proved that
+ * boolean wrong: the legacy spawn path stamped it on its OWN generated petname,
+ * so every one of them read as human-authored and was frozen forever
+ * (2026-08-19).
+ *
+ * The answer is ORIGIN, never the text of the name. We already record who wrote
+ * a title, so ephemeral is simply "not written by a human or an agent acting for
+ * one". Sniffing the string for petname shape would repeat the original
+ * mistake in a new costume: the word lists can change, `biome-cleanup` looks
+ * exactly like a petname, and a human is perfectly entitled to name something
+ * `floppy-panda` on purpose.
+ *
+ * Rows written before this flag existed have no recorded answer. They fall back
+ * to what they did record, which is WRONG for the 1194 legacy petnames -- that
+ * is a one-time data repair, tracked on the card, not something to guess at
+ * here every time anyone reads a title.
+ */
+export function isEphemeralName(state: TitleState): boolean {
+  if (!state.title) return true
+  if (typeof state.titleEphemeral === 'boolean') return state.titleEphemeral
+  // Pre-flag row: fall back to what it recorded. Wrong for the 1194 legacy
+  // petnames, and deliberately NOT guessed at from the text -- see the card.
+  if (state.titleOrigin) return !USER_AUTHORED.has(state.titleOrigin)
+  return !state.titleUserSet
+}
+
+/** True once a title has been claimed intentionally -- by a human, or an agent
+ *  acting for one via `rename_conversation` / `control_conversation`. */
 function isPinned(state: TitleState): boolean {
+  if (isEphemeralName(state)) return false
   return state.titleOrigin ? USER_AUTHORED.has(state.titleOrigin) : !!state.titleUserSet
 }
 
@@ -124,6 +169,11 @@ export function applyTitleWrite(state: TitleState, write: TitleWrite, now: numbe
   // replayed older name cannot resurrect itself into the gap.
   state.titleOrigin = state.title ? write.origin : undefined
   state.titleUserSet = USER_AUTHORED.has(write.origin) && !!state.title
+  // THE flag, recorded from the writer's own origin. An intentional rename
+  // (`rename_conversation`, `control_conversation`, a human, a spawn that
+  // supplied a name) CLEARS it; the automatic renamer writing its own guess
+  // leaves it set, so its output stays replaceable by the next better guess.
+  state.titleEphemeral = !state.title || !USER_AUTHORED.has(write.origin)
   state.titleSetAt = verdict.at ?? now
   return verdict
 }
@@ -157,6 +207,9 @@ export function applySpawnTitle(state: TitleState, requestedName: string | undef
  * so the caller can mark the conversation dirty.
  */
 export function backfillTitleSetAt(state: TitleState, now: number): boolean {
+  // Gating on isPinned is what keeps an ephemeral petname from being promoted
+  // to `origin: 'user'` by the line below -- which would make the 2026-08-19
+  // freeze permanent and unrecoverable rather than merely wrong.
   if (state.titleSetAt !== undefined || !isPinned(state)) return false
   state.titleSetAt = now
   state.titleOrigin ??= 'user'
