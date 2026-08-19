@@ -1,46 +1,17 @@
+import type { ReactNode } from 'react'
 import { LaunchConfigFields, type LaunchFieldsValue } from '../launch-config-fields'
 import { FoldStatsReadout } from './fold-stats'
 import type { FoldStats } from './fork-api'
+import { Field } from './fork-field'
 import type { ForkStrategy } from './fork-strategy'
 import { StrategyPicker } from './strategy-picker'
 import type { ForkPhase } from './use-fork-action'
-
-const inputClass =
-  'w-full bg-surface-inset border border-border rounded px-2 py-1.5 text-[11px] font-mono text-foreground placeholder:text-comment/50 focus:outline-none focus:ring-1 focus:ring-primary/50'
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  disabled?: boolean
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[11px] font-mono text-muted-foreground uppercase tracking-wide pl-0.5">{label}</div>
-      <input
-        type="text"
-        aria-label={label}
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-        className={inputClass}
-      />
-    </div>
-  )
-}
 
 export function ForkDialogBody({
   phase,
   stats,
   summary,
+  pointInTime,
   strategy,
   onStrategyChange,
   name,
@@ -56,6 +27,8 @@ export function ForkDialogBody({
   phase: ForkPhase
   stats: FoldStats | null
   summary: string | null
+  /** The point-in-time controls, when the fork started from a message. */
+  pointInTime?: ReactNode
   strategy: ForkStrategy
   onStrategyChange: (v: ForkStrategy) => void
   name: string
@@ -79,6 +52,10 @@ export function ForkDialogBody({
   // body can sit inside a tab that already scrolls without nesting two.
   return (
     <div className="space-y-4">
+      {/* Above the strategy picker on purpose: WHICH slice you are carrying is a
+          bigger decision than how hard it gets folded. */}
+      {pointInTime}
+
       <StrategyPicker value={strategy} onChange={onStrategyChange} disabled={targetFrozen} />
 
       {stats && <FoldStatsReadout stats={stats} />}

@@ -20,11 +20,13 @@ import { canCloseOriginal } from './fork-dialog/close-original'
 import { CloseOriginalField } from './fork-dialog/close-original-field'
 import { ForkDialogBody } from './fork-dialog/fork-dialog-body'
 import { ForkDialogFooter } from './fork-dialog/fork-dialog-footer'
+import { toForkPointRequest } from './fork-dialog/fork-point'
+import { PointInTimeSection } from './fork-dialog/point-in-time-section'
 import { useForkAction } from './fork-dialog/use-fork-action'
 import { useForkDialogForm } from './fork-dialog/use-fork-dialog-form'
 
 export function ForkDialog() {
-  const { open, openId, conversation, form, patch, close: closeForm } = useForkDialogForm()
+  const { open, openId, conversation, forkPoint, form, patch, close: closeForm } = useForkDialogForm()
   const forkAction = useForkAction(conversation)
   const forkReset = forkAction.reset
 
@@ -48,10 +50,16 @@ export function ForkDialog() {
 
   const handlePrimary = useCallback(() => {
     const { strategy, name, model, effort, cwd, worktree, closeOriginal } = form
-    if (forkAction.phase === 'config') void forkAction.runFork(strategy, { cwd, worktree })
-    else if (forkAction.phase === 'ready')
+    if (forkAction.phase === 'config') {
+      const point = toForkPointRequest(forkPoint, {
+        direction: form.direction,
+        inclusive: form.includeBoundary,
+        summarizeDropped: form.summarizeDropped,
+      })
+      void forkAction.runFork(strategy, { cwd, worktree, forkPoint: point })
+    } else if (forkAction.phase === 'ready')
       void forkAction.runLaunch({ name, model, effort, cwd, worktree }, closeOriginal)
-  }, [forkAction, form])
+  }, [forkAction, form, forkPoint])
 
   useKeyLayer(
     {
@@ -86,6 +94,20 @@ export function ForkDialog() {
               phase={forkAction.phase}
               stats={forkAction.stats}
               summary={forkAction.summary}
+              pointInTime={
+                forkPoint && (
+                  <PointInTimeSection
+                    seed={forkPoint}
+                    direction={form.direction}
+                    onDirectionChange={direction => patch({ direction })}
+                    inclusive={form.includeBoundary}
+                    onInclusiveChange={includeBoundary => patch({ includeBoundary })}
+                    summarizeDropped={form.summarizeDropped}
+                    onSummarizeDroppedChange={summarizeDropped => patch({ summarizeDropped })}
+                    disabled={forkAction.phase !== 'config'}
+                  />
+                )
+              }
               strategy={form.strategy}
               onStrategyChange={strategy => patch({ strategy })}
               name={form.name}
