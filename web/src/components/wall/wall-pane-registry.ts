@@ -31,6 +31,10 @@ export interface WallPaneEntry {
 export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
   a: [
     { code: 'P1', load: () => import('./panes/p1-pulse') },
+    // A8 sits between PULSE and the runs, exactly where the approved mockup puts
+    // it. It was not one of the twelve stubs this registry shipped with, so
+    // `wall-pane-pinned-epics` is the one pane card that also edits this file.
+    { code: 'A8', load: () => import('./panes/a8-pinned') },
     { code: 'A7', load: () => import('./panes/a7-unattended-runs') },
   ],
   b: [

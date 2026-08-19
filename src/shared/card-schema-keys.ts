@@ -27,6 +27,7 @@ import { GATE_MODES } from './board-gate'
 import { LINKAGE_VERBS, type LinkageVerb } from './card-linkage'
 import type { CardKeySpec } from './card-schema-types'
 import { TASK_STATUSES } from './task-statuses'
+import { WALL_PINNED_KEY } from './wall-pin'
 
 /** Matches `PRIORITIES` in project-card-file.ts, which reads it back from here. */
 export const CARD_PRIORITIES = ['low', 'medium', 'high'] as const
@@ -169,6 +170,26 @@ const GATE_SPECS: readonly CardKeySpec[] = [
   { key: 'verdict', type: 'string', doc: 'who approved the card, written by the Tier-1 check', owner: 'machine' },
 ]
 
+/**
+ * Keys the DASHBOARD owns. Deliberately outside `ORDER`: adding one there would
+ * churn the frontmatter of every card on the board to move a line, and this key
+ * is absent from all but a handful of them.
+ */
+const WALL_SPECS: readonly CardKeySpec[] = [
+  {
+    key: WALL_PINNED_KEY,
+    // `enum: [true]` and not a boolean type, because the frontmatter subset has
+    // no booleans to validate (card-schema-validate.ts says so out loud) and
+    // because `true` is the ONLY value ever written: unpinning DELETES the key,
+    // so `wall_pinned: false` is a card in a state the board never produces.
+    type: 'enum',
+    values: ['true'],
+    doc: "watchlisted onto THE WALL's pinned-epics pane; only meaningful on an epic card",
+    consequence: 'the epic stops being watched on the wall',
+    owner: 'human',
+  },
+]
+
 const ORDERED_SET = new Set<string>(ORDER)
 
 /** The ordered block, in ORDER, drawing each entry from whichever table owns it. */
@@ -194,5 +215,6 @@ export function buildCardKeys(): CardKeySpec[] {
     ...orderedSpecs(),
     ...LINKAGE_VERBS.filter(v => !ORDERED_SET.has(v.key)).map(v => fromLinkageVerb(v, false)),
     ...GATE_SPECS,
+    ...WALL_SPECS,
   ]
 }

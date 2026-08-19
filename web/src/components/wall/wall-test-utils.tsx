@@ -26,13 +26,20 @@ export function pane(code: string, doc: Document = document): HTMLElement | null
   return doc.querySelector(`[data-pane="${code}"]`)
 }
 
-/** Open the surface and wait for every lazily-imported stub to land. */
+/**
+ * Open the surface and wait for every lazily-imported pane to land.
+ *
+ * It waits on the PANE ELEMENTS, not on the stub's "no feed yet" line: that
+ * counted the panes that had not been built yet, so the rig broke the first time
+ * a pane card shipped a real feed (A8) -- a passing test suite failing because
+ * somebody delivered.
+ */
 export async function openTheWall(): Promise<void> {
   act(() => {
     openWall()
   })
   render(<WallModal />)
-  await waitFor(() => expect(screen.getAllByText('no feed yet')).toHaveLength(WALL_PANE_CODES.length))
+  await waitFor(() => expect(document.querySelectorAll('[data-pane]')).toHaveLength(WALL_PANE_CODES.length))
 }
 
 /** Registered by each suite so a leaked modal record or a stuck ambient flag

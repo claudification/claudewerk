@@ -4218,6 +4218,8 @@ export interface ProjectTaskInputWire {
   blockedBy?: string[]
   /** Stored as `relates_to`. */
   relatesTo?: string[]
+  /** Stored as `wall_pinned`, a scalar boolean. `false` deletes the key. */
+  wallPinned?: boolean
 }
 
 /** Broker -> Sentinel: a single project-board operation envelope. One message

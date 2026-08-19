@@ -20,13 +20,14 @@ import { installWallTestHooks, openTheWall, pane, store, wallRoot } from './wall
 installWallTestHooks()
 
 describe('the wall shell', () => {
-  it('opens from openWall() with all twelve pane stubs wired in', async () => {
+  it('opens from openWall() with every registered pane wired in', async () => {
     await openTheWall()
 
     // "THE WALL" twice on purpose: the managed surface's title bar names it, and
     // so does the wall's own brand. Pin the one inside the body.
     expect(wallRoot().querySelector('.wall-brand b')?.textContent).toBe('THE WALL')
-    expect(WALL_PANE_CODES).toHaveLength(12)
+    // Twelve stubs shipped with the registry; `wall-pane-pinned-epics` added A8.
+    expect(WALL_PANE_CODES).toHaveLength(13)
     for (const code of WALL_PANE_CODES) expect(pane(code)).toBeTruthy()
     // Chrome, not just a mount: the pane says what it is and what to call it.
     expect(pane('P1')?.querySelector('.wall-pane-title')?.textContent).toBe('PULSE')

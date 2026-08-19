@@ -33,6 +33,11 @@ export interface ProjectTaskInput {
   blockedBy?: string[]
   /** Cards worth reading alongside this one. Serialized as `relates_to`. */
   relatesTo?: string[]
+  /** Watchlist this epic onto THE WALL. `false` REMOVES the key rather than
+   *  writing `wall_pinned: false` -- an unpinned card should read exactly like a
+   *  card that was never pinned, so grepping the board for the key answers
+   *  "what is pinned" with no false positives. */
+  wallPinned?: boolean
 }
 
 /** Fold the alias input into the one field that is stored, so create and update

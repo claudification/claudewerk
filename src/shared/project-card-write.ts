@@ -18,6 +18,7 @@ import { cardPath } from './project-paths'
 import { foldAliases, type ProjectTaskInput } from './project-task-input'
 import type { ProjectTask, ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
+import { WALL_PINNED_KEY } from './wall-pin'
 
 /**
  * Resolve a card for WRITING, relocating it out of a legacy lane on the way.
@@ -69,6 +70,7 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     depends_on: input.dependsOn?.length ? input.dependsOn : undefined,
     relates_to: input.relatesTo?.length ? input.relatesTo : undefined,
     created,
+    [WALL_PINNED_KEY]: input.wallPinned ? true : undefined,
   }
   writeFileSync(cardPath(root, id), serializeCard(meta, input.body), 'utf8')
   return {
@@ -82,6 +84,7 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     epic: input.epic,
     dependsOn: input.dependsOn,
     relatesTo: input.relatesTo,
+    wallPinned: input.wallPinned || undefined,
     created,
     mtime: nowMs,
     bodyPreview: makeBodyPreview(input.body),
@@ -110,6 +113,12 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
   if (patch.epic !== undefined) meta.epic = patch.epic
   if (patch.dependsOn !== undefined) meta.depends_on = patch.dependsOn
   if (patch.relatesTo !== undefined) meta.relates_to = patch.relatesTo
+  // UNPIN DELETES THE KEY. `serializeCard` only skips `undefined` for keys it
+  // owns the order of; `wall_pinned` is not one, so leaving it set to `false`
+  // here would write `wall_pinned: false` and make an unpinned card look
+  // different from a card that was never pinned. See wall-pin.ts.
+  if (patch.wallPinned === true) meta[WALL_PINNED_KEY] = true
+  else if (patch.wallPinned === false) delete meta[WALL_PINNED_KEY]
   if (patch.status !== undefined) meta.status = patch.status
   // A legacy card's lane directory was its only status record -- pin it before
   // the file leaves that directory behind.
