@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+import ISOLATED_TESTS from './vitest-isolated.json' with { type: 'json' }
 
 // Generate asset-manifest.json listing every file the dashboard needs.
 // The SW uses this to precache on install and detect new builds.
@@ -193,6 +194,39 @@ export default defineConfig(({ mode }) => {
         '@/': `${resolve(__dirname, 'src')}/`,
         '@shared/': `${resolve(__dirname, '../src/shared')}/`,
       },
+      // Two projects, split by whether a file can survive sharing a module
+      // registry with its neighbours. Isolation is what makes this suite
+      // expensive -- 207 CPU-seconds isolated against 80 un-isolated -- and
+      // most files do not need it, so most files should not pay for it.
+      //
+      // The membership list is GENERATED from the fragile pattern, never
+      // hand-kept: see scripts/gen-isolated-tests.ts. An observed-failure
+      // denylist was tried first and rejected -- the failing set came out as
+      // 7, 3, 4, 3 files across four runs and its union kept growing, so it
+      // would have been both incomplete on the day and silently rotten later.
+      projects: [
+        {
+          extends: true,
+          test: {
+            name: 'isolated',
+            include: ISOLATED_TESTS,
+            isolate: true,
+          },
+        },
+        {
+          extends: true,
+          test: {
+            name: 'shared',
+            include: ['src/**/*.test.{ts,tsx}'],
+            // Setting `exclude` REPLACES vitest's defaults, so node_modules and
+            // dist have to be restated. `include` is src-scoped today and would
+            // not reach them anyway; this is here so that widening `include`
+            // later cannot quietly start collecting vendored test files.
+            exclude: ['**/node_modules/**', '**/dist/**', ...ISOLATED_TESTS],
+            isolate: false,
+          },
+        },
+      ],
     },
     server: {
       port: parseInt(process.env.PORT || '3456', 10),
