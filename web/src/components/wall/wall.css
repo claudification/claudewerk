@@ -819,6 +819,135 @@
 	color: var(--comment);
 }
 
+/* ---------- P2 commit river ---------- */
+/* THE CONTAINER THE ROW MEASURES. It sits inside `.wall-pane-body` and fills it,
+   so its inline size IS the pane's -- which is what the reflow has to react to,
+   since the pane's width comes from the grid slot and the detach state, never
+   from the window. The declaration is HERE and not on `.wall-pane-body` because
+   `container-type: inline-size` also applies inline-size containment, and
+   putting that on the shared body would change how all twelve panes size
+   themselves to serve one. */
+.wall-river {
+	container-type: inline-size;
+}
+.wall-river-sep {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 4px;
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+}
+.wall-river-band + .wall-river-band .wall-river-sep {
+	margin-top: 8px;
+}
+.wall-river-sep hr {
+	flex: 1;
+	border: none;
+	border-top: 1px solid var(--border);
+	margin: 0;
+}
+.wall-river-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 4px;
+	border-radius: 4px;
+	cursor: pointer;
+}
+.wall-river-row:hover {
+	background: var(--surface-inset);
+}
+.wall-river-row:focus-visible {
+	outline: 1px solid var(--border-strong);
+	outline-offset: -1px;
+}
+.wall-river-t {
+	flex: 0 0 32px;
+	color: var(--comment);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+}
+.wall-river-sha {
+	flex: 0 0 56px;
+	color: var(--fg-muted);
+	font-size: 11px;
+}
+/* THE PROJECT TAG NEVER TRUNCATES. Attribution is the point of this pane, so it
+   is the subject that gives way -- ellipsis on one line, its own full line below
+   520px. That also means overriding the truncation ProjectTag brings with it,
+   which is right for the palette's ~100 rows and wrong here. */
+.wall-river-ptag {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+.wall-river-ptag span {
+	overflow: visible;
+	text-overflow: clip;
+}
+.wall-river-msg {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-river-stat {
+	flex: 0 0 auto;
+	font-size: 10px;
+	color: var(--comment);
+	font-variant-numeric: tabular-nums;
+}
+.wall-river-add {
+	color: var(--success);
+}
+.wall-river-del {
+	color: var(--destructive);
+}
+.wall-river-copy {
+	flex: 0 0 auto;
+	align-self: center;
+}
+/* Below 520px the subject takes its own line, in full, indented under the
+   metadata. Measured in the mockup: naming the project at the real column width
+   (407px) leaves the subject about fourteen characters, and fourteen characters
+   of a commit subject is not a commit subject. Detached, ambient or on a wide
+   monitor the pane is over 520px and the row is the single line the format
+   specifies. */
+@container (max-width: 520px) {
+	.wall-river-row {
+		flex-wrap: wrap;
+		row-gap: 1px;
+	}
+	.wall-river-msg {
+		flex: 1 0 100%;
+		order: 5;
+		padding-left: 38px;
+		white-space: normal;
+		overflow: visible;
+		text-overflow: clip;
+	}
+	.wall-river-stat {
+		order: 4;
+		margin-left: auto;
+	}
+	.wall-river-copy {
+		order: 6;
+	}
+}
+.wall-river-more {
+	display: block;
+	width: 100%;
+	padding-top: 6px;
+	text-align: left;
+	font-size: 10px;
+	color: var(--comment);
+}
+.wall-river-more:hover {
+	color: var(--foreground);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
