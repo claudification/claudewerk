@@ -11,6 +11,7 @@
  * An unresolved or ambiguous name sends NOTHING and comes back with candidates.
  */
 
+import { projectIdentityKey } from '@shared/project-uri'
 import { useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { selectConversations } from '@/lib/slim-conversation'
 import { getOrbInstanceId } from './orb-instance'
@@ -21,12 +22,23 @@ export interface SayArgs {
   target?: unknown
 }
 
-/** Live (non-ended) conversations, in the shape the matcher wants. */
+/** Live (non-ended) conversations, in the shape the matcher wants.
+ *  The project's LABEL rides along, because that is the name he says out loud --
+ *  `projectIdentityKey` is the same lookup every other surface uses, so a
+ *  worktree conversation answers to its parent project's name too. */
 export function liveCandidates(): Candidate[] {
   const store = useConversationsStore.getState()
+  // Defaulted, not assumed: a missing settings slice must degrade to "no label",
+  // never throw -- a throw here takes the whole spoken verb down with it.
+  const settings = store.projectSettings ?? {}
   return selectConversations(store.conversationsById)
     .filter(c => c.status !== 'ended')
-    .map(c => ({ conversationId: c.id, title: c.title ?? '', project: c.project ?? '' }))
+    .map(c => ({
+      conversationId: c.id,
+      title: c.title ?? '',
+      project: c.project ?? '',
+      projectLabel: settings[projectIdentityKey(c.project ?? '')]?.label,
+    }))
 }
 
 /** The conversation the user is looking at, if it is live. */
