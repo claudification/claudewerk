@@ -102,6 +102,35 @@ describe('no opacity-stacked colour tokens', () => {
  * conversation-pill override; the two that said `primary-foreground` were the
  * odd ones out.
  */
+/**
+ * ONE `::selection` rule, and it does not paint with `--primary-foreground`.
+ *
+ * globals.css carried two, ~80 lines apart. The later one won, so selected text
+ * everywhere was `--primary-foreground` on `--primary` -- and when that token
+ * flipped near-white to near-black (so labels could sit on a bright primary
+ * fill) every selection in the app became dark text on blue. The first rule
+ * looked correct the whole time, which is exactly why the duplicate was so hard
+ * to see: reading the file top-down, you find a right answer and stop.
+ *
+ * It also hit CodeMirror, which paints its own selection layer but leaves the
+ * native `::selection` to colour the text on top.
+ */
+describe('exactly one ::selection rule', () => {
+  const css = () => readFileSync(join(SRC, 'styles/globals.css'), 'utf8')
+
+  it('is declared once', () => {
+    const blocks = stripComments(css()).match(/(^|[\s,])::selection\s*[,{]/g) ?? []
+    expect(blocks.length, 'a second ::selection later in the file silently wins').toBe(1)
+  })
+
+  it('does not paint selected text with a token defined by a button fill', () => {
+    const rule = /::selection[^{]*\{[^}]*\}/g
+    for (const block of stripComments(css()).match(rule) ?? []) {
+      expect(block, 'primary-foreground flips with the primary FILL').not.toContain('primary-foreground')
+    }
+  })
+})
+
 describe('chat bubbles do not borrow --primary-foreground', () => {
   it('a bubble is not a primary surface, so it uses white directly', () => {
     const bubble = readFileSync(join(SRC, 'components/transcript/chat-bubble.tsx'), 'utf8')

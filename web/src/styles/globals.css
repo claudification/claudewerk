@@ -500,11 +500,12 @@ body {
 	outline-offset: 2px;
 }
 
-/* Selection */
-::selection {
-	background: var(--primary);
-	color: var(--primary-foreground);
-}
+/* Selection lives ~80 lines up, with the form-control selectors that WebKit
+   needs. There used to be a SECOND rule here painting `--primary-foreground`
+   on `--primary`; being later in the file it won, so when that token flipped
+   near-white -> near-black (so labels could sit on a bright primary fill)
+   every selection in the app became dark text on blue. Two rules for one
+   pseudo-element is how that hid -- there is exactly one now. */
 
 @layer base {
 	* {
