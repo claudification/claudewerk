@@ -48,7 +48,13 @@ beforeEach(() => {
   resetCardProviders()
   useConversationsStore.setState({ pendingTaskEdit: null })
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  // The store is a module singleton: leaving a card queued for the editor is a
+  // trap for whatever runs next.
+  useConversationsStore.setState({ pendingTaskEdit: null })
+  resetCardProviders()
+})
 
 describe('CardChip', () => {
   test('shows the card title once the board answers', () => {
