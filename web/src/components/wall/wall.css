@@ -819,6 +819,156 @@
 	color: var(--comment);
 }
 
+/* ---------- A2 burn clock ---------- */
+.wall-burn {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+/* The headline. Big enough to read from across the room, which is the whole
+   reason the rate is a rate and not a total. */
+.wall-burn-live {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+.wall-burn-rate {
+	font-size: 26px;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: -0.01em;
+	font-variant-numeric: tabular-nums;
+	color: var(--foreground);
+}
+/* Still measuring: the dash must not look like a confident zero. */
+.wall-burn-rate[data-measuring] {
+	color: var(--comment);
+	font-weight: 400;
+}
+.wall-burn-spark-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.wall-burn-spark {
+	display: block;
+	fill: var(--warning);
+}
+.wall-burn-spark-empty,
+.wall-burn-note {
+	font-size: 9px;
+	color: var(--comment);
+	letter-spacing: 0.04em;
+}
+.wall-burn-tiles {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+}
+.wall-burn-tile {
+	border: 1px solid var(--border-subtle);
+	border-radius: 3px;
+	padding: 5px 7px;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	min-width: 0;
+}
+.wall-burn-tile b {
+	font-size: 9px;
+	letter-spacing: 0.14em;
+	color: var(--comment);
+	font-weight: 700;
+}
+.wall-burn-tile-val {
+	font-size: 15px;
+	font-variant-numeric: tabular-nums;
+	color: var(--foreground);
+}
+.wall-burn-cap {
+	font-style: normal;
+	font-size: 9px;
+	letter-spacing: 0.06em;
+	color: var(--comment);
+}
+/* NO CAP SET, or a cap already breached. Both mean nothing is holding, and the
+   tile has to say so without being asked. */
+.wall-burn-tile[data-alarm] {
+	border-color: color-mix(in oklch, var(--destructive) 45%, transparent);
+}
+.wall-burn-tile[data-alarm] .wall-burn-cap {
+	color: var(--destructive);
+	font-weight: 700;
+}
+.wall-burn-split-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 9px;
+	letter-spacing: 0.14em;
+	color: var(--comment);
+	margin-bottom: 3px;
+}
+.wall-burn-split-head b {
+	font-weight: 700;
+}
+.wall-burn-split-window {
+	letter-spacing: 0.04em;
+}
+.wall-burn-split-total {
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0;
+	color: var(--fg-muted);
+}
+.wall-burn-rows {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+}
+.wall-burn-hit {
+	display: grid;
+	grid-template-columns: minmax(0, 88px) 1fr auto;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	text-align: left;
+	font-size: 10px;
+	color: var(--fg-muted);
+}
+button.wall-burn-hit:hover {
+	color: var(--foreground);
+}
+.wall-burn-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-burn-bar {
+	display: block;
+	height: 6px;
+	border-radius: 2px;
+	background: var(--border-subtle);
+	overflow: hidden;
+}
+.wall-burn-bar i {
+	display: block;
+	height: 100%;
+	background: var(--warning);
+}
+.wall-burn-usd {
+	font-variant-numeric: tabular-nums;
+	color: var(--foreground);
+}
+.wall-burn-empty {
+	margin: 0;
+	font-size: 10px;
+	color: var(--comment);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;

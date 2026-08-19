@@ -61,7 +61,11 @@ describe('the wall shell', () => {
   it('renders a pane caption in the header count slot', async () => {
     await openTheWall()
 
-    expect(pane('A2')?.querySelector('.wall-pane-count')?.textContent).toBe('last 60m')
+    // The SHELL's claim is that the slot exists and a pane can fill it -- not
+    // what any particular pane puts there. It used to assert A2's stub caption
+    // verbatim, which made the shell's suite fail the moment A2 shipped a real
+    // one; same trap `openTheWall` already had to be dug out of.
+    expect(pane('A2')?.querySelector('.wall-pane-count')?.textContent).toBeTruthy()
   })
 
   it('moves its body into the detached window without losing the grid', async () => {

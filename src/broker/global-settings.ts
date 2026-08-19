@@ -40,6 +40,13 @@ const GlobalSettingsSchema = z.object({
   // the refiner; turn it off to fit inside the deadline.
   voiceRefinementContextPass: z.boolean().default(true),
   carriageReturnDelay: z.number().min(0).max(2000).default(0),
+  // FLEET-WIDE 30-day spend ceiling, in USD. 0 = no cap, which is the state the
+  // fleet is actually in and the state THE WALL's burn clock (A2) says out loud
+  // in rose. Distinct from `defaultMaxBudgetUsd`, which caps ONE conversation at
+  // spawn: this one is about the total, and reading the per-conversation default
+  // as if it were a fleet ceiling would be a wrong number with a confident label.
+  // Advisory today -- A2 renders it, nothing enforces it.
+  monthlySpendCapUsd: z.number().min(0).default(0),
   defaultLaunchMode: z.enum(['headless', 'pty']).default('headless'),
   // Transport reframe (Phase 3) -- the default transport per backend for
   // AGENT-SPAWNED conversations (MCP spawn_conversation, inter-conversation
