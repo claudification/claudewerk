@@ -112,8 +112,20 @@ export interface MachineStats {
   cpuPercent: number
   load: LoadAverage
   memory: UsedTotal
-  /** The volume the agent runs on, plus the mount point it was measured at so a
-   *  consumer can tell `/` from an external disk. */
+  /**
+   * The volume the agent runs on, plus the DIRECTORY it was measured at so a
+   * consumer can tell `/` from an external disk. `mount` is that directory and
+   * not the kernel's mount point, because the fast path reads `statfs(2)`,
+   * which cannot name one -- a fallback that answered `/volume1` where every
+   * other node answers a working directory would be a second meaning under one
+   * field name.
+   *
+   * `usedBytes` is total MINUS AVAILABLE-to-an-unprivileged-writer, so the
+   * root-reserved blocks count as used. Every producer computes it that way:
+   * the collector via `usedFromAvailable`, `scripts/node-stats-report.sh` via
+   * `($2 - $4)` on `df -Pk`. df's own `Used` column is a DIFFERENT number and
+   * is never the one on the wire.
+   */
   disk: UsedTotal & { mount: string }
 }
 
