@@ -59,6 +59,7 @@ export function PlainGroupList({
   groups,
   enteringKey,
   settlingKey,
+  jumpHighlightKey,
   clearEntering,
   clearSettling,
   box,
@@ -67,6 +68,10 @@ export function PlainGroupList({
   groups: DisplayGroup[]
   enteringKey: string | null
   settlingKey: string | null
+  /** The group a transcript-search jump just landed on, flashed so the reader
+   *  can see WHICH message matched -- otherwise a mid-history landing is
+   *  indistinguishable from having scrolled there by hand. */
+  jumpHighlightKey: string | null
   clearEntering: () => void
   clearSettling: () => void
   box: BoxSizing
@@ -84,7 +89,11 @@ export function PlainGroupList({
             // top would be clipped by contain:paint (the "cut text" bug). Moving
             // the whole box up avoids the clip. continuationOffset={false} stops
             // GroupView from also applying it inside.
-            className={cn('transcript-plain-group', group.continuation && '-mt-2')}
+            className={cn(
+              'transcript-plain-group',
+              group.continuation && '-mt-2',
+              jumpHighlightKey === key && 'transcript-jump-hit',
+            )}
             style={boxStyle(group, key, box)}
             group={group}
             continuationOffset={false}

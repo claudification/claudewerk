@@ -13,7 +13,9 @@ interface ResultsListProps {
   activeIndex: number
   onActivate: (index: number) => void
   onDrillInto: (conversationId: string) => void
-  onGoTo: (conversationId: string) => void
+  /** `seq` lands the transcript on the matched entry. Conversation rows have no
+   *  single entry to land on, so they drill in instead of jumping. */
+  onGoTo: (conversationId: string, seq?: number) => void
 }
 
 /** Hot hits first, cold hits after, one shared index across both -- so arrow
@@ -50,7 +52,7 @@ export function ResultsList({
               key={`${hit.conversationId}-${hit.seq}`}
               hit={hit}
               active={i === activeIndex}
-              onClick={() => onGoTo(hit.conversationId)}
+              onClick={() => onGoTo(hit.conversationId, hit.seq)}
               onHover={() => onActivate(i)}
             />
           ))}
@@ -59,7 +61,7 @@ export function ResultsList({
           key={`cold-${hit.conversationId}-${hit.seq}-${hit.uuid}`}
           hit={hit}
           active={hotHits.length + i === activeIndex}
-          onClick={() => onGoTo(hit.conversationId)}
+          onClick={() => onGoTo(hit.conversationId, hit.seq)}
           onHover={() => onActivate(hotHits.length + i)}
         />
       ))}

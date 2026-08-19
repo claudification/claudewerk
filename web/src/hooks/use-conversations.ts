@@ -17,11 +17,11 @@ import {
 } from '@/lib/control-panel-prefs'
 import { referencedConversationIds } from '@/lib/conversation-refs'
 import { clearExpandedState } from '@/lib/expanded-state'
+import { fetchConversationById } from '@/lib/fetch-conversation'
 import { fetchJsonTimed } from '@/lib/net-timing'
 import { enqueueOutbox, useOutboxStore } from '@/lib/outbox'
 import { discardPendingSend, newRequestId, registerPendingSend } from '@/lib/pending-sends'
 import { setPerfEnabled } from '@/lib/perf-metrics'
-import { fetchConversationById } from '@/lib/fetch-conversation'
 import { DEFAULT_PERMISSIONS, type ResolvedPermissions } from '@/lib/permissions'
 import { appendShareParam } from '@/lib/share-mode'
 import {

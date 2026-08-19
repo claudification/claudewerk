@@ -7,6 +7,9 @@
  *               anchoring, or our prepend + above-viewport anchors. Never both.
  *   backfill  = top-sentinel.tsx (IntersectionObserver, no scroll gesture)
  *   offscreen = content-visibility CSS, sized per group by use-group-heights.ts
+ *   jump      = use-plain-jump-scroll.ts -- the ONLY user-requested scroll
+ *               (a transcript-search hit). Runs once per jump, after follow is
+ *               off, so it never races the follow engine for the bottom.
  */
 
 import { useCallback, useEffect } from 'react'
@@ -17,12 +20,14 @@ import { useIncrementalGroups } from '../grouping'
 import type { TranscriptViewProps } from '../transcript-view'
 import { useTailAnimations } from '../use-tail-animations'
 import { useLiveGroups, usePlanContext, useTranscriptSettings } from '../use-transcript-derivations'
+import { useTranscriptJump } from '../use-transcript-jump'
 import { useTranscriptWindow } from '../use-transcript-window'
 import { resolveAnchorStrategy } from './anchor-strategy'
 import type { BoxSizing } from './plain-group-list'
 import { useAboveViewportAnchor } from './use-above-anchor'
 import { useGroupHeights } from './use-group-heights'
 import { usePlainFollow } from './use-plain-follow'
+import { usePlainJumpScroll } from './use-plain-jump-scroll'
 import { usePrependAnchor } from './use-prepend-anchor'
 
 /** Names the configuration under test in device logs -- which anchoring
@@ -88,6 +93,7 @@ export function usePlainTranscript({
     hasMoreOlder,
     hasMoreOlderRef,
     loadEarlier,
+    revealSeq,
     fetchOlder,
     loadingEarlierRef,
     fetchingOlderRef,
@@ -97,6 +103,20 @@ export function usePlainTranscript({
   const settings = useTranscriptSettings()
   const planContext = usePlanContext(entries)
   const { mainGroups, queuedGroups, liveActive } = useLiveGroups(groups, conversationId)
+
+  // Transcript-search jump: fetch/reveal until the target seq is rendered, then
+  // scroll to its group. Leaves follow on the way in, or the engine would pin
+  // straight back to the bottom.
+  const jump = useTranscriptJump({
+    cacheKey,
+    entries,
+    groups: mainGroups,
+    hasMoreOlder,
+    fetchOlder,
+    revealSeq,
+    onLeaveFollow: onUserScroll,
+  })
+  usePlainJumpScroll(engine.contentRef, jump.groupKey, jump.onLanded)
 
   const tailGroup = mainGroups.length > 0 ? mainGroups[mainGroups.length - 1] : null
   const animations = useTailAnimations({
@@ -145,6 +165,7 @@ export function usePlainTranscript({
     queuedGroups,
     regroupSignal,
     handleNearTop,
+    jumpHighlightKey: jump.highlightKey,
     isEmpty: mainGroups.length === 0 && queuedGroups.length === 0,
     hasMore: hasMoreOlder || windowed.length < entries.length,
   }

@@ -41,6 +41,7 @@ function boxes(overrides: Partial<BoxSizing> = {}): NodeListOf<HTMLElement> {
       planContext={undefined as never}
       enteringKey={null}
       settlingKey={null}
+      jumpHighlightKey={null}
       clearEntering={() => {}}
       clearSettling={() => {}}
     />,

@@ -33,6 +33,7 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain(props: Tran
     queuedGroups,
     regroupSignal,
     handleNearTop,
+    jumpHighlightKey,
     isEmpty,
     hasMore,
   } = usePlainTranscript(props)
@@ -61,6 +62,7 @@ export const TranscriptViewPlain = memo(function TranscriptViewPlain(props: Tran
             planContext={planContext}
             enteringKey={animations.enteringKey}
             settlingKey={animations.settlingKey}
+            jumpHighlightKey={jumpHighlightKey}
             clearEntering={animations.clearEntering}
             clearSettling={animations.clearSettling}
           />
