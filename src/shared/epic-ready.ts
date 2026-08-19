@@ -30,14 +30,34 @@ export interface EpicPlanInput {
   concurrency: number
   /** Card ids with a live implementer right now. */
   inFlight: readonly string[]
+  /**
+   * Card ids with a live VERIFIER right now -- a separate lane from `inFlight`
+   * on purpose.
+   *
+   * These are two different seats and only a same-role collision matters. A live
+   * implementer must NOT suppress the verdict its own card is owed, and a live
+   * verifier must not make the card look dispatchable. Folding both into one bit
+   * is exactly the bug this field exists to end: `verify` had no liveness input
+   * at all, so a card sitting in `in-review` asked for a fresh verifier on every
+   * beat and collected eight concurrent Opus reviewers on one card.
+   */
+  inVerify: readonly string[]
 }
 
 export interface EpicPlan {
   rollup: EpicRollup | null
   /** Cards to hand to an implementer, most important first, already slot-capped. */
   dispatch: ProjectTaskMeta[]
-  /** Cards awaiting an independent verdict. NOT slot-capped: a verifier is cheap
-   *  and a card stuck in `in-review` is the worst place for work to sit. */
+  /**
+   * Cards awaiting an independent verdict, EXCLUDING any that already have a
+   * verifier alive.
+   *
+   * Still not slot-capped, and that part is deliberate: a card stuck in
+   * `in-review` is the worst place for work to sit, so a verdict should never
+   * queue behind implementers. The bound is one-per-card, not a ceiling -- which
+   * makes the worst case "one verifier per in-review card" instead of the
+   * unbounded-in-TIME flood this used to be.
+   */
   verify: ProjectTaskMeta[]
   /** Questions an implementer parked for the overseer (`needs-overseer` cards).
    *  These are answered, never dispatched -- handing a question to another
@@ -80,7 +100,8 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
   }
 
   const inFlight = new Set(input.inFlight)
-  const verify = rollup.children.filter(c => needsVerdict(c.card)).map(c => c.card)
+  const inVerify = new Set(input.inVerify)
+  const verify = rollup.children.filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug)).map(c => c.card)
   const questions = rollup.children
     .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isQuestion(c.card))
     .map(c => c.card)

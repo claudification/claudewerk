@@ -21,12 +21,12 @@ function card(slug: string, status: TaskStatus, extra: Partial<ProjectTaskMeta> 
 }
 
 const EPIC = card('e1', 'open', { tags: ['epic'] })
-const plan = (cards: ProjectTaskMeta[], concurrency = 3, inFlight: string[] = []) =>
-  planEpic({ cards, epicId: 'e1', concurrency, inFlight })
+const plan = (cards: ProjectTaskMeta[], concurrency = 3, inFlight: string[] = [], inVerify: string[] = []) =>
+  planEpic({ cards, epicId: 'e1', concurrency, inFlight, inVerify })
 
 describe('planEpic', () => {
   test('an epic nobody declared is reported, not crashed on', () => {
-    const p = planEpic({ cards: [], epicId: 'ghost', concurrency: 3, inFlight: [] })
+    const p = planEpic({ cards: [], epicId: 'ghost', concurrency: 3, inFlight: [], inVerify: [] })
     expect(p.rollup).toBeNull()
     expect(p.idleReason).toContain('no epic')
   })
@@ -62,6 +62,43 @@ describe('planEpic', () => {
     expect(p.verify.map(c => c.slug)).toEqual(['t1'])
     expect(p.dispatch).toHaveLength(0)
     expect(p.idleReason).toContain('verdict')
+  })
+
+  /**
+   * THE VERIFIER FLOOD, 2026-08-19. `verify` was built with no liveness filter at
+   * all, so a card parked in `in-review` asked for a fresh verifier on EVERY beat.
+   * The sweep runs ~45s, so `node-stats-http-ingest` collected EIGHT concurrent
+   * Opus verifiers on one card -- each with its own scratch worktree, each about
+   * to write a verdict onto the same card body.
+   *
+   * It was invisible for as long as it was because the worktree-create SIGPIPE bug
+   * killed every duplicate in under two seconds. Fixing the spawn path is what let
+   * the flood actually run.
+   */
+  test('a card already being verified does NOT ask for a second verifier', () => {
+    const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })], 3, [], ['t1'])
+    expect(p.verify).toHaveLength(0)
+  })
+
+  test('verifier liveness is per-card, so a sibling still gets its first verdict', () => {
+    const p = plan(
+      [EPIC, card('t1', 'in-review', { epic: 'e1' }), card('t2', 'in-review', { epic: 'e1' })],
+      3,
+      [],
+      ['t1'],
+    )
+    expect(p.verify.map(c => c.slug)).toEqual(['t2'])
+  })
+
+  /**
+   * The lanes are separate seats: a live IMPLEMENTER must not suppress the verdict
+   * its own card is owed. Collapsing both roles into one liveness bit is what
+   * `epic-sweep.ts` used to do, and it is why `verify` could not tell the
+   * difference in the first place.
+   */
+  test('a live implementer does not suppress the verdict on an in-review card', () => {
+    const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })], 3, ['t1'], [])
+    expect(p.verify.map(c => c.slug)).toEqual(['t1'])
   })
 
   test('a needs-overseer question is surfaced, never dispatched', () => {

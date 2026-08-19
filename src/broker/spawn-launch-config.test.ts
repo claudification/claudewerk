@@ -45,7 +45,7 @@ const RUN: EpicRun = {
 }
 
 /** An empty board is a legitimate plan and keeps the fixture honest. */
-const PLAN = planEpic({ cards: [], epicId: 'epic-the-wall', concurrency: 3, inFlight: [] })
+const PLAN = planEpic({ cards: [], epicId: 'epic-the-wall', concurrency: 3, inFlight: [], inVerify: [] })
 
 /** The four seats a run can dispatch, each from its REAL plan builder. */
 const SEATS = [

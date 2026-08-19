@@ -19,6 +19,8 @@ const isLive = (c: Conversation) => (c as unknown as { __live: boolean }).__live
 const impl = (cardId: string, gen = 1): EpicLaunchTag & never =>
   ({ epicId: 'e1', role: 'implementer', cardId, gen }) as never
 const overseer = (gen = 1): EpicLaunchTag & never => ({ epicId: 'e1', role: 'overseer', gen }) as never
+const verifier = (cardId: string, gen = 1): EpicLaunchTag & never =>
+  ({ epicId: 'e1', role: 'verifier', cardId, gen }) as never
 
 function entry(kind: EpicLogEntry['kind'], cardId?: string): EpicLogEntry {
   return { ts: '', kind, convId: 'c', ...(cardId ? { cardId } : {}), body: '' }
@@ -44,6 +46,27 @@ describe('groupEpicConversations', () => {
 
   test('order of conversations does not change the verdict', () => {
     const group = groupEpicConversations([conv(impl('t1'), true), conv(impl('t1'), false)], isLive).get('e1')
+    expect(group?.inFlight).toEqual(['t1'])
+  })
+
+  test('a live verifier is reported in its OWN lane, not just the combined one', () => {
+    const group = groupEpicConversations([conv(verifier('t1'), true)], isLive).get('e1')
+    expect(group?.inVerify).toEqual(['t1'])
+    expect(group?.inFlight).toEqual(['t1'])
+  })
+
+  test('a DEAD verifier leaves the verify lane, so the card can be re-verified', () => {
+    const group = groupEpicConversations([conv(verifier('t1'), false)], isLive).get('e1')
+    expect(group?.inVerify).toEqual([])
+    expect(group?.settled).toEqual(['t1'])
+  })
+
+  /** The lane must be role-scoped or it is just `inFlight` under another name --
+   *  and an implementer keeping a card out of the verify lane would strand the
+   *  verdict for as long as the implementer ran. */
+  test('a live IMPLEMENTER never lands in the verify lane', () => {
+    const group = groupEpicConversations([conv(impl('t1'), true)], isLive).get('e1')
+    expect(group?.inVerify).toEqual([])
     expect(group?.inFlight).toEqual(['t1'])
   })
 
@@ -106,6 +129,7 @@ describe('generationMismatch', () => {
     epicId: 'e1',
     project: '',
     inFlight: [],
+    inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
     settled: [],

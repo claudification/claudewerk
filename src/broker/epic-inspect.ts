@@ -23,7 +23,16 @@ import type { SweepDeps } from './epic-sweep-loop'
 
 /** An epic with no conversations still has a live picture -- an empty one. */
 function emptyGroup(epicId: string, project: string): EpicGroup {
-  return { epicId, project, inFlight: [], overseerAlive: false, liveOverseers: [], settled: [], maxGenSeen: 0 }
+  return {
+    epicId,
+    project,
+    inFlight: [],
+    inVerify: [],
+    overseerAlive: false,
+    liveOverseers: [],
+    settled: [],
+    maxGenSeen: 0,
+  }
 }
 
 /** The group for one epic, from a conversation list the caller already has.
@@ -66,6 +75,7 @@ export async function inspectEpic(
     epicId,
     concurrency: view.run?.concurrency ?? 3,
     inFlight: group.inFlight,
+    inVerify: group.inVerify,
   })
 
   return {

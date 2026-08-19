@@ -73,7 +73,13 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
   if (pending.length > 0) await acknowledge(deps, group, pending)
 
   const cards = await io.fetchBoardCards(deps, group.project)
-  const plan = planEpic({ cards, epicId: group.epicId, concurrency: run.concurrency, inFlight: group.inFlight })
+  const plan = planEpic({
+    cards,
+    epicId: group.epicId,
+    concurrency: run.concurrency,
+    inFlight: group.inFlight,
+    inVerify: group.inVerify,
+  })
 
   const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true
   const beat: EpicBeat = planBeat({

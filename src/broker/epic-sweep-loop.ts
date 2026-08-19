@@ -204,6 +204,7 @@ export async function beatOneEpic(
       epicId,
       project,
       inFlight: [],
+      inVerify: [],
       overseerAlive: false,
       liveOverseers: [],
       settled: [],
