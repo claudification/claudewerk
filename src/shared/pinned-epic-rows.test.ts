@@ -4,12 +4,15 @@
  * The two failures worth a test are both LIES the pane could tell quietly -- a
  * percentage that counts abandoned cards as finished, and a truncated list that
  * reads as complete.
+ *
+ * It moved here from `web/` with the fold itself: the SENTINEL runs this now
+ * (the `pinned` board op), and the browser only renders what it returns.
  */
 
-import type { ProjectTaskMeta } from '@shared/project-task-types'
-import type { TaskStatus } from '@shared/task-statuses'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'bun:test'
 import { MARKER, PINNED_CHILD_CAP, pinnedEpicRows } from './pinned-epic-rows'
+import type { ProjectTaskMeta } from './project-task-types'
+import type { TaskStatus } from './task-statuses'
 
 let clock = 1_000
 

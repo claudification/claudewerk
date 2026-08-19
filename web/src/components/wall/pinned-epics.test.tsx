@@ -2,18 +2,18 @@
  * A8 as it RENDERS: the counts beside every bar, the cap that says so, the hover
  * that stays put and the click that leaves.
  *
- * `useWallPins` is mocked because its feed is the whole project-board cache over
- * a websocket -- what this suite is about is the pane, and the fold behind it has
- * its own suite (`pinned-epic-rows.test.ts`).
+ * `useWallPins` is mocked because its feed is a sentinel-side board op over a
+ * websocket -- what this suite is about is the pane, and the fold behind it has
+ * its own suite (`src/shared/pinned-epic-rows.test.ts`).
  */
 
+import { MARKER, type PinnedChildRow } from '@shared/pinned-epic-rows'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import PinnedEpicsPane from './panes/a8-pinned'
-import { MARKER, type PinnedChildRow } from './pinned-epic-rows'
 import type { WallPinRow } from './use-wall-pins'
 
 const pins = vi.hoisted(() => ({ rows: [] as WallPinRow[] }))

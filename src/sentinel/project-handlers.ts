@@ -4,6 +4,7 @@
  * root; every path op below is jailed under it by src/shared/project-store.ts.
  */
 
+import { pinnedEpicRows } from '../shared/pinned-epic-rows'
 import {
   createProjectTask,
   deleteProjectTask,
@@ -56,6 +57,14 @@ const OPS: Record<ProjectBoardOp['op'], OpHandler> = {
   list: (root, msg) => ({ tasks: listProjectTasks(root, msg.filterStatus) }),
   manifest: root => ({ manifest: listProjectManifest(root) }),
   getBatch: (root, msg) => ({ batch: getProjectTasksBatch(root, msg.refs ?? []) }),
+  // THE WALL's A8 fold, run beside the files. The pin is a frontmatter key only
+  // the full card carries, so a browser-side fold had to pull every project's
+  // whole board across the wire to find a handful of booleans; this reads the
+  // same cards off local disk and sends back only the rows.
+  //
+  // `msg.project` is the canonical URI the row is an address for -- INFORMATIONAL
+  // only, never a path (`root` is the sole path input, jailed as always).
+  pinned: (root, msg) => ({ pinned: pinnedEpicRows(msg.project ?? '', listProjectTasks(root)) }),
   get: (root, msg) => (msg.slug ? { task: getProjectTask(root, msg.slug) } : { error: 'slug required' }),
   create: (root, msg, nowMs) =>
     msg.input ? { note: createProjectTask(root, msg.input, nowMs) } : { error: 'input required' },

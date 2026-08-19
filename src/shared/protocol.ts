@@ -33,6 +33,7 @@ import type {
   NightshiftTaskPatchInput,
 } from './nightshift-types'
 import type { NodeStatsReport } from './node-stats'
+import type { PinnedEpicRow } from './pinned-epic-rows'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type {
   QuestAcceptanceContract,
@@ -4228,7 +4229,11 @@ export interface ProjectBoardOp {
   type: 'project_board_op'
   requestId: string
   projectRoot: string
-  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete'
+  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete' | 'pinned'
+  /** Canonical project URI, for ops whose RESULT has to name the project it came
+   *  from (`pinned` -- a wall row is an address you can click). The sentinel never
+   *  derives a path from it; `projectRoot` above is still the only path input. */
+  project?: string
   /** LEGACY HINT, ignored. A card is addressed by `slug` alone -- its lane is a
    *  `status:` frontmatter key, not a location. Still sent so an older sentinel
    *  that requires it keeps working. */
@@ -4261,6 +4266,9 @@ export interface ProjectBoardResult {
   manifest?: ProjectTaskManifestEntry[]
   /** getBatch */
   batch?: ProjectTaskMeta[]
+  /** pinned: the whole A8 fold, done beside the files. Only the pinned epics and
+   *  their not-closed children cross the wire -- never the board. */
+  pinned?: PinnedEpicRow[]
   /** get / update */
   task?: ProjectTask | null
   /** create */
