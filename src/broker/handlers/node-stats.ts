@@ -35,13 +35,36 @@ function credentialIdentity(ctx: HandlerContext): { nodeId: string; sender: Node
   if (reporterId) return { nodeId: reporterId, sender: 'reporter' }
   const sentinelId = ctx.ws.data.sentinelId
   if (sentinelId) return { nodeId: sentinelId, sender: 'sentinel' }
+  // A sentinel authenticated with the shared admin secret. It has no `snt_` and
+  // therefore no auth-derived `sentinelId`, so the broker resolved one for it at
+  // identify and stamped it. STILL NOT FROM THE WIRE: `resolvedSentinelId` is a
+  // registry record the broker chose, never the `machineId` the sentinel
+  // reported -- so this cannot be used to claim another node's row.
+  const resolved = ctx.ws.data.resolvedSentinelId
+  if (resolved) return { nodeId: resolved, sender: 'sentinel' }
   return null
 }
 
 export const nodeStats: MessageHandler = (ctx, data) => {
   const identity = credentialIdentity(ctx)
   if (!identity) {
-    ctx.log.info(`[node-stats] rejected ${NODE_STATS_MESSAGE}: socket carries no sentinel/reporter credential`)
+    // ONCE PER CONNECTION, for the same reason the identity-stamp line below is
+    // latched: a refused sender keeps its cadence, so logging per frame buys
+    // 17k lines a day and the reader learns nothing after the first. 280 of
+    // these were in the live log when this was found.
+    //
+    // The REPLY is not latched. EVERYTHING IS A STRUCTURED MESSAGE -- a sender
+    // being ignored has to be told, every time, or it reports into the void
+    // exactly as studio did. Log volume is our problem; silence is its problem.
+    if (!ctx.ws.data.nodeStatsRejectLogged) {
+      ctx.ws.data.nodeStatsRejectLogged = true
+      ctx.log.info(`[node-stats] rejected ${NODE_STATS_MESSAGE}: socket carries no sentinel/reporter credential`)
+    }
+    ctx.reply({
+      type: `${NODE_STATS_MESSAGE}_result`,
+      ok: false,
+      error: 'socket carries no sentinel/reporter credential',
+    })
     return
   }
 
