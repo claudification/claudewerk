@@ -5,11 +5,14 @@ interface KeyContext {
   setActiveIndex: (fn: (i: number) => number) => void
   /** Conversation for the row at the active index, hot or cold. */
   activeConversationId: string | null
+  /** Entry seq for that row, when it is a snippet/cold hit -- what the
+   *  transcript scrolls to. Conversation rows have no single seq. */
+  activeSeq: number | null
   /** Conversation to drill into -- only set when a hot conversation row is active. */
   drillTarget: string | null
   inSnippetMode: boolean
   queryIsEmpty: boolean
-  goTo: (conversationId: string) => void
+  goTo: (conversationId: string, seq?: number) => void
   drillInto: (conversationId: string) => void
   drillOut: () => void
   close: () => void
@@ -17,15 +20,15 @@ interface KeyContext {
 
 export interface SearchKeysInput {
   /** Hot rows first, cold rows after -- one index walks both. */
-  hotHits: Array<{ conversationId: string }>
-  coldHits: Array<{ conversationId: string }>
+  hotHits: Array<{ conversationId: string; seq?: number }>
+  coldHits: Array<{ conversationId: string; seq?: number }>
   /** Only conversation rows can be drilled into; snippet and cold rows cannot. */
   drillableHits: Array<{ conversationId: string }>
   activeIndex: number
   setActiveIndex: (fn: (i: number) => number) => void
   inSnippetMode: boolean
   query: string
-  goTo: (conversationId: string) => void
+  goTo: (conversationId: string, seq?: number) => void
   drillInto: (conversationId: string) => void
   drillOut: () => void
   close: () => void
@@ -37,7 +40,7 @@ const KEY_HANDLERS: Record<string, (ctx: KeyContext) => void> = {
   ArrowDown: ctx => ctx.setActiveIndex(i => Math.min(i + 1, ctx.itemCount - 1)),
   ArrowUp: ctx => ctx.setActiveIndex(i => Math.max(i - 1, 0)),
   Enter: ctx => {
-    if (ctx.activeConversationId) ctx.goTo(ctx.activeConversationId)
+    if (ctx.activeConversationId) ctx.goTo(ctx.activeConversationId, ctx.activeSeq ?? undefined)
   },
   Escape: ctx => (ctx.inSnippetMode ? ctx.drillOut() : ctx.close()),
   Tab: ctx => {
@@ -62,6 +65,7 @@ function toKeyContext(input: SearchKeysInput): KeyContext {
     itemCount: hotHits.length + coldHits.length,
     setActiveIndex: input.setActiveIndex,
     activeConversationId: activeHit?.conversationId ?? null,
+    activeSeq: activeHit?.seq ?? null,
     drillTarget: drillableHits[activeIndex]?.conversationId ?? null,
     inSnippetMode: input.inSnippetMode,
     queryIsEmpty: input.query === '',

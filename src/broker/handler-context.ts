@@ -18,6 +18,17 @@ export interface WsData {
   isSentinel?: boolean
   sentinelId?: string
   sentinelAlias?: string
+  /** The registry id the BROKER filed this sentinel under, stamped at
+   *  `sentinel_identify`. Equals `sentinelId` when an `snt_` secret proved the
+   *  identity at upgrade; for the shared-admin-secret path -- which carries no
+   *  `sentinelId` at all -- it is the registry's default sentinel record, the
+   *  same id the spawn roster already uses.
+   *
+   *  Separate from `sentinelId` on purpose: that field means "a per-sentinel
+   *  secret proved this", and daemon attribution plus the alias resolution read
+   *  it. This one answers "who did the broker decide you are", which is a
+   *  weaker claim and must not be mistaken for the stronger one. */
+  resolvedSentinelId?: string
   /** Set at WS upgrade from an `rpt_` secret. Its PRESENCE is the whole reporter
    *  role: `detectRole` checks it first and unconditionally, so an `rpt_` socket
    *  can never be shadowed into a more capable role. A reporter never gets a
@@ -27,6 +38,9 @@ export interface WsData {
   /** One-shot latch: the node-stats handler logs its credential-stamping line
    *  once per connection rather than on every 5s frame. */
   nodeStatsIdentityLogged?: boolean
+  /** One-shot latch for the sibling case: a node-stats frame REFUSED for want of
+   *  a credential. Same 5s cadence, same reason to say it once. */
+  nodeStatsRejectLogged?: boolean
   /** Dedicated host-shell DATA socket (sentinel -> broker byte pipe). Tagged at
    *  upgrade from the `?shellData=1` query flag. detectRole treats it as the
    *  sentinel role so `shell_data`/`shell_replay` route correctly. */

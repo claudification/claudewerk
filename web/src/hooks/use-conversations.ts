@@ -17,6 +17,7 @@ import {
 } from '@/lib/control-panel-prefs'
 import { referencedConversationIds } from '@/lib/conversation-refs'
 import { clearExpandedState } from '@/lib/expanded-state'
+import { fetchConversationById } from '@/lib/fetch-conversation'
 import { fetchJsonTimed } from '@/lib/net-timing'
 import { enqueueOutbox, useOutboxStore } from '@/lib/outbox'
 import { discardPendingSend, newRequestId, registerPendingSend } from '@/lib/pending-sends'
@@ -31,6 +32,7 @@ import {
   rehydrateSelectedIndex,
   rememberFull,
   selectConversations,
+  slimConversation,
 } from '@/lib/slim-conversation'
 import { cacheLookupBefore, cachePushEntries } from '@/lib/transcript-page-cache'
 import { pruneLiveTranscript } from '@/lib/transcript-prune'
@@ -193,6 +195,10 @@ interface ConversationsState {
    *  not yet in this map, so consumers add the two together; a reconnect
    *  replaces the whole index and refreshes this map, so nothing double counts. */
   endedCountsByProject: Record<string, number>
+  /** The off-roster conversation currently being fetched by hydrateConversation,
+   *  so ConversationDetail can render "loading" instead of nothing while an
+   *  ended conversation is on its way in. */
+  hydratingConversationId: string | null
   selectedConversationId: string | null
   /** Reason passed to the last selectConversation call. Drives the locate pulse: a
    *  direct click/touch passes 'click' to suppress the pulse; programmatic selections
@@ -646,6 +652,59 @@ function revealWorkspaceForProject(projectUri: string): void {
   if (!inWorkspace) store.updateControlPanelPrefs({ activeWorkspaceId: null })
 }
 
+// One in-flight hydrate per id. A double-click on a search hit, or a hash route
+// racing the click that set it, must not fire the same GET twice.
+const hydratingIds = new Set<string>()
+
+/**
+ * Fill in a conversation the roster does not carry.
+ *
+ * The boot roster is NON-ended only (1143f57b), but every navigation surface can
+ * name an ended conversation: search indexes all of them, the palette lists
+ * them, notifications and commit links deep-link them, and `#conversation/<id>`
+ * survives in a bookmark. Before this, selecting one left ConversationDetail
+ * with `conversationsById[id] === undefined` and it rendered NOTHING -- a blank
+ * page with no error to notice.
+ *
+ * Fire-and-forget by design: selectConversation stays synchronous (the hash,
+ * the MRU and the tab all have to move on the click), and the detail view reads
+ * `hydratingConversationId` to say "loading" instead of going blank.
+ */
+function hydrateConversation(id: string): void {
+  if (hydratingIds.has(id)) return
+  hydratingIds.add(id)
+  useConversationsStore.setState({ hydratingConversationId: id })
+  console.log(`[nav] hydrate ${shortId(id)}: not in roster, fetching`)
+  fetchConversationById(id).then(conversation => {
+    hydratingIds.delete(id)
+    useConversationsStore.setState(state => {
+      // Only clear the flag if it still describes THIS id -- the user may have
+      // navigated on to another off-roster conversation while this was in
+      // flight, and stealing its flag would blank that one instead.
+      const flag = state.hydratingConversationId === id ? { hydratingConversationId: null } : {}
+      if (!conversation) return flag
+      rememberFull(conversation, state.selectedConversationId)
+      const entry = state.selectedConversationId === id ? conversation : slimConversation(conversation)
+      const prev = state.conversationsById[id]
+      return {
+        ...flag,
+        conversationsById: { ...state.conversationsById, [id]: prev ? { ...prev, ...entry } : entry },
+      }
+    })
+    if (!conversation) {
+      console.warn(`[nav] hydrate ${shortId(id)}: no such conversation`)
+      return
+    }
+    console.log(`[nav] hydrate ${shortId(id)}: ok status=${conversation.status} project=${conversation.project}`)
+    // The reveal in selectConversation ran against an unknown project and
+    // no-opped, so it has to run again now that we know which project this is --
+    // otherwise the sidebar keeps hiding the conversation you just navigated to.
+    if (useConversationsStore.getState().selectedConversationId === id) {
+      revealWorkspaceForProject(conversation.project)
+    }
+  })
+}
+
 function applyDefaultConversation() {
   if (defaultApplied) return
   defaultApplied = true
@@ -916,6 +975,7 @@ function shortId(id: string | null): string {
 export const useConversationsStore = create<ConversationsState>((set, get) => ({
   conversationsById: {},
   endedCountsByProject: {},
+  hydratingConversationId: null,
   selectedConversationId: null,
   lastSelectReason: null,
   selectedProjectUri: null,
@@ -1284,6 +1344,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       const project = get().conversationsById[id]?.project
       if (project) revealWorkspaceForProject(project)
     }
+    // An id the roster never carried (every ended conversation, since the boot
+    // payload went non-ended-only) is fetched on demand. hydrateConversation
+    // re-runs the reveal above once it knows the project.
+    if (id && !get().conversationsById[id]) hydrateConversation(id)
     const activeWorkspace = get().controlPanelPrefs.activeWorkspaceId ?? WORKSPACE_ALL
     if (id) saveLastWorkspaceConversation(activeWorkspace, id)
     clearExpandedState()

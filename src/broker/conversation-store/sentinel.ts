@@ -120,12 +120,24 @@ export function createSentinelState(): SentinelState {
   }
 }
 
+/** The outcome of an identify, including the id the BROKER settled on.
+ *
+ *  The caller needs that id back: a sentinel authenticated with the shared admin
+ *  secret cannot know it (there is no `snt_` secret to derive it from), so the
+ *  broker resolving it and then dropping it on the floor is what left studio's
+ *  socket with no node identity and its vitals in the bin. */
+export interface SentinelAcceptance {
+  accepted: boolean
+  /** Always set when `accepted` -- the key this sentinel is filed under. */
+  sentinelId: string
+}
+
 export function setSentinel(
   state: SentinelState,
   ws: ServerWebSocket<unknown>,
   broadcast: (msg: ControlPanelMessage) => void,
   info?: SentinelIdentifyInfo,
-): boolean {
+): SentinelAcceptance {
   const sentinelId = info?.sentinelId || 'default'
   const alias = info?.alias || 'default'
 
@@ -162,7 +174,7 @@ export function setSentinel(
     hostname: info?.hostname,
     sentinels: buildSentinelList(state),
   })
-  return true
+  return { accepted: true, sentinelId }
 }
 
 /**

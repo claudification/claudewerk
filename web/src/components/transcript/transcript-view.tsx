@@ -31,7 +31,9 @@ import { BannersBlock, InFlightBlock } from './transcript-bottom'
 import { useFollowSignals } from './use-follow-signals'
 import { useTailAnimations } from './use-tail-animations'
 import { useLiveGroups, usePlanContext, useTranscriptSettings } from './use-transcript-derivations'
+import { useTranscriptJump } from './use-transcript-jump'
 import { useTranscriptWindow } from './use-transcript-window'
+import { useVirtualJumpScroll } from './use-virtual-jump-scroll'
 
 // Progressive transcript loading + infinite scrollback data logic lives in
 // use-transcript-window.ts (shared with TranscriptViewPlain).
@@ -149,6 +151,7 @@ export const TranscriptView = memo(function TranscriptView({
     entriesRef,
     cacheKeyRef,
     loadEarlier,
+    revealSeq,
     fetchOlder,
     loadingEarlierRef,
     fetchingOlderRef,
@@ -430,6 +433,20 @@ export const TranscriptView = memo(function TranscriptView({
   // Default placement: streaming content is inside the last virtualizer group,
   // so no supplementary observer is needed -- anchorTo:'end' handles height
   // growth natively.
+
+  // Transcript-search jump: fetch/reveal until the target seq is rendered, then
+  // scroll its group into view. Leaves follow first (onUserScroll), else the
+  // end-pin drags the reader straight back to the bottom.
+  const jump = useTranscriptJump({
+    cacheKey,
+    entries,
+    groups: mainGroups,
+    hasMoreOlder,
+    fetchOlder,
+    revealSeq,
+    onLeaveFollow: onUserScroll,
+  })
+  useVirtualJumpScroll(virtualizer, renderGroups, getItemKey, jump.groupKey, jump.onLanded)
 
   // Track measured sizes: visible items have real DOM measurements from ResizeObserver.
   // Cache these so estimateSize returns accurate heights when items re-enter the viewport.
@@ -743,6 +760,7 @@ export const TranscriptView = memo(function TranscriptView({
                 key={virtualItem.key}
                 data-index={virtualItem.index}
                 ref={virtualizer.measureElement}
+                className={cn(jump.highlightKey === itemKey && 'transcript-jump-hit')}
                 style={{
                   position: 'absolute',
                   transform: `translateY(${virtualItem.start}px)`,

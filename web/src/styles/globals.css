@@ -1074,6 +1074,32 @@ html[data-tab-hidden] *::after {
 	/* intentionally empty -- see above */
 }
 
+/* Transcript-search landing flash. Applied to the group a jump landed on, for a
+   couple of seconds, by BOTH renderers.
+
+   Landing mid-history is otherwise indistinguishable from having scrolled there
+   by hand -- the reader gets a screenful of messages and no idea which one they
+   clicked. The flash answers that and then gets out of the way; it is
+   deliberately not a persistent selected state.
+
+   Ring + tint only, no layout properties: a group that changed size on landing
+   would move the very content the scroll just aimed at. */
+@keyframes transcript-jump-flash {
+	0% {
+		background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 55%, transparent);
+	}
+	100% {
+		background-color: transparent;
+		box-shadow: 0 0 0 2px transparent;
+	}
+}
+
+.transcript-jump-hit {
+	border-radius: 0.5rem;
+	animation: transcript-jump-flash 2.2s ease-out forwards;
+}
+
 /* Draw block chrome-on-hover: on a real pointer device, keep the Excalidraw UI
    (toolbar, menus, zoom) hidden until the user hovers or focuses inside the canvas,
    so an idle Draw block reads as a clean sketch, not a busy editor. Touch devices

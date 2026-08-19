@@ -55,3 +55,15 @@ export function harness(data: Partial<WsData>): Harness {
 export const asReporter = (): Harness => harness({ reporterId: 'rpt-1', reporterAlias: 'beast' })
 export const asSentinel = (): Harness => harness({ isSentinel: true, sentinelId: 'snt-1', sentinelAlias: 'studio' })
 export const asDashboard = (): Harness => harness({ isControlPanel: true, userName: 'jonas' })
+
+/**
+ * A sentinel socket carrying NO node id -- `isSentinel` and nothing else.
+ *
+ * This is the shape an admin-secret sentinel had before the broker learned to
+ * stamp `resolvedSentinelId`, and it is the ONLY shape that still reaches the
+ * handler's "no credential" refusal: `detectRole` calls it `sentinel`, so the
+ * capability gate lets it through, and the handler then finds nothing to key a
+ * row by. The absence of this harness is why the live drop shipped unnoticed --
+ * every existing sentinel test supplied a `sentinelId`.
+ */
+export const asUnidentifiedSentinel = (): Harness => harness({ isSentinel: true })

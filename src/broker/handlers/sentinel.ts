@@ -177,9 +177,23 @@ const sentinelIdentify: MessageHandler = (ctx, data) => {
     defaultPool,
     features,
   }
-  const accepted = ctx.conversations.setSentinel(ctx.ws, sentinelMeta)
-  if (accepted) {
+  const acceptance = ctx.conversations.setSentinel(ctx.ws, sentinelMeta)
+  if (acceptance.accepted) {
     ctx.ws.data.isSentinel = true
+    // The id the BROKER filed this sentinel under -- for an `snt_` secret the
+    // auth-derived one, for the shared admin secret the registry's default
+    // record. Stamped here because a sentinel authenticated with the admin
+    // secret has no way to learn it: there is no per-sentinel secret to resolve
+    // it from, so without this the socket carries no node identity at all and
+    // every `node_stats` frame it sends is binned (card
+    // `sentinel-node-stats-dropped-no-credential`).
+    //
+    // Deliberately NOT written to `ws.data.sentinelId`, which means "an `snt_`
+    // secret proved this at upgrade" and is read by the daemon attribution and
+    // alias paths. This field answers a different question -- "who did the
+    // broker decide you are" -- and answering it must not silently reclassify
+    // those.
+    ctx.ws.data.resolvedSentinelId = acceptance.sentinelId
     ctx.reply({ type: 'ack', eventId: 'sentinel' })
     const label = sentinelMeta.hostname ? ` (${sentinelMeta.hostname} / ${sentinelMeta.machineId})` : ''
     const aliasLabel = sentinelMeta.alias ? ` alias=${sentinelMeta.alias}` : ''

@@ -16,46 +16,12 @@
  * grouping stays on the cheap incremental path. null = no window (show all).
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react'
-import { fetchTranscriptBefore, useConversationsStore } from '@/hooks/use-conversations'
+import { useMemo, useRef, useState } from 'react'
 import type { TranscriptEntry } from '@/lib/types'
-import {
-  defaultAnchorSeq,
-  LOAD_CHUNK,
-  WINDOW_REANCHOR_MARGIN,
-  WINDOW_SIZE,
-  WINDOW_THRESHOLD,
-} from './transcript-window-core'
+import { defaultAnchorSeq, WINDOW_REANCHOR_MARGIN, WINDOW_SIZE, WINDOW_THRESHOLD } from './transcript-window-core'
+import type { TranscriptWindow } from './transcript-window-types'
 import { useTranscriptHeadHold } from './use-transcript-head-hold'
-
-type Ref<T> = { current: T }
-
-export interface TranscriptWindow {
-  /** The entries to render (the windowed tail of `entries`). */
-  windowed: TranscriptEntry[]
-  windowStart: number
-  windowStartRef: Ref<number>
-  /** The window's top-boundary seq (null = show all). Stable across a
-   *  head-prune; moves on switch/reveal -- callers use it to distinguish
-   *  window movement from plain tail growth (e.g. enter-animation gating). */
-  windowAnchorSeq: number | null
-  /** Grouping reset signal: identity of the FIRST rendered entry. Changes on a
-   *  local window reveal AND a server prepend -- both head-growth the tail-only
-   *  incremental grouping path would mis-group. Stable during streaming and
-   *  across a head-prune. */
-  regroupSignal: number | string
-  /** More history exists on the server iff our oldest-held entry isn't seq 1. */
-  hasMoreOlder: boolean
-  hasMoreOlderRef: Ref<boolean>
-  entriesRef: Ref<TranscriptEntry[]>
-  cacheKeyRef: Ref<string | undefined>
-  /** Reveal a chunk of already-loaded older entries (moves the window anchor). */
-  loadEarlier: () => void
-  /** Fetch older entries from the broker (infinite scrollback). */
-  fetchOlder: () => void
-  loadingEarlierRef: Ref<boolean>
-  fetchingOlderRef: Ref<boolean>
-}
+import { useWindowActions } from './use-window-actions'
 
 // Moved VERBATIM out of transcript-view.tsx -- the anchor/re-anchor branches ARE
 // the documented incident fixes in the header; restructuring the state machine
@@ -181,41 +147,16 @@ export function useTranscriptWindow(opts: {
   const loadingEarlierRef = useRef(false)
   const fetchingOlderRef = useRef(false)
 
-  const loadEarlier = useCallback(() => {
-    const ents = entriesRef.current
-    markHeadHeld()
-    // The current top-visible entry becomes a backfill boundary.
-    onBackfillBoundaryRef.current?.(ents[windowStartRef.current]?.seq)
-    onBeforePrependRef.current?.()
-    const newStart = Math.max(0, windowStartRef.current - LOAD_CHUNK)
-    // Move the anchor to the newly-revealed boundary entry (null = reached the
-    // top, show all). Derived windowStart re-resolves on the next render.
-    setWindowAnchorSeq(newStart <= 0 ? null : (ents[newStart]?.seq ?? null))
-  }, [markHeadHeld])
-
-  const fetchOlder = useCallback(() => {
-    const cid = cacheKeyRef.current
-    const oldestSeq = entriesRef.current[0]?.seq
-    if (!cid || oldestSeq === undefined || oldestSeq <= 1) return
-    markHeadHeld()
-    // The current oldest entry becomes a backfill boundary -- fetched entries
-    // prepend ABOVE it.
-    onBackfillBoundaryRef.current?.(oldestSeq)
-    fetchingOlderRef.current = true
-    fetchTranscriptBefore(cid, oldestSeq, LOAD_CHUNK)
-      .then(res => {
-        if (res && res.entries.length > 0) {
-          // Arm the prepend anchor at the moment of insertion, not at fetch
-          // start -- content may have streamed in below during the round-trip.
-          onBeforePrependRef.current?.()
-          useConversationsStore.getState().prependTranscript(cid, res.entries)
-        }
-        fetchingOlderRef.current = false
-      })
-      .catch(() => {
-        fetchingOlderRef.current = false
-      })
-  }, [markHeadHeld])
+  const { loadEarlier, revealSeq, fetchOlder } = useWindowActions({
+    entriesRef,
+    windowStartRef,
+    cacheKeyRef,
+    fetchingOlderRef,
+    onBackfillBoundaryRef,
+    onBeforePrependRef,
+    markHeadHeld,
+    setWindowAnchorSeq,
+  })
 
   return {
     windowed,
@@ -228,6 +169,7 @@ export function useTranscriptWindow(opts: {
     entriesRef,
     cacheKeyRef,
     loadEarlier,
+    revealSeq,
     fetchOlder,
     loadingEarlierRef,
     fetchingOlderRef,

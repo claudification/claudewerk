@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { requestTranscriptJump } from '@/components/transcript/transcript-jump-store'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useCommand } from '@/lib/commands'
 import { useColdSearch } from './use-cold-search'
@@ -42,7 +43,12 @@ export function useSearchDialog() {
 
   useOpenCommands(openSearch)
 
-  function goTo(conversationId: string) {
+  /** Open the conversation AND land on the matched message. The seq is queued
+   *  before the selection so the transcript sees the request on its very first
+   *  render for that conversation -- queue it after and the view has already
+   *  settled at the bottom, which then reads as a scroll rather than a jump. */
+  function goTo(conversationId: string, seq?: number) {
+    if (seq !== undefined) requestTranscriptJump(conversationId, seq)
     useConversationsStore.getState().selectConversation(conversationId, 'transcript-search')
     setOpen(false)
   }
