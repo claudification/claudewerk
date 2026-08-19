@@ -48,8 +48,10 @@ export type NowClass = 'waiting' | 'working' | 'done' | 'stalled' | 'idle'
  */
 export const NOW_CLASSES: readonly NowClass[] = ['waiting', 'working', 'done', 'stalled', 'idle'] as const
 
-/** Label + fill for each class. Both borrowed from the band table -- see header. */
-export const NOW_CLASS_STYLE: Record<NowClass, { label: string; fill: string }> = {
+/** Label + fill for each class. Both borrowed from the band table -- see header.
+ *  File-local: the only reader is `foldNowBar` below, so it stays off the module's
+ *  public surface until something outside actually needs it. */
+const NOW_CLASS_STYLE: Record<NowClass, { label: string; fill: string }> = {
   waiting: { label: 'waiting on you', fill: PULSE_BAND_STYLE.blocked.dot },
   working: { label: 'working', fill: PULSE_BAND_STYLE.working.dot },
   done: { label: 'just done', fill: PULSE_BAND_STYLE.done.dot },

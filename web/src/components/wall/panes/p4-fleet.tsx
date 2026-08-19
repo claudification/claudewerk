@@ -35,7 +35,6 @@ const TILES = [
   { key: 'socket', label: 'WS', Tile: FleetSocket },
 ] as const
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
 export default function FleetPane() {
   const { rows, matched, total } = useWallFilter(TILES, AXES, t => ({ title: t.label }))
 

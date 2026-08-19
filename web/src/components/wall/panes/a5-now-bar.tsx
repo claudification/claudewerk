@@ -49,7 +49,6 @@ function Segment({ seg }: { seg: NowSegment }) {
   )
 }
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
 export default function NowBar() {
   const base = usePulseFleet(WHOLE_FLEET)
   const { rows, matched, total } = useWallFilter(base.flat, AXES)

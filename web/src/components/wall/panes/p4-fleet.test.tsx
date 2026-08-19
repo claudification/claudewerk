@@ -36,7 +36,7 @@ function tile(label: string): HTMLElement | null {
   return document.querySelector(`[data-kpi="${label}"]`)
 }
 
-function valueOf(label: string): string {
+function kpiValue(label: string): string {
   return tile(label)?.querySelector('.wall-kpi-val')?.textContent ?? ''
 }
 
@@ -67,9 +67,9 @@ describe('P4 fleet', () => {
   it('dashes every tile that has no feed behind it yet', () => {
     render(<FleetPane />)
     // No ring samples, no wall frame, no resolved fetch: three unknowns.
-    expect(valueOf('TOKENS/MIN')).toBe('—')
-    expect(valueOf('TOKENS 24H')).toBe('—')
-    expect(valueOf('HOSTS UP')).toBe('—')
+    expect(kpiValue('TOKENS/MIN')).toBe('—')
+    expect(kpiValue('TOKENS 24H')).toBe('—')
+    expect(kpiValue('HOSTS UP')).toBe('—')
     expect(tile('HOSTS UP')?.dataset.unknown).toBe('true')
     expect(screen.getByText('no frame yet')).toBeTruthy()
   })
@@ -78,7 +78,7 @@ describe('P4 fleet', () => {
     render(<FleetPane />)
     // ws-stats measures throughput, so the socket rate is real and 0 is honest.
     // The round trip has no probe anywhere on this wire, so it gets the dash.
-    expect(valueOf('WS')).toBe('0/s')
+    expect(kpiValue('WS')).toBe('0/s')
     expect(screen.getByText('— ms rtt (no probe)')).toBeTruthy()
   })
 
@@ -87,7 +87,7 @@ describe('P4 fleet', () => {
     act(() => {
       applyWallFrame(frame(COUNTERS))
     })
-    expect(valueOf('HOSTS UP')).toBe('3')
+    expect(kpiValue('HOSTS UP')).toBe('3')
     expect(screen.getByText('19 conversations')).toBeTruthy()
     expect(tile('HOSTS UP')?.dataset.unknown).toBeUndefined()
   })
@@ -114,11 +114,11 @@ describe('P4 fleet', () => {
     // No wall frame and no fetch resolve in between: the only thing that moves
     // is the token ring's own coalesced ~1 Hz notify, which is a module-level
     // interval installed at import and therefore a REAL one.
-    await waitFor(() => expect(valueOf('TOKENS/MIN')).toBe('500'), { timeout: 3_000 })
+    await waitFor(() => expect(kpiValue('TOKENS/MIN')).toBe('500'), { timeout: 3_000 })
     expect(document.querySelector('.wall-kpi-spark svg')).toBeTruthy()
     // The tiles that did not feed off that tick are untouched, still unknown.
-    expect(valueOf('HOSTS UP')).toBe('—')
-    expect(valueOf('TOKENS 24H')).toBe('—')
+    expect(kpiValue('HOSTS UP')).toBe('—')
+    expect(kpiValue('TOKENS 24H')).toBe('—')
   })
 
   it('renders {matched}/{total} in the pane count slot', () => {
@@ -186,6 +186,6 @@ describe('P4 fleet', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     // 1.2M moved. The 90M of cache reads are NOT spend and must not appear here.
-    expect(valueOf('TOKENS 24H')).toBe('1.2M')
+    expect(kpiValue('TOKENS 24H')).toBe('1.2M')
   })
 })
