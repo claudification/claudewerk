@@ -1,20 +1,123 @@
 /**
  * A6 SHEAF -- the structural ledger: where the money and the conversation TREES
- * went. Feed: summarizeSheaf() in src/broker/desk/fleet-sheaf.ts.
+ * went.
  *
- * STUB. Card `wall-pane-sheaf-sotu` rewrites THIS FILE and a4-sotu.tsx -- one
- * route feeds both, which is why they are one card. 6h/24h/7d goes in WallPane's
- * `tabs` slot.
+ * Feed: `GET /api/sheaf?windowH=N` (admin-gated, visibility-filtered), compacted
+ * by `summarizeSheaf()` -- the SAME function the dispatcher's `fleet_sheaf` tool
+ * calls, imported from `@shared/sheaf-summary`. The rollup maths is not repeated
+ * here and there is no second route; see `use-wall-sheaf.ts` for why one fetch
+ * serves this pane and A4.
+ *
+ * The window label comes off the RESPONSE, not off the selected tab, so numbers
+ * mid-switch are always labelled with the window they were built for.
+ *
+ * FILTER: `text` and `project`, plus `$cost` -- a sheaf row is money, so `$5`
+ * meaning "projects that burned at least five dollars" is the one extra axis
+ * this pane genuinely understands. No `~time` (the tabs ARE the window) and no
+ * band/context/model (a project is not a conversation).
  */
 
+import { useMemo } from 'react'
+import { cn } from '@/lib/utils'
+import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
+import { type SheafRow, sheafView, sheafWindowLabel } from '@/lib/wall/sheaf-rows'
+import { useProjectLook } from '../use-project-look'
+import { SHEAF_WINDOWS, type SheafWindow, useWallSheafFeed, useWallSheafStore } from '../use-wall-sheaf'
+import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
-import { WallPaneEmpty } from '../wall-pane-empty'
+import { SheafRowView } from './sheaf-row'
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
-export default function SheafPane() {
+const AXES: readonly WallAxis[] = ['text', 'project', 'cost']
+
+/** Stable empty identity -- the filter memo keys on the array. */
+const NO_ROWS: readonly SheafRow[] = []
+
+/** The four ways this pane can have nothing to draw, told apart. */
+function emptyLine(error: string | null, loaded: boolean, total: number): string {
+  if (error) return `sheaf unavailable: ${error}`
+  if (!loaded) return 'loading the ledger…'
+  return total === 0 ? 'nothing spent in this window' : 'no project matches the filter'
+}
+
+function WindowTab({ windowH, current, onPick }: { windowH: SheafWindow; current: number; onPick: () => void }) {
+  const on = windowH === current
   return (
-    <WallPane title="SHEAF" code="A6">
-      <WallPaneEmpty />
+    <button
+      type="button"
+      onClick={onPick}
+      aria-pressed={on}
+      className={cn(
+        'text-[10px] px-[7px] py-[2px] rounded-[3px] border transition-colors',
+        on
+          ? 'bg-background text-foreground border-primary/25'
+          : 'border-transparent text-comment hover:text-foreground',
+      )}
+    >
+      {sheafWindowLabel(windowH)}
+    </button>
+  )
+}
+
+export default function SheafPane() {
+  useWallSheafFeed()
+  const data = useWallSheafStore(s => s.data)
+  const loading = useWallSheafStore(s => s.loading)
+  const error = useWallSheafStore(s => s.error)
+  const selected = useWallSheafStore(s => s.windowH)
+  const setWindow = useWallSheafStore(s => s.setWindow)
+  const look = useProjectLook()
+
+  const view = useMemo(() => (data ? sheafView(data, look) : null), [data, look])
+  const { rows, matched, total } = useWallFilter(view?.rows ?? NO_ROWS, AXES, r => ({
+    title: r.projectName,
+    project: r.projectName,
+    costUsd: r.costUsd,
+  }))
+
+  return (
+    <WallPane
+      title="SHEAF"
+      code="A6"
+      count={`${matched}/${total}`}
+      tabs={
+        <div className="flex gap-[2px]">
+          {SHEAF_WINDOWS.map(w => (
+            <WindowTab key={w} windowH={w} current={selected} onPick={() => setWindow(w)} />
+          ))}
+        </div>
+      }
+    >
+      {view && (
+        <div className="wall-sheaf-totals">
+          <span>
+            <b>${view.totals.costUsd.toFixed(2)}</b> spent
+          </span>
+          <span>
+            <b>{view.totals.conversations}</b> conversations
+          </span>
+          <span>
+            <b>{view.totals.trees}</b> spawn trees
+          </span>
+          <span className="wall-sheaf-window">
+            {sheafWindowLabel(view.windowH)} window{loading && ' · refreshing'}
+          </span>
+        </div>
+      )}
+      {/* Capture-phase, like every other pane: the chip scopes the wall through
+          the filter store's own action and never through a handler in here. */}
+      <div onClickCapture={handleChipCapture}>
+        {rows.map(row => (
+          <SheafRowView key={row.projectUri} row={row} />
+        ))}
+      </div>
+      {view && view.clipped > 0 && (
+        <p className="wall-sheaf-clipped" title="The summariser keeps the top projects by cost">
+          + {view.clipped} lower-cost project{view.clipped === 1 ? '' : 's'} clipped
+        </p>
+      )}
+      {rows.length === 0 && (
+        <p className="text-meta text-fg-faint px-0.5 py-1">{emptyLine(error, view !== null, total)}</p>
+      )}
     </WallPane>
   )
 }

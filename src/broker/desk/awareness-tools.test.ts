@@ -89,7 +89,17 @@ describe('fleet_sheaf', () => {
   const summary: SheafSummary = {
     windowH: 24,
     totals: { projects: 1, conversations: 2, trees: 1, costUsd: 3.5 },
-    projects: [{ project: 'arr', costUsd: 3.5, conversations: 2, trees: 1, inputTokens: 10, outputTokens: 5 }],
+    projects: [
+      {
+        projectUri: 'claude:///arr',
+        project: 'arr',
+        costUsd: 3.5,
+        conversations: 2,
+        trees: 1,
+        inputTokens: 10,
+        outputTokens: 5,
+      },
+    ],
   }
 
   test('returns the compact summary from the provider', async () => {

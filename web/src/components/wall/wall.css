@@ -1315,6 +1315,149 @@ button.wall-burn-hit:hover {
 	font-weight: 600;
 }
 
+||||||| 26f7ac3a
+/* ---------- A6 sheaf ---------- */
+.wall-sheaf-totals {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 6px;
+	font-size: 10px;
+	color: var(--comment);
+}
+.wall-sheaf-totals b {
+	color: var(--foreground);
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.wall-sheaf-window {
+	margin-left: auto;
+}
+/* Name and cost on one line, everything else on the sub-line under both. The
+   cost column is the one thing that must never wrap or truncate: it is the
+   number the pane exists to report. */
+.wall-sheaf-row {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 2px 8px;
+	padding: 4px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-sheaf-row:last-child {
+	border-bottom: none;
+}
+.wall-sheaf-name {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	overflow: hidden;
+}
+.wall-sheaf-cost {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.wall-sheaf-sub {
+	grid-column: 1 / 3;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	font-size: 10px;
+	color: var(--comment);
+	font-variant-numeric: tabular-nums;
+}
+.wall-sheaf-warn {
+	color: var(--warning);
+}
+.wall-sheaf-bad {
+	color: var(--destructive);
+}
+/* One tick per spawn tree -- a glyph, not a chart. The count is spelled out
+   beside it precisely because the tick run is capped. */
+.wall-sheaf-treebar {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 11px;
+}
+.wall-sheaf-treebar i {
+	width: 3px;
+	border-radius: 1px;
+	background: var(--border-strong);
+}
+/* Non-text (WCAG 1.4.11): a proportional rail, never the carrier of a number. */
+.wall-sheaf-rail {
+	height: 4px;
+	border-radius: 2px;
+	opacity: 0.7;
+}
+.wall-sheaf-clipped {
+	padding-top: 5px;
+	font-size: 10px;
+	color: var(--warning);
+}
+
+/* ---------- A4 state of the union ---------- */
+.wall-sotu-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-bottom: 7px;
+}
+.wall-sotu-pill {
+	padding: 1px 6px;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	font-size: 10px;
+	color: var(--fg-muted);
+}
+.wall-sotu-pill[data-tone='bad'] {
+	color: var(--destructive);
+	border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
+}
+.wall-sotu-pill[data-tone='warn'] {
+	color: var(--warning);
+	border-color: color-mix(in oklch, var(--warning) 40%, transparent);
+}
+.wall-sotu-block {
+	padding: 5px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-sotu-block:last-child {
+	border-bottom: none;
+}
+.wall-sotu-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+}
+.wall-sotu-alert {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--destructive);
+}
+.wall-sotu-warn {
+	font-size: 10px;
+	color: var(--warning);
+}
+.wall-sotu-age {
+	font-size: 10px;
+	color: var(--comment);
+	font-variant-numeric: tabular-nums;
+}
+.wall-sotu-text {
+	margin-top: 3px;
+	font-size: 11px;
+	line-height: 1.55;
+	color: var(--fg-muted);
+	white-space: pre-wrap;
+}
+.wall-sotu-quiet {
+	margin-top: 2px;
+	font-size: 10px;
+	color: var(--comment);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;

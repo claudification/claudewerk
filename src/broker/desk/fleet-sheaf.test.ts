@@ -1,79 +1,40 @@
-import { describe, expect, test } from 'bun:test'
-import type { SheafNode, SheafProject, SheafResponse } from '../../shared/sheaf-types'
-import { summarizeSheaf } from './fleet-sheaf'
+/**
+ * The rollup's own behaviour is tested where it now lives:
+ * `src/shared/sheaf-summary.test.ts`. What is left here is the seam -- the desk
+ * (and `awareness-tools.ts` through it) still imports `summarizeSheaf` from this
+ * module, and `scripts/wall-verify` probes this file for that symbol. A silent
+ * drop of the re-export would break both without touching a single test that
+ * mentions the desk.
+ */
 
-function node(children: SheafNode[] = []): SheafNode {
-  return {
-    conversationId: `c_${Math.random().toString(36).slice(2, 8)}`,
-    title: 't',
-    scope: 'claude:///p',
-    status: 'ended',
-    startedAt: 0,
-    durationMs: 0,
+import { describe, expect, test } from 'bun:test'
+import type { SheafResponse } from '../../shared/sheaf-types'
+import { getFleetSheafProvider, summarizeSheaf } from './fleet-sheaf'
+
+const EMPTY: SheafResponse = {
+  windowH: 6,
+  windowStart: 0,
+  windowEnd: 1,
+  generatedAt: 1,
+  totals: {
+    projects: 0,
+    conversations: 0,
+    trees: 0,
     tokens: { input: 0, output: 0, cache: 0 },
     cost: { amount: 0, estimated: false },
-    commits: 0,
-    children,
-  } as unknown as SheafNode
+  },
+  projects: [],
 }
 
-function project(label: string, cost: number, forest: SheafNode[]): SheafProject {
-  return {
-    projectUri: `claude:///${label}`,
-    label,
-    worktrees: [],
-    forest,
-    totals: {
-      tokens: { input: 1000, output: 200, cache: 0 },
-      cost: { amount: cost, estimated: false },
-    },
-  } as unknown as SheafProject
-}
-
-function sheaf(projects: SheafProject[]): SheafResponse {
-  return {
-    windowH: 24,
-    windowStart: 0,
-    windowEnd: 1,
-    generatedAt: 1,
-    totals: {
-      projects: projects.length,
-      conversations: 5,
-      trees: 3,
-      tokens: { input: 1000, output: 200, cache: 0 },
-      cost: { amount: 12.345, estimated: false },
-    },
-    projects,
-  }
-}
-
-describe('summarizeSheaf', () => {
-  test('compacts totals + per-project rollups, counting nested conversations', () => {
-    const s = summarizeSheaf(sheaf([project('rclaude', 10.5, [node([node(), node()])])]))
-    expect(s.totals.costUsd).toBe(12.35)
-    expect(s.projects).toHaveLength(1)
-    expect(s.projects[0]).toMatchObject({ project: 'rclaude', costUsd: 10.5, conversations: 3, trees: 1 })
-    expect(s.clipped).toBeUndefined()
+describe('fleet-sheaf', () => {
+  test('re-exports the shared rollup the desk and the wall both call', () => {
+    expect(summarizeSheaf(EMPTY)).toMatchObject({ windowH: 6, projects: [] })
   })
 
-  test('clips beyond maxProjects and says so', () => {
-    const many = Array.from({ length: 5 }, (_, i) => project(`p${i}`, 5 - i, [node()]))
-    const s = summarizeSheaf(sheaf(many), 2)
-    expect(s.projects).toHaveLength(2)
-    expect(s.projects[0]?.project).toBe('p0')
-    expect(s.clipped).toBe(3)
-  })
-
-  test('surfaces sotu alerts + unmerged commits when the response is enriched', () => {
-    const p = project('rclaude', 1, [node()])
-    ;(p as { sotu?: unknown }).sotu = {
-      enabled: true,
-      alerts: ['at-risk'],
-      contended: 0,
-      branches: [{ aheadOrigin: 2 }, { aheadOrigin: 1 }],
-    }
-    const s = summarizeSheaf(sheaf([p]))
-    expect(s.projects[0]?.alerts).toEqual(['at-risk'])
-    expect(s.projects[0]?.unmergedCommits).toBe(3)
+  // Deliberately NOT binding a provider here: it is a module singleton shared
+  // with `awareness-tools.test.ts`, whose "degrades when unbound" case would
+  // start passing for the wrong reason.
+  test('exposes the provider seam the broker boot binds', () => {
+    expect(typeof getFleetSheafProvider).toBe('function')
   })
 })
