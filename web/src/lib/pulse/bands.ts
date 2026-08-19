@@ -10,7 +10,7 @@ import type { Conversation } from '@/lib/types'
  *
  *   blocked  a human is the only thing that can move this — un-fakeable
  *   working  active and streaming right now
- *   done     finished inside JUST_DONE_WINDOW_MS, still worth a look
+ *   done     the agent REPORTED done inside JUST_DONE_WINDOW_MS -- not "closed"
  *   needs    the agent SAYS it wants you — self-reported, over-reported
  *   idle     alive, quiet, nobody waiting
  *   expired  ended/reaped and past the window — collapsed to a count
@@ -125,11 +125,23 @@ export function wantsAttention(c: Conversation, flags: PulseAttentionFlags = {})
   return !isStatusSuperseded(c.liveStatus, c.lastInputAt)
 }
 
-/** Has this conversation reported a terminal `done` that is still fresh? */
+/**
+ * Has this conversation reported a terminal `done` that is still fresh?
+ *
+ * FRESHNESS IS DATED FROM `liveStatus.updatedAt` -- the moment the agent SAID
+ * done -- never from `lastActivity`, which is merely the last time the process
+ * twitched. The two diverge badly, and the divergence is not an edge case:
+ * `lastActivity` is stamped by the SHUTDOWN itself (the terminate forwards,
+ * `SessionEnd` fires, the host socket closes), so for an ended conversation it
+ * is effectively the CLOSE time. On 2026-08-19 three conversations that had
+ * finished on Aug 14, 16 and 17 were closed from the context menu and all three
+ * jumped straight into JUST DONE -- because closing them looked exactly like
+ * finishing them. A revive does the same thing from the other direction.
+ */
 function isFreshlyDone(c: Conversation, now: number): boolean {
   if (c.liveStatus?.state !== 'done') return false
   if (isStatusSuperseded(c.liveStatus, c.lastInputAt)) return false
-  return now - c.lastActivity <= JUST_DONE_WINDOW_MS
+  return now - c.liveStatus.updatedAt <= JUST_DONE_WINDOW_MS
 }
 
 /**
@@ -165,9 +177,14 @@ export function bandOf(c: Conversation, flags: PulseAttentionFlags = {}, now: nu
   // final act was `needs_you` parked itself at the top of NEEDS YOU forever --
   // unanswerable, unclearable, and pushing live work down the page.
   if (c.status === 'ended') {
-    // Recently ended is still worth a glance; past the window it drops out of
-    // sight entirely.
-    return now - c.lastActivity <= JUST_DONE_WINDOW_MS ? 'done' : 'expired'
+    // CLOSED IS NOT DONE. This used to band every recently-ended conversation as
+    // `done`, which asserted a completion nobody had reported: kill a running
+    // conversation and it claimed success on the board. JUST DONE now means one
+    // thing only -- the agent reported `done` and that report is still fresh --
+    // so the same `isFreshlyDone` gate applies whether the process is still
+    // around or not. Everything else that ended is CLOSED and collapses into the
+    // `expired` count.
+    return isFreshlyDone(c, now) ? 'done' : 'expired'
   }
 
   if (isHardBlocked(c, flags)) return 'blocked'

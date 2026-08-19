@@ -115,7 +115,7 @@ describe('bandOf', () => {
     // to answer, so the report is a fossil, not a request -- and it pushed live
     // work down the page while being unanswerable and unclearable.
     const c = conv({ status: 'ended', liveStatus: live('needs_you'), lastActivity: NOW - 60_000 })
-    expect(bandOf(c, {}, NOW)).toBe('done')
+    expect(bandOf(c, {}, NOW)).toBe('expired')
   })
 
   it('keeps an ended conversation out of NEEDS YOU for every attention source', () => {
@@ -149,9 +149,55 @@ describe('bandOf', () => {
     expect(bandOf(conv({ status: 'active', liveStatus: live('needs_you') }), {}, NOW)).toBe('needs')
   })
 
-  it('bands a recently ended conversation as done', () => {
+  it('does NOT count a conversation you just CLOSED as one that just finished', () => {
+    // THE BUG (2026-08-19, screenshot): three Arr conversations that reported
+    // `done` on Aug 14/16/17 were closed from the context menu at 15:22 and
+    // instantly reappeared under JUST DONE. `lastActivity` is stamped by the
+    // shutdown itself -- the terminate forwards, `SessionEnd` fires, the reaper
+    // logs `lastActivityAgoMs=1365` -- so for an ended conversation it is
+    // effectively the CLOSE time. Measuring freshness against it makes
+    // "ended recently" mean "closed recently", and a batch-close floods the band.
+    const c = conv({
+      status: 'ended',
+      liveStatus: live('done', { updatedAt: NOW - 3 * 24 * 60 * 60_000 }),
+      lastActivity: NOW - 60_000,
+    })
+    expect(bandOf(c, {}, NOW)).toBe('expired')
+  })
+
+  it('does NOT put a conversation killed mid-work in JUST DONE', () => {
+    // The `ended` branch used to return `done` for ANY ended conversation inside
+    // the window, with no requirement that the agent ever reported completion.
+    // Killing a running conversation made it claim success on the board.
+    const c = conv({ status: 'ended', liveStatus: live('working'), lastActivity: NOW - 60_000 })
+    expect(bandOf(c, {}, NOW)).toBe('expired')
+  })
+
+  it('does NOT put an ended conversation that never self-reported in JUST DONE', () => {
     const c = conv({ status: 'ended', lastActivity: NOW - 60_000 })
+    expect(bandOf(c, {}, NOW)).toBe('expired')
+  })
+
+  it('keeps a conversation that genuinely just finished and exited in JUST DONE', () => {
+    // The band must not go so far that nothing lands in it: a headless run that
+    // sets `done` and exits is the exact case JUST DONE exists for.
+    const c = conv({
+      status: 'ended',
+      liveStatus: live('done', { updatedAt: NOW - 60_000 }),
+      lastActivity: NOW - 60_000,
+    })
     expect(bandOf(c, {}, NOW)).toBe('done')
+  })
+
+  it('dates JUST DONE from when the agent said done, not from the last twitch', () => {
+    // Mirror image of the close-bump: a revive (or any late event) stamps
+    // `lastActivity` without the work having finished any more recently.
+    const c = conv({
+      status: 'idle',
+      liveStatus: live('done', { updatedAt: NOW - JUST_DONE_WINDOW_MS - 1 }),
+      lastActivity: NOW - 1_000,
+    })
+    expect(bandOf(c, {}, NOW)).toBe('idle')
   })
 
   it('bands a long-ended conversation as expired', () => {
@@ -165,7 +211,11 @@ describe('bandOf', () => {
   })
 
   it('drops a stale self-reported done to idle', () => {
-    const c = conv({ status: 'idle', liveStatus: live('done'), lastActivity: NOW - JUST_DONE_WINDOW_MS - 1 })
+    const c = conv({
+      status: 'idle',
+      liveStatus: live('done', { updatedAt: NOW - JUST_DONE_WINDOW_MS - 1 }),
+      lastActivity: NOW - JUST_DONE_WINDOW_MS - 1,
+    })
     expect(bandOf(c, {}, NOW)).toBe('idle')
   })
 
@@ -239,7 +289,7 @@ describe('bandOf', () => {
   it('keeps an ended conversation out of BLOCKED for every hard-block source', () => {
     const c = conv({ status: 'ended', lastActivity: NOW - 60_000 })
     for (const flags of [{ hasOpenDialog: true }, { hasPendingAsk: true }, { hasPendingPermission: true }]) {
-      expect(bandOf(c, flags, NOW)).toBe('done')
+      expect(bandOf(c, flags, NOW)).toBe('expired')
     }
   })
 })
