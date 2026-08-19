@@ -9,13 +9,8 @@
  * frames, and asking it to would be a heartbeat about a heartbeat.
  */
 
-import { useEffect, useState } from 'react'
+import { useWallClock } from '../use-wall-clock'
 
 export function useVitalsClock(intervalMs = 1000): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
+  return useWallClock(intervalMs)
 }

@@ -145,7 +145,12 @@ export const ASPECTS: Aspect[] = [
     code: 'A7',
     card: 'wall-pane-unattended-runs',
     promise: 'Unattended runs: epic DAG, overseer lease age, baton tail, nightshift',
-    artifacts: [{ path: `${PANES}/a7-runs.tsx` }],
+    // The stub registry pins this pane as `a7-unattended-runs.tsx`, and the
+    // registry is what the epic says pane files are pinned BY. This manifest
+    // guessed `a7-runs.tsx` and would have reported a delivered pane as missing
+    // -- the same correction S1 and A2 already carry above: the probe follows
+    // the code, never the other way round.
+    artifacts: [{ path: `${PANES}/a7-unattended-runs.tsx` }],
     feeds: [{ path: 'src/broker/routes/epic.ts' }, { path: 'src/broker/routes/nightshift.ts' }],
   },
   {

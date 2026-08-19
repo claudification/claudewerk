@@ -70,6 +70,8 @@
   "src/components/wall/panes/s1-host-vitals.test.tsx",
   "src/components/wall/pinned-epics.test.tsx",
   "src/components/wall/plan/plan-pane.test.tsx",
+  "src/components/wall/runs/run-actions.test.tsx",
+  "src/components/wall/unattended-runs.test.tsx",
   "src/components/wall/wall-ambient.test.tsx",
   "src/components/wall/wall-navigate.test.ts",
   "src/components/wall/wall-pulse.test.tsx",

@@ -653,6 +653,172 @@
 	font-size: 10px;
 }
 
+/* ---------- A7 unattended runs ---------- */
+.wall-run {
+	padding: 6px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-run:last-child {
+	border-bottom: none;
+}
+.wall-run-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+}
+.wall-run-proj {
+	flex: 0 0 auto;
+	min-width: 0;
+	max-width: 34%;
+}
+.wall-run-name,
+.wall-run-name-static {
+	flex: 0 1 auto;
+	min-width: 0;
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: left;
+}
+.wall-run-gen {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-run-tag {
+	flex: 0 0 auto;
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 0 4px;
+	color: var(--comment);
+}
+.wall-run-tag-on {
+	color: var(--active);
+	border-color: color-mix(in oklch, var(--active) 45%, transparent);
+}
+.wall-run-tag-night {
+	color: var(--event-prompt);
+	border-color: color-mix(in oklch, var(--event-prompt) 45%, transparent);
+}
+/* The beat pulse: a tick per performed beat. A beat that found nothing to do is
+   dim, so a row of dim ticks reads as "beating and going nowhere" rather than
+   as motion. */
+.wall-run-beats {
+	flex: 0 0 auto;
+	display: flex;
+	gap: 2px;
+	align-items: center;
+}
+.wall-run-beats i {
+	display: block;
+	width: 3px;
+	height: 9px;
+	border-radius: 1px;
+	background: var(--info);
+	opacity: 0.25;
+}
+.wall-run-beats i[data-did] {
+	opacity: 1;
+}
+.wall-run-buckets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 9px;
+	margin-top: 3px;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+/* THE ALARM. A stalled run and a dead lease are the two things this pane exists
+   to make impossible to miss, so both get the destructive tone and weight. */
+.wall-run-stalled,
+.wall-run-overseer-bad {
+	color: var(--destructive);
+	font-weight: 700;
+}
+.wall-run-stalled {
+	margin-top: 3px;
+	font-size: 10px;
+	letter-spacing: 0.04em;
+}
+.wall-run-overseer {
+	margin-top: 3px;
+	font-size: 10px;
+	color: var(--success);
+}
+.wall-run-why {
+	margin-top: 2px;
+	font-size: 10px;
+	color: var(--warning);
+}
+.wall-run-baton {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	margin-top: 4px;
+	font-size: 10px;
+}
+.wall-run-baton-kind {
+	display: inline-block;
+	width: 74px;
+}
+.wall-run-baton-age {
+	display: inline-block;
+	width: 34px;
+	color: var(--comment);
+}
+.wall-run-baton-body {
+	color: var(--fg-muted);
+}
+.wall-run-acts {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	margin-top: 5px;
+}
+.wall-run-act {
+	font-size: 10px;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 1px 6px;
+	color: var(--fg-muted);
+}
+.wall-run-act:hover {
+	border-color: var(--epic-badge-edge);
+	background: var(--epic-badge-tint);
+	color: var(--foreground);
+}
+.wall-run-act:disabled {
+	color: var(--comment);
+	cursor: not-allowed;
+}
+/* ARMED = one more click does it. It has to look different from hover, or the
+   confirm is a decoration. */
+.wall-run-act-armed {
+	color: var(--warning);
+	border-color: color-mix(in oklch, var(--warning) 55%, transparent);
+	background: color-mix(in oklch, var(--warning) 12%, transparent);
+}
+.wall-run-note,
+.wall-run-read {
+	font-size: 10px;
+	color: var(--comment);
+}
+.wall-run-read {
+	margin-top: 3px;
+	color: var(--warning);
+}
+.wall-run-more {
+	padding-top: 4px;
+	font-size: 10px;
+	color: var(--comment);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
