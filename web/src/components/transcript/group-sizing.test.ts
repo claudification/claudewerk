@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Group sizing -- the reserved-height layer both renderers share.
  *
  * The property that matters for scroll-back is RELATIVE, not absolute: a group

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { ProjectTaskMeta } from '@shared/project-task-types'
 import type { TaskStatus } from '@shared/task-statuses'
 import { beforeEach, describe, expect, it, vi } from 'vitest'

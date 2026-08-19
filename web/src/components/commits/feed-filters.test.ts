@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Live-commit filter matching. This decides whether a commit arriving over the
  * socket is spliced into an already-filtered list WITHOUT asking the server --
  * so a wrong answer silently shows a row that does not belong to the filter the

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { ProjectOrderGroup, ProjectOrderNode } from '@/lib/types'
 import { applyProjectDragEnd, findInTree, findParentGroup, removeFromTree } from './use-project-drag-drop'

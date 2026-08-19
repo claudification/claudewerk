@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { formatStoreReport, humanBytes, measureStore } from './store-sizeof'
 

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { Fzf } from 'fzf'
 import { describe, expect, it } from 'vitest'
 

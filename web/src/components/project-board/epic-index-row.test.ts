@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The bar is the only thing in the index that encodes SIZE. If it ever stops
  * scaling, a 13-child epic and a 1-child epic go back to looking identical --
  * which is the exact complaint the index was built to answer.

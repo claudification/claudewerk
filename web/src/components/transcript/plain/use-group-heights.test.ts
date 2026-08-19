@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * intrinsicStyle -- the per-group `contain-intrinsic-size` value.
  *
  * Two properties, both load-bearing:

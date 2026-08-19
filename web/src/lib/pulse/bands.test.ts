@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { Conversation, LiveStatus, LiveStatusState } from '@/lib/types'
 import { bandOf, compareInBand, hardBlockOf, JUST_DONE_WINDOW_MS, PULSE_BANDS, wantsAttention } from './bands'

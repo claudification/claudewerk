@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { ProjectTaskManifestEntry } from '@shared/project-task-types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { EpicRollup } from '@shared/epic-cards'
 import { describe, expect, it } from 'vitest'
 import { sortEpics } from './epic-sorts'

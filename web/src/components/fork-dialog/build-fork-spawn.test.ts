@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The fork SpawnRequest shape.
  *
  * A fork that launches on the wrong profile boots fine and inherits nothing --

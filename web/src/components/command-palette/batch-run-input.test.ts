@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { BatchAction } from './batch-actions'
 import { buildClearableField, buildRunInput, isInputValid, type ReassignFields } from './batch-run-input'

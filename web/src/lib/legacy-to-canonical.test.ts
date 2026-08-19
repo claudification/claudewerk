@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { canonicalizeToolUse, ensureCanonical } from './legacy-to-canonical'
 import type { TranscriptContentBlock } from './types'

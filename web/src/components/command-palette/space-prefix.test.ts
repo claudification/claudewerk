@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { derivePaletteMode } from './mode-detect'
 import { applyDoubleSpaceGesture } from './space-prefix'

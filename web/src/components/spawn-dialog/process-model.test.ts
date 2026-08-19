@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * process-model -- pure transport <-> (isDaemon, headless) mapping for the
  * spawn dialog's "Process model" segmented control (transport reframe).
  */

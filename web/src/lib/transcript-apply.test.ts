@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The two client-side rules in lib/transcript-apply.ts, each pinned to the
  * production failure it came from:
  *

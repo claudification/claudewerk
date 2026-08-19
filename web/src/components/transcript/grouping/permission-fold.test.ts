@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * One permission gate must render as ONE card, even though it arrives as two
  * append-only entries (the ask, then the receipt). These cover the fold and the
  * cases where there is nothing to fold into.

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * What each launch mode implies for the lifecycle switches.
  *
  * The two failures pinned here are both silent: an ANALYZE run inheriting

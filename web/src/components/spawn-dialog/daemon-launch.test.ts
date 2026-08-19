@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Unit tests for the daemon-launch pure helpers -- validation + spawn-request
  * shaping for the spawn dialog's three daemon modes (NEW / RESUME / ATTACH).
  */

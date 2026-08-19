@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { SentinelStatusInfo } from '@/hooks/use-conversations'
 import type { Conversation } from '@/lib/types'

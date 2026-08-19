@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The vocabulary merge. Keyterms are not cosmetic: on the same 26s fixture the
  * model returned "CloudFlo" bare and "Cloudflare" with them on, so what ends up
  * in this list is what the transcript gets right.

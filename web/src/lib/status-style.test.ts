@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { formatAgeShort, isStatusSuperseded } from './status-style'
 import type { LiveStatus } from './types'

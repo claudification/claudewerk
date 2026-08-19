@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The whole point of the phase breakdown is that a MISSING measurement never
  * reads as a FAST one. Resource timing zeroes fields it cannot provide, so a
  * naive `responseStart - requestStart` reports 0ms for a request that actually

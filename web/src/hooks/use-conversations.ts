@@ -492,7 +492,10 @@ interface ConversationsState {
   canvasChatHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftWatchdogHandler: ((msg: Record<string, unknown>) => void) | null
-  sendWsMessage: (msg: Record<string, unknown>) => void
+  /** True when the frame went out. False means the socket was not open and
+   *  NOTHING was sent -- a caller awaiting a reply must treat that as a failure,
+   *  not as a slow answer. */
+  sendWsMessage: (msg: Record<string, unknown>) => boolean
   dismissConversation: (conversationId: string) => void
   terminateConversation: (conversationId: string, source: TerminationSource) => void
   terminateLineage: (conversationId: string, source: TerminationSource) => void
@@ -1634,13 +1637,16 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setWs: ws => set({ ws }),
   setTerminalHandler: handler => set({ terminalHandler: handler }),
   setJsonStreamHandler: handler => set({ jsonStreamHandler: handler }),
+  // Returns whether the frame actually went out. A closed socket used to drop it
+  // in silence, which is indistinguishable from a send for every caller that
+  // expects a reply -- see `ws-request.ts` for the twelve seconds that cost.
   sendWsMessage: msg => {
     const { ws } = get()
-    if (ws?.readyState === WebSocket.OPEN) {
-      const payload = JSON.stringify(msg)
-      recordOut(payload.length)
-      ws.send(payload)
-    }
+    if (ws?.readyState !== WebSocket.OPEN) return false
+    const payload = JSON.stringify(msg)
+    recordOut(payload.length)
+    ws.send(payload)
+    return true
   },
   dismissConversation: conversationId => {
     wsSend('dismiss_conversation', { conversationId })

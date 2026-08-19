@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { LaunchProfile } from '@shared/launch-profile'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {

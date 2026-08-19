@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The seam: a `<channel sender="canvas">` entry must come out of the parser as a
  * canvas item (id + chips + clean text), not as the plain-text fallback that put
  * raw `<selected>` markup in the bubble.

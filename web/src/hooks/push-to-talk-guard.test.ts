@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { CHORD_GRACE_MS, hasForeignModifier, type ModifierFlags } from './push-to-talk-guard'
 

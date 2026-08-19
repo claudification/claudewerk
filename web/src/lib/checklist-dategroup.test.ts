@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { ChecklistItem } from '@shared/protocol'
 import { expect, test } from 'vitest'
 import { groupByResolvedDate } from './checklist-dategroup'

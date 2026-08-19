@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { DialogLayout } from '@shared/dialog-schema'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

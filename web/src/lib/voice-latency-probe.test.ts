@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The report is meant to be PASTED -- into an issue, a chat, a commit message --
  * so its alignment and its unreachable case are the whole product. A screenshot
  * cannot be grepped or diffed; this can.

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The "close the original" default.
  *
  * This decides whether a destructive checkbox arrives pre-ticked, so every rule

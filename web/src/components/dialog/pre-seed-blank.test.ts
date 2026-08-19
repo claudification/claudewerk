@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression: the blank-save that wiped Jonas's canvases. See pre-seed-blank.ts
  * for the full sequence.
  */

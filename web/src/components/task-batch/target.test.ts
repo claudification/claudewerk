@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * REGRESSION: "work on this epic" from a board whose project is NOT the app's
  * current selection.
  *

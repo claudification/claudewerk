@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The reveal is a NAVIGATION with two halves that have to happen together: the
  * epic id parked for whichever board picks it up, and the Kanban surface opened
  * so that there IS a board to pick it up. Parking without opening is the silent

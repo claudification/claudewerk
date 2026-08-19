@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Tests for the dictation timing record.
  *
  * WHY THIS IS TESTED AT ALL: the numbers this module produces are the ones that

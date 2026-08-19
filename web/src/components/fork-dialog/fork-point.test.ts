@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { type ForkPointSeed, PREVIEW_CHARS, previewText, toForkPointRequest } from './fork-point'
 

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * `isEpicCard` shipped exported, tested, and with ZERO callers -- so on the
  * kanban board an epic rendered pixel-identical to an ordinary card. "THE WERK"
  * epic was reported as "not rendering as an epic" for exactly that reason: it

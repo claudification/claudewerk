@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * `queued` is a GROUP flag, but queueing is a PER-MESSAGE fact.
  *
  * Consecutive user messages merge into one user group, and the whole group is

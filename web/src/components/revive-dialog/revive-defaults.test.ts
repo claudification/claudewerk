@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The revive dialog's opening state.
  *
  * The chain has to match the server handler's (`reviveConversation`), because

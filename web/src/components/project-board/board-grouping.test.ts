@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { buildEpicIndex } from '@shared/epic-cards'
 import type { ProjectTaskMeta } from '@shared/project-task-types'
 import { describe, expect, it } from 'vitest'

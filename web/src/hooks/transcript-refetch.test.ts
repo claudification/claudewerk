@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * THE BROKER-RESTART SCREENSHOT (2026-07-23).
  *
  * Jonas restarts the broker; every panel reconnects, `sync_check` reports the

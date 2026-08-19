@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Draft <-> wire mapping, with the one-shot path.
  *
  * The seam that matters: the user types a WALL CLOCK, the wire carries an

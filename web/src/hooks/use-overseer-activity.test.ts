@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { EpicActivityEntry } from '@shared/protocol'
 import { beforeEach, describe, expect, test } from 'vitest'
 import {

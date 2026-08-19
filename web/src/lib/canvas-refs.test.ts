@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { buildCanvasRef, matchLeadingCanvasRef, parseCanvasRefs } from './canvas-refs'
 

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Tests for the host-shell store + data-handler registry (use-shells.ts).
  *
  * Covers roster mutation (snapshot/add/remove), the remove-cleans-everything

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * What counts as a card, and what the preview gets to show.
  *
  * The decision matters because the caller has a fallback: say "not a card" and

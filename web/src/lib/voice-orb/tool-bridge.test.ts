@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getOrbInstanceId } from './orb-instance'
 import type { FunctionCall } from './realtime-events'

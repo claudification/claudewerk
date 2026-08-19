@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Fields-bridge tests -- the "" vs undefined contract.
  *
  * This adapter is the seam between the editor form (empty strings) and the wire

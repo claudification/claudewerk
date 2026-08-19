@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { DialogOp, DialogSnapshot, DialogStatus } from '@shared/dialog-live'
 import { describe, expect, it } from 'vitest'
 import { foldPrefs, freshView, transitionView } from './live-dialog-view'

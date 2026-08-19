@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Tests for list-resident conversation slimming (heap-pressure reduction).
  *
  * Pins the contract that:

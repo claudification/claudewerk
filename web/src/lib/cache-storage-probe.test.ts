@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The probe's only job is to make a leaked cache generation impossible to miss
  * in the boot log, so the wording of that line is the thing worth testing.
  */

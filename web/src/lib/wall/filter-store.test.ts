@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { projectToken, selectWallProject, useWallFilterStore, type WallFilterState } from './filter'
 import { stripProjectTokens, toggledProject, withProject } from './project-token'

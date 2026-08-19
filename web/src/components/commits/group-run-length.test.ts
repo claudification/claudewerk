@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Run-length grouping. The property that matters: CHRONOLOGY IS NEVER
  * REORDERED. Grouping only collapses ADJACENT repeats, so the same project
  * legitimately appears more than once down the timeline.
