@@ -44,7 +44,13 @@ beforeEach(() => {
   releaseOk = true
 
   configureActionIo({
-    fetchEpicRun: async () => ({ run: null, baton: [], lease, ...(getError ? { error: getError } : {}) }),
+    fetchEpicRun: async () => ({
+      run: null,
+      baton: [],
+      acknowledgedCardIds: [],
+      lease,
+      ...(getError ? { error: getError } : {}),
+    }),
     sendEpicOp: async (_d, _p, op) => {
       if (op.op === 'release') released++
       return (releaseOk ? { ok: true } : { ok: false, error: 'sentinel refused' }) as EpicResult

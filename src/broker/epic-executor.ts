@@ -69,7 +69,10 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
   const mismatch = generationMismatch(group, run.gen)
   if (mismatch) deps.log(`${tag(group.epicId, run.gen)} ${mismatch}`)
 
-  const pending = unacknowledgedCards(group.settled, view.baton)
+  // Against the WHOLE log's acknowledgement set, never against `view.baton` --
+  // that is a 20-entry prompt tail, and asking it this question is what made the
+  // failure in this file's docstring real (gens 23-28, 2026-08-19).
+  const pending = unacknowledgedCards(group.settled, view.acknowledgedCardIds)
   if (pending.length > 0) await acknowledge(deps, group, pending)
 
   const cards = await io.fetchBoardCards(deps, group.project)

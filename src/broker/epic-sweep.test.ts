@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { acknowledgedCardIds } from '../shared/epic-log'
 import type { EpicLaunchTag, EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { generationMismatch, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
@@ -93,34 +94,63 @@ describe('groupEpicConversations', () => {
   })
 })
 
-describe('unacknowledgedCards -- the standing question the wake is built on', () => {
-  test('a settled card with no baton entry is unacknowledged', () => {
-    expect(unacknowledgedCards(['t1'], [])).toEqual(['t1'])
-  })
-
-  test('a completion entry acknowledges it', () => {
-    expect(unacknowledgedCards(['t1'], [entry('completion', 't1')])).toEqual([])
+describe('acknowledgedCardIds -- which cards the log has ever settled', () => {
+  test('a completion entry acknowledges its card', () => {
+    expect(acknowledgedCardIds([entry('completion', 't1')])).toEqual(['t1'])
   })
 
   test('a verdict entry acknowledges it too', () => {
-    expect(unacknowledgedCards(['t1'], [entry('verdict', 't1')])).toEqual([])
+    expect(acknowledgedCardIds([entry('verdict', 't1')])).toEqual(['t1'])
   })
 
   test('a DISPATCH entry does NOT acknowledge -- it records a start, not an outcome', () => {
-    expect(unacknowledgedCards(['t1'], [entry('dispatch', 't1')])).toEqual(['t1'])
-  })
-
-  test('an entry for a different card does not acknowledge this one', () => {
-    expect(unacknowledgedCards(['t1'], [entry('completion', 't2')])).toEqual(['t1'])
+    expect(acknowledgedCardIds([entry('dispatch', 't1')])).toEqual([])
   })
 
   test('a cardless entry acknowledges nothing', () => {
-    expect(unacknowledgedCards(['t1'], [entry('completion')])).toEqual(['t1'])
+    expect(acknowledgedCardIds([entry('completion')])).toEqual([])
+  })
+})
+
+describe('unacknowledgedCards -- the standing question the wake is built on', () => {
+  test('a settled card the log has never acknowledged comes back', () => {
+    expect(unacknowledgedCards(['t1'], [])).toEqual(['t1'])
+  })
+
+  test('an acknowledged one does not', () => {
+    expect(unacknowledgedCards(['t1'], ['t1'])).toEqual([])
+  })
+
+  test('an acknowledgement of a different card does not cover this one', () => {
+    expect(unacknowledgedCards(['t1'], ['t2'])).toEqual(['t1'])
   })
 
   test('only the unacknowledged ones come back, in order', () => {
-    const baton = [entry('completion', 't1'), entry('dispatch', 't3')]
-    expect(unacknowledgedCards(['t1', 't2', 't3'], baton)).toEqual(['t2', 't3'])
+    expect(unacknowledgedCards(['t1', 't2', 't3'], acknowledgedCardIds([entry('completion', 't1')]))).toEqual([
+      't2',
+      't3',
+    ])
+  })
+
+  /**
+   * THE DEFECT, AT THE UNIT LEVEL. Kept deliberately, and it is not a test of
+   * this function -- the function is right, and was right the whole time.
+   *
+   * The argument was wrong: the beat fed it the acknowledgement set folded from
+   * the sentinel's 20-entry PROMPT TAIL, so a run with more settled cards than
+   * that re-discovered every card whose acknowledgement had scrolled out of the
+   * window. Below, all 25 are acknowledged in the log and 5 still come back.
+   * That is a call site bug a unit test of `unacknowledgedCards` can never fail
+   * on, which is why the test that guards the fix lives at the seam
+   * (epic-executor.test.ts, 'against the real sentinel seam').
+   */
+  test('folding a TRUNCATED window re-discovers the settles that scrolled out of it', () => {
+    const settled = Array.from({ length: 25 }, (_, i) => `t${i + 1}`)
+    const wholeLog = settled.map(id => entry('completion', id))
+    const promptTail = wholeLog.slice(-20)
+
+    expect(unacknowledgedCards(settled, acknowledgedCardIds(promptTail))).toHaveLength(5)
+    expect(unacknowledgedCards(settled, acknowledgedCardIds(wholeLog))).toEqual([])
   })
 })
 

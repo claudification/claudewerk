@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
-import { readEpicLog } from '../shared/epic-log'
+import { acknowledgedCardIds, readEpicLog } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import { cardPath } from '../shared/project-paths'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
@@ -96,7 +96,15 @@ beforeEach(() => {
   run = { ...RUN }
 
   configureEpicIo({
-    fetchEpicRun: async () => ({ run, baton, lease: null, ...(run ? {} : { error: 'no run' }) }),
+    // `baton` here is the WHOLE log, so folding it is the honest answer. The
+    // seam tests below are the ones that exercise a truncated tail.
+    fetchEpicRun: async () => ({
+      run,
+      baton,
+      acknowledgedCardIds: acknowledgedCardIds(baton),
+      lease: null,
+      ...(run ? {} : { error: 'no run' }),
+    }),
     fetchBoardCards: async () => cards,
     appendBaton: async (_d, _p, _e, entry) => {
       baton.push({
@@ -195,7 +203,14 @@ describe('runEpicBeat', () => {
    * to answering the group-wide question.
    */
   test('the CAS is told about THE HOLDER named on the board, not about any overseer', async () => {
-    configureEpicIo({ fetchEpicRun: async () => ({ run, baton, lease: { convId: 'conv_holder', gen: 4, at: '' } }) })
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run,
+        baton,
+        acknowledgedCardIds: acknowledgedCardIds(baton),
+        lease: { convId: 'conv_holder', gen: 4, at: '' },
+      }),
+    })
     await runEpicBeat(deps(), group({ settled: ['t1'], liveOverseers: ['conv_someone_else'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
   })
@@ -328,7 +343,11 @@ describe('runEpicBeat against the real sentinel seam', () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'epic-seam-'))
     mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
-    writeFileSync(cardPath(root, 'e1', false), '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n', 'utf8')
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      'utf8',
+    )
 
     // A run mid-flight: planning done, no overseer holding it.
     handleEpicOp(

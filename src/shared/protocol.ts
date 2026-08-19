@@ -4774,6 +4774,21 @@ export interface EpicResult {
   run?: EpicRunSnapshot | null
   /** get -- the baton slice, newest last. */
   baton?: EpicLogEntry[]
+  /**
+   * get -- every card the baton has EVER acknowledged, folded over the whole log
+   * rather than over the `baton` slice above.
+   *
+   * A separate field because it answers a different question than the tail does,
+   * and the tail is sized for a prompt. Deriving it from `baton` instead made a
+   * settle whose acknowledgement had scrolled past entry 20 read as unhandled
+   * again on every sweep, which is how one epic burned five generations without
+   * dispatching anything (2026-08-19).
+   *
+   * OPTIONAL for version skew only: broker and sentinel deploy separately, and a
+   * broker talking to an older sentinel must fall back to the old (wrong, but
+   * survivable) fold rather than treat every card as unacknowledged.
+   */
+  acknowledgedCardIds?: string[]
   /** log_append -- the persisted entry. */
   logEntry?: EpicLogEntry
   /** lease -- granted or refused, with the holder either way. */

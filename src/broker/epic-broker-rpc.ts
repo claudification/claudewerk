@@ -5,6 +5,7 @@
  */
 
 import type { EpicLease } from '../shared/epic-lease'
+import { acknowledgedCardIds } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type {
@@ -67,21 +68,46 @@ export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): P
 
 export interface EpicRunView {
   run: EpicRunSnapshot | null
+  /** The PROMPT-SIZED tail. What a fresh overseer generation is handed, and the
+   *  only thing it is for -- never ask it what has been acknowledged. */
   baton: EpicLogEntry[]
+  /** Every card acknowledged anywhere in the log. The wake's standing question. */
+  acknowledgedCardIds: string[]
   /** Who holds the overseer seat, off the epic card. `null` = never run. */
   lease: EpicLease | null
   error?: string
 }
+
+const EMPTY_VIEW = (error: string): EpicRunView => ({
+  run: null,
+  baton: [],
+  acknowledgedCardIds: [],
+  lease: null,
+  error,
+})
 
 /**
  * One `get` result, folded into the view the engine consumes. Its own exported
  * function so a test can drive the REAL sentinel handler through the REAL broker
  * fold: the interesting epic bugs live in the shape of this answer, and a test
  * that re-implements the mapping cannot catch one.
+ *
+ * The `??` on `acknowledgedCardIds` is VERSION SKEW, not a default. Broker and
+ * sentinel ship separately, so a new broker will meet an old sentinel that does
+ * not send the field. Folding the tail then is the old behaviour -- wrong for
+ * long runs, but it degrades to the bug we had rather than to "nothing has ever
+ * been acknowledged", which would re-wake an overseer for every settled card in
+ * the epic on every sweep.
  */
 export function toEpicRunView(res: EpicResult): EpicRunView {
-  if (!res.ok) return { run: null, baton: [], lease: null, error: res.error ?? 'epic get failed' }
-  return { run: res.run ?? null, baton: res.baton ?? [], lease: res.currentLease ?? null }
+  if (!res.ok) return EMPTY_VIEW(res.error ?? 'epic get failed')
+  const baton = res.baton ?? []
+  return {
+    run: res.run ?? null,
+    baton,
+    acknowledgedCardIds: res.acknowledgedCardIds ?? acknowledgedCardIds(baton),
+    lease: res.currentLease ?? null,
+  }
 }
 
 /**
