@@ -75,7 +75,14 @@ export function ChatBubble({
                   // [&_code] styles inline code chips; [&_pre_code] re-zeros them
                   // for fenced blocks -- inline padding on a wrapped <code> bleeds
                   // its left-padding onto the first visual line only, indenting it.
-                  className="text-sm [&_a]:text-primary-foreground/85 [&_a]:underline [&_a]:decoration-primary-foreground/40 [&_code]:!bg-black/25 [&_code]:!px-1.5 [&_code]:!py-0.5 [&_code]:!rounded-sm [&_code]:!text-primary-foreground/80 [&_code]:!text-[0.85em] [&_pre_code]:!bg-transparent [&_pre_code]:!p-0 [&_pre_code]:!rounded-none [&_pre_code]:!text-[0.95em] [&_.conversation-pill]:!text-white [&_.conversation-pill]:!bg-black/20 [&_.conversation-pill]:!border-white/30 [&_.conversation-pill]:hover:!bg-black/30"
+                  // Links and code chips are WHITE, like the bubble's own
+                  // `text-white` and the pill override below. They used to say
+                  // `primary-foreground`, which worked only because that token
+                  // happened to be near-white; the moment it flipped dark (so
+                  // labels could sit on a bright primary fill) every link and
+                  // code chip in a bubble went dark-on-colour. A bubble is a
+                  // user-chosen saturated background, not a primary surface.
+                  className="text-sm [&_a]:text-white/85 [&_a]:underline [&_a]:decoration-white/40 [&_code]:!bg-black/30 [&_code]:!px-1.5 [&_code]:!py-0.5 [&_code]:!rounded-sm [&_code]:!text-white/95 [&_code]:!text-[0.85em] [&_pre_code]:!bg-transparent [&_pre_code]:!p-0 [&_pre_code]:!rounded-none [&_pre_code]:!text-[0.95em] [&_.conversation-pill]:!text-white [&_.conversation-pill]:!bg-black/20 [&_.conversation-pill]:!border-white/30 [&_.conversation-pill]:hover:!bg-black/30"
                 >
                   <Markdown inline={!hasBlocks}>{item.text}</Markdown>
                 </div>

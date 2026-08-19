@@ -89,6 +89,31 @@ describe('no opacity-stacked colour tokens', () => {
   })
 })
 
+/**
+ * `--primary-foreground` means "text that sits ON a primary-coloured fill".
+ * It is defined by its BACKGROUND, so its value flips whenever that background
+ * does -- it went from near-white to near-black when primary buttons got a
+ * bright fill.
+ *
+ * A chat bubble is a user-chosen saturated colour, not a primary surface. It
+ * borrowed the token anyway, and rode on it happening to be near-white. The
+ * moment it flipped, every link and inline code chip inside a bubble turned
+ * dark-on-colour. The bubble's own text is `text-white`, and so is its
+ * conversation-pill override; the two that said `primary-foreground` were the
+ * odd ones out.
+ */
+describe('chat bubbles do not borrow --primary-foreground', () => {
+  it('a bubble is not a primary surface, so it uses white directly', () => {
+    const bubble = readFileSync(join(SRC, 'components/transcript/chat-bubble.tsx'), 'utf8')
+    const offenders = stripComments(bubble)
+      .split('\n')
+      .map((line, i) => [line, i + 1] as const)
+      .filter(([line]) => line.includes('primary-foreground'))
+      .map(([, n]) => `chat-bubble.tsx:${n}`)
+    expect(offenders, `use text-white -- the token flips with the primary FILL:\n${offenders.join('\n')}`).toEqual([])
+  })
+})
+
 describe('no dead dark: variants', () => {
   it('the dark variant is still class-based (this test is pointless if it is not)', () => {
     const css = readFileSync(join(SRC, 'styles/globals.css'), 'utf8')
