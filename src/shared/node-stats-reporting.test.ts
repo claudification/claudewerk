@@ -78,9 +78,9 @@ describe('node-stats cadence runner', () => {
   it('builds a sentinel frame with the extras block when the callback is given', () => {
     const frame = runner({
       identity: SENTINEL_IDENTITY,
-      sentinelExtras: () => ({ conversationCount: 3, profiles: [{ name: 'x' }] }),
+      sentinelExtras: () => ({ conversationCount: 3 }),
     }).tick()
-    expect(frame?.sentinel).toEqual({ conversationCount: 3, profiles: [{ name: 'x' }] })
+    expect(frame?.sentinel).toEqual({ conversationCount: 3 })
     expect(validateNodeStats(frame).ok).toBe(true)
   })
 

@@ -220,48 +220,53 @@ describe('dedupeMachineStatsByHost', () => {
 describe('one contract, one utilization path', () => {
   const contractSources = ['src/shared/node-stats.ts', 'src/shared/node-stats-sample.ts']
 
-  // RESOLVED 2026-08-19. This test previously banned the word `utilization` from
-  // the contract outright, on the rule "plan windows ride sentinel_usage_report,
-  // a second path here is duplication".
+  // The original rule, RESTORED and sharpened (decision 2026-08-19): plan
+  // windows ride `sentinel_usage_report` / ProfileUsageSnapshot, and a second
+  // path here is exactly the duplication this card exists to prevent. A derived
+  // headline percent was briefly carried on the payload and has been removed --
+  // one number sampled on two clocks is one number that can disagree with
+  // itself.
   //
-  // The CARD (`node-stats-contract`) asks for the opposite in as many words:
-  // "Sentinel-only extras ... running conversation count, profile NAMES with
-  // plan utilization". Both cannot hold, so the rule is narrowed rather than
-  // dropped: what is forbidden is a second copy of the WINDOW DATA (the reset
-  // times, the per-window breakdown, the error states). `ProfileUsageSnapshot`
-  // remains the single SOURCE of those. What the payload may carry is the one
-  // DERIVED headline number per profile, so the wall can render a node row
-  // without joining against a separately-timed second message.
-  //
-  // (The old assertion would not have caught this anyway: `\butilization\b` does
-  // not match `utilizationPercent`, so it passed on a word-boundary accident.
-  // Encoding the real rule is the point.)
-  it('carries no WINDOW data -- ProfileUsageSnapshot stays the source for that', () => {
-    const banned = /\b(fiveHour|sevenDay|sevenDayOpus|sevenDaySonnet|resetAt|planUsage|usageWindow|extraUsage)\b/i
+  // The old assertion could not have caught that: it banned `\butilization\b`,
+  // which does NOT match `utilizationPercent`, so a field by that name sailed
+  // straight through on a word-boundary accident. The substring match below is
+  // the fix -- it catches any casing and any suffix.
+  it('carries NO plan-utilization field, in any spelling', () => {
+    const banned = /(utilization|utilisation|fiveHour|sevenDay|planUsage|usageWindow|extraUsage|usedPercent)/i
     for (const rel of contractSources) {
       const code = readFileSync(join(ROOT, rel), 'utf8')
-      // Strip block comments -- the prose deliberately NAMES the other path.
+      // Strip comments -- the prose deliberately NAMES the other path.
       const withoutComments = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-      expect({ rel, hit: banned.test(withoutComments) }).toEqual({ rel, hit: false })
+      const hit = banned.exec(withoutComments)
+      expect({ rel, hit: hit?.[0] ?? null }).toEqual({ rel, hit: null })
     }
   })
 
-  it('carries at most ONE derived number per profile, and its NAME', () => {
-    // The whole permitted profile surface, pinned. Anything else on a profile
-    // entry -- a window, a reset time, a configDir -- is rejected by the
-    // validator, so widening this shape cannot happen quietly.
+  it('the extras block is conversationCount and NOTHING else', () => {
+    // Held by refusal rather than trimming, so a sender that grows a `profiles`
+    // array (or a configDir) is visible in the logs instead of silently ignored.
     const parsed = validateNodeStats(
       frame({
         sentinel: {
           conversationCount: 1,
-          // Deliberately invalid: a window field is exactly what must not ride here.
-          profiles: [{ name: 'work', utilizationPercent: 50, sevenDay: { usedPercent: 50 } }],
+          profiles: [{ name: 'work', utilizationPercent: 50 }],
         },
       } as unknown as Partial<NodeStatsReport>),
     )
     expect(parsed.ok).toBe(false)
     if (parsed.ok) return
-    expect(parsed.errors.some(e => e.includes('sevenDay: not allowed'))).toBe(true)
+    expect(parsed.errors.some(e => e.includes('sentinel.profiles: not allowed'))).toBe(true)
+  })
+
+  it('rejects a configDir smuggled onto the extras block', () => {
+    const parsed = validateNodeStats(
+      frame({
+        sentinel: { conversationCount: 1, configDir: '/Users/jonas/.claude-work' },
+      } as unknown as Partial<NodeStatsReport>),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes('sentinel.configDir: not allowed'))).toBe(true)
   })
 
   it('declares the node_stats wire shape exactly once in the tree', () => {

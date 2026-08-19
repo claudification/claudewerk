@@ -84,38 +84,6 @@ export function checkMachine(value: unknown, errors: string[]): void {
 }
 
 /**
- * PROFILE-ENV BOUNDARY enforcement point. A profile entry may carry a NAME and a
- * percent and nothing else -- an entry with extra keys is a sender trying to
- * push `configDir` / `env` / a token across, and is rejected outright rather
- * than quietly trimmed, so the misbehaving sender is visible in the logs.
- */
-export function checkProfiles(value: unknown, errors: string[]): void {
-  if (value === undefined) return
-  if (!Array.isArray(value)) {
-    errors.push('sentinel.profiles: expected an array')
-    return
-  }
-  for (const [i, entry] of value.entries()) {
-    if (!isRecord(entry)) {
-      errors.push(`sentinel.profiles[${i}]: expected an object`)
-      continue
-    }
-    if (!nonEmptyString(entry.name)) errors.push(`sentinel.profiles[${i}].name: expected a non-empty string`)
-    if (entry.utilizationPercent !== undefined) {
-      const pct = entry.utilizationPercent
-      if (!num(pct) || pct < 0 || pct > 100) {
-        errors.push(`sentinel.profiles[${i}].utilizationPercent: expected a number in 0..100`)
-      }
-    }
-    for (const key of Object.keys(entry)) {
-      if (key !== 'name' && key !== 'utilizationPercent') {
-        errors.push(`sentinel.profiles[${i}].${key}: not allowed (profile NAME + percent only)`)
-      }
-    }
-  }
-}
-
-/**
  * The extras rule. Derived from `node.sender` rather than from who happens to be
  * calling -- the broker stamps `sender` from the CREDENTIAL before this runs, so
  * a reporter cannot claim `sender: 'sentinel'` to smuggle extras through.
@@ -133,5 +101,13 @@ export function checkSentinelExtras(extras: unknown, sender: unknown, errors: st
     errors.push('sentinel.conversationCount: expected a non-negative number')
     return
   }
-  checkProfiles(extras.profiles, errors)
+  // PROFILE-ENV BOUNDARY, held by refusal rather than by trimming: the extras
+  // block is `conversationCount` and nothing else. Any other key -- `profiles`,
+  // `configDir`, `env`, a token -- is a sender pushing something across that has
+  // no business here, and is rejected so it shows up in the logs.
+  for (const key of Object.keys(extras)) {
+    if (key !== 'conversationCount') {
+      errors.push(`sentinel.${key}: not allowed (the extras block is conversationCount only)`)
+    }
+  }
 }

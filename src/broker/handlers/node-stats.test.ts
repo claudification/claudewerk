@@ -78,21 +78,18 @@ describe('a reporter key sends vitals', () => {
     expect(h.logs.some(l => l.includes('rejected') && l.includes('errors='))).toBe(true)
   })
 
-  it('rejects a profile entry smuggling configDir / env past the PROFILE-ENV BOUNDARY', () => {
+  it('rejects a configDir smuggled onto the extras block (PROFILE-ENV BOUNDARY)', () => {
     const h = asSentinel()
     routeMessage(
       h.ctx,
       NODE_STATS_MESSAGE,
       frame({
         node: { sender: 'sentinel' },
-        sentinel: {
-          conversationCount: 1,
-          profiles: [{ name: 'work', utilizationPercent: 50, configDir: '/Users/jonas/.claude-work' }],
-        },
+        sentinel: { conversationCount: 1, configDir: '/Users/jonas/.claude-work' },
       } as never),
     )
     expect(nodeStatsStore.size()).toBe(0)
-    expect(h.logs.some(l => l.includes('configDir: not allowed'))).toBe(true)
+    expect(h.logs.some(l => l.includes('sentinel.configDir: not allowed'))).toBe(true)
   })
 })
 
@@ -104,15 +101,12 @@ describe('the standalone reporter feeds the SAME handler as a sentinel', () => {
       NODE_STATS_MESSAGE,
       frame({
         node: { nodeId: 'machine-id', sender: 'sentinel' },
-        sentinel: { conversationCount: 3, profiles: [{ name: 'default', utilizationPercent: 61 }] },
+        sentinel: { conversationCount: 3 },
       }),
     )
     const row = nodeStatsStore.get('snt-1')
     expect(row?.report.node.sender).toBe('sentinel')
-    expect(row?.report.sentinel).toEqual({
-      conversationCount: 3,
-      profiles: [{ name: 'default', utilizationPercent: 61 }],
-    })
+    expect(row?.report.sentinel).toEqual({ conversationCount: 3 })
   })
 
   it('a sentinel machineId-as-nodeId is NOT logged as a mismatch (it cannot know its snt_ id)', () => {
