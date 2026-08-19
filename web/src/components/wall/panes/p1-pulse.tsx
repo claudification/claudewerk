@@ -56,7 +56,6 @@ function ViewTab({ view, current, onPick }: { view: WallPulseView; current: Wall
   )
 }
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
 export default function PulsePane() {
   const base = usePulseFleet(WHOLE_FLEET)
   const query = useWallFilterStore(s => s.query)
