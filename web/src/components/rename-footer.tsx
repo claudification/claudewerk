@@ -1,3 +1,4 @@
+import { Button } from './ui/button'
 import { Kbd } from './ui/kbd'
 
 interface RenameFooterProps {
@@ -13,14 +14,10 @@ export function RenameFooter({ onSubmit }: RenameFooterProps) {
         <span className="text-fg-faint">·</span>
         <Kbd>Esc</Kbd> cancel
       </span>
-      <button
-        type="button"
-        onClick={onSubmit}
-        className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-accent/20 text-accent hover:bg-accent/30 transition-colors"
-      >
+      <Button type="button" variant="accent" size="sm" onClick={onSubmit}>
         Save
-        <Kbd className="bg-accent/20 text-accent/70">Enter</Kbd>
-      </button>
+        <Kbd className="border-accent-foreground/25 bg-accent-foreground/15 text-accent-foreground">Enter</Kbd>
+      </Button>
     </div>
   )
 }

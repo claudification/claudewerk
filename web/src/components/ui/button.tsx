@@ -10,6 +10,13 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:brightness-110',
+        /* THE CONFIRM. Save, Create, Send -- the one action a surface exists to
+           perform. It is a SOLID accent fill, not a 20% tint of one: a tint on
+           a dark page reads as a selected chip, which is why the rename
+           dialog's Save button was indistinguishable from its own keyboard
+           hints. Tints are for state (selected, active, highlighted); a CTA is
+           an object you press. */
+        accent: 'bg-accent text-accent-foreground font-bold hover:brightness-110',
         destructive:
           'bg-destructive text-destructive-foreground hover:brightness-110 focus-visible:ring-destructive/40',
         /* Was `bg-background` -- the page colour -- so an outline button was a

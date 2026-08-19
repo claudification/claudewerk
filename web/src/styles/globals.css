@@ -409,7 +409,17 @@
  * unreadable. Pinning the foreground makes the syntax hue irrelevant: whatever
  * you select, it turns into one known-contrast pair.
  */
-::selection {
+/*
+ * The bare `::selection` does NOT reach text inside a form control in WebKit --
+ * the editable text lives in a shadow subtree the universal selector cannot
+ * cross, so Safari falls back to the macOS system highlight. That is why the
+ * rename dialog's name field still came up in system blue with dark text after
+ * this rule shipped: the rule was fine, it just never applied there.
+ * The element-qualified selectors below are the documented way in.
+ */
+::selection,
+input::selection,
+textarea::selection {
 	background-color: color-mix(in oklch, var(--border-strong) 62%, transparent);
 	color: var(--foreground);
 }

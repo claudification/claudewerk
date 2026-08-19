@@ -5,6 +5,7 @@
 
 import { AlertTriangle, FileText } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { useProject } from '@/hooks/use-project'
 import { haptic } from '@/lib/utils'
@@ -110,15 +111,16 @@ export function QuickTaskModal() {
               <span className="text-fg-faint">·</span>
               <Kbd>Esc</Kbd> close
             </span>
-            <button
+            <Button
               type="button"
+              variant="accent"
+              size="sm"
               onClick={handleSubmit}
               disabled={!text.trim() || !hasWrapper}
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add
-              <Kbd className="bg-accent/20 text-accent/70">↵</Kbd>
-            </button>
+              <Kbd className="border-accent-foreground/25 bg-accent-foreground/15 text-accent-foreground">↵</Kbd>
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

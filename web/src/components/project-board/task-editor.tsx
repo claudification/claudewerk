@@ -9,6 +9,7 @@
 import type { EditorView } from '@codemirror/view'
 import { Archive, Eye, Moon, Pencil, RotateCcw, Zap } from 'lucide-react'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import { sendInput } from '@/hooks/use-conversations'
@@ -434,14 +435,10 @@ export function TaskEditor({
               >
                 Cancel <Kbd className="opacity-60">Esc</Kbd>
               </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="px-3 py-1 text-xs font-bold font-mono bg-accent/20 text-accent hover:bg-accent/30 transition-colors disabled:opacity-50"
-              >
-                {saving ? '...' : 'Save'} <Kbd className="ml-1.5 opacity-60">^S</Kbd>
-              </button>
+              <Button type="button" variant="accent" size="sm" onClick={handleSave} disabled={saving}>
+                {saving ? '...' : 'Save'}
+                <Kbd className="border-accent-foreground/25 bg-accent-foreground/15 text-accent-foreground">^S</Kbd>
+              </Button>
             </div>
           </div>
           <div className="flex items-center justify-between px-4 pb-1.5">
