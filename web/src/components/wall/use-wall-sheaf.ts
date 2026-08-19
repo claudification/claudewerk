@@ -35,7 +35,7 @@ export type SheafWindow = (typeof SHEAF_WINDOWS)[number]
  * git-fabric rescan per visible project. A minute is far finer than the coarsest
  * thing on the pane and still cheap; this is a ledger, not the pulse.
  */
-export const SHEAF_REFRESH_MS = 60_000
+const SHEAF_REFRESH_MS = 60_000
 
 interface WallSheafState {
   windowH: SheafWindow
@@ -61,7 +61,7 @@ export const useWallSheafStore = create<WallSheafState>((set, get) => ({
  *  refresh tick collapse into one request. */
 let inflight: number | null = null
 
-export async function loadWallSheaf(windowH: number, force = false): Promise<void> {
+async function loadWallSheaf(windowH: number, force = false): Promise<void> {
   if (inflight === windowH && !force) return
   inflight = windowH
   useWallSheafStore.setState({ loading: true })

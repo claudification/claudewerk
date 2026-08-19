@@ -22,7 +22,10 @@
 
 import type { SheafResponse } from '../../shared/sheaf-types'
 
-export { type SheafProjectSummary, type SheafSummary, summarizeSheaf } from '../../shared/sheaf-summary'
+// `SheafProjectSummary` is deliberately NOT re-exported: nothing broker-side
+// names the row type, and a re-export with no consumer is dead code. Import it
+// from `@shared/sheaf-summary` (where the wall gets it) if that changes.
+export { type SheafSummary, summarizeSheaf } from '../../shared/sheaf-summary'
 
 export type FleetSheafProvider = (windowH: number) => SheafResponse
 
