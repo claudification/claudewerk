@@ -127,7 +127,7 @@ export function PermissionCard({ group }: { group: DisplayGroup }) {
           {decisionSummary(decision.outcome, decision.decidedBy, decision.waitedMs)}
         </div>
       )}
-      {!decision && !waiting && <div className="text-muted-foreground/70 text-[10px] mt-1.5">outcome not recorded</div>}
+      {!decision && !waiting && <div className="text-fg-muted text-[10px] mt-1.5">outcome not recorded</div>}
       {waiting && requestId && (
         <PendingActions conversationId={conversationId} requestId={requestId} toolName={toolName} />
       )}
