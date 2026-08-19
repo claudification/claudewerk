@@ -7,6 +7,7 @@ import {
   cpuTotals,
   createMachineSampler,
   osArchLabel,
+  parseDfOutput,
 } from './node-stats-sample'
 
 function times(user: number, nice: number, sys: number, idle: number, irq: number) {
@@ -43,7 +44,53 @@ describe('cpuPercentFromDelta', () => {
   })
 })
 
-describe('disk read: statfs, not a fork', () => {
+describe('parseDfOutput -- the fallback for filesystems statfs cannot describe', () => {
+  // REGRESSION (2026-08-19, live on the Synology): `/volume1` has 7,492,117,464
+  // blocks. That is > 2^32, so the 32-bit `statfs` returns EOVERFLOW and Bun's
+  // statfsSync throws -- the reporter dutifully reported disk 0/0 for a 30TB
+  // array. statfs stays the fast path (no fork on the 5s tick for the ~99% of
+  // volumes it handles); df is the fallback for the ones it cannot.
+  const DARWIN = [
+    'Filesystem 1024-blocks      Used Available Capacity  Mounted on',
+    '/dev/disk3s1s1 1942700360 1893184216  40374144    98%    /',
+  ].join('\n')
+
+  it('reads used/total bytes and the mount point', () => {
+    expect(parseDfOutput(DARWIN)).toEqual({
+      usedBytes: 1_893_184_216 * 1024,
+      totalBytes: 1_942_700_360 * 1024,
+      mount: '/',
+    })
+  })
+
+  it('handles the 30TB volume that overflowed statfs in the first place', () => {
+    const synology = [
+      'Filesystem           1024-blocks       Used Available Capacity Mounted on',
+      '/dev/mapper/cachedev_0 29968469856 27510561000 2457908856      92% /volume1',
+    ].join('\n')
+    const parsed = parseDfOutput(synology)
+    expect(parsed?.mount).toBe('/volume1')
+    expect(parsed?.totalBytes).toBe(29_968_469_856 * 1024)
+    expect(parsed?.usedBytes).toBeLessThan(parsed?.totalBytes ?? 0)
+  })
+
+  it('handles a mount path containing spaces', () => {
+    const out = [
+      'Filesystem 1024-blocks Used Available Capacity Mounted on',
+      '/dev/disk5 100 40 60 40% /Volumes/Big Disk',
+    ].join('\n')
+    expect(parseDfOutput(out)?.mount).toBe('/Volumes/Big Disk')
+  })
+
+  it('returns null on truncated or unparseable output rather than a fake zero', () => {
+    expect(parseDfOutput('')).toBeNull()
+    expect(parseDfOutput('Filesystem 1024-blocks Used Available Capacity Mounted on')).toBeNull()
+    expect(parseDfOutput('header\n/dev/disk5 100 40')).toBeNull()
+    expect(parseDfOutput('header\n/dev/disk5 lots some more 40% /')).toBeNull()
+  })
+})
+
+describe('disk read: statfs fast path, df fallback', () => {
   it('reads the real volume with used <= total', () => {
     const { disk } = createMachineSampler(process.cwd()).sample()
     expect(disk.totalBytes).toBeGreaterThan(0)

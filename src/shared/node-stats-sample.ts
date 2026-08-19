@@ -7,10 +7,12 @@
  * incomparable numbers under one field name, which is worse than having no
  * number at all.
  *
- * Node-only (`node:os` + `node:fs`). Kept out of `node-stats.ts` so the contract
+ * Node-only (`node:os` + `node:fs`, with a `df` fallback). Kept out of
+ * `node-stats.ts` so the contract
  * module stays runtime-free and safe for the web bundle to import.
  */
 
+import { execFileSync } from 'node:child_process'
 import { statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem, uptime } from 'node:os'
 import type {
@@ -58,23 +60,42 @@ export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number {
 }
 
 /**
- * Disk usage for the volume `dir` lives on, via `statfs(2)`.
+ * Parse `df -Pk <dir>` output into the used/total bytes for the volume, plus
+ * the mount point it was measured at.
  *
- * NOT `df`. This runs every 5s on every node forever -- forking a process for it
- * is ~17k spawns per node per day to read three numbers the kernel will hand
- * over in one syscall. `node:fs.statfsSync` is plain Node (no Bun global), so it
- * satisfies the same `web/tsconfig` constraint that ruled out `Bun.spawnSync`,
- * without the fork.
+ * POSIX `-P` output is one header line and one data line per filesystem; the
+ * blocks are 1 KiB. Long device names wrap in the non-`-P` form, which is
+ * exactly why `-P` is not optional here. Returns null on anything unexpected --
+ * a missing disk field is honest, a fabricated zero is not.
+ */
+export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) | null {
+  const lines = stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+  if (lines.length < 2) return null
+  const fields = lines[lines.length - 1].split(/\s+/)
+  // filesystem, 1024-blocks, used, available, capacity, mounted-on
+  if (fields.length < 6) return null
+  const totalKb = Number(fields[1])
+  const usedKb = Number(fields[2])
+  const mount = fields.slice(5).join(' ')
+  if (!Number.isFinite(totalKb) || !Number.isFinite(usedKb) || mount.length === 0) return null
+  return { usedBytes: usedKb * 1024, totalBytes: totalKb * 1024, mount }
+}
+
+/**
+ * Disk usage via `statfs(2)`. The FAST PATH: this runs every 5s on every node
+ * forever, and forking `df` for it is ~17k process spawns per node per day to
+ * read three numbers the kernel hands over in one syscall.
  *
  * `bavail` (free to an unprivileged user) rather than `bfree`: the reserved
  * blocks root can still write into are not space this agent can use, and a disk
  * meter that says 5% free when every write fails is a broken meter.
  *
- * Null when statfs is unavailable or nonsensical -- callers fall back to a
- * zeroed disk with the mount they asked about, which validates and renders as
- * "unknown" rather than blocking the whole frame.
+ * Returns null when statfs cannot describe the volume -- see `readDiskViaDf`.
  */
-function readDisk(dir: string): (UsedTotal & { mount: string }) | null {
+function readDiskViaStatfs(dir: string): (UsedTotal & { mount: string }) | null {
   try {
     const fs = statfsSync(dir)
     const blockSize = Number(fs.bsize)
@@ -85,6 +106,35 @@ function readDisk(dir: string): (UsedTotal & { mount: string }) | null {
   } catch {
     return null
   }
+}
+
+/**
+ * The FALLBACK, for volumes `statfs` cannot describe.
+ *
+ * 32-bit `statfs` returns EOVERFLOW when a filesystem has more than 2^32
+ * blocks, and a big NAS array crosses that easily: the Synology `/volume1` that
+ * caught this has 7,492,117,464 of them, so the reporter shipped disk 0/0 for a
+ * 30TB array (2026-08-19). `df` reads the same numbers through a wider
+ * interface, so it answers where the syscall cannot.
+ *
+ * `node:child_process`, not `Bun.spawnSync`: `web/tsconfig.json` typechecks all
+ * of `src/shared` with no Bun globals. The fork cost is fine HERE because this
+ * only runs for volumes that failed the syscall, not on the common tick.
+ */
+function readDiskViaDf(dir: string): (UsedTotal & { mount: string }) | null {
+  try {
+    const stdout = execFileSync('df', ['-Pk', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    return parseDfOutput(stdout)
+  } catch {
+    return null
+  }
+}
+
+/** Syscall first, `df` when it cannot answer. Null when neither can -- callers
+ *  fall back to a zeroed disk with the mount they asked about, which validates
+ *  and renders as "unknown" rather than blocking the whole frame. */
+function readDisk(dir: string): (UsedTotal & { mount: string }) | null {
+  return readDiskViaStatfs(dir) ?? readDiskViaDf(dir)
 }
 
 /** OS/arch label as the contract wants it: one string, e.g. `darwin/arm64`. */

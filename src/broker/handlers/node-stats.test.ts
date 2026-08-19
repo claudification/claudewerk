@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it } from 'bun:test'
 import { NODE_STATS_INTERVAL_MS, NODE_STATS_MESSAGE } from '../../shared/node-stats'
 import { FIXTURE_REPORTER_IDENTITY } from '../../shared/node-stats-fixture'
 import { createNodeStatsReporter } from '../../shared/node-stats-reporting'
+import { logPrefix } from '../handler-context'
 import { routeMessage } from '../message-router'
 import { nodeStatsStore } from '../node-stats-store'
 import { registerAllHandlers } from './index'
@@ -34,7 +35,17 @@ describe('a reporter key sends vitals', () => {
     routeMessage(h.ctx, NODE_STATS_MESSAGE, frame({ node: { nodeId: 'snt-1-i-am-a-sentinel-honest' } }))
     expect(nodeStatsStore.get('rpt-1')).toBeDefined()
     expect(nodeStatsStore.get('snt-1-i-am-a-sentinel-honest')).toBeUndefined()
-    expect(h.logs.some(l => l.includes('nodeId mismatch'))).toBe(true)
+    expect(h.logs.some(l => l.includes('identity stamped from credential'))).toBe(true)
+  })
+
+  it('logs the credential stamp ONCE per connection, not on every 5s frame', () => {
+    // REGRESSION (2026-08-19, live): this fired every tick -- ~17k lines a day
+    // per node -- because NEITHER sender can know its broker-assigned id, so the
+    // mismatch is the normal case rather than an anomaly.
+    const h = asReporter()
+    for (let i = 0; i < 5; i++) routeMessage(h.ctx, NODE_STATS_MESSAGE, frame())
+    expect(h.logs.filter(l => l.includes('identity stamped from credential')).length).toBe(1)
+    expect(nodeStatsStore.get('rpt-1')).toBeDefined() // still ingesting every frame
   })
 
   it('stamps sender from the credential, so a reporter cannot CLAIM to be a sentinel', () => {
@@ -152,5 +163,23 @@ describe('the standalone reporter feeds the SAME handler as a sentinel', () => {
     expect(update?.type).toBe('node_stats_update')
     expect(update?.machineOwner).toBe(true)
     expect(typeof update?.receivedAt).toBe('number')
+  })
+})
+
+describe('log context', () => {
+  it('a reporter connection is labelled, not [unknown]', () => {
+    // REGRESSION (2026-08-19, live): every reporter line in the broker log read
+    // `[unknown]` because logPrefix had no reporter branch -- a reporter carries
+    // no conversationId and no sentinel marker.
+    expect(logPrefix({ data: { reporterId: 'rpt-1', reporterAlias: 'beast' } })).toBe('[reporter:beast]')
+  })
+
+  it('falls back to the id when the alias is missing', () => {
+    expect(logPrefix({ data: { reporterId: 'abcdef1234567890' } })).toBe('[reporter:abcdef12]')
+  })
+
+  it('does not shadow the other roles', () => {
+    expect(logPrefix({ data: { isSentinel: true } })).toBe('[sentinel]')
+    expect(logPrefix({ data: { isControlPanel: true, userName: 'jonas' } })).toBe('[dash:jonas]')
   })
 })

@@ -57,11 +57,13 @@ describe('ONE contract: neither sender forks it', () => {
     expect(reporter).toContain("from '../shared/host-id'")
   })
 
-  it('the sampler does not fork a process per tick', () => {
-    // This runs every 5s on every node forever; `df` would be ~17k spawns a day.
+  it('the sampler reads disk by SYSCALL first, forking only when that fails', () => {
+    // This runs every 5s on every node forever, so `df` on the common path would
+    // be ~17k spawns per node per day. But statfs alone is not enough: it
+    // EOVERFLOWs past 2^32 blocks and shipped disk 0/0 for a 30TB NAS array.
+    // Both, in that order -- the ?? is the whole rule.
     const sampler = readFileSync(join(SRC, 'shared/node-stats-sample.ts'), 'utf8')
-    expect(sampler).not.toContain('child_process')
-    expect(sampler).toContain('statfsSync')
+    expect(sampler).toMatch(/readDiskViaStatfs\(dir\)\s*\?\?\s*readDiskViaDf\(dir\)/)
   })
 })
 
