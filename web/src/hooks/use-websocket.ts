@@ -380,6 +380,13 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
             return
           }
 
+          // Card-ledger feed -> its own handler. `card_changed` is the live push,
+          // `card_ledger_result` is the cold-start seed off the broker's ring.
+          if (msg.type === 'card_changed' || msg.type === 'card_ledger_result') {
+            useConversationsStore.getState().cardLedgerHandler?.(msg as unknown as Record<string, unknown>)
+            return
+          }
+
           // Per-project checklist messages -> direct handler callback. Covers the
           // live `checklist_changed` broadcast and the request/reply results
           // (checklist_list_result, checklist_op_result, checklist_archive_result).
