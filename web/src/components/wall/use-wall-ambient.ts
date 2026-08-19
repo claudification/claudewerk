@@ -19,13 +19,8 @@
  */
 
 import { type RefObject, useEffect } from 'react'
+import { isTypingTarget } from './wall-keys'
 import { useWallStore } from './wall-state'
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-}
 
 /** Fullscreen is unavailable in jsdom and refused outside a user gesture. Both
  *  are fine: the attribute still flips, so the wall still scales and hides its
@@ -38,6 +33,27 @@ function exitFullscreen(doc: Document): void {
   if (doc.fullscreenElement) void doc.exitFullscreen?.().catch(() => {})
 }
 
+/** Escape follows the same rule `A` does: it is not a hotkey while the user is in
+ *  a field. In the filter box the first Escape leaves the box (W2 owns that) and
+ *  only the second one leaves ambient. Returns whether it consumed the event. */
+function leaveOnEscape(event: KeyboardEvent): boolean {
+  const store = useWallStore.getState()
+  if (event.key !== 'Escape' || !store.ambient || isTypingTarget(event.target)) return false
+  // Stop here, in capture, or Radix dismisses the surface underneath us.
+  event.preventDefault()
+  event.stopPropagation()
+  store.setAmbient(false)
+  return true
+}
+
+/** Bare `A` toggles ambient. Any modifier means the key belongs to someone else. */
+function toggleOnA(event: KeyboardEvent): void {
+  if (event.key !== 'a' && event.key !== 'A') return
+  if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return
+  event.preventDefault()
+  useWallStore.getState().toggleAmbient()
+}
+
 export function useWallAmbient(rootRef: RefObject<HTMLElement | null>, visible: boolean): boolean {
   const ambient = useWallStore(s => s.ambient)
 
@@ -48,18 +64,8 @@ export function useWallAmbient(rootRef: RefObject<HTMLElement | null>, visible: 
     const doc = root.ownerDocument
 
     function onKeyDown(event: KeyboardEvent) {
-      const store = useWallStore.getState()
-      if (event.key === 'Escape' && store.ambient) {
-        // Stop here, in capture, or Radix dismisses the surface underneath us.
-        event.preventDefault()
-        event.stopPropagation()
-        store.setAmbient(false)
-        return
-      }
-      if (event.key !== 'a' && event.key !== 'A') return
-      if (event.metaKey || event.ctrlKey || event.altKey || isTypingTarget(event.target)) return
-      event.preventDefault()
-      store.toggleAmbient()
+      if (leaveOnEscape(event)) return
+      toggleOnA(event)
     }
 
     doc.addEventListener('keydown', onKeyDown, true)
