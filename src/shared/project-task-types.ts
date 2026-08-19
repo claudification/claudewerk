@@ -35,6 +35,11 @@ export interface ProjectTaskMeta {
    *  Stored as `depends_on:`; `blocked_by:` is an accepted spelling that folds
    *  into this one on read and on write (see card-linkage.ts). */
   dependsOn?: string[]
+  /** Watchlisted onto THE WALL's A8 pane. Only meaningful on an epic card; a
+   *  scalar boolean so it can never hit the wrapped-list frontmatter bug. Absent
+   *  is the normal case -- see `wall-pin.ts` for why the pin lives on the card
+   *  rather than in panel preferences. */
+  wallPinned?: boolean
   /** Cards worth reading alongside this one. Symmetric and untyped: it asserts
    *  no order and no parenthood, which is exactly why it is a separate verb
    *  from `dependsOn` rather than a weaker flavour of it. Stored as

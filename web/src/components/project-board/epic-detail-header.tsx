@@ -19,6 +19,7 @@ import { ArrowLeft } from 'lucide-react'
 import { cn, haptic } from '@/lib/utils'
 import { EpicMarkBadge } from './epic-mark-badge'
 import { EpicModeButtons } from './epic-mode-buttons'
+import { EpicPinButton } from './epic-pin-button'
 import { EpicRunButton } from './epic-run-button'
 import { EpicWorkButton } from './epic-work-button'
 
@@ -84,6 +85,7 @@ export function EpicDetailHeader({
         {blocked > 0 && <Stat value={blocked} label="BLOCKED" tone="text-event-prompt" />}
         {rollup.dropped > 0 && <Stat value={rollup.dropped} label="DROPPED" tone="text-fg-muted" />}
         <span className="flex items-center gap-1.5 ml-auto">
+          <EpicPinButton rollup={rollup} />
           <EpicRunButton rollup={rollup} onOpenDialog={onRunEpic} />
           <EpicWorkButton rollup={rollup} onWork={onWorkOnEpic} />
           <EpicModeButtons rollup={rollup} onMode={onEpicMode} />

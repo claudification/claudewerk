@@ -25,7 +25,6 @@ import { WallPaneEmpty } from '../wall-pane-empty'
 
 const AXES = ['text', 'host'] as const
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
 export default function PlanUsagePane() {
   const { plan, at } = useWallChannel()
   const lines = useMemo(() => buildPlanLines(plan), [plan])

@@ -412,6 +412,109 @@
 	color: var(--comment);
 }
 
+/* ---------- A8 pinned epics ---------- */
+.wall-pin {
+	padding: 5px 0;
+	border-bottom: 1px solid var(--border-subtle);
+}
+.wall-pin:last-child {
+	border-bottom: none;
+}
+.wall-pin-head {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	border-radius: 4px;
+	padding: 1px 3px;
+}
+.wall-pin-head:hover {
+	background: var(--card2, var(--muted));
+}
+.wall-pin-proj {
+	flex: 0 0 auto;
+	min-width: 0;
+	max-width: 40%;
+}
+.wall-pin-open {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	text-align: left;
+}
+.wall-pin-sep {
+	color: var(--comment);
+}
+.wall-pin-epic {
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* The bar and its counts are ONE unit: a bar without them is a lie about scale. */
+.wall-pin-bar {
+	flex: 1 1 auto;
+	min-width: 60px;
+	height: 8px;
+	background: var(--bg);
+	border-radius: 2px;
+	overflow: hidden;
+	display: flex;
+}
+.wall-pin-bar i {
+	display: block;
+	height: 100%;
+	background: var(--active, var(--accent));
+}
+.wall-pin-frac {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--fg-muted);
+}
+.wall-pin-pct {
+	flex: 0 0 32px;
+	text-align: right;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-pin-kid {
+	display: flex;
+	align-items: baseline;
+	gap: 7px;
+	width: 100%;
+	padding: 1px 3px 1px 14px;
+	border-radius: 3px;
+	font-size: 11px;
+	text-align: left;
+}
+.wall-pin-kid:hover {
+	background: var(--card2, var(--muted));
+}
+.wall-pin-marker {
+	flex: 0 0 8px;
+	text-align: center;
+}
+.wall-pin-kid-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-pin-kid-lane {
+	flex: 0 0 auto;
+	color: var(--comment);
+	font-size: 10px;
+}
+.wall-pin-more {
+	padding-left: 14px;
+	font-size: 10px;
+	color: var(--comment);
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
