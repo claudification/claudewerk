@@ -102,7 +102,15 @@ describe('unacknowledgedCards -- the standing question the wake is built on', ()
 })
 
 describe('generationMismatch', () => {
-  const group = { epicId: 'e1', project: '', inFlight: [], overseerAlive: false, settled: [], maxGenSeen: 5 }
+  const group = {
+    epicId: 'e1',
+    project: '',
+    inFlight: [],
+    overseerAlive: false,
+    liveOverseers: [],
+    settled: [],
+    maxGenSeen: 5,
+  }
 
   test('agreement is silent', () => {
     expect(generationMismatch(group, 5)).toBeNull()

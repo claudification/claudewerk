@@ -17,15 +17,32 @@
  * shape lives next door in `node-stats-sample.ts` (node-only runtime; this file
  * stays dependency-free so the web bundle can import the types).
  *
- * WHAT IS NOT ON THIS PAYLOAD: plan utilization. Per-profile plan windows ride
- * `sentinel_usage_report` (`ProfileUsageSnapshot` in `protocol.ts`) and are read
- * back via `getSentinelProfileUsage()`. There is exactly one utilization path and
- * this is not it -- node stats carry MACHINE facts plus the conversation count.
+ * WHAT IS NOT ON THIS PAYLOAD: plan WINDOW data. The per-window breakdown, the
+ * reset times and the auth-error states ride `sentinel_usage_report`
+ * (`ProfileUsageSnapshot` in `protocol.ts`) and are read back via
+ * `getSentinelProfileUsage()`. That message stays the SOURCE. What a sentinel
+ * frame may carry is the one DERIVED headline percent per profile, so the wall
+ * can render a node row without joining against a separately-timed second
+ * message. See `NodeProfileUtilization`.
  *
  * PROFILE-ENV BOUNDARY (`src/sentinel/sentinel-config.ts`): nothing here carries
- * a config dir, an env bag or an oauth token. The payload has no profile fields
- * at all.
+ * a config dir, an env bag or an oauth token. A profile entry is a NAME and a
+ * percent, and the validator REJECTS any other key on it.
+ *
+ * Split for size: the validation helpers live in `node-stats-checks.ts`, the
+ * per-host views in `node-stats-host.ts`. Same contract, three files.
  */
+
+import { checkIdentity, checkMachine, checkSentinelExtras, isRecord, num } from './node-stats-checks'
+
+/**
+ * The wire message name. A CONSTANT rather than a bare literal because three
+ * places must agree on it -- the handler that registers it, the reporter
+ * capability allowlist that permits exactly it, and the senders that emit it.
+ * Three hand-typed strings is one typo away from a node that silently reports
+ * into the void.
+ */
+export const NODE_STATS_MESSAGE = 'node_stats'
 
 /**
  * Sampling cadence, shared by both senders. One sample every 5s, emitted on the
@@ -101,6 +118,25 @@ export interface MachineStats {
 }
 
 /**
+ * Profile NAME + plan utilization. The ENTIRE broker-safe profile slice --
+ * `configDir`, `env` and oauth tokens have no representation here by
+ * construction, which is how the PROFILE-ENV BOUNDARY
+ * (`src/sentinel/sentinel-config.ts`) is held on this payload.
+ *
+ * This duplicates a number that also rides `sentinel_usage_report`, and that is
+ * deliberate: the WALL renders one row per NODE and must not have to join
+ * against a second, separately-timed message to fill it in. The usage report
+ * stays the SOURCE (it carries every window, the reset times and the error
+ * states); this is the one derived headline number, sampled on the node tick.
+ */
+export interface NodeProfileUtilization {
+  name: string
+  /** 0-100. ABSENT when the profile is unauthed or its last poll failed --
+   *  absent is honest, a zero would read as plenty of headroom. */
+  utilizationPercent?: number
+}
+
+/**
  * Facts only a SENTINEL can know. Optional on the shape and absent -- not
  * zeroed -- from a reporter frame, so "no reporter data" and "reporter with
  * nothing running" stay distinguishable.
@@ -108,6 +144,9 @@ export interface MachineStats {
 export interface SentinelNodeExtras {
   /** Conversations currently running under this sentinel. */
   conversationCount: number
+  /** Profile NAMES with their plan utilization. Empty when the sentinel has no
+   *  profiles configured. */
+  profiles?: NodeProfileUtilization[]
 }
 
 /** The wire message. Sentinel and reporter both send exactly this. */
@@ -126,80 +165,6 @@ export interface NodeStatsReport {
  *  way with the same reasons. */
 export type NodeStatsValidation = { ok: true; report: NodeStatsReport } | { ok: false; errors: string[] }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/** Finite number check that also rejects NaN/Infinity, which JSON.parse happily
- *  produces from `null`-ish arithmetic upstream. */
-function num(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
-function nonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0
-}
-
-function checkIdentity(value: unknown, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push('node: expected an object')
-    return
-  }
-  for (const key of ['nodeId', 'hostId', 'hostname', 'osArch', 'agentVersion'] as const) {
-    if (!nonEmptyString(value[key])) errors.push(`node.${key}: expected a non-empty string`)
-  }
-  if (!num(value.uptimeSec) || value.uptimeSec < 0) errors.push('node.uptimeSec: expected a non-negative number')
-  if (value.sender !== 'sentinel' && value.sender !== 'reporter') {
-    errors.push("node.sender: expected 'sentinel' or 'reporter'")
-  }
-}
-
-function checkUsedTotal(value: unknown, path: string, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push(`${path}: expected an object`)
-    return
-  }
-  if (!num(value.usedBytes) || value.usedBytes < 0) errors.push(`${path}.usedBytes: expected a non-negative number`)
-  if (!num(value.totalBytes) || value.totalBytes < 0) errors.push(`${path}.totalBytes: expected a non-negative number`)
-  if (num(value.usedBytes) && num(value.totalBytes) && value.usedBytes > value.totalBytes) {
-    errors.push(`${path}: usedBytes exceeds totalBytes`)
-  }
-}
-
-function checkLoad(value: unknown, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push('machine.load: expected an object')
-    return
-  }
-  for (const key of ['one', 'five', 'fifteen'] as const) {
-    const reading = value[key]
-    if (!num(reading) || reading < 0) errors.push(`machine.load.${key}: expected a non-negative number`)
-  }
-  // Cores is the divisor the load is read against, so a zero would make the
-  // whole triple meaningless rather than merely wrong.
-  if (!num(value.cores) || value.cores < 1) errors.push('machine.load.cores: expected a positive number')
-}
-
-function checkDisk(value: unknown, errors: string[]): void {
-  checkUsedTotal(value, 'machine.disk', errors)
-  if (isRecord(value) && !nonEmptyString(value.mount)) {
-    errors.push('machine.disk.mount: expected a non-empty string')
-  }
-}
-
-function checkMachine(value: unknown, errors: string[]): void {
-  if (!isRecord(value)) {
-    errors.push('machine: expected an object')
-    return
-  }
-  if (!num(value.cpuPercent) || value.cpuPercent < 0 || value.cpuPercent > 100) {
-    errors.push('machine.cpuPercent: expected a number in 0..100')
-  }
-  checkLoad(value.load, errors)
-  checkUsedTotal(value.memory, 'machine.memory', errors)
-  checkDisk(value.disk, errors)
-}
-
 /**
  * The ONE validator. A reporter payload and a sentinel payload are checked by
  * this function and no other; the only asymmetry is the extras rule, which is
@@ -216,76 +181,15 @@ export function validateNodeStats(value: unknown): NodeStatsValidation {
   if (!num(value.sampledAt) || value.sampledAt <= 0) errors.push('sampledAt: expected a positive ms epoch')
 
   if (value.sentinel !== undefined) {
-    const sender = isRecord(value.node) ? value.node.sender : undefined
-    if (sender === 'reporter') {
-      errors.push('sentinel: sentinel-only extras are not allowed on a reporter frame')
-    } else if (!isRecord(value.sentinel)) {
-      errors.push('sentinel: expected an object')
-    } else if (!num(value.sentinel.conversationCount) || value.sentinel.conversationCount < 0) {
-      errors.push('sentinel.conversationCount: expected a non-negative number')
-    }
+    checkSentinelExtras(value.sentinel, isRecord(value.node) ? value.node.sender : undefined, errors)
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true, report: value as unknown as NodeStatsReport }
 }
-
-/** Machine facts attributed to a HOST rather than to an agent. */
-export interface HostMachineRow {
-  hostId: string
-  hostname: string
-  machine: MachineStats
-  sampledAt: number
-  /** Every agent reporting from this host, sorted. The row exists once; the
-   *  agents on it are still enumerable. */
-  nodeIds: string[]
-  /** The agent whose sample won. */
-  reportedBy: string
-}
-
-/**
- * Collapse a set of frames to ONE machine row per host.
- *
- * Two agents on one box each send the same cpu/mem/disk. Summing or listing
- * both double-counts the machine -- `studio` would appear twice at 99% disk and
- * the fleet total would claim twice the RAM that exists. The freshest sample per
- * `hostId` wins; ties break on the lexicographically smallest `nodeId` so the
- * result does not depend on the order frames happened to arrive.
- *
- * Per-node rows (which the wall keys by `nodeId`) are NOT collapsed by this --
- * it answers "what is this box doing", not "who is on it".
- */
-export function dedupeMachineStatsByHost(reports: NodeStatsReport[]): HostMachineRow[] {
-  const byHost = new Map<string, HostMachineRow>()
-  for (const report of reports) {
-    const { hostId, hostname, nodeId } = report.node
-    const existing = byHost.get(hostId)
-    if (!existing) {
-      byHost.set(hostId, {
-        hostId,
-        hostname,
-        machine: report.machine,
-        sampledAt: report.sampledAt,
-        nodeIds: [nodeId],
-        reportedBy: nodeId,
-      })
-      continue
-    }
-    if (!existing.nodeIds.includes(nodeId)) existing.nodeIds.push(nodeId)
-    const fresher = report.sampledAt > existing.sampledAt
-    const tie = report.sampledAt === existing.sampledAt && nodeId < existing.reportedBy
-    if (fresher || tie) {
-      existing.machine = report.machine
-      existing.sampledAt = report.sampledAt
-      existing.hostname = hostname
-      existing.reportedBy = nodeId
-    }
-  }
-  for (const row of byHost.values()) row.nodeIds.sort()
-  return [...byHost.values()].sort((a, b) => a.hostId.localeCompare(b.hostId))
-}
-
-/** True when `report` is old enough that a consumer must render it as stale
- *  (greyed, with a last-seen age) instead of as a live number. */
-export function isNodeStatsStale(report: NodeStatsReport, now: number): boolean {
-  return now - report.sampledAt > NODE_STATS_STALE_AFTER_MS
-}
+// Split for size only -- these are part of the same contract and every consumer
+// keeps importing them from here.
+export {
+  dedupeMachineStatsByHost,
+  type HostMachineRow,
+  isNodeStatsStale,
+} from './node-stats-host'

@@ -18,6 +18,12 @@ export interface WsData {
   isSentinel?: boolean
   sentinelId?: string
   sentinelAlias?: string
+  /** Set at WS upgrade from an `rpt_` secret. Its PRESENCE is the whole reporter
+   *  role: `detectRole` checks it first and unconditionally, so an `rpt_` socket
+   *  can never be shadowed into a more capable role. A reporter never gets a
+   *  `sentinelId` and therefore never enters the spawn roster. */
+  reporterId?: string
+  reporterAlias?: string
   /** Dedicated host-shell DATA socket (sentinel -> broker byte pipe). Tagged at
    *  upgrade from the `?shellData=1` query flag. detectRole treats it as the
    *  sentinel role so `shell_data`/`shell_replay` route correctly. */

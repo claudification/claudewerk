@@ -8,6 +8,7 @@ import { getUser } from '../auth'
 import { getAuthenticatedUser, resolveAuth } from '../auth-routes'
 import { getCommitCount } from '../commit-ledger/counts'
 import type { ConversationStore } from '../conversation-store'
+import { canAuthenticateHttpRoutes } from '../node-capability'
 import { type Permission, resolvePermissions, type UserGrant } from '../permissions'
 import { shareToGrants, validateShare } from '../shares'
 
@@ -25,12 +26,15 @@ export interface RouteHelpers {
 
 export function createRouteHelpers(_rclaudeSecret?: string): RouteHelpers {
   function resolveHttpGrants(req: Request): UserGrant[] | null {
-    // Bearer token with admin or sentinel secret = admin-level access
+    // Bearer token with admin or sentinel secret = admin-level access.
+    // A WEBSOCKET-ONLY credential (`rpt_`) gets NOTHING here -- it must not be
+    // promoted to admin-level HTTP access by falling into the "not none" bucket.
+    // Same predicate as requireAuth, so both gates cannot drift apart.
     const authHeader = req.headers.get('authorization')
     const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
     if (bearer) {
       const auth = resolveAuth(bearer)
-      if (auth.role !== 'none') return null
+      if (canAuthenticateHttpRoutes(auth.role)) return null
     }
 
     // Cookie auth = user grants
@@ -56,8 +60,9 @@ export function createRouteHelpers(_rclaudeSecret?: string): RouteHelpers {
     const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
     if (bearer) {
       const auth = resolveAuth(bearer)
-      // Admin bearer auth bypasses share scoping.
-      if (auth.role !== 'none') return null
+      // Admin bearer auth bypasses share scoping. A websocket-only credential
+      // does not, because it authenticates no HTTP route in the first place.
+      if (canAuthenticateHttpRoutes(auth.role)) return null
     }
     // Cookie-authenticated users are not share viewers.
     if (getAuthenticatedUser(req)) return null

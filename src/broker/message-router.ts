@@ -8,13 +8,14 @@
  */
 
 import { GuardError, type HandlerContext, type MessageData, type MessageHandler, type WsData } from './handler-context'
+import { connectionMaySendMessage } from './node-capability'
 
 /**
  * Connection role. Determined from WsData fields set at WS upgrade
  * (or by a self-declared role-marker handler like sentinel_identify
  * for the legacy sentinel auth path).
  */
-export type WsRole = 'agent-host' | 'control-panel' | 'sentinel' | 'gateway' | 'share'
+export type WsRole = 'agent-host' | 'control-panel' | 'sentinel' | 'gateway' | 'share' | 'reporter'
 
 /** Common role groups for `registerHandlers` second arg. */
 export const AGENT_HOST_ONLY: WsRole[] = ['agent-host']
@@ -26,17 +27,24 @@ export const DASHBOARD_ROLES: WsRole[] = ['control-panel', 'share']
  *  channels that leak host internals (raw JSON stream, project files/board,
  *  disk paths). A share viewer hitting these is rejected by the router. */
 export const CONTROL_PANEL_ONLY: WsRole[] = ['control-panel']
-/** Everyone (the implicit default before C3). */
+/** Everyone (the implicit default before C3). NOTE: `reporter` is deliberately
+ *  NOT in this list. A reporter is capability-restricted at the router (see
+ *  node-capability.ts), so "any role" must never be read as "including the
+ *  minimal-privilege one". */
 export const ANY_ROLE: WsRole[] = ['agent-host', 'control-panel', 'sentinel', 'gateway', 'share']
 
 /**
  * Derive the connection's role from its WsData. Order of precedence:
- *   share > gateway > sentinel > control-panel > agent-host
+ *   reporter > share > gateway > sentinel > control-panel > agent-host
+ *
+ * `reporter` is checked FIRST and unconditionally: an `rpt_` credential must
+ * never be shadowed into a more capable role by any other field on the socket.
  *
  * The `agent-host` role is the default for bearer-secret authentication
  * with no other role marker (the legacy "rclaude secret" path).
  */
 export function detectRole(data: WsData): WsRole {
+  if (data.reporterId) return 'reporter'
   if (data.isShare) return 'share'
   if (data.isGateway) return 'gateway'
   // The dedicated shell-data socket is a sentinel-originated byte pipe; route its
@@ -79,6 +87,26 @@ export function registerHandlers(map: Record<string, MessageHandler>, roles?: Ws
 
 /** Route a message to its handler. Returns true if handled. */
 export function routeMessage(ctx: HandlerContext, type: string, data: MessageData): boolean {
+  // CAPABILITY GATE -- runs BEFORE the handler lookup, so a capability-
+  // restricted connection is judged on what its CREDENTIAL may say, not on
+  // which handlers happen to exist. This is what makes the reporter allowlist
+  // airtight: a handler registered with no `roles` (legacy any-role) is still
+  // unreachable from an `rpt_` socket, and an unknown message type is refused
+  // with a logged reason instead of falling through as "unhandled".
+  // ONE predicate, in node-capability.ts -- never an `if (kind === 'reporter')`
+  // here or in any handler.
+  const capabilityVerdict = connectionMaySendMessage(detectRole(ctx.ws.data), type)
+  if (!capabilityVerdict.ok) {
+    ctx.reply({
+      type: `${type}_result`,
+      ok: false,
+      error: `Forbidden: ${capabilityVerdict.reason}`,
+      ...requestIdEcho(data),
+    })
+    ctx.log.info(`[router] capability reject ${type}: ${capabilityVerdict.reason}`)
+    return true
+  }
+
   const entry = handlers.get(type)
   if (!entry) return false
 

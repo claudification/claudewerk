@@ -100,6 +100,16 @@ GATEWAY COMMANDS:
   gateway list                                              List all registered gateways
   gateway revoke --alias <alias>                            Revoke gateway secret
 
+REPORTER COMMANDS (rpt_ keys -- node vitals ONLY, no spawn authority):
+  reporter create --alias <alias> [--color <c>]            Create a reporter key. WebSocket only,
+                                                             one connection per key, one capability
+                                                             (can_report_node_stats). Never a spawn target.
+  reporter list                                             List registered reporters
+  reporter revoke --alias <alias>                           Revoke a reporter key
+
+  There is no HTTP route that mints these -- minting lives here, on the box
+  that holds the registry file.
+
 BACKUP COMMANDS:
   backup create [--dest <dir>] [--include-blobs]           Create backup (VACUUM INTO + tar.zst)
     [--retain-hours N] [--retain-days N]                     Tiered retention (default: 24h + 7d)

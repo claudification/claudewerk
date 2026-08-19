@@ -7,12 +7,20 @@
  */
 
 import type { SentinelRpcDeps } from './broker-sentinel-rpc'
+import type { SpawnDispatchDeps } from './spawn-dispatch'
 
 export type LogFn = (line: string) => void
 
 export interface BeatDeps extends SentinelRpcDeps {
-  /** Everything `dispatchSpawn` needs, passed straight through. */
-  spawnContext: Record<string, unknown>
+  /**
+   * Everything `dispatchSpawn` needs, passed straight through.
+   *
+   * TYPED, not `Record<string, unknown>`. It was opaque, and the casts that
+   * opacity forced at the call sites are what let the epic SEAT TAG be dropped
+   * by the spawn schema unnoticed for the whole life of the feature. A type-only
+   * import, so this costs no runtime edge.
+   */
+  spawnContext: SpawnDispatchDeps
   log: LogFn
   /** Is the project's night window open? ASYNC and consulted ONLY for
    *  cadence=window -- the answer lives in the project's nightshift config, and

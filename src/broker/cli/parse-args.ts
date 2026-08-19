@@ -181,6 +181,7 @@ const POSITIONAL_HANDLERS: Record<string, PositionalHandler> = {
   exec: fillQueryArg,
   sentinel: fillSubCommand,
   gateway: fillSubCommand,
+  reporter: fillSubCommand,
   backup: (result, arg) => {
     if (!result.subCommand) {
       result.subCommand = arg

@@ -7,7 +7,6 @@ import {
   cpuTotals,
   createMachineSampler,
   osArchLabel,
-  parseDfOutput,
 } from './node-stats-sample'
 
 function times(user: number, nice: number, sys: number, idle: number, irq: number) {
@@ -44,33 +43,30 @@ describe('cpuPercentFromDelta', () => {
   })
 })
 
-describe('parseDfOutput', () => {
-  const DARWIN = [
-    'Filesystem 1024-blocks      Used Available Capacity  Mounted on',
-    '/dev/disk3s1s1 1942700360 1893184216  40374144    98%    /',
-  ].join('\n')
-
-  it('reads used/total bytes and the mount point', () => {
-    expect(parseDfOutput(DARWIN)).toEqual({
-      usedBytes: 1_893_184_216 * 1024,
-      totalBytes: 1_942_700_360 * 1024,
-      mount: '/',
-    })
+describe('disk read: statfs, not a fork', () => {
+  it('reads the real volume with used <= total', () => {
+    const { disk } = createMachineSampler(process.cwd()).sample()
+    expect(disk.totalBytes).toBeGreaterThan(0)
+    expect(disk.usedBytes).toBeGreaterThanOrEqual(0)
+    expect(disk.usedBytes).toBeLessThanOrEqual(disk.totalBytes)
   })
 
-  it('handles a mount path containing spaces', () => {
-    const out = [
-      'Filesystem 1024-blocks Used Available Capacity Mounted on',
-      '/dev/disk5 100 40 60 40% /Volumes/Big Disk',
-    ].join('\n')
-    expect(parseDfOutput(out)?.mount).toBe('/Volumes/Big Disk')
+  it('reports the mount it was asked about', () => {
+    expect(createMachineSampler('/').sample().disk.mount).toBe('/')
   })
 
-  it('returns null on truncated or unparseable output rather than a fake zero', () => {
-    expect(parseDfOutput('')).toBeNull()
-    expect(parseDfOutput('Filesystem 1024-blocks Used Available Capacity Mounted on')).toBeNull()
-    expect(parseDfOutput('header\n/dev/disk5 100 40')).toBeNull()
-    expect(parseDfOutput('header\n/dev/disk5 lots some more 40% /')).toBeNull()
+  it('an unreadable path yields a zeroed disk, NOT a dropped frame -- cpu is still live', () => {
+    const machine = createMachineSampler('/no/such/volume/anywhere').sample()
+    expect(machine.disk).toEqual({ usedBytes: 0, totalBytes: 0, mount: '/no/such/volume/anywhere' })
+    expect(machine.memory.totalBytes).toBeGreaterThan(0)
+  })
+
+  it('counts space this agent can actually WRITE (bavail), not root-reserved blocks', () => {
+    // A meter that says 5% free while every write fails is a broken meter, so
+    // used is computed against the unprivileged-available figure. That makes
+    // used+free <= total on a reserved filesystem; it must never exceed total.
+    const { disk } = createMachineSampler('/').sample()
+    expect(disk.usedBytes).toBeLessThanOrEqual(disk.totalBytes)
   })
 })
 

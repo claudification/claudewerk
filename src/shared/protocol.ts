@@ -4622,6 +4622,9 @@ export interface EpicLeaseInput {
    *  sentinel cannot know this, and must not guess. */
   holderAlive: boolean
   force?: boolean
+  /** Swap the real conversation id in over a `pending-` placeholder, same
+   *  generation. See `EpicLeaseRequest.adopt` in epic-lease.ts. */
+  adopt?: boolean
 }
 
 /** log_append payload. */
@@ -6345,6 +6348,23 @@ export type BrokerSentinelMessage =
 export interface SentinelStatus {
   type: 'sentinel_status'
   connected: boolean
+}
+
+// Dashboard broadcast: one node's vitals, plus the dedupe verdict for its host.
+// The inbound `node_stats` frame is declared in `./node-stats` (re-exported at
+// the top of this file); this is the outbound fan-out to the control panel.
+//
+// `machineOwner` is the answer to "who counts the machine": exactly ONE node per
+// `hostId` carries it, so a consumer can render N agent rows on one box without
+// adding the same cpu/ram/disk numbers together N times. It is the broker's
+// `dedupeMachineStatsByHost` verdict, delivered on the wire so every consumer
+// does not have to recompute it.
+export interface NodeStatsUpdate {
+  type: 'node_stats_update'
+  report: NodeStatsReport
+  /** ms epoch the broker received it (the sender's clock may be wrong). */
+  receivedAt: number
+  machineOwner: boolean
 }
 
 // Foreground-task fields shared by the broker wire type (ConversationSummary)

@@ -10,6 +10,7 @@ import {
 } from '../analytics-store'
 import { buildConnectionInfoList, closeConnection } from '../connection-registry'
 import type { ConversationStore } from '../conversation-store'
+import { querySpendRollup, type SpendPeriod } from '../openrouter-spend-store'
 import { listProjects } from '../project-store'
 import type { StoreDriver } from '../store/types'
 import type { RouteHelpers } from './shared'
@@ -189,6 +190,20 @@ export function createStatsRouter(
       conversationId,
     })
     return c.json({ window: windowKey, from, to, bucketMs, groupBy, buckets })
+  })
+
+  // ─── OpenRouter spend (which broker FEATURE is burning the money) ──
+  // Admin-only, like every other cost route here -- spend is not public.
+  // `?feature=<x>` scopes the by-model breakdown to one feature; byFeature stays
+  // fleet-wide so a drill-down keeps its context. Windows stop at 30d because
+  // that is the store's retention bound (a 90d answer would be missing data).
+  app.get('/api/stats/openrouter', c => {
+    if (!httpIsAdmin(c.req.raw)) return c.json({ error: 'Forbidden: admin only' }, 403)
+    const period = (c.req.query('period') || '24h') as SpendPeriod
+    if (!['24h', '7d', '30d'].includes(period)) {
+      return c.json({ error: 'Invalid period. Use 24h, 7d, or 30d' }, 400)
+    }
+    return c.json(querySpendRollup(period, c.req.query('feature') || undefined))
   })
 
   // ─── Projects ──────────────────────────────────────────────────────
