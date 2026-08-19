@@ -99,7 +99,7 @@ function logSample(ctx: HandlerContext, report: NodeStatsReport, machineOwner: b
       `cpu=${machine.cpuPercent.toFixed(1)}% load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
       `mem=${machine.memory.usedBytes}/${machine.memory.totalBytes} ` +
       `disk=${machine.disk.usedBytes}/${machine.disk.totalBytes}@${machine.disk.mount} ` +
-      `convs=${report.sentinel?.conversationCount ?? '-'} profiles=${report.sentinel?.profiles?.length ?? '-'} ` +
+      `convs=${report.sentinel?.conversationCount ?? '-'} ` +
       `machineOwner=${machineOwner} nodesKnown=${nodeStatsStore.size()}`,
   )
 }

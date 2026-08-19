@@ -2968,7 +2968,6 @@ function connect(
       hostId: getMachineId(),
       agentVersion: BUILD_VERSION.gitHashShort,
       conversationCount: () => trackedChildren.size + adoptedChildren.size,
-      profileUsage: getLatestProfileUsage,
       send: frame => {
         if (ws.readyState !== WebSocket.OPEN) return false
         ws.send(JSON.stringify(frame))

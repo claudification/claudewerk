@@ -50,13 +50,7 @@ export const FIXTURE_SENTINEL_FRAME: NodeStatsReport = buildNodeStatsReport(
   FIXTURE_SENTINEL_IDENTITY,
   FIXTURE_MACHINE,
   FIXTURE_SAMPLED_AT,
-  {
-    conversationCount: 7,
-    profiles: [
-      { name: 'default', utilizationPercent: 61 },
-      { name: 'work', utilizationPercent: 12 },
-    ],
-  },
+  { conversationCount: 7 },
 )
 
 /** A sampler stub, so a frame builder never touches real hardware. */
