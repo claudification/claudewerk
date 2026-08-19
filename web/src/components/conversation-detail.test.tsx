@@ -120,9 +120,21 @@ describe('ConversationDetail - no conversation in store', () => {
     setStoreState({ conversationsById: {} })
   })
 
-  it('renders nothing when conversation not in store', () => {
-    const { container } = render(<ConversationDetail conversationId="test-conversation-1" />)
-    expect(container.innerHTML).toBe('')
+  // This used to assert innerHTML === '' -- the pane rendered NOTHING for an id
+  // the roster did not carry, which is how clicking a transcript-search hit for
+  // an ended conversation produced a blank page. Off-roster is now a state with
+  // a name, not an empty div: hydrating -> spinner, otherwise -> not found.
+  it('says the conversation was not found instead of rendering nothing', () => {
+    render(<ConversationDetail conversationId="test-conversation-1" />)
+    expect(screen.getByText('Conversation not found')).toBeTruthy()
+    expect(screen.getByText('test-conversation-1')).toBeTruthy()
+  })
+
+  it('shows a loading state while the off-roster conversation is being fetched', () => {
+    setStoreState({ conversationsById: {}, hydratingConversationId: 'test-conversation-1' })
+    render(<ConversationDetail conversationId="test-conversation-1" />)
+    expect(screen.getByText('Loading conversation...')).toBeTruthy()
+    expect(screen.queryByText('Conversation not found')).toBeNull()
   })
 
   it('does not render header when no conversation', () => {
