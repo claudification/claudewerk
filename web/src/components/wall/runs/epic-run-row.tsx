@@ -43,10 +43,11 @@ function leaseSentence(lease: LeaseState): string {
   return `overseer ${lease.holder} woke ${age}`
 }
 
-// fallow-ignore-next-line complexity -- DEFERRED to `wall-integration-fallow-debt`, which
-// owns the split. The model layer is already out (runStall / leaseState / runBuckets /
-// idleSentence); what trips the metric is JSX, where every `??` and `&&` counts as a
-// decision point. Delete this suppression the day that card lands.
+// DEFERRED to `wall-integration-fallow-debt`, which owns the split. The model layer is
+// already out (runStall / leaseState / runBuckets / idleSentence); what trips the metric
+// is JSX, where every `??` and `&&` counts as a decision point. Delete this suppression
+// the day that card lands.
+// fallow-ignore-next-line complexity
 export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number }) {
   const { entry, project, epicId } = row
   const { data, fetchedAt, stale: readStale, refresh } = useOverseerInspect(project, epicId)
