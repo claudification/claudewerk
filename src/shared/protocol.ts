@@ -4309,6 +4309,72 @@ export interface ProjectChanged {
 }
 
 // ---------------------------------------------------------------------------
+// Card ledger -- THE WALL's P3 feed.
+//
+// `project_changed` answers "the board is different now"; it carries no history
+// and no direction. A LEDGER needs the opposite: one durable line per move, in
+// order, saying which lane the card left and which it entered. That is what
+// these three messages are.
+// ---------------------------------------------------------------------------
+
+/**
+ * One card crossing lanes.
+ *
+ * Epic cards NEVER appear here. They are dropped by the sentinel that observes
+ * the move (see `card-moves.ts`), so no consumer carries the exclusion rule and
+ * no UI can forget to apply it.
+ *
+ * `epic` is the id of the epic this card BELONGS to, not a flag saying this card
+ * is one -- after source-side exclusion an `isEpic` field would be constant
+ * false, whereas the parent id is what a ledger row needs to paint itself in its
+ * epic's hue (`epic-color.ts`).
+ */
+export interface CardMove {
+  /** Card id -- the filename stem. Unique within a project, not globally. */
+  id: string
+  /** Canonical project URI whose board the card lives on. */
+  project: string
+  title: string
+  /** The lane the card left. */
+  from: ProjectTaskStatus
+  /** The lane the card entered. */
+  to: ProjectTaskStatus
+  priority?: 'low' | 'medium' | 'high'
+  /** The epic card's id, when this card declares `epic:` membership. */
+  epic?: string
+  /** ms since epoch, stamped by the sentinel that saw the move. */
+  ts: number
+}
+
+/** Sentinel -> Broker: cards changed lane. Batched, because one board write can
+ *  move several cards and the watcher sees them in a single diff. The broker
+ *  records them in its ring and rebroadcasts this same frame permission-gated
+ *  by `project`. */
+export interface CardChanged {
+  type: 'card_changed'
+  project: string
+  moves: CardMove[]
+}
+
+/** Dashboard -> Broker: seed a cold surface from the broker's in-memory ring.
+ *  The ring is process-lifetime only; nothing here is persisted. */
+export interface CardLedgerRequest {
+  type: 'card_ledger_request'
+  requestId: string
+  /** Cap the reply. The ring's own bound is the ceiling. */
+  limit?: number
+}
+
+/** Broker -> Dashboard: the ring, newest first, filtered to projects the caller
+ *  may read. */
+export interface CardLedgerResult {
+  type: 'card_ledger_result'
+  requestId: string
+  ok: boolean
+  moves: CardMove[]
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard -> Broker project requests. The dashboard never sends a host path;
 // it sends the project URI and the broker resolves it to `projectRoot` + the
 // owning sentinel before forwarding the sentinel-side RPC above.
@@ -5937,6 +6003,7 @@ export type SentinelMessage =
   | FetchArtifactResult
   | ProjectBoardResult
   | ProjectChanged
+  | CardChanged
   | NightshiftResult
   | QuestResult
   | UsageUpdate
@@ -6533,19 +6600,33 @@ export type SubscriptionChannel =
   // (NOT a conversationId). Managed by handlers/canvas-sync.ts, not the generic
   // channel_subscribe path (which assumes a conversation + chat:read).
   | 'canvas'
+  // THE WALL's single fleet-wide feed. Fixed `WALL_SCOPE` in the registry's id
+  // slot (NOT a conversationId): one subscription carries pulse, commits, card
+  // moves, host vitals, plan usage and fleet counters as one coalesced frame.
+  // Subscribed through the generic channel_subscribe with NO conversationId --
+  // see the `wall` branch in handlers/channel.ts. Types: shared/wall.ts.
+  | 'wall'
+
+/** The `wall` channel's one wire message. Defined in `shared/wall.ts` -- the
+ *  wall has six sections and a coalescing contract worth its own module -- and
+ *  re-exported here so the protocol index still names every frame that crosses
+ *  the socket. */
+export type { WallFrame } from './wall'
 
 // Control Panel -> Broker: channel subscription management
 export interface ChannelSubscribe {
   type: 'channel_subscribe'
   channel: SubscriptionChannel
-  conversationId: string
+  /** Omitted only for fleet-wide channels (`wall`), which have no conversation. */
+  conversationId?: string
   agentId?: string // required for session:subagent_transcript
 }
 
 export interface ChannelUnsubscribe {
   type: 'channel_unsubscribe'
   channel: SubscriptionChannel
-  conversationId: string
+  /** Omitted only for fleet-wide channels (`wall`). */
+  conversationId?: string
   agentId?: string
 }
 
