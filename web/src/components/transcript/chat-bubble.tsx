@@ -1,4 +1,5 @@
 import { Mic } from 'lucide-react'
+import type { ComponentPropsWithRef } from 'react'
 import { cn } from '@/lib/utils'
 import { CopyMenu } from '../copy-menu'
 import { Markdown } from '../markdown'
@@ -6,6 +7,13 @@ import type { RenderItem } from './group-view-types'
 import { BUBBLE_COLORS } from './group-view-types'
 import { TimeStamp } from './timestamp'
 
+/**
+ * `...rest` is not decoration. A Radix `Trigger asChild` (the fork context menu)
+ * CLONES this component and passes its `onContextMenu` handler and `ref` as
+ * props -- a component that destructures only what it recognises drops both
+ * silently, and the trigger renders as a menu that never opens. Anything wrapping
+ * a bubble needs those to reach a real DOM node.
+ */
 export function ChatBubble({
   items,
   ts,
@@ -14,6 +22,7 @@ export function ChatBubble({
   queued,
   channelServer,
   effortBadge,
+  ...rest
 }: {
   items: RenderItem[]
   ts?: string | number
@@ -22,7 +31,7 @@ export function ChatBubble({
   queued?: boolean
   channelServer?: string
   effortBadge: { symbol: string; label: string } | null
-}) {
+} & ComponentPropsWithRef<'div'>) {
   const bubbleBg = BUBBLE_COLORS[bubbleColor] || BUBBLE_COLORS.blue
   const source = items
     .filter((item): item is Extract<RenderItem, { kind: 'text' }> => item.kind === 'text')
@@ -33,7 +42,7 @@ export function ChatBubble({
   const isVoice = items.some(item => item.kind === 'text' && item.voice)
 
   return (
-    <div className="mb-3 flex justify-end">
+    <div className="mb-3 flex justify-end" {...rest}>
       <div className={cn('group/bubble max-w-[85%] sm:max-w-[75%]', queued && 'opacity-50')}>
         <div
           className={cn(
