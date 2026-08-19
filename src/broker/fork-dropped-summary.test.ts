@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ForkPoint, TranscriptEntry } from '../shared/protocol'
-import {
-  DROPPED_SUMMARY_MIN_ENTRIES,
-  DROPPED_SUMMARY_MODEL,
-  summarizeDroppedSlice,
-} from './fork-dropped-summary'
+import { DROPPED_SUMMARY_MIN_ENTRIES, DROPPED_SUMMARY_MODEL, summarizeDroppedSlice } from './fork-dropped-summary'
 import type { chat } from './recap/shared/openrouter-client'
 
 /** A user/assistant pair per index, one minute apart, uuids e0..e(n-1). */

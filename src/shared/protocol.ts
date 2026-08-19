@@ -8,7 +8,6 @@ import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
 import type { EpicLease } from './epic-lease'
-import type { CutBoundary } from './fork-cut'
 import type {
   EpicCadence,
   EpicLaunchTag,
@@ -18,6 +17,7 @@ import type {
   EpicRunFull,
   EpicRunStatus,
 } from './epic-run-types'
+import type { CutBoundary } from './fork-cut'
 import type {
   NightshiftBlocked,
   NightshiftConfig,

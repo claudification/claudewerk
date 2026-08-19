@@ -91,19 +91,14 @@ export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutc
 
   try {
     mkdirSync(targetDir, { recursive: true })
-    const result = await runCompaction(
-      new FileReader(sourcePath),
-      new FileWriter(outPath),
-      new ClaudeCodeAdapter(),
-      {
-        newSessionId: newCcSessionId,
-        parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
-        provenanceBlock: input.provenanceBlock,
-        digestToolResultsOverTokens: input.digestOverTokens,
-        tailTokenBudget: input.tailTokenBudget,
-        cutAt: input.forkPoint,
-      },
-    )
+    const result = await runCompaction(new FileReader(sourcePath), new FileWriter(outPath), new ClaudeCodeAdapter(), {
+      newSessionId: newCcSessionId,
+      parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
+      provenanceBlock: input.provenanceBlock,
+      digestToolResultsOverTokens: input.digestOverTokens,
+      tailTokenBudget: input.tailTokenBudget,
+      cutAt: input.forkPoint,
+    })
     const s = result.stats
     return {
       ok: true,

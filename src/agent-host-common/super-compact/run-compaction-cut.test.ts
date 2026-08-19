@@ -5,9 +5,8 @@
 
 import { describe, expect, test } from 'bun:test'
 import { ClaudeCodeAdapter } from './claude-code-adapter'
-import { buildFixture } from './fixtures'
+import { buildFixture, makeGenId } from './fixtures'
 import { runCompaction, StringReader, StringWriter } from './index'
-import { makeGenId } from './fixtures'
 
 const adapter = new ClaudeCodeAdapter()
 

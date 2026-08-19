@@ -77,11 +77,7 @@ function findByTime<T>(items: T[], ms: number, acc: CutAccessors<T>): number {
   return best
 }
 
-function resolveBoundary<T>(
-  items: T[],
-  cut: CutBoundary,
-  acc: CutAccessors<T>,
-): { index: number; by: CutResolution } {
+function resolveBoundary<T>(items: T[], cut: CutBoundary, acc: CutAccessors<T>): { index: number; by: CutResolution } {
   if (cut.uuid) {
     const i = items.findIndex(x => acc.uuidOf(x) === cut.uuid)
     if (i >= 0) return { index: i, by: 'uuid' }

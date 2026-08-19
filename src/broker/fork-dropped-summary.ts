@@ -24,8 +24,8 @@
 
 import { type CutAccessors, sliceAtCut, toEpochMs } from '../shared/fork-cut'
 import type { ForkPoint, TranscriptEntry } from '../shared/protocol'
-import { chat } from './recap/shared/openrouter-client'
 import { renderTurns } from './fork-summary'
+import { chat } from './recap/shared/openrouter-client'
 
 /** Fast and cheap on purpose: this is a scene-setter, not the fork's payload. */
 export const DROPPED_SUMMARY_MODEL = 'anthropic/claude-haiku-4.5'
@@ -66,11 +66,7 @@ export interface DroppedSummaryInput {
  * at the top of a transcript reads as something the agent itself concluded.
  */
 function renderDroppedSummary(summary: string, droppedTurns: number): string {
-  return [
-    `[earlier context -- ${droppedTurns} turns, summarized rather than carried verbatim]`,
-    '',
-    summary,
-  ].join('\n')
+  return [`[earlier context -- ${droppedTurns} turns, summarized rather than carried verbatim]`, '', summary].join('\n')
 }
 
 /**

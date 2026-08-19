@@ -90,8 +90,9 @@ describe('buildForkMessage -- point-in-time', () => {
 
   test('no extra provenance leaves the header exactly as it was', () => {
     const withOut = buildForkMessage(conv({ title: 'voice latency' }), 'req1')?.provenanceBlock
-    const withEmpty = buildForkMessage(conv({ title: 'voice latency' }), 'req1', { extraProvenance: '' })
-      ?.provenanceBlock
+    const withEmpty = buildForkMessage(conv({ title: 'voice latency' }), 'req1', {
+      extraProvenance: '',
+    })?.provenanceBlock
     expect(withEmpty).toBe(withOut as string)
     expect(withOut?.endsWith('\n')).toBe(false)
   })

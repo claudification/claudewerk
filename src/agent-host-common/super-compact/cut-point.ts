@@ -6,7 +6,7 @@
  * just the accessors for the super-compact `Entry` shape.
  */
 
-import { type CutAccessors, type CutBoundary, sliceAtCut, type SliceResult, toEpochMs } from '../../shared/fork-cut'
+import { type CutAccessors, type CutBoundary, type SliceResult, sliceAtCut, toEpochMs } from '../../shared/fork-cut'
 import type { Entry } from './model'
 
 export type { CutResolution } from '../../shared/fork-cut'
