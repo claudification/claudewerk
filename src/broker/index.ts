@@ -82,6 +82,7 @@ import { startNightshiftGuardians } from './nightshift-guardians'
 import { startNightshiftOrchestrator } from './nightshift-orchestrator'
 import { startNightshiftScheduler } from './nightshift-scheduler'
 import { startNightshiftWatchdog } from './nightshift-watchdog'
+import { closeOpenRouterSpendStore, initOpenRouterSpendStore } from './openrouter-spend-store'
 import { initParentNotify } from './parent-notify'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { allGrantsExpired } from './permissions'
@@ -409,6 +410,11 @@ async function main() {
 
   // Initialize analytics store (SQLite, non-critical)
   initAnalyticsStore(authCacheDir)
+
+  // Initialize the OpenRouter spend store. MUST come before anything that can
+  // call chat() -- the sink is a silent no-op until this runs, so a call made
+  // earlier logs but never lands a row.
+  initOpenRouterSpendStore(authCacheDir)
 
   // Initialize the SOTU file store (queue.jsonl + chronicle + state under
   // {cacheDir}/sotu/). The contribution spine + lifecycle floor write here.
@@ -771,6 +777,7 @@ async function main() {
     stopExternalStatusPolling()
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
+    closeOpenRouterSpendStore()
     closeProjectStore()
     closeCommitLedger()
     closeChecklistStore()
