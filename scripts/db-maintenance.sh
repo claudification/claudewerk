@@ -20,14 +20,23 @@
 #   6. VACUUM    -- reclaim freed pages (skipped when disk headroom is thin)
 #   7. SMOKETEST -- quick_check, FTS query, row-count bounds, /health
 #
-# DELETE IS OFF BY DEFAULT. Set CONFIRM_DELETE=1 only once you have seen a
-# successful export+verify round-trip in the log.
+# DELETE IS ON as of 2026-08-19, after six consecutive clean export+verify
+# round-trips in the log (2026-04: 33,352 rows, archived and verified against
+# the live database every night since 08-14) and with the delete step itself
+# never having run once. Set CONFIRM_DELETE=0 to put it back.
+#
+# What makes this safe is that nothing is deleted that has not first been
+# written to a cold NDJSON.zst archive AND verified row-for-row against the
+# live database, twice: once in the archive phase and again inside
+# pruneArchivedMonth. The delete then runs in a transaction that COUNTs before
+# and after and rolls back unless both numbers line up, so a late row landing
+# in an already-archived month aborts the delete instead of being destroyed.
 #
 # Env overrides:
 #   BROKER_CONTAINER   default: broker
 #   HOT_DAYS           default: 90
 #   MAX_BACKUP_AGE     default: 90 (minutes)
-#   CONFIRM_DELETE     default: 0
+#   CONFIRM_DELETE     default: 1
 #   DRY_RUN            default: 0
 #   CLAUDEWERK_LOG_DIR default: ~/Library/Logs/claudewerk
 
@@ -36,7 +45,7 @@ set -euo pipefail
 CONTAINER="${BROKER_CONTAINER:-broker}"
 HOT_DAYS="${HOT_DAYS:-90}"
 MAX_BACKUP_AGE="${MAX_BACKUP_AGE:-90}"
-CONFIRM_DELETE="${CONFIRM_DELETE:-0}"
+CONFIRM_DELETE="${CONFIRM_DELETE:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 
 LOG_DIR="${CLAUDEWERK_LOG_DIR:-$HOME/Library/Logs/claudewerk}"
