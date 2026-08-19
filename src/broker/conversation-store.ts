@@ -61,6 +61,7 @@ import {
   recordInferenceUsage as recordInferenceUsageImpl,
   recordSentinelHeartbeat as recordSentinelHeartbeatImpl,
   removeSentinel as removeSentinelImpl,
+  type SentinelAcceptance,
   type SentinelConnection,
   type SentinelIdentifyInfo,
   setClaudeEfficiency as setClaudeEfficiencyImpl,
@@ -283,7 +284,7 @@ export interface ConversationStore {
   getSubscriptionsDiag: () => SubscriptionsDiag
   getSubscriberEntryForWs: (ws: ServerWebSocket<unknown>) => SubscriberEntry | undefined
   // Sentinel methods (sentinels Map internally)
-  setSentinel: (ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo) => boolean
+  setSentinel: (ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo) => SentinelAcceptance
   getSentinel: () => ServerWebSocket<unknown> | undefined
   getSentinelByAlias: (alias: string) => ServerWebSocket<unknown> | undefined
   getSentinelConnection: (sentinelId: string) => SentinelConnection | undefined
@@ -2793,7 +2794,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   // Sentinel management: extracted to sentinel.ts (sentinels Map internally)
   const sentinelState = createSentinelState()
 
-  function setSentinel(ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo): boolean {
+  function setSentinel(ws: ServerWebSocket<unknown>, info?: SentinelIdentifyInfo): SentinelAcceptance {
     let sentinelId = info?.sentinelId
     let alias = info?.alias
     if (!sentinelId && sentinelRegistry) {
@@ -2809,7 +2810,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         if (record) alias = record.aliases[0]
       }
     }
-    const ok = setSentinelImpl(sentinelState, ws, broadcast, { ...info, sentinelId, alias })
+    const acceptance = setSentinelImpl(sentinelState, ws, broadcast, { ...info, sentinelId, alias })
     // A (re)registering sentinel may change features.shell, which feeds the
     // shellCapable summary field for every conversation it hosts. Invalidate
     // those cached summaries. Rare event (sentinel connect), so the scan is cheap.
@@ -2818,7 +2819,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         if (conv.hostSentinelId === sentinelId) invalidateSummary(id)
       }
     }
-    return ok
+    return acceptance
   }
 
   function getSentinel(): ServerWebSocket<unknown> | undefined {
