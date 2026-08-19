@@ -8,6 +8,11 @@
  * cap the OLDEST entries fall off and are counted, because a slow client wants
  * the current river, not a backlog.
  *
+ * `plan` is the ONE exception and it is deliberate: S2 draws a five-hour SHAPE,
+ * so its section is a bounded per-key SERIES rather than a latest value. See
+ * `notePlan`. The thinning that keeps it small happens at the producer
+ * (`plan-usage-series.ts`), not here.
+ *
  * Pure: no sockets, no timers, no permissions. The hub owns those.
  */
 
@@ -20,6 +25,7 @@ import {
   type WallPlanSample,
   type WallPulseRow,
 } from '../../shared/wall'
+import { appendPlanSample, flattenPlanSeries, type WallPlanSeries } from '../../shared/wall-plan-series'
 import { computeCounters } from './wall-counters'
 
 /** How many commits / card moves the snapshot keeps for a fresh subscriber. */
@@ -46,10 +52,6 @@ export interface WallSnapshot {
   cards: CardMove[]
   hosts: WallHostVitals[]
   plan: WallPlanSample[]
-}
-
-function planKey(s: WallPlanSample): string {
-  return s.node ? `${s.profile}@${s.node}` : s.profile
 }
 
 function pushRing<T>(ring: T[], item: T): number {
@@ -82,7 +84,7 @@ export interface WallState {
 export function createWallState(): WallState {
   const pulse = new Map<string, WallPulseRow>()
   const hosts = new Map<string, WallHostVitals>()
-  const plan = new Map<string, WallPlanSample>()
+  const plan: WallPlanSeries = new Map()
   const commitRing: WallCommitRow[] = []
   const cardRing: CardMove[] = []
 
@@ -91,7 +93,7 @@ export function createWallState(): WallState {
   let pendingCommits: WallCommitRow[] = []
   let pendingCards: CardMove[] = []
   let dirtyHosts = new Set<string>()
-  let dirtyPlan = new Set<string>()
+  let pendingPlan: WallPlanSample[] = []
   let fleetDirty = false
   let coalesced = 0
   let dropped = 0
@@ -133,10 +135,18 @@ export function createWallState(): WallState {
     coalesced++
   }
 
+  /**
+   * The ONE section that is not latest-value-wins. S2 draws the SHAPE of the
+   * last five hours, so a fresh subscriber's snapshot has to carry the series,
+   * not the newest point of it -- a keyed Map would collapse the seed replay to
+   * one dot per profile and the pane would have to interpolate to look like a
+   * chart. The thinning that keeps this bounded happened upstream in
+   * `plan-usage-series.ts`; the same append is applied here so a producer that
+   * ignored it still cannot grow this without bound.
+   */
   function notePlan(sample: WallPlanSample): void {
-    const key = planKey(sample)
-    plan.set(key, sample)
-    dirtyPlan.add(key)
+    if (!appendPlanSample(plan, sample, sample.at, { minGapMs: 0 })) return
+    pendingPlan.push(sample)
     coalesced++
   }
 
@@ -147,7 +157,7 @@ export function createWallState(): WallState {
       pendingCommits.length > 0 ||
       pendingCards.length > 0 ||
       dirtyHosts.size > 0 ||
-      dirtyPlan.size > 0 ||
+      pendingPlan.length > 0 ||
       fleetDirty
     )
   }
@@ -159,7 +169,7 @@ export function createWallState(): WallState {
       commits: pendingCommits,
       cards: pendingCards,
       hosts: [...dirtyHosts].map(id => hosts.get(id)).filter((h): h is WallHostVitals => h !== undefined),
-      plan: [...dirtyPlan].map(k => plan.get(k)).filter((p): p is WallPlanSample => p !== undefined),
+      plan: pendingPlan,
       fleetDirty,
       coalesced,
       dropped,
@@ -169,7 +179,7 @@ export function createWallState(): WallState {
     pendingCommits = []
     pendingCards = []
     dirtyHosts = new Set()
-    dirtyPlan = new Set()
+    pendingPlan = []
     fleetDirty = false
     coalesced = 0
     dropped = 0
@@ -182,7 +192,7 @@ export function createWallState(): WallState {
       commits: [...commitRing],
       cards: [...cardRing],
       hosts: [...hosts.values()],
-      plan: [...plan.values()],
+      plan: flattenPlanSeries(plan),
     }
   }
 

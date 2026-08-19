@@ -11,7 +11,8 @@ import type { CommitRow } from '../../shared/commit-ledger'
 import type { ConversationSummary } from '../../shared/protocol'
 import type { WallCommitRow, WallPulseRow } from '../../shared/wall'
 import { readCardLedger } from '../card-ledger-ring'
-import { publishWallCardMoves, publishWallPulse, setWallSeed, wallActive } from './index'
+import { publishWallCardMoves, publishWallPlanSample, publishWallPulse, setWallSeed, wallActive } from './index'
+import { readPlanSeries } from './plan-usage-series'
 
 /** A hard block is something un-fakeable holding the conversation: the broker
  *  is waiting on a human, not on the model. */
@@ -72,12 +73,16 @@ export function pushWallPulse(summary: ConversationSummary): void {
  * once and fills the snapshot from it. Without this, a freshly opened wall
  * would show empty panes until something happened to change.
  *
- * Two sources answer that question today:
+ * Three sources answer that question today:
  *   - the conversation store, for the pulse roster
  *   - `card-ledger-ring.ts`, which `board-card-change-events` built for exactly
  *     this reason ("a wall opened cold has no history"). Reading it here is
  *     what lets the wall channel replace that card's separate
  *     `card_ledger_request` round trip instead of running beside it.
+ *   - `plan-usage-series.ts`, for the same reason and more sharply: S2 is a
+ *     chart of the last FIVE HOURS, so a wall opened now has to be handed the
+ *     five hours that happened before it opened. That series is the one thing
+ *     on the wall kept while nobody is watching; see that file for why.
  *
  * Commits are NOT seeded: unlike card moves the broker keeps no in-memory river
  * of them, and the ledger they live in is a SQLite table the commit-river pane
@@ -98,8 +103,15 @@ export function attachWallSources(getSummaries: () => ConversationSummary[]): vo
       const move = ledger[i]
       if (move) publishWallCardMoves([move])
     }
+
+    // Oldest first: the accumulator's per-key series refuses an out-of-order
+    // sample, so replaying newest-first would keep one point per profile.
+    const plan = readPlanSeries()
+    for (const sample of plan) publishWallPlanSample(sample)
+
     console.log(
-      `[wall] seed: ${summaries.length} conversation(s) + ${ledger.length} card move(s) into the first snapshot`,
+      `[wall] seed: ${summaries.length} conversation(s) + ${ledger.length} card move(s)` +
+        ` + ${plan.length} plan sample(s) into the first snapshot`,
     )
   })
 }

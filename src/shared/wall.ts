@@ -6,12 +6,18 @@
  * ~2 Hz as a `wall_frame`. Every section is optional: a section is present in a
  * frame only when something in it changed during that window.
  *
- * COALESCE, NEVER QUEUE. Keyed sections (pulse / hosts / plan) hold a Map of
+ * COALESCE, NEVER QUEUE. Keyed sections (pulse / hosts) hold a Map of
  * latest-value-wins, so a conversation that ticked forty times in one window
  * costs one row. Event sections (commits / cards) are append-with-a-cap: past
  * `WALL_SECTION_CAP` the OLDEST entries are dropped and counted in
  * `WallFrame.dropped`, because a slow client wants the latest state, not a
  * backlog of stale frames.
+ *
+ * `plan` is a bounded per-key SERIES, not a latest value: S2 draws the shape of
+ * the last five hours, and a snapshot carrying one point per profile would make
+ * a freshly opened wall interpolate to look like a chart. Its keying, window and
+ * thinning are one shared policy -- `wall-plan-series.ts`, used verbatim by the
+ * broker's accumulator and the browser's fold.
  *
  * PRODUCERS. `pulse`, `fleet`, `commits` and `cards` are fed by sources that
  * exist today (the conversation store's coalesced update flush, the commit
@@ -112,15 +118,47 @@ export interface WallHostVitals {
   conversations?: number
 }
 
-/** One profile's plan-utilization sample. Producer: `wall-plan-usage-series`. */
+/**
+ * Whether a sample carries a real number.
+ *
+ * `ok` is the only state whose `utilization` means anything. The other three
+ * exist so the pane can say WHY a profile has no line instead of drawing it at
+ * zero -- a profile nobody has logged into and a profile sitting at 0% look
+ * identical on a chart and are not remotely the same fact.
+ */
+export type WallPlanState =
+  /** A real reading. */
+  | 'ok'
+  /** No OAuth token for this profile -- there is nothing to read. */
+  | 'unauthed'
+  /** Authed, but the probe failed (`errorKind` says how). */
+  | 'error'
+  /** Authed and no error, but no 5-hour window came back. */
+  | 'unknown'
+
+/** One profile's plan-utilization sample. Producer: `wall-plan-usage-series`.
+ *  Series policy (keying, window, thinning) lives in `wall-plan-series.ts`. */
 export interface WallPlanSample {
   /** Profile NAME only. The profile-env boundary is not negotiable. */
   profile: string
+  /** Sentinel alias (falls back to its id), matching `WallPulseRow.host`. Part
+   *  of the series key: one profile name on two sentinels is two accounts. */
   node?: string
-  /** 0-100. */
+  /** 0-100, the FIVE-HOUR window. Only meaningful when `state === 'ok'`. */
   utilization: number
   resetsAt?: number
+  /** Broker clock when the sample was appended to the series. */
   at: number
+  state: WallPlanState
+  /** The windows are real but CARRIED FORWARD from `polledAt`, re-emitted
+   *  because the live probe is throttled. A stale reading drawn as a live point
+   *  is the lie this flag exists to prevent -- render its age, never the number
+   *  alone. */
+  stale?: boolean
+  /** When the reading was actually taken. Older than `at` when `stale`. */
+  polledAt?: number
+  /** `ProfileUsageSnapshot.error.kind`, when `state === 'error'`. */
+  errorKind?: 'http' | 'parse' | 'network' | 'no_token'
 }
 
 /** Fleet-wide counters, summed over the projects this subscriber may read. */
