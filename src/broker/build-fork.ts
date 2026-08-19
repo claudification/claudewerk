@@ -15,7 +15,7 @@
  */
 
 import { renderForkProvenance } from '../shared/fork-provenance'
-import type { Conversation, ForkCcSession } from '../shared/protocol'
+import type { Conversation, ForkCcSession, ForkPoint } from '../shared/protocol'
 
 export interface ForkOverrides {
   /** Where the fork will be launched, when that differs from the source. */
@@ -27,6 +27,14 @@ export interface ForkOverrides {
   tailTokenBudget?: number
   /** Overrides the conversation's resolved profile (recovery flows only). */
   profile?: string
+  /** Fold only one side of a boundary entry. Omitted = fold from HEAD. */
+  forkPoint?: ForkPoint
+  /**
+   * Extra provenance appended below the rendered fork header -- currently the
+   * summary of a carry-AFTER cut's discarded history, produced by the broker
+   * before the message is built (see fork-dropped-summary.ts).
+   */
+  extraProvenance?: string
 }
 
 /** Whether a conversation can be forked at all -- i.e. CC ever wrote a transcript for it. */
@@ -49,6 +57,17 @@ export function buildForkMessage(
   // hunting for detail that is already in front of it.
   const mode = overrides?.digestOverTokens === 0 ? 'full' : 'condensed'
 
+  const provenanceBlock = [
+    renderForkProvenance({
+      conversationId: conversation.id,
+      conversationName: conversation.title || conversation.agentName || undefined,
+      mode,
+    }),
+    overrides?.extraProvenance,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
   return {
     type: 'fork_cc_session',
     requestId,
@@ -58,15 +77,12 @@ export function buildForkMessage(
     // carried this (build-revive.ts); fork not carrying it meant every
     // worktree-born conversation resolved to the main repo's slug and failed.
     sourceWorktree: conversation.adHocWorktree || undefined,
-    provenanceBlock: renderForkProvenance({
-      conversationId: conversation.id,
-      conversationName: conversation.title || conversation.agentName || undefined,
-      mode,
-    }),
+    provenanceBlock,
     targetWorktree: overrides?.targetWorktree,
     targetCwd: overrides?.targetCwd,
     profile: overrides?.profile ?? conversation.resolvedProfile,
     digestOverTokens: overrides?.digestOverTokens,
     tailTokenBudget: overrides?.tailTokenBudget,
+    forkPoint: overrides?.forkPoint,
   }
 }

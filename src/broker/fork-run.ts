@@ -10,18 +10,25 @@ import { randomUUID } from 'node:crypto'
 import type { Conversation, ForkCcSessionResult } from '../shared/protocol'
 import { buildForkMessage, type ForkOverrides } from './build-fork'
 import type { ConversationStore } from './conversation-store'
+import { summarizeDroppedSlice } from './fork-dropped-summary'
 
 /** Folding a multi-MB transcript is real work; well clear of the 5s used for listing. */
 export const FORK_TIMEOUT_MS = 60_000
 
 export type RunForkResult =
-  | { ok: true; resumeId: string; stats?: ForkCcSessionResult['stats'] }
+  | { ok: true; resumeId: string; stats?: ForkCcSessionResult['stats']; cut?: ForkCcSessionResult['cut'] }
   | { ok: false; error: string; status: 400 | 409 | 503 | 504 }
+
+export interface RunForkDeps {
+  /** Injectable so the summarize path is testable without a live model call. */
+  summarizeDropped?: typeof summarizeDroppedSlice
+}
 
 export async function runFork(
   conversationStore: ConversationStore,
   conversation: Conversation,
   overrides: ForkOverrides,
+  deps: RunForkDeps = {},
 ): Promise<RunForkResult> {
   // Fork on the conversation's OWN sentinel: the transcript lives on that host,
   // under that host's profile config dir.
@@ -35,8 +42,19 @@ export async function runFork(
     }
   }
 
+  // Summarizing the discarded slice happens HERE rather than on the sentinel:
+  // the broker holds the transcript and the model client, the sentinel holds the
+  // filesystem. The result rides down inside the provenance block the fold
+  // already puts at the top of its preamble -- nothing new crosses the wire.
+  const extraProvenance = overrides.forkPoint
+    ? await (deps.summarizeDropped ?? summarizeDroppedSlice)({
+        entries: conversationStore.getTranscriptEntries(conversation.id),
+        forkPoint: overrides.forkPoint,
+      })
+    : undefined
+
   const requestId = randomUUID()
-  const forkMsg = buildForkMessage(conversation, requestId, overrides)
+  const forkMsg = buildForkMessage(conversation, requestId, { ...overrides, extraProvenance })
   if (!forkMsg) {
     return { ok: false, status: 409, error: 'This conversation has no Claude Code session to fork yet' }
   }
@@ -62,5 +80,5 @@ export async function runFork(
 
   if (result.error) return { ok: false, status: 400, error: result.error }
   if (!result.resumeId) return { ok: false, status: 400, error: 'Fork returned no session to resume' }
-  return { ok: true, resumeId: result.resumeId, stats: result.stats }
+  return { ok: true, resumeId: result.resumeId, stats: result.stats, cut: result.cut }
 }

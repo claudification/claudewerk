@@ -14,7 +14,7 @@
 import { type CompactOptions, type CompactResult, superCompact } from './compactor'
 import { applyCut, type CutPoint, type CutResolution } from './cut-point'
 import type { Reader, Writer } from './io'
-import type { Entry, TranscriptAdapter } from './model'
+import type { TranscriptAdapter } from './model'
 
 export type { CompactOptions, CompactResult } from './compactor'
 export * from './cut-point'
@@ -34,37 +34,17 @@ export interface RunCompactionOptions extends CompactOptions {
   cutAt?: CutPoint
 }
 
-export interface RunCompactionHooks {
-  /**
-   * Called with the discarded slice after a cut, before the fold. Whatever text
-   * it returns is appended to the provenance block, i.e. the very top of the
-   * synthesized preamble.
-   *
-   * This is the seam for summarizing the part you are throwing away -- keeping the
-   * recent turns verbatim while one paragraph stands in for the ancient history.
-   * The hook is supplied by the caller precisely so this layer never learns what a
-   * model is.
-   */
-  onDropped?: (dropped: Entry[]) => Promise<string | undefined>
-}
-
 export interface RunCompactionResult extends CompactResult {
   cut: { resolvedBy: CutResolution; keptEntries: number; droppedEntries: number }
 }
 
 const NO_CUT = { resolvedBy: 'none' as CutResolution, droppedEntries: 0 }
 
-function joinProvenance(...parts: Array<string | undefined>): string | undefined {
-  const kept = parts.filter((p): p is string => typeof p === 'string' && p.length > 0)
-  return kept.length ? kept.join('\n\n') : undefined
-}
-
 export async function runCompaction(
   reader: Reader,
   writer: Writer,
   adapter: TranscriptAdapter,
   opts: RunCompactionOptions,
-  hooks?: RunCompactionHooks,
 ): Promise<RunCompactionResult> {
   const raw = await reader.read()
   const parsed = adapter.parse(raw)
@@ -73,10 +53,7 @@ export async function runCompaction(
   const cut = cutAt ? applyCut(parsed.entries, cutAt) : null
   const transcript = cut ? { ...parsed, entries: cut.kept } : parsed
 
-  const droppedSummary = cut?.dropped.length ? await hooks?.onDropped?.(cut.dropped) : undefined
-  const provenanceBlock = joinProvenance(foldOpts.provenanceBlock, droppedSummary)
-
-  const result = superCompact(transcript, { ...foldOpts, provenanceBlock })
+  const result = superCompact(transcript, foldOpts)
   await writer.write(adapter.serialize(result.transcript))
 
   const { resolvedBy, droppedEntries } = cut

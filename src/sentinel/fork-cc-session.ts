@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { runCompaction } from '../agent-host-common/super-compact'
 import { ClaudeCodeAdapter } from '../agent-host-common/super-compact/claude-code-adapter'
 import { FileReader, FileWriter } from '../agent-host-common/super-compact/io'
-import type { ForkCcSessionResult } from '../shared/protocol'
+import type { ForkCcSessionResult, ForkPoint } from '../shared/protocol'
 import { transcriptSlug } from '../shared/transcript-path'
 
 export interface ForkCcSessionInput {
@@ -39,12 +39,26 @@ export interface ForkCcSessionInput {
   /** Digest cold tool_results over this many tokens; 0 copies them verbatim. */
   digestOverTokens?: number
   tailTokenBudget?: number
+  /**
+   * Fold only one side of a boundary entry. Omitted = fold from HEAD.
+   *
+   * Note what is NOT here: summarizing the discarded slice. That runs in the
+   * BROKER, against its own copy of the transcript, and arrives already rendered
+   * inside `provenanceBlock` -- the sentinel has host filesystem access, not a
+   * model client, and giving it one to serve a checkbox would be the wrong seam.
+   */
+  forkPoint?: ForkPoint
   /** Injectable for tests. */
   genSessionId?: () => string
 }
 
 export type ForkOutcome =
-  | { ok: true; ccSessionId: string; stats: NonNullable<ForkCcSessionResult['stats']> }
+  | {
+      ok: true
+      ccSessionId: string
+      stats: NonNullable<ForkCcSessionResult['stats']>
+      cut?: NonNullable<ForkCcSessionResult['cut']>
+    }
   | { ok: false; error: string }
 
 /**
@@ -77,13 +91,19 @@ export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutc
 
   try {
     mkdirSync(targetDir, { recursive: true })
-    const result = await runCompaction(new FileReader(sourcePath), new FileWriter(outPath), new ClaudeCodeAdapter(), {
-      newSessionId: newCcSessionId,
-      parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
-      provenanceBlock: input.provenanceBlock,
-      digestToolResultsOverTokens: input.digestOverTokens,
-      tailTokenBudget: input.tailTokenBudget,
-    })
+    const result = await runCompaction(
+      new FileReader(sourcePath),
+      new FileWriter(outPath),
+      new ClaudeCodeAdapter(),
+      {
+        newSessionId: newCcSessionId,
+        parentRef: { sessionId: input.sourceCcSessionId, path: sourcePath },
+        provenanceBlock: input.provenanceBlock,
+        digestToolResultsOverTokens: input.digestOverTokens,
+        tailTokenBudget: input.tailTokenBudget,
+        cutAt: input.forkPoint,
+      },
+    )
     const s = result.stats
     return {
       ok: true,
@@ -97,6 +117,7 @@ export async function forkCcSession(input: ForkCcSessionInput): Promise<ForkOutc
         droppedThinking: s.droppedThinking,
         collapsedReads: s.collapsedReads,
       },
+      ...(input.forkPoint ? { cut: result.cut } : {}),
     }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }

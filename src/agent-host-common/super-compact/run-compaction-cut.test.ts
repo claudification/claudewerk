@@ -24,15 +24,14 @@ function texts(serialized: string): string[] {
     })
 }
 
-async function run(cutAt?: Parameters<typeof runCompaction>[3]['cutAt'], onDropped?: (d: unknown[]) => Promise<string>) {
+async function run(cutAt?: Parameters<typeof runCompaction>[3]['cutAt']) {
   const writer = new StringWriter()
-  const result = await runCompaction(
-    new StringReader(buildFixture()),
-    writer,
-    adapter,
-    { newSessionId: 'fork-0001', genId: makeGenId(), tailTokenBudget: 0, cutAt },
-    onDropped ? { onDropped: onDropped as never } : undefined,
-  )
+  const result = await runCompaction(new StringReader(buildFixture()), writer, adapter, {
+    newSessionId: 'fork-0001',
+    genId: makeGenId(),
+    tailTokenBudget: 0,
+    cutAt,
+  })
   return { result, out: writer.output }
 }
 
@@ -86,25 +85,9 @@ describe('runCompaction -- point-in-time cut', () => {
     expect(texts(out).join('\n')).toContain('All tests pass.')
   })
 
-  test('the dropped hook receives ONLY the discarded slice and lands in the preamble', async () => {
-    let seen = 0
-    const { out } = await run({ uuid: 'a7', direction: 'after', inclusive: true }, async d => {
-      seen = d.length
-      return '[earlier context] The agent read foo.ts and fixed an off-by-one.'
-    })
-    expect(seen).toBeGreaterThan(0)
-    const body = texts(out).join('\n')
-    expect(body).toContain('fixed an off-by-one')
-    // Still dropped from the verbatim history -- the summary replaces it, not augments it.
-    expect(body).not.toContain('Read foo.ts and fix the bug')
-  })
-
-  test('the dropped hook is not called when nothing was dropped', async () => {
-    let called = false
-    await run(undefined, async () => {
-      called = true
-      return 'x'
-    })
-    expect(called).toBe(false)
+  test('reports how many entries each side of the boundary got', async () => {
+    const { result } = await run({ uuid: 'a7', direction: 'after', inclusive: true })
+    expect(result.cut.droppedEntries).toBe(6)
+    expect(result.cut.keptEntries).toBe(4)
   })
 })

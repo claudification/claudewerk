@@ -4097,15 +4097,24 @@ function connect(
             provenanceBlock: forkMsg.provenanceBlock,
             digestOverTokens: forkMsg.digestOverTokens,
             tailTokenBudget: forkMsg.tailTokenBudget,
+            forkPoint: forkMsg.forkPoint,
           })
 
           if (outcome.ok) {
+            // A cut that resolved by timestamp landed on a NEIGHBOUR of the row
+            // the user clicked, and one that resolved to 'none' carried the whole
+            // transcript after being asked for a slice. Both are legitimate and
+            // both are invisible without this line.
+            const cutLog = forkMsg.forkPoint
+              ? ` cut=${forkMsg.forkPoint.direction}/${forkMsg.forkPoint.inclusive ? 'incl' : 'excl'}` +
+                ` by=${outcome.cut?.resolvedBy ?? 'none'} dropped=${outcome.cut?.droppedEntries ?? 0}`
+              : ''
             log(
               `[fork] ${forkMsg.sourceCcSessionId.slice(0, 8)} -> ${outcome.ccSessionId.slice(0, 8)} ` +
                 `tokens=${outcome.stats.beforeTokens}->${outcome.stats.afterTokens} ` +
                 `entries=${outcome.stats.entriesBefore}->${outcome.stats.entriesAfter} ` +
                 `digested=${outcome.stats.digestedResults} cwd=${forkCwds.cwd} ` +
-                `target=${forkCwds.targetCwd ?? 'in place'} sourceWorktree=${forkMsg.sourceWorktree ?? 'none'}`,
+                `target=${forkCwds.targetCwd ?? 'in place'} sourceWorktree=${forkMsg.sourceWorktree ?? 'none'}${cutLog}`,
             )
           } else {
             log(
@@ -4123,6 +4132,7 @@ function connect(
                     requestId: forkMsg.requestId,
                     resumeId: outcome.ccSessionId,
                     stats: outcome.stats,
+                    ...(outcome.cut ? { cut: outcome.cut } : {}),
                   }
                 : { type: 'fork_cc_session_result', requestId: forkMsg.requestId, error: outcome.error },
             ),
