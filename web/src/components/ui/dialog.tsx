@@ -26,12 +26,20 @@ function DialogPortal({ container, ...props }: React.ComponentProps<typeof Dialo
   return <DialogPrimitive.Portal data-slot="dialog-portal" container={container ?? popout ?? undefined} {...props} />
 }
 
+/**
+ * One definition of the dim, used by BOTH backdrops below. They used to carry
+ * separate `bg-black/80` literals, so in a popout the two stacked and the page
+ * behind went to #010204 -- past dim, into gone.
+ */
+const SCRIM = 'scrim-backdrop fixed inset-0 z-50'
+
 function DialogOverlay({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        'fixed inset-0 z-50 bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+        SCRIM,
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         className,
       )}
       {...props}
@@ -54,7 +62,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
             type="button"
             aria-label="Close"
             data-slot="dialog-overlay"
-            className="fixed inset-0 z-50 cursor-default bg-black/80"
+            className={cn(SCRIM, 'cursor-default')}
           />
         </DialogPrimitive.Close>
       ) : (
@@ -65,7 +73,11 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
         className={cn(
           'fixed left-[50%] top-[50%] z-50 translate-x-[-50%] translate-y-[-50%]',
           'w-[90vw] max-w-3xl max-h-[85vh]',
-          'border border-border bg-background shadow-lg',
+          /* `bg-background` made the window fill IDENTICAL to the page fill --
+             measured srgb(7,11,20) on both -- leaving one hairline to say a
+             window was there at all. It gets its own rung now, plus the strong
+             edge and the rim-light. */
+          'border border-border-strong bg-popover elevation-window',
           'flex flex-col',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',

@@ -53,7 +53,7 @@ export interface DialogFormState {
 // when the block's own content is unchanged.
 const MarkdownBlock = memo(function MarkdownBlock({ content, color }: { content: string; color?: DialogColor }) {
   return (
-    <div className={cn('prose prose-sm dark:prose-invert max-w-none', color && COLOR_CLASSES[color])}>
+    <div className={cn('prose prose-sm max-w-none', color && COLOR_CLASSES[color])}>
       <Markdown>{content}</Markdown>
     </div>
   )

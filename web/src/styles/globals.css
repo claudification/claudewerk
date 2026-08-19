@@ -337,6 +337,53 @@
 	--radius-4xl: calc(var(--radius) + 16px);
 }
 
+/*
+ * ELEVATION -- on a dark UI, light comes from above.
+ *
+ * A drop shadow is how you lift a card off WHITE paper. On a near-black page a
+ * black shadow is invisible, which is why `shadow-lg` did nothing for windows
+ * here. What reads instead is a 1px rim-light along the top edge, as though the
+ * pane catches a light source above it, over a wide soft shadow that separates
+ * it from whatever it covers.
+ */
+@utility elevation-window {
+	box-shadow:
+		inset 0 1px 0 rgb(255 255 255 / 0.07),
+		0 1px 2px rgb(0 0 0 / 0.5),
+		0 18px 44px -8px rgb(0 0 0 / 0.72);
+}
+
+@utility elevation-panel {
+	box-shadow:
+		inset 0 1px 0 rgb(255 255 255 / 0.04),
+		0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+/*
+ * THE SCRIM. Was `bg-black/80` -- and rendered TWICE (Radix's overlay plus our
+ * own popout backdrop), which crushed the page behind to #010204. The page did
+ * not recede, it died, and the window had nothing to float above.
+ *
+ * A tinted scrim plus a small blur pushes the page back while leaving it
+ * legible, which is what you want when the window you opened is ABOUT
+ * something on the page behind it.
+ */
+@utility scrim-backdrop {
+	background-color: color-mix(in oklab, var(--surface-sunken) 82%, transparent);
+	backdrop-filter: blur(2px);
+	transition: opacity 120ms ease-out;
+}
+
+/*
+ * Hold Option to see through every scrim at once. Set on <html> by
+ * use-backdrop-bypass; scoped here so ONE rule covers every managed surface,
+ * present and future, instead of each modal opting in.
+ */
+:root[data-backdrop-bypass='on'] .scrim-backdrop {
+	opacity: 0;
+	pointer-events: none;
+}
+
 * {
 	border-color: var(--border);
 }

@@ -196,7 +196,7 @@ function LiveDialogModalInner({
     >
       <div className="flex min-h-0 flex-1 flex-col">
         {layout.description && (
-          <div className="prose prose-sm dark:prose-invert max-w-none px-4 pt-3 text-muted-foreground">
+          <div className="prose prose-sm max-w-none px-4 pt-3 text-muted-foreground">
             <Markdown inline>{layout.description}</Markdown>
           </div>
         )}
