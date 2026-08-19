@@ -9,38 +9,16 @@
  * The only thing this file adds over the standalone reporter is the OPTIONAL
  * `sentinel` block -- the facts that are per-SENTINEL rather than per-HOST.
  *
- * PROFILE-ENV BOUNDARY (sentinel-config.ts): what crosses here is profile NAMES
- * and a utilization percent. `configDir`, `profile.env` and oauth tokens are not
- * read by this file and have no field to travel in -- and the shared validator
- * REJECTS a profile entry carrying any other key, so a future edit that widens
- * this cannot land quietly.
+ * PROFILE-ENV BOUNDARY (sentinel-config.ts): nothing profile-shaped crosses here
+ * at all. This file never reads the profile registry, and the extras block has
+ * exactly one field, so there is no field for a configDir / env bag / oauth
+ * token to travel in. The shared validator REJECTS any other key on the block,
+ * so a future edit that widens it cannot land quietly.
  */
 
-import type { NodeProfileUtilization, SentinelNodeExtras } from '../shared/node-stats'
+import type { SentinelNodeExtras } from '../shared/node-stats'
 import { createNodeStatsReporter, type NodeStatsReporter } from '../shared/node-stats-reporting'
 import { buildNodeIdentity } from '../shared/node-stats-sample'
-import type { ProfileUsageSnapshot } from '../shared/protocol'
-
-/**
- * The utilization number reported per profile: the widest window the plan is
- * actually measured on. Prefer the 7-day figure (the one that ends a week), and
- * fall back to the 5-hour window when only that is present. Undefined when the
- * profile is unauthed or its last poll failed -- an absent number is honest, a
- * zero would read as plenty of headroom.
- */
-export function profileUtilization(snap: ProfileUsageSnapshot): number | undefined {
-  return snap.sevenDay?.usedPercent ?? snap.fiveHour?.usedPercent
-}
-
-/** The broker-safe profile slice: NAME + percent, nothing else. */
-export function buildProfileUtilizations(usage: ReadonlyMap<string, ProfileUsageSnapshot>): NodeProfileUtilization[] {
-  const out: NodeProfileUtilization[] = []
-  for (const snap of usage.values()) {
-    const pct = profileUtilization(snap)
-    out.push(pct === undefined ? { name: snap.profile } : { name: snap.profile, utilizationPercent: pct })
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name))
-}
 
 export interface SentinelNodeStatsDeps {
   /** Stable per-AGENT id. The broker overrides this with the id it resolved from
@@ -50,9 +28,10 @@ export interface SentinelNodeStatsDeps {
   /** Stable per-HOST fingerprint -- the machine dedupe key. */
   hostId: string
   agentVersion: string
-  /** Conversations this sentinel currently has running (own + adopted). */
+  /** Conversations this sentinel currently has running (own + adopted). The
+   *  ONLY sentinel-only fact on this payload -- plan utilization rides
+   *  `sentinel_usage_report`, which the sentinel already sends. */
   conversationCount(): number
-  profileUsage(): ReadonlyMap<string, ProfileUsageSnapshot>
   /** Emit on the EXISTING broker socket. Returns false when it is not open -- a
    *  dropped sample is logged and the cadence carries on. */
   send(report: unknown): boolean
@@ -73,10 +52,7 @@ export function startSentinelNodeStats(deps: SentinelNodeStatsDeps): NodeStatsRe
       sender: 'sentinel',
     }),
     send: report => deps.send(report),
-    sentinelExtras: (): SentinelNodeExtras => ({
-      conversationCount: deps.conversationCount(),
-      profiles: buildProfileUtilizations(deps.profileUsage()),
-    }),
+    sentinelExtras: (): SentinelNodeExtras => ({ conversationCount: deps.conversationCount() }),
     log: deps.log,
   })
   reporter.start()
