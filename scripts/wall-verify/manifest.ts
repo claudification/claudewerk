@@ -14,7 +14,12 @@ import type { Aspect } from './types'
  */
 
 const PANES = 'web/src/components/wall/panes'
-const WALL = 'web/src/components/wall/**/*.{ts,tsx}'
+const WALL_DIR = 'web/src/components/wall'
+const WALL = `${WALL_DIR}/**/*.{ts,tsx}`
+/** The wall's non-React substrate -- stores, parsers, row builders. Panes are
+ *  components; what they all agree ON is a library, and several cards put their
+ *  contract symbol here rather than under `components/`. */
+const LIB = 'web/src/lib/wall/**/*.ts'
 
 export const ASPECTS: Aspect[] = [
   {
@@ -57,7 +62,9 @@ export const ASPECTS: Aspect[] = [
     promise: 'Commit river: EVERY commit attributed to a project AND a conversation',
     artifacts: [
       { path: `${PANES}/p2-commit-river.tsx`, needle: 'project', as: 'per-commit project attribution' },
-      { path: `${PANES}/p2-commit-river.tsx`, needle: 'conversation', as: 'per-commit conversation attribution' },
+      // The implementer split the row out of the pane (SPLIT DISCIPLINE), so the
+      // per-commit attribution renders here, not in the pane shell.
+      { path: `${PANES}/commit-river-row.tsx`, needle: 'conversation', as: 'per-commit conversation attribution' },
     ],
     feeds: [{ path: 'web/src/components/commits/use-commit-subscription.ts' }],
   },
@@ -174,9 +181,18 @@ export const ASPECTS: Aspect[] = [
     code: 'W2',
     card: 'wall-filter-bus',
     promise: 'One query language, every pane obeys, one grammar reused from pulse',
+    // The substrate half of this promise was split onto `wall-filter-store` by the
+    // gen-7 q1 resolution (O2, "substrate first"), which also moved it OUT of
+    // components/wall and INTO lib/wall. This manifest still asserted the
+    // pre-split plan -- a `useWallQuery` that was never written, under a glob that
+    // could never have matched -- so W2 read GONE for two generations while both
+    // halves were merged and green. Assert what the CARDS name, where they say it
+    // lives: `useWallFilter` + `parseWallQuery` (wall-filter-store) and the box
+    // itself (wall-filter-bus).
     artifacts: [
-      { path: WALL, needle: 'useWallQuery', as: 'the useWallQuery contract symbol' },
-      { path: WALL, needle: 'parsePulseQuery', as: 'the pulse grammar REUSED, not forked' },
+      { path: LIB, needle: 'useWallFilter', as: 'the useWallFilter contract symbol' },
+      { path: LIB, needle: 'parsePulseQuery', as: 'the pulse grammar REUSED, not forked' },
+      { path: `${WALL_DIR}/wall-filter-box.tsx`, needle: 'useWallFilterStore', as: 'the header filter box' },
     ],
   },
   {
