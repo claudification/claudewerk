@@ -80,6 +80,52 @@ describe('processEntry - harness nag suppression', () => {
   })
 })
 
+// CC flags harness-authored text on a `user` entry with `isMeta` and delivers it
+// as a plain STRING. Every such entry in this repo's transcript corpus is the
+// harness talking -- an image placeholder, a commit nudge, a resume caveat --
+// and not one is a human turn, so the rule can be generic.
+function metaEntry(content: string): TranscriptEntry {
+  return {
+    type: 'user',
+    timestamp: '2026-08-19T22:05:59.000Z',
+    isMeta: true,
+    message: { role: 'user', content },
+  } as unknown as TranscriptEntry
+}
+
+describe('processEntry - harness meta entries', () => {
+  it('routes a meta commit nudge to a system group instead of a user bubble', () => {
+    const { groups } = group([metaEntry('Nudge -- there are uncommitted files in this git repo.')])
+    expect(groups).toHaveLength(1)
+    expect(groups[0]?.type).toBe('system')
+    expect(groups[0]?.systemSubtype).toBe('harness_meta')
+  })
+
+  it('drops the image placeholder outright -- its numbers already ride the Read row', () => {
+    const { groups } = group([
+      metaEntry(
+        '[Image: original 736x2854, displayed at 516x2000. Multiply coordinates by 1.43 to map to original image.]',
+      ),
+    ])
+    expect(groups).toHaveLength(0)
+  })
+
+  it('leaves a real user message quoting a placeholder alone -- no isMeta flag, no reroute', () => {
+    const { groups } = group([userEntry('[Image: original 736x2854, displayed at 516x2000.] what is this?')])
+    expect(groups[0]?.type).toBe('user')
+  })
+
+  it('still lets hook feedback claim a meta string first -- it has its own line', () => {
+    const { groups } = group([metaEntry('Stop hook feedback:\nsome reason')])
+    expect(groups[0]?.systemSubtype).toBe('hook_feedback')
+  })
+
+  it('ignores an empty meta entry rather than drawing a blank line', () => {
+    const { groups } = group([metaEntry('   ')])
+    expect(groups).toHaveLength(0)
+  })
+})
+
 // The Skill tool produces a tool_result carrying `toolUseResult.commandName`,
 // then the big markdown dump. The agent host marks the dump `isMeta` -- native
 // in CC's JSONL (PTY), normalized from stream-json `isSynthetic` (headless).
