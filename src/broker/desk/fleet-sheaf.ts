@@ -12,9 +12,17 @@
  * The raw SheafResponse is far too big for the dispatcher's tiny context
  * (full spawn forests), so `summarizeSheaf` compacts it to per-project rollup
  * numbers -- the dispatcher wants "where is the money/time going", not trees.
+ *
+ * THAT COMPACTION NOW LIVES IN `src/shared/sheaf-summary.ts` and is re-exported
+ * here. THE WALL's A6 pane runs the same function on the same `/api/sheaf`
+ * response, and the web bundle can only import from `src/shared`. Moving the
+ * pure function was the alternative to giving the route a second response shape;
+ * every caller here keeps importing `summarizeSheaf` from this module.
  */
 
-import type { SheafProject, SheafResponse } from '../../shared/sheaf-types'
+import type { SheafResponse } from '../../shared/sheaf-types'
+
+export { summarizeSheaf, type SheafProjectSummary, type SheafSummary } from '../../shared/sheaf-summary'
 
 export type FleetSheafProvider = (windowH: number) => SheafResponse
 
@@ -27,74 +35,4 @@ export function setFleetSheafProvider(fn: FleetSheafProvider): void {
 
 export function getFleetSheafProvider(): FleetSheafProvider | null {
   return provider
-}
-
-/** Compact per-project rollup for the model. Numbers only, no forests. */
-export interface SheafProjectSummary {
-  project: string
-  costUsd: number
-  conversations: number
-  trees: number
-  inputTokens: number
-  outputTokens: number
-  /** SOTU escalation alerts when the response was enriched (at-risk/unpushed/stalled). */
-  alerts?: string[]
-  /** Unmerged commits sitting on this project's worktree branches. */
-  unmergedCommits?: number
-}
-
-export interface SheafSummary {
-  windowH: number
-  totals: { projects: number; conversations: number; trees: number; costUsd: number }
-  projects: SheafProjectSummary[]
-  /** How many low-cost projects were clipped from the list (never silent). */
-  clipped?: number
-}
-
-const MAX_PROJECTS = 20
-
-function countConvs(p: SheafProject): number {
-  let n = 0
-  const stack = [...p.forest]
-  while (stack.length) {
-    const node = stack.pop()
-    if (!node) continue
-    n++
-    stack.push(...node.children)
-  }
-  return n
-}
-
-function summarizeProject(p: SheafProject): SheafProjectSummary {
-  const row: SheafProjectSummary = {
-    project: p.label,
-    costUsd: Math.round(p.totals.cost.amount * 100) / 100,
-    conversations: countConvs(p),
-    trees: p.forest.length,
-    inputTokens: p.totals.tokens.input,
-    outputTokens: p.totals.tokens.output,
-  }
-  if (p.sotu?.alerts.length) row.alerts = p.sotu.alerts
-  const unmerged = p.sotu?.branches.reduce((sum, b) => sum + b.aheadOrigin, 0) ?? 0
-  if (unmerged > 0) row.unmergedCommits = unmerged
-  return row
-}
-
-/** Compact the full SheafResponse to what the dispatcher's context can afford.
- *  Projects arrive cost-sorted from the builder; keep the top slice. */
-export function summarizeSheaf(sheaf: SheafResponse, maxProjects: number = MAX_PROJECTS): SheafSummary {
-  const projects = sheaf.projects.slice(0, maxProjects).map(summarizeProject)
-  const out: SheafSummary = {
-    windowH: sheaf.windowH,
-    totals: {
-      projects: sheaf.totals.projects,
-      conversations: sheaf.totals.conversations,
-      trees: sheaf.totals.trees,
-      costUsd: Math.round(sheaf.totals.cost.amount * 100) / 100,
-    },
-    projects,
-  }
-  const clipped = sheaf.projects.length - projects.length
-  if (clipped > 0) out.clipped = clipped
-  return out
 }
