@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { computeSwitchSlots, MAX_PINS } from './conversation-pins'
 import type { Conversation } from './types'

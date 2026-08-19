@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { SpokenLine } from './caption-fold'
 import { appendLine, foldLog, TRANSCRIPT_LIMIT, typedLine } from './transcript-log'

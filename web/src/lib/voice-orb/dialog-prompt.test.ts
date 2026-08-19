@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { DIALOG_PROMPT_FLOOR_MS, decideDialogPrompt, type PromptableDialog } from './dialog-prompt'
 

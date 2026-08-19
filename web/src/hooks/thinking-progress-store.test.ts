@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { clearThinkingProgress, getThinkingProgress, recordThinkingProgress } from './thinking-progress-store'
 

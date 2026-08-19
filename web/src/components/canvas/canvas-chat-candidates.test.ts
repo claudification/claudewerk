@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { type CandidateSource, liveCandidates, matchCandidates } from './canvas-chat-candidates'
 

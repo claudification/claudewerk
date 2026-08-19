@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression tests for the pre-roll ring.
  *
  * THE BUG: push-to-talk lost the first word or two of every dictation. Four

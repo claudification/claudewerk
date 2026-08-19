@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { canvasIdFromChannelAddress, parseCanvasMessage } from './canvas-selected-parse'
 

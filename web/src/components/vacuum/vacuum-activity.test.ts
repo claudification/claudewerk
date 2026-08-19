@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * What the parked Vacuum tile is allowed to claim.
  *
  * The ordering is the whole test: a failure must never be buried under a

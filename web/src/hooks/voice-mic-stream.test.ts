@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression tests for the pinned-device fallback in openMicStream.
  *
  * THE INCIDENT (2026-08-12, iPad): after the app hard-reloaded itself, every

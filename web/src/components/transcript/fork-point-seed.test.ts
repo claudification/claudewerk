@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { PREVIEW_CHARS } from '../fork-dialog/fork-point'
 import { buildForkPointSeed, canForkAtGroup } from './fork-point-seed'

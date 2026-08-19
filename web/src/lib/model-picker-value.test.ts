@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * modelPickerValue -- runtime model id -> a value the picker can select.
  *
  * The failure being pinned: a Select handed a value matching no option renders

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { effectiveProject, flatten } from './batch-grouping'

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * use-nightshift-queue: the manual Run-now trigger (`runNightshiftNow`).
  * Verifies it sends the `op:'run'` envelope and maps a rejected RPC (empty
  * queue / already running) to `ok:false` + the reason.

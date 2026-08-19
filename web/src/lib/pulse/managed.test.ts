@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { Conversation } from '@/lib/types'
 import { isManaged, managedInfo } from './managed'

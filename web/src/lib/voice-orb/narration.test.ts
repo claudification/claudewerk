@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { decideNarration, NARRATION_COOLDOWN_MS, newlyWaiting, snapshotStates } from './narration'
 

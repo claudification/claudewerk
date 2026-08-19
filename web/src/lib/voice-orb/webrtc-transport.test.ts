@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The mic-release path, tested on a stubbed peer connection. This is the piece
  * that decides whether the OS "microphone in use" indicator goes off -- toggling
  * `track.enabled` would look muted and keep the device hot, which is the bug

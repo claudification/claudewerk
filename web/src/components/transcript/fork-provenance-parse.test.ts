@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Parsing the fork provenance block out of a transcript entry.
  *
  * These pin the round-trip against the renderer in src/shared/fork-provenance.ts

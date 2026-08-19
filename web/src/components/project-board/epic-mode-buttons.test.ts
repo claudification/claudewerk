@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * What REFINE and ANALYZE are allowed to act on.
  *
  * The trap: gating them on `notStarted` like WORK does. An epic with every card

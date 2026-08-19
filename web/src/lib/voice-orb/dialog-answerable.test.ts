@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { DialogComponent, DialogLayout } from '@shared/dialog-schema'
 import { describe, expect, it } from 'vitest'
 import { answerableDialogs, askAnswerable, dialogAnswerable, type PendingAsk } from './dialog-answerable'

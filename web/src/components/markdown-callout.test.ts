@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { Marked } from 'marked'
 import { describe, expect, test } from 'vitest'
 import { calloutInlineExtension } from '@/lib/callout-marked'

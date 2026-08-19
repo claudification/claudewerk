@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * formatRemaining -- the share countdown. A link that reads "1h left" when it is
  * already dead is worse than no countdown, so the boundary cases matter.
  */

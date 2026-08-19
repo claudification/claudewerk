@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The RUN dialog's numbers. These drive a decision to arm an unattended fleet,
  * so a wrong one is worse than no number at all.
  */

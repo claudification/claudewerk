@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { TranscriptEntry as SharedTranscriptEntry } from '@shared/protocol'
 import { sortTranscriptEntries } from '@shared/transcript-order'
 import { describe, expect, it } from 'vitest'

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Policy fields rendering.
  *
  * Each control here changes what happens when nobody is watching, so the hints

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression tests for the 2026-06-10 follow-state oscillator: a layout-driven
  * drift=0 scroll event ENGAGED follow during a backfill, which triggered the
  * deferred prune-collapse, whose height shrink fired a bogus DISENGAGE, which

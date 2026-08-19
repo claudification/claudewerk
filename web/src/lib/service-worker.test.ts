@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression tests for the two service-worker defects behind "reloading the
  * panel is incredibly slow, even on LAN".
  *

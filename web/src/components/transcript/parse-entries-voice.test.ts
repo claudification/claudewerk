@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { applyInputSourceHint } from '@shared/voice-hint'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptEntry } from '@/lib/types'

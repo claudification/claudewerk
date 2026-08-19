@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { matchesPulseQuery, type PulseSearchable, parsePulseQuery } from '@/lib/pulse/filter'
 // Through the barrel on purpose: this is the surface eleven panes will import.

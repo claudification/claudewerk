@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * REGRESSION: the batch prompt emitted `.rclaude/project/<status>/<id>.md`.
  *
  * That lane layout was deleted in the board migration -- a card lives at

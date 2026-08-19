@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { _resetMessageContext, beginMessage, endMessage } from './perf-message-context'
 import { clearEntries, record, setPerfEnabled } from './perf-metrics'

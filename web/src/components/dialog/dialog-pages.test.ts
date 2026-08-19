@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { layoutPages, pagesWithChanges, resolvePageIndex } from './dialog-pages'
 import type { DialogLayout } from './types'

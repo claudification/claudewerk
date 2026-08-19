@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { ProfileUsageSnapshot } from '@shared/protocol'
 import { describe, expect, it } from 'vitest'
 import {

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock the WS seam so the store can be exercised without a live socket.

@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import type { RecapSummary } from '@shared/protocol'
 import { describe, expect, test } from 'vitest'
 import { DEFAULT_RECAP_MODEL, modelLabel, RECAP_MODEL_OPTIONS, selectSiblings } from './recap-forks'

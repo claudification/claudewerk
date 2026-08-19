@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { afterEach, describe, expect, test } from 'vitest'
 import { fetchJsonTimed, parseServerTiming } from './net-timing'
 import { categoryStats, getEntries, setPerfEnabled } from './perf-metrics'

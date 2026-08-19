@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { VOICE_ORB_TONES, VOICE_ORB_VOICES } from '@shared/voice-orb-options'
 import { describe, expect, it } from 'vitest'
 import { nearestSpeedStep, ORB_SPEED_STEPS, speedLabel, TONE_LABEL, VOICE_LABEL } from './orb-menu-model'

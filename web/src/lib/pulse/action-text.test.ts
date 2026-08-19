@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { Conversation, LiveStatus } from '@/lib/types'
 import { pulseActionText, pulseAge, pulseTag } from './action-text'

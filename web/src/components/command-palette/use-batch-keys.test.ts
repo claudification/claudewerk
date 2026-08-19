@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it, vi } from 'vitest'
 import { ifNotTyping, nextFocus } from './use-batch-keys'
 

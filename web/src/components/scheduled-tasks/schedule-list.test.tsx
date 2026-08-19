@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Schedule list rendering.
  *
  * The row has one job: tell you at a glance whether this schedule is going to

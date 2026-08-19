@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * The launch selector's defaults, as a pure decision rather than a UI assertion.
  *
  * "Work on this epic" must arrive with the NOT-STARTED cards ticked -- opening

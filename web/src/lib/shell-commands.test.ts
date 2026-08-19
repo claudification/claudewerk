@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Tests for shell-commands.ts -- the pure helpers (id/title/path derivation)
  * and the wire senders (with wsSend mocked to assert the exact `shell_*`
  * payloads the broker contract expects).

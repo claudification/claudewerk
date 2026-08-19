@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Project-order tree edits. These reorder the user's sidebar, and every failure
  * mode here is silent -- a project that vanishes from the tree or gets listed
  * twice looks like a rendering glitch, not a data bug.

@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Every <DialogContent> must state its padding explicitly.
  *
  * The incident (2026-08-14): the vacuum APPLY confirm rendered with its title

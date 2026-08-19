@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { beforeEach, describe, expect, test } from 'vitest'
 import { setPerfEnabled } from './perf-metrics'
 import { ANATOMY_THRESHOLD_BYTES, clearWireStats, getWireStats, recordWireIn, totalWireBytes } from './wire-stats'

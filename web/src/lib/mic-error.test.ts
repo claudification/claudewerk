@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Regression tests for describeMicError.
  *
  * THE INCIDENT (2026-08-12, iPad): voice died on an iPad and the banner showed

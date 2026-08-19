@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * Anchor-strategy resolution. The invariant that matters: native and JS
  * anchoring are MUTUALLY EXCLUSIVE -- running both double-compensates every
  * prepend, which is the bug the old hardcoded `overflow-anchor: none` existed

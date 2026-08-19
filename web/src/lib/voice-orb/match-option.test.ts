@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { VoiceOption } from './dialog-answerable'
 import { cleanSpoken, matchSpokenOption } from './match-option'

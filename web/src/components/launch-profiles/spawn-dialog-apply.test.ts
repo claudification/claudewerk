@@ -1,4 +1,7 @@
 /**
+ * @vitest-environment node
+ */
+/**
  * spawn-dialog-apply -- profile <-> spawn-dialog form bridge.
  *
  * Transport reframe (Phase 6): a daemon launch profile is `backend:'claude'` +

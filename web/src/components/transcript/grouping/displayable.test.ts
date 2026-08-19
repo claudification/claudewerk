@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import type { TranscriptEntry } from '@/lib/types'
 import { hasRenderableMessageContent, isDisplayableEntry, isToolResultUserEntry } from './parsers'

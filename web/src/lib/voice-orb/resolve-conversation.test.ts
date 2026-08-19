@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, it } from 'vitest'
 import { type Candidate, resolveSpokenConversation } from './resolve-conversation'
 

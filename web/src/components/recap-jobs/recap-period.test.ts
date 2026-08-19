@@ -1,3 +1,6 @@
+/**
+ * @vitest-environment node
+ */
 import { describe, expect, test } from 'vitest'
 import { periodSpanDays, RECAP_PRESETS, retrospectDefault } from './recap-period'
 
