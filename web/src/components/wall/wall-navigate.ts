@@ -24,8 +24,8 @@
  * it, and do not add a second transport beside it.
  */
 
-import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { showToast } from '@/lib/toast-bus'
 import { openProjectCard } from '../conversation-detail/open-project-card'
 import { WALL_MODAL } from './wall-state'

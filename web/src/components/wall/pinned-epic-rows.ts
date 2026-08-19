@@ -13,8 +13,8 @@
  */
 
 import { buildEpicIndex, type EpicChild } from '@shared/epic-cards'
-import type { ProjectTaskMeta } from '@shared/project-task-types'
 import { NEEDS_OVERSEER_TAG } from '@shared/epic-run-types'
+import type { ProjectTaskMeta } from '@shared/project-task-types'
 
 /** Row markers, straight off the mockup. */
 export const MARKER = {

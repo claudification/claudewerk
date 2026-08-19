@@ -107,7 +107,11 @@ describe('pinnedEpicRows', () => {
   })
 
   it('a card in flight is MOVING even while a dependency is unfinished', () => {
-    const rows = pinnedEpicRows(PROJECT, [epicCard(), child('dep', 'open'), child('busy', 'in-progress', { dependsOn: ['dep'] })])
+    const rows = pinnedEpicRows(PROJECT, [
+      epicCard(),
+      child('dep', 'open'),
+      child('busy', 'in-progress', { dependsOn: ['dep'] }),
+    ])
     expect(rows[0].children.find(c => c.slug === 'busy')?.marker).toBe(MARKER.moving)
   })
 })

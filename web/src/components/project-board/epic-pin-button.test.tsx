@@ -8,9 +8,9 @@
 
 import type { EpicRollup } from '@shared/epic-cards'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { Conversation } from '@/lib/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import type { Conversation } from '@/lib/types'
 import { EpicPinButton } from './epic-pin-button'
 
 const sendBoardOp = vi.hoisted(() => vi.fn(async () => ({ ok: true })))
