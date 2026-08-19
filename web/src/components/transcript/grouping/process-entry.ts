@@ -12,6 +12,7 @@ import { isHiddenEvent, kindOf, visibilityOf } from '@shared/system-events'
 import { VOICE_HINT_ATTR } from '@shared/voice-hint'
 import type { TranscriptAssistantEntry, TranscriptEntry, TranscriptUserEntry } from '@/lib/types'
 import { hasForkProvenance, parseForkProvenance } from '../fork-provenance-parse'
+import { classifyHarnessMeta } from './harness-meta'
 import {
   extractSkillName,
   hasRenderableMessageContent,
@@ -196,6 +197,21 @@ function handleUser(entry: TranscriptEntry, state: GroupingState): boolean {
       timestamp: entry.timestamp || '',
       entries: [entry],
       systemSubtype: 'hook_feedback',
+    })
+    return true
+  }
+
+  // Harness-authored text CC flags `isMeta` and delivers as a bare string. Runs
+  // AFTER hook feedback so that keeps its own warmer line. See ./harness-meta.
+  const metaVerdict = classifyHarnessMeta(userEntry.isMeta, content)
+  if (metaVerdict === 'drop') return true
+  if (metaVerdict === 'line') {
+    state.current = null
+    state.groups.push({
+      type: 'system',
+      timestamp: entry.timestamp || '',
+      entries: [entry],
+      systemSubtype: 'harness_meta',
     })
     return true
   }

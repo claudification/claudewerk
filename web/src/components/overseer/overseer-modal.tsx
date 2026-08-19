@@ -53,12 +53,23 @@ function OverseerBody() {
   }, [selected, runs, select])
 
   const current = runs.find(r => runKey(r.project, r.epicId) === selected) ?? null
-  const { data, error, loading, refresh } = useOverseerInspect(current?.project ?? null, current?.epicId ?? null)
+  const { data, error, loading, refresh, fetchedAt, stale } = useOverseerInspect(
+    current?.project ?? null,
+    current?.epicId ?? null,
+  )
 
   return (
     <div className="flex flex-1 min-h-0">
       <OverseerRail />
-      <OverseerDetail data={data} error={error} loading={loading} nowMs={nowMs} onRefresh={refresh} />
+      <OverseerDetail
+        data={data}
+        error={error}
+        loading={loading}
+        nowMs={nowMs}
+        onRefresh={refresh}
+        fetchedAt={fetchedAt}
+        stale={stale}
+      />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 /** The conversation lane: turns, commands, compaction, notices. */
 import type { Describer } from './types'
-import { clamp, num, str } from './types'
+import { clamp, firstLine, messageText, num, str } from './types'
 
 const COMMAND_TAG_RE = /<\/?(?:local-command-stdout|command-name|command-message|command-args|local-command-caveat)>/g
 
@@ -60,7 +60,23 @@ const notification: Describer = entry => {
   return { text, severity: priority === 'high' || priority === 'immediate' ? 'warn' : 'info' }
 }
 
+/**
+ * `harness-meta` -- Claude Code's own prose, injected as a user entry flagged
+ * `isMeta` and synthesized into a system group by the grouper. A commit nudge, a
+ * resume caveat, a malformed-tool-call retry: addressed to the model, never to the
+ * reader. It earns one muted line so the timeline stays honest about who spoke,
+ * with the full text one click away in the inspector -- and it must never wear the
+ * user's bubble, which is what it did before.
+ */
+const harnessMeta: Describer = entry => {
+  const text = firstLine(messageText(entry))
+    .replace(/^\[|\]$/g, '')
+    .trim()
+  return text ? { text: clamp(text, 120), severity: 'muted' } : null
+}
+
 export const CONVERSATION_DESCRIBERS: Record<string, Describer> = {
+  'harness-meta': harnessMeta,
   'command-input': commandInput,
   // Output of a local slash command (/voice, /usage): the backend renders it as
   // assistant-style text, so it keeps the neutral tone.

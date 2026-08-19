@@ -17,17 +17,17 @@
  * shape lives next door in `node-stats-sample.ts` (node-only runtime; this file
  * stays dependency-free so the web bundle can import the types).
  *
- * WHAT IS NOT ON THIS PAYLOAD: plan WINDOW data. The per-window breakdown, the
- * reset times and the auth-error states ride `sentinel_usage_report`
- * (`ProfileUsageSnapshot` in `protocol.ts`) and are read back via
- * `getSentinelProfileUsage()`. That message stays the SOURCE. What a sentinel
- * frame may carry is the one DERIVED headline percent per profile, so the wall
- * can render a node row without joining against a separately-timed second
- * message. See `NodeProfileUtilization`.
+ * WHAT IS NOT ON THIS PAYLOAD: plan utilization, in any form. Per-profile plan
+ * windows ride `sentinel_usage_report` (`ProfileUsageSnapshot` in `protocol.ts`)
+ * and are read back via `getSentinelProfileUsage()`. There is exactly one
+ * utilization path and this is not it -- node stats carry MACHINE facts plus the
+ * conversation count. (A derived headline percent was carried here briefly and
+ * removed on 2026-08-19: one number sampled on two clocks is one number that can
+ * disagree with itself.)
  *
  * PROFILE-ENV BOUNDARY (`src/sentinel/sentinel-config.ts`): nothing here carries
- * a config dir, an env bag or an oauth token. A profile entry is a NAME and a
- * percent, and the validator REJECTS any other key on it.
+ * a config dir, an env bag or an oauth token. The payload has no profile fields
+ * at all, which is the cheapest possible way to hold that boundary.
  *
  * Split for size: the validation helpers live in `node-stats-checks.ts`, the
  * per-host views in `node-stats-host.ts`. Same contract, three files.
@@ -131,35 +131,19 @@ export interface MachineStats {
 }
 
 /**
- * Profile NAME + plan utilization. The ENTIRE broker-safe profile slice --
- * `configDir`, `env` and oauth tokens have no representation here by
- * construction, which is how the PROFILE-ENV BOUNDARY
- * (`src/sentinel/sentinel-config.ts`) is held on this payload.
- *
- * This duplicates a number that also rides `sentinel_usage_report`, and that is
- * deliberate: the WALL renders one row per NODE and must not have to join
- * against a second, separately-timed message to fill it in. The usage report
- * stays the SOURCE (it carries every window, the reset times and the error
- * states); this is the one derived headline number, sampled on the node tick.
- */
-export interface NodeProfileUtilization {
-  name: string
-  /** 0-100. ABSENT when the profile is unauthed or its last poll failed --
-   *  absent is honest, a zero would read as plenty of headroom. */
-  utilizationPercent?: number
-}
-
-/**
  * Facts only a SENTINEL can know. Optional on the shape and absent -- not
  * zeroed -- from a reporter frame, so "no reporter data" and "reporter with
  * nothing running" stay distinguishable.
+ *
+ * NO PROFILE FIELDS. Plan utilization was briefly carried here and was removed
+ * (decision 2026-08-19): there is exactly ONE utilization path and it is
+ * `sentinel_usage_report`. A consumer that wants a node's plan numbers joins
+ * against that, rather than this payload growing a second, separately-sampled
+ * copy that can disagree with it.
  */
 export interface SentinelNodeExtras {
   /** Conversations currently running under this sentinel. */
   conversationCount: number
-  /** Profile NAMES with their plan utilization. Empty when the sentinel has no
-   *  profiles configured. */
-  profiles?: NodeProfileUtilization[]
 }
 
 /** The wire message. Sentinel and reporter both send exactly this. */

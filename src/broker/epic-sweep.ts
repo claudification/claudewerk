@@ -27,6 +27,16 @@ export interface EpicGroup {
   project: string
   /** Cards with a live implementer or verifier right now. */
   inFlight: string[]
+  /**
+   * Cards with a live VERIFIER specifically. A strict subset of nothing --
+   * it overlaps `inFlight` and that is correct, they answer different questions.
+   *
+   * `inFlight` answers "may this card be dispatched to an implementer"; this
+   * answers "does this card already have someone writing its verdict". The beat
+   * needs both, and for a long time it only had the first -- so a card in
+   * `in-review` asked for a new verifier every sweep, forever.
+   */
+  inVerify: string[]
   /** Is a conversation holding the overseer seat still alive? */
   overseerAlive: boolean
   /**
@@ -56,7 +66,16 @@ export type IsLive = (conv: Conversation) => boolean
 type CardLiveness = Map<string, Map<string, boolean>>
 
 function emptyGroup(epicId: string, project: string): EpicGroup {
-  return { epicId, project, inFlight: [], overseerAlive: false, liveOverseers: [], settled: [], maxGenSeen: 0 }
+  return {
+    epicId,
+    project,
+    inFlight: [],
+    inVerify: [],
+    overseerAlive: false,
+    liveOverseers: [],
+    settled: [],
+    maxGenSeen: 0,
+  }
 }
 
 /** OR-fold one card's liveness. Its own function because the OR is the subtle
@@ -70,7 +89,13 @@ function noteCardLiveness(cards: CardLiveness, epicId: string, cardId: string, l
 
 /** Fold one conversation into the accumulators. Split out so the grouping pass
  *  reads as "for each conversation, absorb it" and nothing else. */
-function absorb(conv: Conversation, isLive: IsLive, groups: Map<string, EpicGroup>, cards: CardLiveness): void {
+function absorb(
+  conv: Conversation,
+  isLive: IsLive,
+  groups: Map<string, EpicGroup>,
+  cards: CardLiveness,
+  verifiers: CardLiveness,
+): void {
   const tag = conv.launchConfig?.epic
   if (!tag?.epicId) return
 
@@ -86,19 +111,41 @@ function absorb(conv: Conversation, isLive: IsLive, groups: Map<string, EpicGrou
     }
     return
   }
-  if (tag.cardId) noteCardLiveness(cards, tag.epicId, tag.cardId, live)
+  if (!tag.cardId) return
+  noteCardLiveness(cards, tag.epicId, tag.cardId, live)
+  // Second, role-scoped fold. The combined one above still owns settle/dispatch;
+  // this one exists so the beat can ask "is a VERDICT already being written" --
+  // a question the combined bit cannot answer, which is how one card ended up
+  // with eight simultaneous verifiers.
+  if (tag.role === 'verifier') noteCardLiveness(verifiers, tag.epicId, tag.cardId, live)
 }
 
 /** Resolve the per-card liveness fold into the two lanes the beat consumes. */
-function splitLanes(groups: Map<string, EpicGroup>, cards: CardLiveness): void {
+/** Live vs dead across ALL roles -- the in-flight / settled split. */
+function foldWorkLanes(group: EpicGroup, byCard: Map<string, boolean>): void {
+  for (const [cardId, live] of byCard) {
+    ;(live ? group.inFlight : group.settled).push(cardId)
+  }
+  group.inFlight.sort()
+  group.settled.sort()
+}
+
+/** Verifier-role only, and only the LIVE half: a dead verifier is not a reason
+ *  to withhold a verdict, it is a reason to write one. */
+function foldVerifyLane(group: EpicGroup, byCard: Map<string, boolean>): void {
+  for (const [cardId, live] of byCard) if (live) group.inVerify.push(cardId)
+  group.inVerify.sort()
+}
+
+/** Resolve the per-card liveness folds into the lanes the beat consumes. */
+function splitLanes(groups: Map<string, EpicGroup>, cards: CardLiveness, verifiers: CardLiveness): void {
   for (const [epicId, byCard] of cards) {
     const group = groups.get(epicId)
-    if (!group) continue
-    for (const [cardId, live] of byCard) {
-      ;(live ? group.inFlight : group.settled).push(cardId)
-    }
-    group.inFlight.sort()
-    group.settled.sort()
+    if (group) foldWorkLanes(group, byCard)
+  }
+  for (const [epicId, byCard] of verifiers) {
+    const group = groups.get(epicId)
+    if (group) foldVerifyLane(group, byCard)
   }
 }
 
@@ -109,8 +156,9 @@ function splitLanes(groups: Map<string, EpicGroup>, cards: CardLiveness): void {
 export function groupEpicConversations(convs: readonly Conversation[], isLive: IsLive): Map<string, EpicGroup> {
   const groups = new Map<string, EpicGroup>()
   const cards: CardLiveness = new Map()
-  for (const conv of convs) absorb(conv, isLive, groups, cards)
-  splitLanes(groups, cards)
+  const verifiers: CardLiveness = new Map()
+  for (const conv of convs) absorb(conv, isLive, groups, cards, verifiers)
+  splitLanes(groups, cards, verifiers)
   return groups
 }
 

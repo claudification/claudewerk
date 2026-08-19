@@ -1,10 +1,11 @@
 /**
  * The `Read` tool row. Binary reads (an image, a PDF) and text reads answer
  * different questions, so they are two cases; what either one LOOKS like lives
- * in `read-details.tsx`.
+ * in `read-binary.tsx` and `read-details.tsx`.
  */
 
-import { BinaryDetails, type BinaryFile, BinarySummary, TextReadSummary } from './read-details'
+import { BinaryDetails, type BinaryFile, BinarySummary } from './read-binary'
+import { TextReadSummary } from './read-details'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 import { filePreview } from './tool-file-view'
 
