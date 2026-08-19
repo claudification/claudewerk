@@ -415,7 +415,8 @@ function defaultShellStyle(isSelected: boolean, planMode: boolean, displayColor:
       boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, transparent), 0 0 10px color-mix(in oklch, ${color} 22%, transparent)`,
     }
 
-  if (displayColor) return { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
+  if (displayColor)
+    return { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
   return undefined
 }
 
