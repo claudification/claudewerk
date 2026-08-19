@@ -53,8 +53,17 @@ async function unmergedBranches(card: string): Promise<string> {
 
 for (const r of results) {
   if (r.verdict === 'VERIFIED') continue
-  const branches = await unmergedBranches(r.aspect.card)
-  if (branches) r.failures.push(`built but NOT MERGED: ${branches}`)
+  const own = await unmergedBranches(r.aspect.card)
+  if (own) r.failures.push(`built but NOT MERGED: ${own}`)
+
+  // A dead feed whose owner is DONE but unmerged is a merge away, not a dead
+  // end. Shouting CANNOT DELIVER at work that is finished and sitting on a
+  // branch is the fastest way to teach someone to ignore the shouting.
+  if (r.verdict !== 'UNDELIVERABLE' || !r.aspect.feedFrom) continue
+  const feedBranches = await unmergedBranches(r.aspect.feedFrom)
+  if (!feedBranches) continue
+  r.verdict = 'BLOCKED'
+  r.failures.push(`feed is DONE but unmerged, on ${feedBranches} -- merge it and this clears`)
 }
 
 if (process.argv.includes('--json')) {

@@ -95,7 +95,13 @@ export const ASPECTS: Aspect[] = [
     card: 'wall-host-vitals',
     promise: 'Host vitals per sentinel: cpu, ram, disk, load, live sparkline',
     artifacts: [{ path: `${PANES}/s1-host-vitals.tsx` }],
-    feeds: [{ path: 'src/shared/*.ts', needle: 'report_node_stats', as: 'the shared node-stats contract' }],
+    // The implementer named it `node-stats`, not the `report_node_stats` this
+    // manifest first guessed -- and the contract-symbol table reached the epic
+    // card AFTER that card was dispatched, so the guess was mine to lose. The
+    // shipped name is the better one; the probe follows the code.
+    feeds: [
+      { path: 'src/shared/node-stats.ts', needle: 'NODE_STATS_INTERVAL_MS', as: 'the shared node-stats contract' },
+    ],
     feedFrom: 'node-stats-contract',
   },
   {
