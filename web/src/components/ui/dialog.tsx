@@ -93,7 +93,15 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-2.5 top-2.5 grid size-6 place-items-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-foreground">
+        {/* `top-2.5` centres this 24px box on a 44px header row, which is what a
+            padded dialog header comes out to. A surface whose first child is a
+            SHORTER bar has to re-centre it -- hence the slot, so it can be
+            targeted from the outside instead of every caller re-implementing the
+            button. See ModalSurface. */}
+        <DialogPrimitive.Close
+          data-slot="dialog-close"
+          className="absolute right-2.5 top-2.5 grid size-6 place-items-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-foreground"
+        >
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

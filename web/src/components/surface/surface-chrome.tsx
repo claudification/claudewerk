@@ -50,10 +50,14 @@ function DetachedControls({ modal, onClose }: { modal: ManagedModal; onClose?: (
   )
 }
 
-/** Inline dialog: minimize / maximize / detach. mr-6 clears the Dialog's own X. */
+/** Inline dialog: minimize / maximize / detach. The Dialog's own X sits in the
+ *  corner DialogContent already reserves on this header (`[&>*:first-child]:pr-11`),
+ *  so no hand-rolled clearance here -- the `mr-6` that used to be on this row
+ *  DOUBLED it and pushed the X 24px off the end of the cluster. Same leftover
+ *  ModalWindowControls dropped for the same reason. */
 function InlineControls({ modal }: { modal: ManagedModal }) {
   return (
-    <div className="ml-auto mr-6 flex items-center gap-3">
+    <div className="ml-auto flex items-center gap-3">
       <MinimizeButton modal={modal} />
       <ChromeButton onClick={modal.toggleMaximize} title={modal.maximized ? 'Restore size' : 'Maximize'}>
         {modal.maximized ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}

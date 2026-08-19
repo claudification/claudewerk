@@ -16,6 +16,12 @@ function hasSummary(r: ToolCaseResult): boolean {
   return r.summary != null && r.summary !== ''
 }
 
+/** Summaries are ReactNodes (a file name can be a card chip), so read the text. */
+function summaryText(r: ToolCaseResult): string {
+  if (typeof r.summary === 'string') return r.summary
+  return renderToStaticMarkup(r.summary as ReactElement).replace(/<[^>]*>/g, '')
+}
+
 // -------------------------------------------------------------------
 // dispatchToolCase: Core tool routing
 // -------------------------------------------------------------------
@@ -236,7 +242,20 @@ describe('dispatchToolCase - Edit', () => {
 describe('dispatchToolCase - Write', () => {
   it('shows file path and char count in summary', () => {
     const r = dispatchToolCase('Write', makeCtx({ input: { file_path: '/src/new.ts', content: 'hello world' } }))
-    expect(r.summary).toContain('11 chars')
+    expect(summaryText(r)).toContain('11 chars')
+    expect(summaryText(r)).toContain('new.ts')
+  })
+
+  // A board card is not a file to a reader -- it has a lane and a title -- so
+  // the row renders the card, and its content renders as the card it wrote.
+  it('renders a card path as a card, not a filename', () => {
+    const card = '---\ntitle: Wall time cursor\nstatus: in-progress\n---\n\nScrub the wall.'
+    const r = dispatchToolCase(
+      'Write',
+      makeCtx({ input: { file_path: '/repo/.rclaude/project/cards/wall-time-cursor.md', content: card } }),
+    )
+    expect(summaryText(r)).toContain('wall-time-cursor')
+    expect(renderToStaticMarkup(r.details as ReactElement)).toContain('in-progress')
   })
 
   it('provides details with content preview', () => {
@@ -249,7 +268,7 @@ describe('dispatchToolCase - Write', () => {
 
   it('handles zero-length content', () => {
     const r = dispatchToolCase('Write', makeCtx({ input: { file_path: '/src/empty.ts', content: '' } }))
-    expect(r.summary).toContain('0 chars')
+    expect(summaryText(r)).toContain('0 chars')
     expect(r.details).toBeNull()
   })
 })

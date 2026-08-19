@@ -4,7 +4,7 @@ import { renderMcpSendMessage } from './tool-case-send-message'
 import { renderMcpSetStatus } from './tool-case-set-status'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
 import { renderAgentTask, renderAskUserQuestion } from './tool-cases-agent'
-import { renderBash, renderEdit, renderRead, renderRepl, renderWrite } from './tool-cases-core'
+import { renderBash, renderEdit, renderRepl, renderWrite } from './tool-cases-core'
 import {
   renderGmailDraftEmail,
   renderGmailGetThread,
@@ -37,6 +37,7 @@ import {
   renderTeam,
   renderWorktree,
 } from './tool-cases-misc'
+import { renderRead } from './tool-cases-read'
 import { renderGlobGrep, renderWebFetch, renderWebSearch } from './tool-cases-search'
 import { renderTaskCreate, renderTaskMisc, renderTaskUpdate, renderTodoWrite } from './tool-cases-tasks'
 import { WEB_REMOTE_HANDLERS } from './web-remote-handlers'
