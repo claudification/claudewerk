@@ -214,6 +214,17 @@
 }
 
 /*
+ * Mono is bound to BOTH font slots, so every string in the app -- prose
+ * included -- is monospaced. That is the look, and it is also why long
+ * descriptions read slowly: mono costs you the word-shape cues that make prose
+ * scannable. Toggled live from the theme playground so the choice can be made
+ * by looking rather than by arguing.
+ */
+:root[data-prose-font='sans'] {
+	--font-sans: ui-sans-serif, -apple-system, 'Inter', 'Segoe UI', system-ui, sans-serif;
+}
+
+/*
  * THE LADDER -- five type roles, so a surface can say what matters.
  *
  * The board had exactly one typographic voice: every string on it was 9-13px

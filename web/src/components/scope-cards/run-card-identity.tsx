@@ -26,9 +26,7 @@ export function RunIdentity({
   const worktree = currentPath && currentPath !== root ? currentPath : null
   return (
     <ScopeSection>
-      <div className="text-[10px] text-fg-muted truncate">
-        {[model, effort, profile].filter(Boolean).join(' · ')}
-      </div>
+      <div className="text-[10px] text-fg-muted truncate">{[model, effort, profile].filter(Boolean).join(' · ')}</div>
       {branch && <ScopeLine label="branch" value={branch.label} tone="text-purple-300/80" title={branch.title} />}
       {worktree && <ScopeLine label="worktree" value={worktree} tone="text-violet-300/80" title={worktree} />}
     </ScopeSection>

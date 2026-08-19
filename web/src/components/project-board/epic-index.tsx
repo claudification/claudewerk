@@ -67,9 +67,7 @@ function LooseRow({
         <span />
       )}
       <span className="font-mono text-tally tabular-nums text-right text-foreground">{count}</span>
-      <span className="col-start-2 col-span-3 font-mono text-meta text-fg-muted truncate -mt-0.5">
-        {detail}
-      </span>
+      <span className="col-start-2 col-span-3 font-mono text-meta text-fg-muted truncate -mt-0.5">{detail}</span>
     </div>
   )
 }

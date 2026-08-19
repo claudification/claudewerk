@@ -64,9 +64,7 @@ function Choice<T extends string>({
         ))}
       </div>
       {active && (
-        <span
-          className={cn('text-chrome leading-snug', active.alarming ? 'text-destructive' : 'text-fg-muted')}
-        >
+        <span className={cn('text-chrome leading-snug', active.alarming ? 'text-destructive' : 'text-fg-muted')}>
           {active.hint}
         </span>
       )}

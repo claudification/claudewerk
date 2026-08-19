@@ -51,8 +51,8 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
 function OrderingCaveat({ waiting }: { waiting: number }) {
   return (
     <p className="font-mono text-chrome text-fg-dim leading-relaxed">
-      Ordering is only as good as the declared edges: cards with no{' '}
-      <code className="text-fg-muted">depends_on</code> between them dispatch together even if they collide.
+      Ordering is only as good as the declared edges: cards with no <code className="text-fg-muted">depends_on</code>{' '}
+      between them dispatch together even if they collide.
       {waiting > 0 ? ' The overseer can add a missing edge, but only between beats.' : ' Nothing here declares one.'}
     </p>
   )

@@ -54,9 +54,7 @@ export function LegacyBody({ usage }: { usage: UsageUpdate }) {
         </>
       )}
       <div className="border-t border-border mt-2 pt-1">
-        <span className="text-[9px] text-fg-faint">
-          Polled {new Date(usage.polledAt).toLocaleTimeString()}
-        </span>
+        <span className="text-[9px] text-fg-faint">Polled {new Date(usage.polledAt).toLocaleTimeString()}</span>
       </div>
     </div>
   )

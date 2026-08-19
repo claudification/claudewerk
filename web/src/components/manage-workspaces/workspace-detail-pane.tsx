@@ -18,9 +18,7 @@ function ViewTab({ active, onClick, children }: { active: boolean; onClick: () =
       onClick={onClick}
       className={cn(
         'h-6 px-2.5 rounded-md text-[10px] font-mono transition-colors',
-        active
-          ? 'bg-accent/20 text-foreground ring-1 ring-accent/30'
-          : 'text-fg-dim hover:text-foreground',
+        active ? 'bg-accent/20 text-foreground ring-1 ring-accent/30' : 'text-fg-dim hover:text-foreground',
       )}
     >
       {children}

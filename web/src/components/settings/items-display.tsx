@@ -2,6 +2,7 @@ import { ThemeSelector } from '../theme-selector'
 import { BubbleColorPicker } from './color-inputs'
 import { SettingCheckbox } from './settings-inputs'
 import { SELECT_CLS, type SettingItem } from './settings-item'
+import { ThemePlaygroundItem } from './theme-playground-item'
 
 export const DISPLAY_ITEMS: SettingItem[] = [
   {
@@ -12,6 +13,14 @@ export const DISPLAY_ITEMS: SettingItem[] = [
     fullWidth: true,
     keywords: 'appearance dark color scheme palette',
     render: () => <ThemeSelector />,
+  },
+  {
+    tab: 'display',
+    group: 'Theme',
+    label: 'Theme playground',
+    description: 'Drag the surface ladder against the live app, then copy the result back',
+    keywords: 'playground ramp contrast tune colors surfaces sliders font',
+    render: () => <ThemePlaygroundItem />,
   },
   {
     tab: 'display',

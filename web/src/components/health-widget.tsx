@@ -134,9 +134,7 @@ export function HealthWidget() {
             )}
 
             <div className="border-t border-border mt-2 pt-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] text-fg-faint">
-                Polled {new Date(health.polledAt).toLocaleTimeString()}
-              </span>
+              <span className="text-[9px] text-fg-faint">Polled {new Date(health.polledAt).toLocaleTimeString()}</span>
               <a
                 href="https://clanker.watch/status/claude"
                 target="_blank"

@@ -109,9 +109,7 @@ export function EfficiencyWidget() {
             {eff.forecast.length > 0 && (
               <>
                 <div className="border-t border-border my-2" />
-                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">
-                  Forecast (UTC blocks)
-                </div>
+                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">Forecast (UTC blocks)</div>
 
                 <div className="flex gap-0.5">
                   {eff.forecast.map(block => {
@@ -140,9 +138,7 @@ export function EfficiencyWidget() {
             )}
 
             <div className="border-t border-border mt-2 pt-1 flex items-center justify-between gap-2">
-              <span className="text-[9px] text-fg-faint">
-                Polled {new Date(eff.polledAt).toLocaleTimeString()}
-              </span>
+              <span className="text-[9px] text-fg-faint">Polled {new Date(eff.polledAt).toLocaleTimeString()}</span>
               <a
                 href="https://usage.report"
                 target="_blank"

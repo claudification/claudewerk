@@ -29,9 +29,7 @@ export function StrategyPicker({
               }}
               className={cn(
                 'w-full text-left px-2.5 py-2 rounded border transition-colors disabled:opacity-50',
-                active
-                  ? 'border-primary/60 bg-primary/10'
-                  : 'border-border hover:border-border hover:bg-surface-inset',
+                active ? 'border-primary/60 bg-primary/10' : 'border-border hover:border-border hover:bg-surface-inset',
               )}
             >
               <div className={cn('text-[11px] font-mono font-bold', active ? 'text-primary' : 'text-foreground')}>

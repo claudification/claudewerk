@@ -10,7 +10,8 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:brightness-110',
-        destructive: 'bg-destructive text-destructive-foreground hover:brightness-110 focus-visible:ring-destructive/40',
+        destructive:
+          'bg-destructive text-destructive-foreground hover:brightness-110 focus-visible:ring-destructive/40',
         /* Was `bg-background` -- the page colour -- so an outline button was a
            border floating on nothing. It gets a real fill and a strong edge. */
         outline: 'border border-border-strong bg-surface-overlay hover:bg-surface-hover hover:text-foreground',

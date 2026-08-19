@@ -76,9 +76,7 @@ function ListRow({
         <span className="truncate">{profile.name || '(unnamed)'}</span>
       </span>
       {profile.chord && (
-        <span className="text-[10px] text-fg-muted shrink-0">
-          {formatShortcut(`mod+j ${profile.chord}`)}
-        </span>
+        <span className="text-[10px] text-fg-muted shrink-0">{formatShortcut(`mod+j ${profile.chord}`)}</span>
       )}
     </button>
   )

@@ -34,10 +34,7 @@ export function SotuProjectStrip({ sotu }: { sotu: SheafProjectSotu | undefined 
         ))}
         {sotu.grounding && <GroundingChip g={sotu.grounding} />}
         {!sotu.enabled && (
-          <span
-            className="text-[10px] text-fg-dim italic"
-            title="SOTU paid distill not enabled -- free floor only"
-          >
+          <span className="text-[10px] text-fg-dim italic" title="SOTU paid distill not enabled -- free floor only">
             floor only
           </span>
         )}
@@ -69,11 +66,7 @@ export function FleetSotuStats({ sotu }: { sotu: SheafFleetSotu | undefined }) {
   if (sotu.grounding) parts.push(<GroundingChip key="g" g={sotu.grounding} />)
   if (sotu.filteredProjects > 0) {
     parts.push(
-      <span
-        key="f"
-        className="text-[10px] text-fg-dim italic"
-        title="Projects hidden by per-project visibility"
-      >
+      <span key="f" className="text-[10px] text-fg-dim italic" title="Projects hidden by per-project visibility">
         {sotu.filteredProjects} hidden
       </span>,
     )

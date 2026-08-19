@@ -79,10 +79,7 @@ export function CardBody({
           </span>
         )}
         {task.tags.map(tag => (
-          <span
-            key={tag}
-            className="text-chrome px-1 py-0.5 border border-muted-foreground/28 text-fg-muted font-mono"
-          >
+          <span key={tag} className="text-chrome px-1 py-0.5 border border-muted-foreground/28 text-fg-muted font-mono">
             {tag}
           </span>
         ))}

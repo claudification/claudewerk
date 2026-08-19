@@ -518,9 +518,7 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
         {/* Task list */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {visibleTasks.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-fg-faint text-xs font-mono">
-              No tasks match
-            </div>
+            <div className="flex items-center justify-center h-24 text-fg-faint text-xs font-mono">No tasks match</div>
           ) : (
             visibleTasks.map(task => {
               const isSelected = selected.has(task.slug)

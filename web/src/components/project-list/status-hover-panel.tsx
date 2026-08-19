@@ -31,9 +31,7 @@ export function StatusHoverPanel({
           <span className={cn('h-2 w-2 rounded-full', meta.dot)} />
           {meta.label}
         </span>
-        <span className="text-[10px] tracking-wide text-fg-dim">
-          {formatAgeShort(status.updatedAt)} ago
-        </span>
+        <span className="text-[10px] tracking-wide text-fg-dim">{formatAgeShort(status.updatedAt)} ago</span>
         {status.safe_to_close && (
           <span className="text-[10px] font-bold text-muted-foreground">{`${CLOSEABLE_ICON} closeable`}</span>
         )}
@@ -43,9 +41,7 @@ export function StatusHoverPanel({
           </span>
         )}
         {lastInputAt != null && (
-          <span className="basis-full text-[10px] text-fg-dim">
-            last input · {formatAgeShort(lastInputAt)} ago
-          </span>
+          <span className="basis-full text-[10px] text-fg-dim">last input · {formatAgeShort(lastInputAt)} ago</span>
         )}
       </div>
       <StatusDetailFields source={status} className="px-3 py-2.5" />

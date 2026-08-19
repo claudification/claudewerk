@@ -27,9 +27,7 @@ function CardLine({ card, glyph, tone, label }: { card: EpicInspectCard; glyph: 
   return (
     <div className="flex items-center gap-2 py-0.5 text-[11px]">
       <span className={cn('w-2.5 text-center shrink-0', tone)}>{glyph}</span>
-      <span className={cn('flex-1 min-w-0 truncate', label === 'waiting' && 'text-fg-dim')}>
-        {card.id}
-      </span>
+      <span className={cn('flex-1 min-w-0 truncate', label === 'waiting' && 'text-fg-dim')}>{card.id}</span>
       <span className="text-meta text-fg-dim shrink-0">{waiting}</span>
     </div>
   )
@@ -39,9 +37,7 @@ export function OverseerDag({ plan }: { plan: EpicInspectPlan | null }) {
   if (!plan) {
     return (
       <Block title="DAG">
-        <div className="text-[11px] text-fg-dim italic">
-          No card on the board carries or claims this epic.
-        </div>
+        <div className="text-[11px] text-fg-dim italic">No card on the board carries or claims this epic.</div>
       </Block>
     )
   }

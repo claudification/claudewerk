@@ -255,9 +255,7 @@ export function RunTaskDialog({
                   : 'Launching...'}
           </span>
           {phase === 'launching' && (
-            <span className="text-[10px] font-mono text-fg-dim ml-auto mr-2 tabular-nums">
-              {progress.elapsed}s
-            </span>
+            <span className="text-[10px] font-mono text-fg-dim ml-auto mr-2 tabular-nums">{progress.elapsed}s</span>
           )}
         </div>
 

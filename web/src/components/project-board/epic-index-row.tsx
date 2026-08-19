@@ -86,9 +86,7 @@ export function EpicIndexRow({
     >
       <EpicMarkBadge epicId={rollup.epicId} variant={selected ? 'solid' : 'quiet'} />
 
-      <span className={cn('font-mono truncate', empty ? 'text-read text-fg-muted' : 'text-loud')}>
-        {title}
-      </span>
+      <span className={cn('font-mono truncate', empty ? 'text-read text-fg-muted' : 'text-loud')}>{title}</span>
 
       {empty ? (
         <span

@@ -25,9 +25,7 @@ export function BatchModeModal({ open, onClose }: { open: boolean; onClose: () =
       <DialogContent className="max-w-5xl max-h-[80vh] flex flex-col p-0 gap-0 top-[10vh] translate-y-0">
         <div className="flex items-center gap-3 border-b border-border px-3 py-2">
           <DialogTitle className="text-sm font-bold text-accent shrink-0">Batch operations</DialogTitle>
-          {b.currentBatchId && (
-            <span className="text-[10px] font-mono text-fg-dim truncate">{b.currentBatchId}</span>
-          )}
+          {b.currentBatchId && <span className="text-[10px] font-mono text-fg-dim truncate">{b.currentBatchId}</span>}
           <span className="ml-auto mr-6 text-[10px] font-mono text-muted-foreground tabular-nums shrink-0">
             {b.selectedIds.length} selected
           </span>

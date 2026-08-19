@@ -221,11 +221,7 @@ export const DialogModal = memo(function DialogModal({
   const urgent = remaining <= 30
   const critical = remaining <= 10
   const countdownColor = critical ? 'bg-destructive' : urgent ? 'bg-amber-500' : 'bg-primary/40'
-  const countdownTextColor = critical
-    ? 'text-destructive animate-pulse'
-    : urgent
-      ? 'text-amber-500'
-      : 'text-fg-dim'
+  const countdownTextColor = critical ? 'text-destructive animate-pulse' : urgent ? 'text-amber-500' : 'text-fg-dim'
 
   // Minimized: thin vertical strip on the right edge
   if (minimized) {

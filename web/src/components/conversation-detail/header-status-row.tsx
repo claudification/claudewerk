@@ -74,9 +74,7 @@ export function StatusRow({ conversation, model }: { conversation: Conversation;
       {(conversation.title || conversation.agentName) && (
         <span className="text-foreground text-[10px]">{conversation.title || conversation.agentName}</span>
       )}
-      {conversation.description && (
-        <span className="text-fg-muted text-[10px] italic">{conversation.description}</span>
-      )}
+      {conversation.description && <span className="text-fg-muted text-[10px] italic">{conversation.description}</span>}
       <span
         className="text-muted-foreground text-[10px]"
         title={`conversation: ${conversation.id}\nconnections: ${conversation.connectionIds?.join(', ') || 'none'}`}

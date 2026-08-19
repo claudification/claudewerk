@@ -11,8 +11,7 @@ import { editChecklistItem, removeChecklistItem, setChecklistStatus } from '@/li
 import { Markdown } from '../markdown'
 
 const ICON = 'size-3.5 shrink-0'
-const HOVER_BTN =
-  'shrink-0 text-fg-dim hover:text-foreground opacity-0 group-hover/ci:opacity-100 transition-opacity'
+const HOVER_BTN = 'shrink-0 text-fg-dim hover:text-foreground opacity-0 group-hover/ci:opacity-100 transition-opacity'
 
 // Status-dependent presentation, picked with a single branch in the row.
 const VARIANT = {

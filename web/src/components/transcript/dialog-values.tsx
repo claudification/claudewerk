@@ -35,9 +35,7 @@ function BoolBadge({ val }: { val: boolean }) {
     <span
       className={cn(
         'px-1.5 py-0.5 rounded text-[9px] font-bold border',
-        val
-          ? 'bg-green-500/15 text-green-400 border-green-500/30'
-          : 'bg-zinc-500/15 text-fg-dim border-zinc-500/20',
+        val ? 'bg-green-500/15 text-green-400 border-green-500/30' : 'bg-zinc-500/15 text-fg-dim border-zinc-500/20',
       )}
     >
       {String(val)}

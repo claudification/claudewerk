@@ -52,9 +52,7 @@ function ThemeCard({
       onClick={() => onSelect(theme.id)}
       className={cn(
         'text-left rounded-sm border p-1.5 transition-all',
-        currentTheme === theme.id
-          ? 'border-primary ring-1 ring-primary/30'
-          : 'border-border hover:border-primary/40',
+        currentTheme === theme.id ? 'border-primary ring-1 ring-primary/30' : 'border-border hover:border-primary/40',
       )}
     >
       <ThemePreview variables={theme.variables} />
@@ -64,11 +62,7 @@ function ThemeCard({
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[9px] font-mono uppercase tracking-widest text-fg-dim pt-1 pb-0.5">
-      {children}
-    </div>
-  )
+  return <div className="text-[9px] font-mono uppercase tracking-widest text-fg-dim pt-1 pb-0.5">{children}</div>
 }
 
 export function ThemeSelector() {

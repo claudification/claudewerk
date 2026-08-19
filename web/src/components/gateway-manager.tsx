@@ -149,9 +149,7 @@ function GatewayList() {
           <GatewayRow key={g.gatewayId} gateway={g} onRevoke={() => handleRevoke(g.gatewayId, g.alias)} />
         ))}
         {gateways.length === 0 && (
-          <div className="text-xs text-fg-dim text-center py-2">
-            No gateways registered. Create one below.
-          </div>
+          <div className="text-xs text-fg-dim text-center py-2">No gateways registered. Create one below.</div>
         )}
       </div>
 

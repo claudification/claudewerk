@@ -83,9 +83,7 @@ function OrganizeModalInner() {
                 <FolderPlus className="size-3.5" /> New group
               </button>
 
-              <div className="text-[10px] text-fg-dim font-bold uppercase tracking-wider px-1 pt-1">
-                Ungrouped
-              </div>
+              <div className="text-[10px] text-fg-dim font-bold uppercase tracking-wider px-1 pt-1">Ungrouped</div>
               <UngroupedDropZone>
                 {d.pool.length === 0 ? (
                   <p className="text-[10px] text-fg-dim px-1 py-0.5">Everything is grouped.</p>

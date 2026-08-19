@@ -44,9 +44,7 @@ function ProjectHeader({ project, expanded, onToggle }: Omit<ProjectSectionProps
       <h2 className="text-base font-semibold tracking-tight truncate" title={project.projectUri}>
         {project.label}
       </h2>
-      <span className="text-[10px] text-fg-muted font-mono truncate hidden sm:inline">
-        {project.projectUri}
-      </span>
+      <span className="text-[10px] text-fg-muted font-mono truncate hidden sm:inline">{project.projectUri}</span>
       <div className="ml-auto flex items-baseline gap-x-4 text-xs">
         <span className="text-muted-foreground">
           <span className="font-mono font-semibold text-foreground">{totals.convCount}</span> convs

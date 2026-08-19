@@ -169,9 +169,7 @@ export const ThinkingSpinner = memo(function ThinkingSpinner({ conversationId }:
           </span>
         </div>
         {turnTokens > 0 && (
-          <span className="text-fg-faint tabular-nums pl-4 text-[10px]">
-            {(turnTokens / 1000).toFixed(1)}K tokens
-          </span>
+          <span className="text-fg-faint tabular-nums pl-4 text-[10px]">{(turnTokens / 1000).toFixed(1)}K tokens</span>
         )}
       </div>
     </Collapse>

@@ -61,9 +61,7 @@ export function WorkspaceMatrixPane({
         <table className="w-full text-xs border-collapse">
           <thead className="sticky top-0 bg-background z-10">
             <tr>
-              <th className="text-left font-normal text-[10px] uppercase tracking-wider text-fg-dim py-1">
-                Project
-              </th>
+              <th className="text-left font-normal text-[10px] uppercase tracking-wider text-fg-dim py-1">Project</th>
               {inventory.workspaces.map((ws: Workspace) => (
                 <th key={ws.id} className="px-0.5 pb-1 align-bottom" title={ws.name}>
                   <div className="flex flex-col items-center gap-1">
@@ -86,9 +84,7 @@ export function WorkspaceMatrixPane({
                       <span className="truncate" title={projectPath(uri)}>
                         {inventory.labelOf(uri)}
                       </span>
-                      {memberOf.size === 0 && (
-                        <span className="text-[9px] text-fg-faint shrink-0">All only</span>
-                      )}
+                      {memberOf.size === 0 && <span className="text-[9px] text-fg-faint shrink-0">All only</span>}
                     </div>
                   </td>
                   {inventory.workspaces.map(ws => (

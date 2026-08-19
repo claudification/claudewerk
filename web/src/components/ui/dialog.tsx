@@ -58,12 +58,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
     <DialogPortal>
       {popout ? (
         <DialogPrimitive.Close asChild>
-          <button
-            type="button"
-            aria-label="Close"
-            data-slot="dialog-overlay"
-            className={cn(SCRIM, 'cursor-default')}
-          />
+          <button type="button" aria-label="Close" data-slot="dialog-overlay" className={cn(SCRIM, 'cursor-default')} />
         </DialogPrimitive.Close>
       ) : (
         <DialogOverlay />

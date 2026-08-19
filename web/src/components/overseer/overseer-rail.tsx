@@ -45,9 +45,7 @@ function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: bool
           : 'border-l-transparent hover:bg-muted/20',
       )}
     >
-      <div className={cn('text-[11px] truncate', live ? 'text-foreground' : 'text-fg-dim')}>
-        {run.epicId}
-      </div>
+      <div className={cn('text-[11px] truncate', live ? 'text-foreground' : 'text-fg-dim')}>{run.epicId}</div>
       <div className="text-meta text-fg-dim truncate mt-0.5">
         {projectTail(run.project)} . {run.status ?? 'no run'} . gen {run.gen}
         {run.maxGens > 0 && `/${run.maxGens}`}

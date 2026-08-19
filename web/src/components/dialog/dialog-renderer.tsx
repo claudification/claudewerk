@@ -93,7 +93,11 @@ function CommentableDiagram({ content, id, form }: { content: string; id: string
 function ImageBlock({ url, alt }: { url: string; alt?: string }) {
   return (
     <div className="flex justify-center">
-      <img src={url} alt={alt || ''} className="max-w-full max-h-80 rounded border border-border-subtle object-contain" />
+      <img
+        src={url}
+        alt={alt || ''}
+        className="max-w-full max-h-80 rounded border border-border-subtle object-contain"
+      />
     </div>
   )
 }

@@ -114,9 +114,7 @@ function StatusIndicator() {
                   {sentinelConnected ? '●' : '○'}
                 </span>
                 <span className="text-[11px] text-muted-foreground">Sentinel</span>
-                <span
-                  className={`text-[10px] ml-auto ${sentinelConnected ? 'text-active' : 'text-fg-dim'}`}
-                >
+                <span className={`text-[10px] ml-auto ${sentinelConnected ? 'text-active' : 'text-fg-dim'}`}>
                   {sentinelConnected ? 'connected' : 'offline'}
                 </span>
               </div>
@@ -125,9 +123,7 @@ function StatusIndicator() {
             {showStats && isConnected && (
               <>
                 <div className="border-t border-border my-2" />
-                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">
-                  Traffic (3s avg)
-                </div>
+                <div className="text-[10px] text-fg-dim uppercase tracking-wider mb-1">Traffic (3s avg)</div>
                 <div className="flex items-center gap-3 text-[10px] text-fg-muted tabular-nums">
                   <span>
                     <span className="opacity-50">in</span> {rates.msgInPerSec.toFixed(0)}m/

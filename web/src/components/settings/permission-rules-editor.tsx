@@ -143,13 +143,9 @@ function ToolSection({
     <div className={cn(isLinkedSecondary && 'opacity-50 pointer-events-none')}>
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold">{tool}</span>
-        {isLinkedSecondary && (
-          <span className="text-[8px] text-fg-faint border border-border px-1">synced</span>
-        )}
+        {isLinkedSecondary && <span className="text-[8px] text-fg-faint border border-border px-1">synced</span>}
         <span className="flex-1 h-px bg-border" />
-        <span className="text-[10px] text-fg-dim tabular-nums">
-          {BUILTINS.length + rules[tool].length}
-        </span>
+        <span className="text-[10px] text-fg-dim tabular-nums">{BUILTINS.length + rules[tool].length}</span>
       </div>
 
       {/* Built-in rules */}
@@ -355,9 +351,7 @@ export function PermissionRulesEditor({ project }: PermissionRulesEditorProps) {
 
   if (!hasConfigRw) {
     return (
-      <div className="text-[10px] text-fg-dim py-2">
-        Agent not connected or does not support config read/write.
-      </div>
+      <div className="text-[10px] text-fg-dim py-2">Agent not connected or does not support config read/write.</div>
     )
   }
 

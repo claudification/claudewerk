@@ -49,10 +49,7 @@ function IconToggle({
     <button
       type="button"
       title={title}
-      className={cn(
-        'p-0.5 transition-colors',
-        active ? 'text-accent' : 'text-fg-dim hover:text-foreground',
-      )}
+      className={cn('p-0.5 transition-colors', active ? 'text-accent' : 'text-fg-dim hover:text-foreground')}
       onClick={() => {
         haptic('tap')
         onClick()

@@ -25,9 +25,7 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
       >
         <CommitSummaryLine
           commit={commit}
-          trailing={
-            <span className="text-[10px] text-fg-muted shrink-0">{commitAge(commit.committedAt)}</span>
-          }
+          trailing={<span className="text-[10px] text-fg-muted shrink-0">{commitAge(commit.committedAt)}</span>}
         />
         <div className="flex items-center gap-2 text-[9px] font-mono text-fg-dim uppercase tracking-wide">
           <span className={commit.origin === 'agent' ? 'text-accent/70' : ''}>{commit.origin}</span>

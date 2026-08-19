@@ -502,12 +502,8 @@ export function GrepSummary({
       )}
       {glob && <span className="text-cyan-400/70 shrink-0">{glob}</span>}
       {!isError && numFiles !== undefined && (
-        <span
-          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}
-        >
-          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>
-            {numFiles}
-          </span>{' '}
+        <span className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}>
+          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>{numFiles}</span>{' '}
           {numFiles === 1 ? 'file' : 'files'}
         </span>
       )}
@@ -547,12 +543,8 @@ export function GlobSummary({
         </span>
       )}
       {!isError && numFiles !== undefined && (
-        <span
-          className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}
-        >
-          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>
-            {numFiles}
-          </span>{' '}
+        <span className={cn('shrink-0 text-[10px]', numFiles === 0 ? 'text-fg-dim' : 'text-foreground/70')}>
+          <span className={numFiles === 0 ? 'text-fg-dim' : 'text-emerald-400/80 font-semibold'}>{numFiles}</span>{' '}
           {numFiles === 1 ? 'file' : 'files'}
           {truncated && <span className="text-amber-400/70 ml-1">(truncated)</span>}
         </span>

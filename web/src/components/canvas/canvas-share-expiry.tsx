@@ -48,9 +48,7 @@ function ExpiryRow({ s }: { s: CanvasShareState }) {
   const remaining = formatRemaining(s.expiresAt)
   return (
     <div className="flex items-center gap-2 px-1">
-      <span className={`text-[10px] ${remaining ? 'text-fg-muted' : 'text-red-400/90'}`}>
-        {remaining ?? 'Expired'}
-      </span>
+      <span className={`text-[10px] ${remaining ? 'text-fg-muted' : 'text-red-400/90'}`}>{remaining ?? 'Expired'}</span>
       <span className="flex-1" />
       <button
         type="button"

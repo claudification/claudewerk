@@ -39,10 +39,7 @@ export function BoardGroupBar({ group, rollup }: { group: CardGroup; rollup?: Ep
         </span>
       )}
       <span
-        className={cn(
-          'font-mono truncate',
-          epicId ? 'text-loud text-foreground' : 'text-read text-fg-muted',
-        )}
+        className={cn('font-mono truncate', epicId ? 'text-loud text-foreground' : 'text-read text-fg-muted')}
         title={group.label}
       >
         {group.label}

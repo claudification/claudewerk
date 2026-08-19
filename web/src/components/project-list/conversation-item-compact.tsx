@@ -173,9 +173,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
               />,
             )
             if (showHostAlias)
-              mobileChips.push(
-                <span className="text-fg-dim font-medium">{conversation.hostSentinelAlias}</span>,
-              )
+              mobileChips.push(<span className="text-fg-dim font-medium">{conversation.hostSentinelAlias}</span>)
             mobileChips.push(...mobilePrefix)
           }
           if (!subtitle && mobileChips.length === 0) return null

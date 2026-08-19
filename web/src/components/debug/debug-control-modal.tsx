@@ -129,9 +129,7 @@ export function DebugControlModal() {
             )}
           </div>
           <div className="flex flex-col gap-2">
-            {traces.length === 0 && (
-              <div className="text-[10px] text-fg-dim">No traces yet -- send a command.</div>
-            )}
+            {traces.length === 0 && <div className="text-[10px] text-fg-dim">No traces yet -- send a command.</div>}
             {traces.map(t => (
               <DebugTraceWaterfall key={t.traceId} trace={t} />
             ))}

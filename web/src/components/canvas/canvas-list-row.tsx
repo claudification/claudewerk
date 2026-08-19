@@ -22,9 +22,7 @@ function canvasAge(updatedAt: number, now = Date.now()): string {
 function Thumb({ canvas }: { canvas: CanvasSummary }) {
   if (!canvas.hasThumb) {
     return (
-      <span className="w-10 h-8 grid place-items-center text-sky-400/40 border border-border shrink-0 text-sm">
-        ◳
-      </span>
+      <span className="w-10 h-8 grid place-items-center text-sky-400/40 border border-border shrink-0 text-sm">◳</span>
     )
   }
   return (

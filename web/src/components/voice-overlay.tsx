@@ -185,9 +185,7 @@ export function VoiceOverlay({ onResult, onClose, holdMode = false, onMicGranted
             </button>
           )}
           {voice.state === 'recording' && holdMode && (
-            <span className="text-xs text-fg-dim font-mono uppercase tracking-wider">
-              Release to stop recording
-            </span>
+            <span className="text-xs text-fg-dim font-mono uppercase tracking-wider">Release to stop recording</span>
           )}
           {(voice.state === 'refining' || voice.state === 'connecting') && !holdMode && (
             <button

@@ -115,9 +115,7 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className={cn(
         'shrink-0 p-0.5 rounded transition-all',
-        copied
-          ? 'text-emerald-400'
-          : 'text-muted-foreground/0 group-hover:text-fg-dim hover:!text-foreground',
+        copied ? 'text-emerald-400' : 'text-muted-foreground/0 group-hover:text-fg-dim hover:!text-foreground',
       )}
       title="Copy JSON"
     >
@@ -141,19 +139,14 @@ function StreamLine({ line, index }: { line: ParsedLine; index: number }) {
           <span className="shrink-0 text-fg-dim w-8 text-right tabular-nums select-none">{index + 1}</span>
           {line.parsed ? (
             <ChevronRight
-              className={cn(
-                'shrink-0 w-3 h-3 mt-0.5 transition-transform text-fg-dim',
-                expanded && 'rotate-90',
-              )}
+              className={cn('shrink-0 w-3 h-3 mt-0.5 transition-transform text-fg-dim', expanded && 'rotate-90')}
             />
           ) : (
             <span className="shrink-0 w-3" />
           )}
           <span className={cn('shrink-0', typeColor(line.type))}>{line.type || 'raw'}</span>
           {!expanded && (
-            <span className="truncate text-fg-muted">
-              {line.parsed ? summarizeLine(line.parsed) : line.raw}
-            </span>
+            <span className="truncate text-fg-muted">{line.parsed ? summarizeLine(line.parsed) : line.raw}</span>
           )}
         </button>
         <CopyButton text={jsonText} />

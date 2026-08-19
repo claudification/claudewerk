@@ -39,9 +39,7 @@ export function DialogTabs<T extends string>({
             onClick={() => onChange(tab.value)}
             className={cn(
               'px-3 py-1.5 text-[11px] font-mono font-bold uppercase tracking-wide border-b-2 -mb-px transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
-              active
-                ? `${tab.activeClass} border-current`
-                : 'text-fg-dim border-transparent hover:text-foreground',
+              active ? `${tab.activeClass} border-current` : 'text-fg-dim border-transparent hover:text-foreground',
             )}
           >
             {tab.label}

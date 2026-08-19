@@ -45,9 +45,7 @@ function Row({ sample, worst }: { sample: LatencySample; worst: number }) {
           {/* A number for a path that does not exist is useful -- measure before
               you build -- but it must never look selectable. */}
           {!sample.available && (
-            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-fg-dim">
-              not built
-            </span>
+            <span className="ml-1.5 text-[9px] font-normal uppercase tracking-wide text-fg-dim">not built</span>
           )}
         </span>
         {sample.samples.length > 0 ? (

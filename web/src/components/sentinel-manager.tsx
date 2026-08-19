@@ -420,9 +420,7 @@ function SentinelList() {
           )
         })}
         {sentinels.length === 0 && (
-          <div className="text-xs text-fg-dim text-center py-2">
-            No sentinels registered. Create one below.
-          </div>
+          <div className="text-xs text-fg-dim text-center py-2">No sentinels registered. Create one below.</div>
         )}
       </div>
 

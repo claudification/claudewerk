@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -82,7 +82,10 @@ describe('no opacity-stacked colour tokens', () => {
 
   it('borders use a real weight, not an alpha suffix', () => {
     const offenders = scan(STACKED_BORDER)
-    expect(offenders, `use border-border-subtle / border-border / border-border-strong:\n${offenders.join('\n')}`).toEqual([])
+    expect(
+      offenders,
+      `use border-border-subtle / border-border / border-border-strong:\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 })
 

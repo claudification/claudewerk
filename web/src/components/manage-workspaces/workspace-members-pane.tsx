@@ -97,9 +97,7 @@ export function WorkspaceMembersPane({
           >
             <Plus className="size-3 shrink-0" />
             <span className="flex-1 truncate text-left">{inventory.labelOf(uri)}</span>
-            <span className="text-[10px] tabular-nums text-fg-faint">
-              {inventory.memberOf.get(uri)?.size ?? 0} ws
-            </span>
+            <span className="text-[10px] tabular-nums text-fg-faint">{inventory.memberOf.get(uri)?.size ?? 0} ws</span>
           </button>
         ))}
       </div>

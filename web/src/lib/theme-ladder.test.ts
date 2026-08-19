@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { LADDER_FLOOR, collapsedRungs, deriveLadder, formatOklch, parseOklch, smallestSurfaceStep } from './theme-ladder'
+import {
+  collapsedRungs,
+  deriveLadder,
+  formatOklch,
+  LADDER_FLOOR,
+  parseOklch,
+  smallestSurfaceStep,
+} from './theme-ladder'
 import { THEMES } from './themes'
 
 const LADDER_TOKENS = [

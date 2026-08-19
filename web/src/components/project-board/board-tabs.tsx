@@ -47,12 +47,7 @@ export function BoardTabs({
           )}
         >
           {TAB_LABEL[v]}
-          <span
-            className={cn(
-              'text-chrome tabular-nums',
-              view === v ? 'text-fg-muted' : 'text-fg-dim',
-            )}
-          >
+          <span className={cn('text-chrome tabular-nums', view === v ? 'text-fg-muted' : 'text-fg-dim')}>
             {counts[v]}
           </span>
         </button>
