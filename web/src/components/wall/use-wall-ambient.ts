@@ -19,13 +19,8 @@
  */
 
 import { type RefObject, useEffect } from 'react'
+import { isTypingTarget } from './wall-keys'
 import { useWallStore } from './wall-state'
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  if (target.isContentEditable) return true
-  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)
-}
 
 /** Fullscreen is unavailable in jsdom and refused outside a user gesture. Both
  *  are fine: the attribute still flips, so the wall still scales and hides its
@@ -49,7 +44,10 @@ export function useWallAmbient(rootRef: RefObject<HTMLElement | null>, visible: 
 
     function onKeyDown(event: KeyboardEvent) {
       const store = useWallStore.getState()
-      if (event.key === 'Escape' && store.ambient) {
+      // Escape follows the same rule `A` does: it is not a hotkey while the user
+      // is in a field. In the filter box the first Escape leaves the box (W2
+      // owns that) and only the second one leaves ambient.
+      if (event.key === 'Escape' && store.ambient && !isTypingTarget(event.target)) {
         // Stop here, in capture, or Radix dismisses the surface underneath us.
         event.preventDefault()
         event.stopPropagation()

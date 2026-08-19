@@ -90,7 +90,7 @@
 	}
 }
 
-/* W2 filter -- inert until wall-filter-bus lands. */
+/* W2 filter -- the one query box, bound to wall-filter-store. */
 .wall-filter {
 	flex: 1 1 320px;
 	min-width: 180px;
@@ -117,6 +117,18 @@
 }
 .wall-filter input::placeholder {
 	color: var(--comment);
+}
+/* The `/` affordance. Hidden rather than removed once the box has focus, so the
+   input never reflows out from under a cursor mid-keystroke. */
+.wall-filter-hint {
+	flex: 0 0 auto;
+	border: 1px solid var(--border);
+	border-radius: 3px;
+	padding: 0 3px;
+	line-height: 14px;
+}
+.wall-filter:focus-within .wall-filter-hint {
+	visibility: hidden;
 }
 
 /* W1 time cursor -- inert until wall-time-cursor lands. */

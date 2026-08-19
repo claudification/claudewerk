@@ -73,6 +73,7 @@
   "src/components/wall/runs/run-actions.test.tsx",
   "src/components/wall/unattended-runs.test.tsx",
   "src/components/wall/wall-ambient.test.tsx",
+  "src/components/wall/wall-filter-box.test.tsx",
   "src/components/wall/wall-navigate.test.ts",
   "src/components/wall/wall-pulse.test.tsx",
   "src/hooks/conversation-hydrate.test.ts",

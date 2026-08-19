@@ -1,7 +1,8 @@
 /**
  * The wall's own header bar, in the mockup's order: brand, W2 filter, W1
- * scrubber, buttons. The two middle slots ship inert (see wall-header-slots.tsx)
- * so the cards that wire them do not have to reshape this row.
+ * scrubber, buttons. W2 is live (wall-filter-box.tsx); the scrubber still ships
+ * inert (see wall-header-slots.tsx) so the card that wires it does not have to
+ * reshape this row.
  *
  * LAYOUT is rendered DISABLED, exactly as the card asks: it drives the
  * configurable pane grid the epic defers to FUTURE, and a button that silently
@@ -9,7 +10,8 @@
  */
 
 import { WallClock } from './wall-clock'
-import { WallFilterSlot, WallScrubSlot } from './wall-header-slots'
+import { WallFilterBox } from './wall-filter-box'
+import { WallScrubSlot } from './wall-header-slots'
 import { useWallStore } from './wall-state'
 
 function AmbientButton({ ambient }: { ambient: boolean }) {
@@ -31,7 +33,7 @@ export function WallHeader({ ambient, onDetach }: { ambient: boolean; onDetach?:
         <WallClock />
       </div>
 
-      <WallFilterSlot />
+      <WallFilterBox />
       <WallScrubSlot />
 
       <div className="wall-btns">
