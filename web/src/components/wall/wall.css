@@ -515,6 +515,144 @@
 	color: var(--comment);
 }
 
+/* ---------- A1 blocked on you ----------
+   The tier is carried by `data-tier` on the section AND on every row, so the two
+   halves cannot drift apart: HARD is the destructive token (a real stop), SOFT
+   is the warning token (a self-report). Nothing else on the wall uses those two
+   colours for a list, which is what makes the split readable at a glance. */
+.wall-att-tier {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	margin: 0 0 3px;
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	color: var(--comment);
+}
+.wall-att-tier[data-tier='hard'] {
+	color: var(--destructive);
+}
+.wall-att-tier[data-tier='soft'] {
+	color: var(--warning);
+}
+.wall-att-tier-n {
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-att-list {
+	list-style: none;
+	margin: 0 0 9px;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+.wall-att-list:last-child {
+	margin-bottom: 0;
+}
+.wall-att {
+	border-left: 2px solid var(--border-strong);
+	padding: 2px 0 3px 6px;
+}
+.wall-att[data-tier='hard'] {
+	border-left-color: var(--destructive);
+}
+.wall-att[data-tier='soft'] {
+	border-left-color: var(--warning);
+}
+.wall-att-head {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+.wall-att-num {
+	flex: 0 0 auto;
+	min-width: 11px;
+	text-align: center;
+	border-radius: 2px;
+	background: var(--surface-inset);
+	color: var(--fg-muted);
+	font-size: 9px;
+	font-variant-numeric: tabular-nums;
+}
+.wall-att-proj {
+	flex: 0 1 auto;
+	min-width: 0;
+	max-width: 42%;
+	text-align: left;
+}
+.wall-att-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fg-muted);
+	font-size: 11px;
+}
+/* The waiting clock never truncates and never wraps: it is the one number on
+   this pane that decides whether you get up. */
+.wall-att-wait {
+	flex: 0 0 auto;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+.wall-att[data-tier='hard'] .wall-att-wait {
+	color: var(--destructive);
+}
+.wall-att[data-tier='soft'] .wall-att-wait {
+	color: var(--warning);
+}
+.wall-att-q {
+	margin: 1px 0 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-att-detail {
+	margin: 1px 0 0;
+	padding: 1px 4px;
+	border-radius: 3px;
+	background: var(--surface-inset);
+	color: var(--comment);
+	font: inherit;
+	font-size: 10px;
+	white-space: pre-wrap;
+	overflow: hidden;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+.wall-att-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 3px;
+}
+.wall-att-btn {
+	padding: 1px 6px;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+}
+.wall-att-btn[data-tone='go'] {
+	color: var(--success);
+	border-color: color-mix(in oklch, var(--success) 40%, transparent);
+}
+.wall-att-btn[data-tone='stop'] {
+	color: var(--destructive);
+	border-color: color-mix(in oklch, var(--destructive) 40%, transparent);
+}
+.wall-att-btn[data-primary] {
+	font-weight: 700;
+}
+.wall-att-hint {
+	margin: 3px 0 0;
+	color: var(--comment);
+	font-size: 10px;
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;

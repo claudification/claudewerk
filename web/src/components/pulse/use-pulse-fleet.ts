@@ -74,8 +74,12 @@ export interface PulseFleet {
 /**
  * Re-render on a wall-clock tick so ages stay honest. Only runs while a Pulse
  * surface is mounted, which is why 1s is affordable — the surface is transient.
+ *
+ * Exported for THE WALL's A1 pane, whose waiting clock has to count up on its
+ * own: a second ticker beside this one would be the same six lines with a
+ * different bug in it.
  */
-function useNowTick(intervalMs = 1_000): number {
+export function useNowTick(intervalMs = 1_000): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), intervalMs)
