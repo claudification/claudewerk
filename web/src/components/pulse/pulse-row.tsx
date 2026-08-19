@@ -39,6 +39,31 @@ function ManagedChip({ label, title }: { label: string; title?: string }) {
   )
 }
 
+/** What the human is actually being asked for, in one word. */
+const BLOCK_CHIP: Record<string, string> = {
+  dialog: 'DIALOG',
+  ask: 'QUESTION',
+  permission: 'PERMISSION',
+  plan_approval: 'PLAN',
+  spawn_approval: 'SPAWN',
+  elicitation: 'INPUT',
+  link: 'LINK',
+}
+
+/**
+ * Blocked marker. Rose, filled, and carrying the NOUN rather than a generic
+ * warning glyph -- from across the room the point is that something is stopped;
+ * up close the point is what it wants. Unknown block kinds still get a chip:
+ * "the agent is stuck and I do not know on what" beats rendering nothing.
+ */
+function BlockedChip({ kind }: { kind: string }) {
+  return (
+    <span className="shrink-0 rounded-sm px-1 text-[9px] font-bold leading-[1.4] tracking-wide text-rose-300 bg-rose-400/15 border border-rose-400/40">
+      {BLOCK_CHIP[kind] ?? 'BLOCKED'}
+    </span>
+  )
+}
+
 /** Hover text naming the run this seat belongs to, so the chip is traceable. */
 function managedTitle(row: Row): string | undefined {
   if (!row.managedBy) return undefined
@@ -67,7 +92,9 @@ interface PulseRowProps {
 export function PulseRowItem({ row, query, active = false, onSelect, onHover }: PulseRowProps) {
   const style = PULSE_BAND_STYLE[row.band]
   const age = pulseAge(row.ageMs)
-  const asCard = row.band === 'needs'
+  // Both attention bands get the mobile card treatment: they are the two the
+  // surface exists to make unmissable.
+  const asCard = row.band === 'needs' || row.band === 'blocked'
 
   return (
     <button
@@ -90,6 +117,7 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover }: 
           would put the same text in the DOM twice -- invisible to the eye,
           ambiguous to a screen reader, and to getByText. */}
       <span className="flex-1 min-w-0 flex items-baseline gap-x-2.5 gap-y-0.5 max-sm:flex-wrap">
+        {row.band === 'blocked' && row.blockedBy && <BlockedChip kind={row.blockedBy} />}
         {row.managedBy && <ManagedChip label={row.managedBy.label} title={managedTitle(row)} />}
         <span
           className={cn(
@@ -106,9 +134,7 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover }: 
           className={cn('text-[10px] font-mono shrink-0 max-w-[9rem]', !row.projectColor && 'text-comment')}
           iconClassName="size-[11px]"
         />
-        <span className={cn('text-[11px] truncate', row.band === 'needs' ? style.text : 'text-accent')}>
-          {row.action}
-        </span>
+        <span className={cn('text-[11px] truncate', asCard ? style.text : 'text-accent')}>{row.action}</span>
       </span>
 
       <span className="text-[10px] font-mono text-comment shrink-0 tabular-nums max-sm:absolute max-sm:right-3 max-sm:top-2.5">

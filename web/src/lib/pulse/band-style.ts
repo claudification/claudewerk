@@ -6,8 +6,13 @@ import type { PulseBand } from './bands'
  *
  * Hues deliberately match STATUS_META (`status-style.ts`) — amber = wants you,
  * sky = working, emerald = done — because those are already the app's colour
- * vocabulary for agent state. Pulse adds the two bands `set_status` has no word
- * for: idle and expired.
+ * vocabulary for agent state. Pulse adds the three bands `set_status` has no
+ * word for: blocked, idle and expired.
+ *
+ * `blocked` is the one deliberate escalation: rose, the only alarm hue on the
+ * surface, and the only band with a fill you notice without reading. An agent
+ * parked on a dialog is stopped dead until you act, and that has to be legible
+ * from across the room.
  */
 export interface PulseBandStyle {
   label: string
@@ -21,6 +26,14 @@ export interface PulseBandStyle {
 }
 
 export const PULSE_BAND_STYLE: Record<PulseBand, PulseBandStyle> = {
+  blocked: {
+    label: 'BLOCKED ON YOU',
+    icon: '■', // ■
+    text: 'text-rose-400',
+    dot: 'bg-rose-400',
+    border: 'border-rose-400/40',
+    bg: 'bg-rose-400/10',
+  },
   needs: {
     label: 'NEEDS YOU',
     icon: '◆', // ◆

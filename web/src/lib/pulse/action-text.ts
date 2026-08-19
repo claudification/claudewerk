@@ -1,3 +1,4 @@
+import type { PulseAttentionFlags } from '@/lib/pulse/bands'
 import { formatDurationShort } from '@/lib/status-style'
 import type { Conversation } from '@/lib/types'
 
@@ -52,8 +53,19 @@ function attentionText(a: NonNullable<Conversation['pendingAttention']>): string
   return label
 }
 
-/** Ordered resolvers. First non-empty string wins. */
-const RESOLVERS: Array<(c: Conversation) => string | undefined> = [
+/**
+ * Ordered resolvers. First non-empty string wins.
+ *
+ * The store flags come FIRST and deliberately duplicate what `pendingAttention`
+ * would say. They are the second path that survives the umbrella being wrong --
+ * a row in the blocked band whose action text read "working" would be worse than
+ * useless.
+ */
+const RESOLVERS: Array<(c: Conversation, f: PulseAttentionFlags) => string | undefined> = [
+  (_, f) => (f.hasPendingPermission ? 'permission' : undefined),
+  (_, f) => (f.hasOpenDialog ? 'dialog open' : undefined),
+  (_, f) => (f.hasPendingAsk ? 'asked a question' : undefined),
+  (_, f) => (f.hasPendingLink ? 'link needs approval' : undefined),
   c => (c.pendingAttention ? attentionText(c.pendingAttention) : undefined),
   c => (c.pendingSpawnApproval ? 'spawn needs approval' : undefined),
   c => (c.rateLimit ? 'rate limited' : undefined),
@@ -66,9 +78,9 @@ const RESOLVERS: Array<(c: Conversation) => string | undefined> = [
   c => STATUS_LABEL[c.status],
 ]
 
-export function pulseActionText(c: Conversation): string {
+export function pulseActionText(c: Conversation, flags: PulseAttentionFlags = {}): string {
   for (const resolve of RESOLVERS) {
-    const text = resolve(c)
+    const text = resolve(c, flags)
     if (text) return text
   }
   return ''

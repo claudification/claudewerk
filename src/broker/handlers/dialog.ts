@@ -145,7 +145,7 @@ const dialogResult: MessageHandler = (ctx, data) => {
 
   const firstCancel = applyDialogResolution(ctx, conversationId, dialogId, result)
 
-  cancelDialogNotify(conversationId)
+  cancelDialogNotify(conversationId, 'answered')
 
   // Forward to the agent host that owns this conversation
   const targetWs = ctx.conversations.getConversationSocket(conversationId)
@@ -203,7 +203,7 @@ const dialogDismiss: MessageHandler = (ctx, data) => {
     }
     ctx.conversations.persistConversationById(conversationId)
     ctx.conversations.broadcastConversationUpdate(conversationId)
-    cancelDialogNotify(conversationId)
+    cancelDialogNotify(conversationId, 'expired')
     if (conversation.project) {
       ctx.broadcastScoped({ type: 'dialog_dismiss', conversationId, dialogId, reason }, conversation.project)
     }
@@ -216,7 +216,7 @@ const dialogDismiss: MessageHandler = (ctx, data) => {
   // Hard dismiss (answered/cancelled/conversation ended): clear everything.
   clearDialogState(ctx, conversationId)
 
-  cancelDialogNotify(conversationId)
+  cancelDialogNotify(conversationId, 'dismissed')
 
   if (conversation?.project) {
     const dismissMsg2 = { type: 'dialog_dismiss', conversationId: conversationId, dialogId }

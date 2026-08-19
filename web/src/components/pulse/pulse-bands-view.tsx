@@ -6,10 +6,17 @@ import { PulseRowItem } from './pulse-row'
 import type { PulseFleet, PulseRow } from './use-pulse-fleet'
 
 /**
- * How many rows each band shows before folding. NEEDS YOU never folds — the
- * whole surface exists so that band is complete at a glance.
+ * How many rows each band shows before folding. BLOCKED ON YOU and NEEDS YOU
+ * never fold — the whole surface exists so those bands are complete at a glance.
  */
-const FOLD: Record<PulseBand, number> = { needs: Number.POSITIVE_INFINITY, working: 5, done: 3, idle: 3, expired: 0 }
+const FOLD: Record<PulseBand, number> = {
+  blocked: Number.POSITIVE_INFINITY,
+  needs: Number.POSITIVE_INFINITY,
+  working: 5,
+  done: 3,
+  idle: 3,
+  expired: 0,
+}
 
 interface PulseBandsViewProps {
   fleet: PulseFleet

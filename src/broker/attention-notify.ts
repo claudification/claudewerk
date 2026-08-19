@@ -1,47 +1,63 @@
 /**
- * Attention-notify: push notification when dialog or AskUserQuestion
- * has been waiting for user input for 4 minutes with no interaction.
+ * Attention-notify: push notification when a dialog or AskUserQuestion has been
+ * waiting for user input for 4 minutes with no interaction.
  *
  * Timer state is in-memory (lost on broker restart). Acceptable -- the UI
  * still shows pending state; the user just won't get a push for items that
  * were already pending before the restart.
+ *
+ * The debounce gate and the log live in `attention-gate.ts`. EVERY decision on
+ * both sides is logged: on 2026-08-19 a dialog sat unanswered for twelve minutes
+ * with no push and the whole path was silent, so there was no way to tell
+ * afterwards whether the timer fired, the debouncer ate it, or it was cancelled.
  */
 
 import { extractProjectLabel } from '../shared/project-uri'
-import { DEFAULT_NOTIFY_WINDOW_MS, NotificationDebouncer } from './notification-debounce'
-import { isPushConfigured, sendPushToAll } from './push'
+import { attentionLog, passesAttentionGates, short } from './attention-gate'
+import { sendPushToAll } from './push'
+
+export { rearmAttentionNotify } from './attention-gate'
 
 const NOTIFY_DELAY_MS = 4 * 60 * 1000
 
+/**
+ * THE KEEPALIVE CEILING.
+ *
+ * A keepalive means "the user is looking at this, do not push at them". That is
+ * true when it comes from a human interacting -- and FALSE when it comes from a
+ * MINIMIZED dialog, which the panel keepalives on a 30-second interval with no
+ * human involved at all (`dialog-modal.tsx`). Left uncapped, a dialog you parked
+ * and forgot resets its own push clock forever: the one case where the push is
+ * the only thing that could still save it.
+ *
+ * So the clock may be restarted, but never past this far from the moment the
+ * dialog was SHOWN. The push lands eventually, whatever the panel claims.
+ */
+const MAX_NOTIFY_DEFERRAL_MS = 15 * 60 * 1000
+
+interface DialogTimer {
+  timer: ReturnType<typeof setTimeout>
+  /** When this dialog first went up -- the anchor MAX_NOTIFY_DEFERRAL_MS measures from. */
+  shownAt: number
+}
+
 // One dialog per conversation at a time.
-const dialogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const dialogTimers = new Map<string, DialogTimer>()
 // One AskUserQuestion per conversation at a time (CC blocks until answered).
 const askTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-/**
- * ONE "this conversation wants you" push per conversation per window. Keyed by
- * conversationId and SHARED across every attention path (dialog idle, ask idle,
- * and the immediate `set_status` needs_you signal) so they never double-buzz.
- * `set_status:needs_you` fires immediately (Jonas's phone pull); the dialog/ask
- * idle timers fire after the 4-min grace — whichever lands first suppresses the
- * rest for the window. Re-armed via {@link rearmAttentionNotify} when the
- * conversation leaves the needs-you state.
- */
-const attentionDebouncer = new NotificationDebouncer({ windowMs: DEFAULT_NOTIFY_WINDOW_MS })
 
 interface BaseParams {
   conversationId: string
   project: string
 }
 
-export function scheduleDialogNotify(params: BaseParams & { dialogTitle: string }): void {
-  cancelDialogNotify(params.conversationId)
+function armDialogTimer(params: BaseParams & { dialogTitle: string }, shownAt: number, delayMs: number): void {
   const { conversationId, project, dialogTitle } = params
-  const label = extractProjectLabel(project) || conversationId.slice(0, 8)
+  const label = extractProjectLabel(project) || short(conversationId)
   const timer = setTimeout(() => {
     dialogTimers.delete(conversationId)
-    if (!isPushConfigured()) return
-    if (!attentionDebouncer.shouldNotify(conversationId)) return
+    if (!passesAttentionGates(conversationId, 'dialog')) return
+    attentionLog(`dialog FIRE conv=${short(conversationId)} project=${label} waited=${Date.now() - shownAt}ms`)
     sendPushToAll({
       title: 'Input needed',
       body: `${dialogTitle} -- ${label}`,
@@ -49,31 +65,56 @@ export function scheduleDialogNotify(params: BaseParams & { dialogTitle: string 
       project,
       tag: `attention-${conversationId}`,
     }).catch(() => {})
-  }, NOTIFY_DELAY_MS)
-  dialogTimers.set(conversationId, timer)
+  }, delayMs)
+  dialogTimers.set(conversationId, { timer, shownAt })
 }
 
-/** Restart the dialog notification clock (called on keepalive -- user is actively looking). */
+export function scheduleDialogNotify(params: BaseParams & { dialogTitle: string }): void {
+  cancelDialogNotify(params.conversationId, 'rescheduled')
+  armDialogTimer(params, Date.now(), NOTIFY_DELAY_MS)
+  attentionLog(`dialog ARM conv=${short(params.conversationId)} in=${NOTIFY_DELAY_MS}ms title="${params.dialogTitle}"`)
+}
+
+/**
+ * Restart the dialog notification clock (called on keepalive -- user is actively
+ * looking), clamped by {@link MAX_NOTIFY_DEFERRAL_MS} so an auto-keepalive from
+ * a minimized dialog cannot defer the push forever.
+ */
 export function resetDialogNotifyTimer(params: BaseParams & { dialogTitle: string }): void {
-  scheduleDialogNotify(params)
+  const { conversationId } = params
+  const existing = dialogTimers.get(conversationId)
+  if (!existing) {
+    // No live clock to restart -- it already fired, or was cancelled. Rearming
+    // here would resurrect a push for a dialog nobody is tracking any more.
+    attentionLog(`dialog KEEPALIVE-IGNORED conv=${short(conversationId)} reason=no-live-timer`)
+    return
+  }
+
+  const now = Date.now()
+  const ceiling = existing.shownAt + MAX_NOTIFY_DEFERRAL_MS
+  const delayMs = Math.max(0, Math.min(NOTIFY_DELAY_MS, ceiling - now))
+  clearTimeout(existing.timer)
+  armDialogTimer(params, existing.shownAt, delayMs)
+  const capped = delayMs < NOTIFY_DELAY_MS ? ' CAPPED' : ''
+  attentionLog(`dialog KEEPALIVE conv=${short(conversationId)} in=${delayMs}ms up=${now - existing.shownAt}ms${capped}`)
 }
 
-export function cancelDialogNotify(conversationId: string): void {
-  const t = dialogTimers.get(conversationId)
-  if (t !== undefined) {
-    clearTimeout(t)
-    dialogTimers.delete(conversationId)
-  }
+export function cancelDialogNotify(conversationId: string, reason = 'resolved'): void {
+  const existing = dialogTimers.get(conversationId)
+  if (existing === undefined) return
+  clearTimeout(existing.timer)
+  dialogTimers.delete(conversationId)
+  attentionLog(`dialog CANCEL conv=${short(conversationId)} reason=${reason} up=${Date.now() - existing.shownAt}ms`)
 }
 
 export function scheduleAskNotify(params: BaseParams & { question: string }): void {
   cancelAskNotify(params.conversationId)
   const { conversationId, project, question } = params
-  const label = extractProjectLabel(project) || conversationId.slice(0, 8)
+  const label = extractProjectLabel(project) || short(conversationId)
   const timer = setTimeout(() => {
     askTimers.delete(conversationId)
-    if (!isPushConfigured()) return
-    if (!attentionDebouncer.shouldNotify(conversationId)) return
+    if (!passesAttentionGates(conversationId, 'ask')) return
+    attentionLog(`ask FIRE conv=${short(conversationId)} project=${label}`)
     sendPushToAll({
       title: 'Question for you',
       body: `${question} -- ${label}`,
@@ -83,20 +124,29 @@ export function scheduleAskNotify(params: BaseParams & { question: string }): vo
     }).catch(() => {})
   }, NOTIFY_DELAY_MS)
   askTimers.set(conversationId, timer)
+  attentionLog(`ask ARM conv=${short(conversationId)} in=${NOTIFY_DELAY_MS}ms`)
+}
+
+export function cancelAskNotify(conversationId: string): void {
+  const t = askTimers.get(conversationId)
+  if (t === undefined) return
+  clearTimeout(t)
+  askTimers.delete(conversationId)
+  attentionLog(`ask CANCEL conv=${short(conversationId)}`)
 }
 
 /**
  * THE STATUS — the agent self-reported `needs_you` AND it's corroborated by a
  * real pending interaction (Option B: derived-gated, can't be faked). Fire an
  * IMMEDIATE debounced push so it pulls the user's attention to their phone.
- * Shares {@link attentionDebouncer} with the dialog/ask idle timers so a
+ * Shares the attention debouncer with the dialog/ask idle timers so a
  * conversation never double-buzzes.
  */
 export function notifyNeedsYou(params: BaseParams & { summary?: string }): void {
   const { conversationId, project, summary } = params
-  if (!isPushConfigured()) return
-  if (!attentionDebouncer.shouldNotify(conversationId)) return
-  const label = extractProjectLabel(project) || conversationId.slice(0, 8)
+  if (!passesAttentionGates(conversationId, 'needs_you')) return
+  const label = extractProjectLabel(project) || short(conversationId)
+  attentionLog(`needs_you FIRE conv=${short(conversationId)} project=${label}`)
   sendPushToAll({
     title: 'Needs you',
     body: summary ? `${summary} -- ${label}` : label,
@@ -104,21 +154,4 @@ export function notifyNeedsYou(params: BaseParams & { summary?: string }): void 
     project,
     tag: `attention-${conversationId}`,
   }).catch(() => {})
-}
-
-/**
- * Re-arm the attention debouncer for a conversation (forget its last fire) so
- * the NEXT needs-you buzzes immediately instead of waiting out the window. Call
- * when the conversation LEAVES the needs-you state or on a new user turn.
- */
-export function rearmAttentionNotify(conversationId: string): void {
-  attentionDebouncer.reset(conversationId)
-}
-
-export function cancelAskNotify(conversationId: string): void {
-  const t = askTimers.get(conversationId)
-  if (t !== undefined) {
-    clearTimeout(t)
-    askTimers.delete(conversationId)
-  }
 }

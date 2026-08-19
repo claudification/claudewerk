@@ -28,7 +28,7 @@ function row(over: Partial<PulseRow> = {}): PulseRow {
   }
 }
 
-const ZERO_TOTALS: Record<PulseBand, number> = { needs: 0, working: 0, done: 0, idle: 0, expired: 0 }
+const ZERO_TOTALS: Record<PulseBand, number> = { blocked: 0, needs: 0, working: 0, done: 0, idle: 0, expired: 0 }
 
 function fleet(over: Partial<PulseFleet> = {}): PulseFleet {
   const groups = over.groups ?? []
@@ -246,7 +246,7 @@ describe('PulseTideView', () => {
 })
 
 describe('PulseChips', () => {
-  const totals: Record<PulseBand, number> = { needs: 2, working: 5, done: 3, idle: 4, expired: 7 }
+  const totals: Record<PulseBand, number> = { blocked: 0, needs: 2, working: 5, done: 3, idle: 4, expired: 7 }
 
   it('sums only the visible bands into All — expired is not part of the fleet', () => {
     render(<PulseChips totals={totals} active={null} onPick={vi.fn()} />)
@@ -297,7 +297,7 @@ describe('PulsePaletteHeader', () => {
         onFilterChange={vi.fn()}
         inputRef={{ current: null }}
         liveCount={80}
-        totals={{ needs: 2, working: 5, done: 3, idle: 4, expired: 7 }}
+        totals={{ blocked: 0, needs: 2, working: 5, done: 3, idle: 4, expired: 7 }}
         activeBands={null}
         onPickBand={vi.fn()}
         view={view}
@@ -335,7 +335,7 @@ describe('PulsePaletteHeader', () => {
 })
 
 describe('PulseStripBar', () => {
-  const totals: Record<PulseBand, number> = { needs: 2, working: 5, done: 3, idle: 4, expired: 7 }
+  const totals: Record<PulseBand, number> = { blocked: 0, needs: 2, working: 5, done: 3, idle: 4, expired: 7 }
 
   it('shows every band count including expired', () => {
     render(<PulseStripBar totals={totals} lead={row()} open={false} onToggle={vi.fn()} />)

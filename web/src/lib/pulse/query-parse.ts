@@ -15,8 +15,12 @@ export function parseWindow(token: string): number | null {
 
 /** Band shorthand. `!` is the fire, `!!` is everything still live. */
 const BAND_SHORTHAND: Record<string, readonly PulseBand[]> = {
-  '!': ['needs'],
-  '!!': ['needs', 'working'],
+  // `!` = "who wants me" -- both halves, hard blocks and soft asks. A shorthand
+  // that showed only one of them would be a second way to miss a stuck agent.
+  '!': ['blocked', 'needs'],
+  '!!': ['blocked', 'needs', 'working'],
+  // `!!!` = only the un-fakeable ones.
+  '!!!': ['blocked'],
 }
 
 /** Scope sigils that take a string: sigil -> which PulseQuery field it fills. */

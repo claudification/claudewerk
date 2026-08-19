@@ -14,6 +14,7 @@ import { usePulseKeys } from './use-pulse-keys'
 /** Band -> the grammar token its chip writes. Chips are a shortcut for typing,
  *  never a second filter mechanism. */
 const CHIP_TOKEN: Record<PulseBand, string> = {
+  blocked: '!!!',
   needs: '!',
   working: '!!',
   done: '',

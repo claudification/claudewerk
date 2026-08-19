@@ -59,12 +59,37 @@ export function handleElicitation(conv: Conversation, event: HookEventOf<'Elicit
 }
 
 /**
+ * Is a dialog still on the user's screen, waiting to be answered?
+ *
+ * Both slots count: `pendingDialog` is the one-shot dialog, `liveDialog` the
+ * persistent one (THE DIALOGUE), and either means a human is still expected to
+ * act.
+ */
+function hasOpenDialog(conv: Conversation): boolean {
+  return conv.pendingDialog !== undefined || conv.liveDialog?.snapshot.status === 'open'
+}
+
+/**
  * Clear pendingAttention + stored request payloads when CC signals the
  * blocking interaction is done: PostToolUse, PostToolUseFailure,
  * ElicitationResult.
+ *
+ * EXCEPT a dialog that is still open. `mcp__rclaude__dialog` returns the instant
+ * the dialog is SHOWN (44 ms measured) -- the dialog stays up and the answer
+ * arrives later as its own channel message -- so its `PostToolUse` lands ~200 ms
+ * after `dialog_show` and used to delete the attention flag that had just been
+ * set. A live 2026-08-19 trace (conversation 88739d3a) left a dialog open for
+ * twelve minutes with the conversation reporting that it needed nothing: gone
+ * from Pulse, gone from every "who is waiting on me" surface.
+ *
+ * A dialog's attention is retired by the dialog's OWN lifecycle -- `clearDialogState`
+ * in handlers/dialog.ts on answer/cancel/dismiss, and dialog-live.ts on a
+ * non-open snapshot. A tool result is not that lifecycle and must not act like it.
+ * Attention with no dialog behind it is still cleared: an orphan is dead.
  */
 export function clearPendingAttention(conv: Conversation): void {
-  if (conv.pendingAttention) conv.pendingAttention = undefined
+  const shielded = conv.pendingAttention?.type === 'dialog' && hasOpenDialog(conv)
+  if (conv.pendingAttention && !shielded) conv.pendingAttention = undefined
   if (conv.pendingPermission) conv.pendingPermission = undefined
   if (conv.pendingAskQuestion) conv.pendingAskQuestion = undefined
 }

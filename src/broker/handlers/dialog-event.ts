@@ -142,7 +142,7 @@ export const dialogLiveDismiss: MessageHandler = (ctx, data) => {
   const prevStatus = slot.snapshot.status
   delete conv.liveDialog
   if (conv.pendingAttention?.type === 'dialog') delete conv.pendingAttention
-  cancelDialogNotify(conv.id)
+  cancelDialogNotify(conv.id, 'live-dismissed')
   ctx.conversations.persistConversationById(conv.id)
   ctx.conversations.broadcastConversationUpdate(conv.id)
   if (conv.project) {

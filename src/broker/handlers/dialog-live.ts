@@ -115,7 +115,7 @@ const dialogPatch: MessageHandler = (ctx, data) => {
       a.conv.project,
     )
   }
-  if (a.snapshot.status !== 'open') cancelDialogNotify(a.conversationId)
+  if (a.snapshot.status !== 'open') cancelDialogNotify(a.conversationId, `snapshot-${a.snapshot.status}`)
   ctx.log.info(
     `[dialog-live] patch dialog=${a.dialogId.slice(0, 8)} conv=${a.conversationId.slice(0, 8)} status=${a.prevStatus}->${a.snapshot.status} seq=${a.snapshot.seq} ops=${Array.isArray(data.ops) ? data.ops.length : 0}`,
   )
@@ -141,7 +141,7 @@ const dialogOrphaned: MessageHandler = (ctx, data) => {
   const a = acceptHostSnapshot(ctx, data)
   if (!a) return
   const reason = (data.reason as string) || 'orphaned'
-  cancelDialogNotify(a.conversationId)
+  cancelDialogNotify(a.conversationId, `orphaned:${reason}`)
   if (a.conv?.project) {
     ctx.broadcastScoped(
       { type: 'dialog_orphaned', conversationId: a.conversationId, dialogId: a.dialogId, reason, snapshot: a.snapshot },
