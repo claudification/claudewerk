@@ -12,15 +12,21 @@
  *
  * Emits `project_changed { projectRoot, diff, notes }` (no conversationId) --
  * the broker broadcasts it permission-gated by the project URI.
+ *
+ * The same diff also produces `card_changed { project, moves }` -- one typed
+ * line per card that crossed lanes, epics dropped at the source. This watcher is
+ * the only place that ever sees both the old lane and the new one, which is why
+ * THE WALL's card ledger is fed from here rather than reconstructed downstream.
  */
 
 import { join } from 'node:path'
 import { type TreeWatcher, watchTree } from '../shared/fs-watch'
 import { CARDS_DIR, listProjectManifest, listProjectTasks } from '../shared/project-store'
 import type { ProjectTaskManifestEntry } from '../shared/project-task-types'
-import type { ProjectChanged, ProjectDiff } from '../shared/protocol'
+import type { CardChanged, ProjectChanged, ProjectDiff } from '../shared/protocol'
 import { TASK_STATUS_PATTERN } from '../shared/task-statuses'
 import { autoUpgradeBoard } from './board-auto-upgrade'
+import { deriveCardMoves } from './card-moves'
 
 /** The card id, and nothing else. A lane change used to look like a removal
  *  plus an addition (the key carried the status); now it is one `modified`. */
@@ -66,7 +72,7 @@ interface WatchEntry {
   pollInterval: ReturnType<typeof setInterval>
 }
 
-type SendFn = (msg: ProjectChanged) => void
+type SendFn = (msg: ProjectChanged | CardChanged) => void
 type LogFn = (msg: string) => void
 
 const watches = new Map<string, WatchEntry>()
@@ -77,12 +83,22 @@ function manifestMap(root: string): Map<ManifestKey, ProjectTaskManifestEntry> {
   return m
 }
 
-function emitIfChanged(projectRoot: string, entry: WatchEntry, send: SendFn) {
+function emitIfChanged(projectRoot: string, entry: WatchEntry, send: SendFn, log: LogFn) {
   const next = listProjectManifest(projectRoot)
   const diff = diffManifest(entry.lastManifest, next)
   if (diff.added.length === 0 && diff.removed.length === 0 && diff.modified.length === 0) return
   const notes = listProjectTasks(projectRoot)
   send({ type: 'project_changed', project: entry.project, diff, notes })
+
+  // Both callers of this function share one `lastManifest`, and whichever runs
+  // first advances it -- so a lane change is derived exactly once, whether the
+  // fs watcher or the 5s poll noticed it.
+  const moves = deriveCardMoves(entry.lastManifest, next, notes, entry.project, Date.now())
+  if (moves.length > 0) {
+    for (const m of moves) log(`[card-ledger] move ${m.id}: ${m.from} -> ${m.to} (source=project-watch, ${m.project})`)
+    send({ type: 'card_changed', project: entry.project, moves })
+  }
+
   const map = new Map<ManifestKey, ProjectTaskManifestEntry>()
   for (const e of next) map.set(mkey(e), e)
   entry.lastManifest = map
@@ -120,7 +136,7 @@ export function watchProject(projectRoot: string, project: string, leaseMs: numb
       log(`[project-watch] lease expired (no renew): ${projectRoot}`)
       unwatchProject(projectRoot, log)
     }, leaseMs),
-    pollInterval: setInterval(() => emitIfChanged(projectRoot, entry, send), 5000),
+    pollInterval: setInterval(() => emitIfChanged(projectRoot, entry, send, log), 5000),
   }
   // Recursive .md watch under the board dir (depth 2), filtered to `cards/`
   // plus any undrained legacy lane. The 300ms debounce replaces chokidar's
@@ -132,7 +148,7 @@ export function watchProject(projectRoot: string, project: string, leaseMs: numb
     depth: 2,
     filter: abs => PROJECT_TASK_PATTERN.test(abs),
     debounceMs: 300,
-    onEvent: () => emitIfChanged(projectRoot, entry, send),
+    onEvent: () => emitIfChanged(projectRoot, entry, send, log),
   })
   watches.set(projectRoot, entry)
 
