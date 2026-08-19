@@ -29,7 +29,7 @@ import {
   tryParseProjectUri,
   validateProjectUri,
 } from '../shared/project-uri'
-import type { Conversation, LaunchConfig, ProjectSettings, SpawnResult } from '../shared/protocol'
+import type { Conversation, ProjectSettings, SpawnResult } from '../shared/protocol'
 import { resolveDefaultTransport, resolveSpawnConfig } from '../shared/spawn-defaults'
 import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
 import { evaluateSpawnPermission, type SpawnCallerContext } from '../shared/spawn-permissions'
@@ -437,7 +437,6 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     repl,
     thinkingSummaries,
     includePartialMessages,
-    transport,
   } = resolved
 
   if (model) {

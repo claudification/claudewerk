@@ -124,7 +124,11 @@ export function evaluateLease(current: EpicLease | null, req: LeaseRequest, nowM
   // generation it is adopting and never advances one.
   if (req.adopt) {
     if (current.gen !== req.expectGen) {
-      return { grant: false, reason: `stale adopt: expected gen ${req.expectGen}, epic is at gen ${current.gen}`, holder: current }
+      return {
+        grant: false,
+        reason: `stale adopt: expected gen ${req.expectGen}, epic is at gen ${current.gen}`,
+        holder: current,
+      }
     }
     return { grant: true, lease: { convId: req.convId, gen: current.gen, at: current.at }, replaced: current }
   }
