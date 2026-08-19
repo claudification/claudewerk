@@ -229,6 +229,21 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       ctx.diag('headless', `commands_changed: refreshed conversation_info with ${names.length} slash commands`)
     },
 
+    // CC classified the turn it just finished. Machine-derived "what is this
+    // doing right now" -- forwarded to its own slot, NEVER folded into
+    // liveStatus (that one is the agent's deliberate set_status claim and
+    // outranks this). Fire-and-forget: if the socket is down we drop it rather
+    // than queue, because a stale label is worse than none.
+    onTurnSummary(summary) {
+      if (!ctx.wsClient?.isConnected()) return
+      ctx.wsClient.send({
+        type: 'turn_summary',
+        conversationId: ctx.claudeSessionId || ctx.conversationId,
+        summary: { ...summary, updatedAt: Date.now() },
+      })
+      ctx.diag('headless', `turn_summary: [${summary.category}] ${summary.detail}`)
+    },
+
     onResult(result) {
       ctx.diag('headless', `Result: ${result.subtype} cost=$${result.total_cost_usd} turns=${result.num_turns}`)
       // SOTU: emit the per-turn baseline turn-digest + reset the callout scanner

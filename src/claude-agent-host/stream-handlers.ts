@@ -14,6 +14,7 @@ import type {
 } from './stream-backend'
 import { deriveMonitorOutputPath, type MonitorTracker } from './stream-monitors'
 import { flushReplayBuffer, type ReplayBuffer } from './stream-replay'
+import { parseTurnSummary } from './turn-summary'
 
 const debug = (msg: string) => _debug(`[stream] ${msg}`)
 
@@ -61,6 +62,7 @@ export interface HandlerContext {
     | 'onApiStatus'
     | 'onThinkingProgress'
     | 'onCommandsChanged'
+    | 'onTurnSummary'
   >
 }
 
@@ -190,6 +192,20 @@ function handleSystem(hctx: HandlerContext, msg: Record<string, unknown>) {
     const names = commands.map(c => c?.name).filter((n): n is string => typeof n === 'string')
     debug(`commands_changed: ${names.length} commands`)
     callbacks.onCommandsChanged?.(names)
+    return
+  }
+
+  // CC's own background turn classifier. Conversation STATE, not a transcript
+  // row -- so it rides a callback and is deliberately NOT persisted as a system
+  // entry (same treatment as thinking_tokens). Only fires when the spawn env
+  // opts in; see turn-summary.ts for the env gate and why it is an accelerator
+  // rather than a source of truth.
+  if (subtype === 'post_turn_summary') {
+    const summary = parseTurnSummary(msg)
+    if (summary) {
+      debug(`post_turn_summary: [${summary.category}] ${summary.detail}`)
+      callbacks.onTurnSummary?.(summary)
+    }
     return
   }
 

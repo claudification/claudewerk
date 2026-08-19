@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { TranscriptEntry } from '../shared/protocol'
 import { type HandlerContext, handleMessage } from './stream-handlers'
 import { createReplayBuffer } from './stream-replay'
+import type { ParsedTurnSummary } from './turn-summary'
 
 function createTestContext(extraCallbacks: Partial<HandlerContext['callbacks']> = {}): {
   hctx: HandlerContext
@@ -354,6 +355,83 @@ describe('stream-handlers thinking_tokens', () => {
     handleMessage(hctx, { type: 'system', subtype: 'thinking_tokens', estimated_tokens: 50 })
 
     expect(progress).toEqual([{ tokens: 50, delta: undefined }])
+  })
+})
+
+describe('stream-handlers post_turn_summary', () => {
+  function createTurnSummaryCtx() {
+    const summaries: ParsedTurnSummary[] = []
+    const ctx = createTestContext({ onTurnSummary: s => summaries.push(s) })
+    return { ...ctx, summaries }
+  }
+
+  // The payload shape here is a VERBATIM capture from a live probe against CC
+  // 2.1.221 -- see .claude/docs/plan-conversation-classifier.md for how to
+  // reproduce it. If CC changes the shape, this is the test that should fail.
+  test('forwards a live-captured summary and does NOT persist a transcript entry', () => {
+    const { hctx, entries, summaries } = createTurnSummaryCtx()
+
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'post_turn_summary',
+      summarizes_uuid: 'a0eff3d0-55e9-46c8-ae91-cca5f5b5bfdb',
+      status_category: 'review_ready',
+      status_detail: 'f.txt contains: hello',
+      needs_action: '',
+    })
+
+    expect(entries).toHaveLength(0)
+    expect(summaries).toEqual([
+      {
+        category: 'review_ready',
+        detail: 'f.txt contains: hello',
+        summarizesUuid: 'a0eff3d0-55e9-46c8-ae91-cca5f5b5bfdb',
+      },
+    ])
+  })
+
+  test('carries needsAction when CC reports the turn blocked', () => {
+    const { hctx, summaries } = createTurnSummaryCtx()
+
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'post_turn_summary',
+      status_category: 'blocked',
+      status_detail: 'Waiting on permission: Bash',
+      needs_action: 'Approve or deny Bash',
+    })
+
+    expect(summaries[0]).toMatchObject({
+      category: 'blocked',
+      detail: 'Waiting on permission: Bash',
+      needsAction: 'Approve or deny Bash',
+    })
+  })
+
+  // CC emits a priming message with no detail at turn start. Forwarding it would
+  // blank out a good label with an empty one.
+  test('drops the priming message and blank details without firing the callback', () => {
+    const { hctx, entries, summaries } = createTurnSummaryCtx()
+
+    handleMessage(hctx, { type: 'system', subtype: 'post_turn_summary', status_detail: null })
+    handleMessage(hctx, { type: 'system', subtype: 'post_turn_summary', status_detail: '   ' })
+    handleMessage(hctx, { type: 'system', subtype: 'post_turn_summary' })
+
+    expect(summaries).toHaveLength(0)
+    expect(entries).toHaveLength(0)
+  })
+
+  test('defaults a missing category to review_ready and omits an empty needs_action', () => {
+    const { hctx, summaries } = createTurnSummaryCtx()
+
+    handleMessage(hctx, {
+      type: 'system',
+      subtype: 'post_turn_summary',
+      status_detail: 'wiring swipe into app shell',
+      needs_action: '   ',
+    })
+
+    expect(summaries[0]).toEqual({ category: 'review_ready', detail: 'wiring swipe into app shell' })
   })
 })
 

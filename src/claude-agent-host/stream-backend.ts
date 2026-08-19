@@ -14,6 +14,7 @@ import { type HandlerContext, handleMessage } from './stream-handlers'
 import { createMonitorTracker } from './stream-monitors'
 import { createReplayBuffer, flushReplayBuffer } from './stream-replay'
 import { syntheticUserUuid, userContentHash } from './synthetic-user-uuid'
+import { type ParsedTurnSummary, TURN_SUMMARY_ENV } from './turn-summary'
 
 const SHOW_PRETTY = !!process.env.RCLAUDE_SHOW_TRANSCRIPT_PRETTY
 const SHOW_TRANSCRIPT = SHOW_PRETTY || !!process.env.RCLAUDE_SHOW_TRANSCRIPT
@@ -112,6 +113,11 @@ export interface StreamBackendOptions {
    *  receiver refreshes conversation_info so the composer autocomplete stays
    *  live mid-session. */
   onCommandsChanged?: (names: string[]) => void
+  /** Backend classified the turn it just finished (CC: `system/post_turn_summary`).
+   *  Conversation STATE, not a transcript row: `detail` is a ~30-char label of
+   *  what the agent is doing right now. Only fires when the spawn env opts in
+   *  (see TURN_SUMMARY_ENV in ./turn-summary). */
+  onTurnSummary?: (summary: ParsedTurnSummary) => void
   onJsonStreamLine?: (line: string) => void
   onExit?: (code: number | null) => void
 }
@@ -221,6 +227,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       onApiStatus: options.onApiStatus,
       onThinkingProgress: options.onThinkingProgress,
       onCommandsChanged: options.onCommandsChanged,
+      onTurnSummary: options.onTurnSummary,
     },
   }
 
@@ -293,6 +300,10 @@ function spawnProcess(options: StreamBackendOptions) {
     stderr: 'pipe',
     env: {
       ...process.env,
+      // Opt in to CC's own turn classifier so `post_turn_summary` reaches the
+      // wire. Placed BEFORE ...env so an operator can still override or unset
+      // it per-spawn. See ./turn-summary for the gate and its blast radius.
+      ...TURN_SUMMARY_ENV,
       ...env,
       RCLAUDE_CONVERSATION_ID: conversationId,
       RCLAUDE_PORT: String(localServerPort),

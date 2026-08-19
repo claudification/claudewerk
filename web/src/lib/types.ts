@@ -16,6 +16,7 @@ export type {
   ProjectSettings,
   SubagentInfo,
   TaskInfo,
+  TurnSummary,
   UsageUpdate,
   UsageWindow,
 } from '@shared/protocol'
@@ -29,6 +30,7 @@ import type {
   LiveStatus,
   MonitorInfo,
   ProjectSettings,
+  TurnSummary,
 } from '@shared/protocol'
 
 // Re-export HookEvent but with a looser data type for generic property access
@@ -143,6 +145,9 @@ export interface Conversation extends ConversationTaskFields {
   }
   /** THE STATUS — agent self-reported task state; drives the attention badge. */
   liveStatus?: LiveStatus
+  /** Machine-classified "what is it doing right now" (CC's own per-turn
+   *  classifier). Lower trust than liveStatus and never a substitute for it. */
+  turnSummary?: TurnSummary
   /** Last user-impulse time (UserPromptSubmit); marks liveStatus superseded. */
   lastInputAt?: number
   pendingSpawnApproval?: {

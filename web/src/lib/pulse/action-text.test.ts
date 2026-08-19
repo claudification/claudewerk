@@ -106,6 +106,38 @@ describe('pulseTag', () => {
   })
 })
 
+describe('pulseActionText -- CC turn classification', () => {
+  const summary = (detail: string) => ({ category: 'review_ready', detail, updatedAt: NOW })
+
+  it('replaces the useless "working" fallback with what it is actually doing', () => {
+    const c = conv({ status: 'active', turnSummary: summary('wiring swipe into app shell') })
+    expect(pulseActionText(c)).toBe('wiring swipe into app shell')
+  })
+
+  // The label describes the LAST turn. On a row that stopped working it would
+  // assert activity that is over, so the lifecycle word has to win.
+  it('does NOT speak for an idle or ended row', () => {
+    expect(pulseActionText(conv({ status: 'idle', turnSummary: summary('running tests') }))).toBe('idle')
+    expect(pulseActionText(conv({ status: 'ended', turnSummary: summary('running tests') }))).toBe('ended')
+  })
+
+  it('yields to everything authored or blocking above it', () => {
+    const s = summary('running tests')
+    expect(pulseActionText(conv({ turnSummary: s }), { hasPendingPermission: true })).toBe('permission')
+    expect(pulseActionText(conv({ turnSummary: s, planMode: true }))).toBe('plan mode')
+    expect(pulseActionText(conv({ turnSummary: s, lastError: { errorType: 'api' } } as Partial<Conversation>))).toBe(
+      'error: api',
+    )
+    const needsYou = conv({ turnSummary: s, liveStatus: live({ state: 'needs_you', pending: 'pick A or B' }) })
+    expect(pulseActionText(needsYou)).toBe('pick A or B')
+  })
+
+  it('clips a long label rather than blowing out the column', () => {
+    const c = conv({ turnSummary: summary('x'.repeat(90)) })
+    expect(pulseActionText(c).length).toBeLessThanOrEqual(48)
+  })
+})
+
 describe('pulseAge', () => {
   it('floors the first seconds to "now" so rows do not flicker', () => {
     expect(pulseAge(0)).toBe('now')
