@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { WALL_AXES } from '@/lib/wall/axes'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 import { wallPulseFleet } from '../wall-pulse-fleet'
 import { useWallPulseStore, type WallPulseView } from '../wall-pulse-state'
@@ -69,23 +70,6 @@ export default function PulsePane() {
   const setView = useWallPulseStore(s => s.setView)
   const selectedId = useWallPulseStore(s => s.selectedId)
   const select = useWallPulseStore(s => s.select)
-
-  /**
-   * THE PROJECT CHIP. A row is a `<button>`, so the chip inside it cannot be
-   * one -- the click is intercepted on the way DOWN instead, which is also what
-   * stops the row selecting itself when you only meant to scope the wall.
-   *
-   * It calls the store's exported action. There is exactly one implementation of
-   * "scope to this project, or clear it if it is already the scope" in the tree
-   * and it is not in this file.
-   */
-  function handleChipCapture(event: React.MouseEvent<HTMLDivElement>) {
-    const chip = (event.target as HTMLElement).closest('[data-project]')
-    const project = chip?.getAttribute('data-project')
-    if (!project) return
-    event.stopPropagation()
-    useWallFilterStore.getState().toggleProject(project)
-  }
 
   /** The reveal affordance writes the token into the wall's box, so the user can
    *  see WHY the machine runs came back and delete it by hand. */

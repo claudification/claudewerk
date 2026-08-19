@@ -20,12 +20,11 @@
  * the fact and make `{matched}/{total}` a lie.
  */
 
-import { projectIdentityKey } from '@shared/project-uri'
 import type { EpicActivityEntry } from '@shared/protocol'
 import { useEffect, useMemo, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
-import { projectDisplayName } from '@/lib/utils'
+import { useProjectLook } from '../use-project-look'
 import { useWallClock } from '../use-wall-clock'
 
 interface RowBase {
@@ -63,32 +62,6 @@ export type UnattendedRow = EpicRunRowData | NightshiftRunRowData
  */
 export function useRunClock(intervalMs = 5_000): number {
   return useWallClock(intervalMs)
-}
-
-interface ProjectLook {
-  projectName: string
-  projectIcon?: string
-  projectColor?: string
-}
-
-/** How a project is meant to LOOK, resolved once per project rather than per row. */
-function useProjectLook(): (uri: string) => ProjectLook {
-  const projectSettings = useConversationsStore(s => s.projectSettings)
-  return useMemo(() => {
-    const cache = new Map<string, ProjectLook>()
-    return (uri: string) => {
-      const hit = cache.get(uri)
-      if (hit) return hit
-      const settings = projectSettings[projectIdentityKey(uri)]
-      const look: ProjectLook = {
-        projectName: projectDisplayName(uri, settings?.label),
-        ...(settings?.icon ? { projectIcon: settings.icon } : {}),
-        ...(settings?.color ? { projectColor: settings.color } : {}),
-      }
-      cache.set(uri, look)
-      return look
-    }
-  }, [projectSettings])
 }
 
 /**
