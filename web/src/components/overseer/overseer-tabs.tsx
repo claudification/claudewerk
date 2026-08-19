@@ -48,8 +48,20 @@ function Entry({
       <span className="text-meta text-fg-faint shrink-0 w-14" title={ts}>
         {ago(ts, nowMs)}
       </span>
-      <span className={cn('text-chrome uppercase shrink-0 w-16', tone)}>{kind}</span>
-      <span className="flex-1 min-w-0 text-[11px] text-foreground/88 break-words">{body}</span>
+      {/* w-20 + truncate, not w-16: `COMPLETION` and `CHECKPOINT` are the two
+          longest kinds and at 9px with 0.11em tracking they measured a hair over
+          64px, so they overflowed the column and printed INTO the body text --
+          `COMPLETIONmain-biome-...`. The truncate is the backstop so a kind added
+          later cannot reintroduce it. */}
+      <span className={cn('text-chrome uppercase shrink-0 w-20 truncate', tone)} title={kind}>
+        {kind}
+      </span>
+      {/* Baton bodies are MARKDOWN -- the overseer writes them with bold, lists
+          and verification tables. Rendered as a raw string they showed literal
+          `**...**` and a table collapsed onto one line as `| check | result |`. */}
+      <div className="flex-1 min-w-0 text-[11px] text-foreground/88 [overflow-wrap:break-word]">
+        <Markdown>{body}</Markdown>
+      </div>
     </div>
   )
 }
@@ -102,9 +114,14 @@ export function OverseerBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: 
   // scrolling to the bottom to find out what just happened is a tax.
   return (
     <div className="px-3 py-2">
-      {[...baton].reverse().map((e, i) => (
+      {/* Key on CONTENT, never position. The list is reversed, so a new entry
+          arrives at index 0 and shifts every other index -- an index-bearing key
+          therefore changes on every row of a live log, remounting the lot (and
+          now re-rendering a Markdown body per row) each time the overseer writes
+          one line. */}
+      {[...baton].reverse().map(e => (
         <Entry
-          key={`${e.ts}-${i}`}
+          key={`${e.ts}-${e.kind}-${e.cardId ?? ''}-${e.body.length}`}
           ts={e.ts}
           kind={e.kind}
           tone={KIND_TONE[e.kind] ?? 'text-fg-dim'}
@@ -122,9 +139,9 @@ export function OverseerBeats({ beats, nowMs }: { beats: EpicBeatRecord[]; nowMs
   }
   return (
     <div className="px-3 py-2">
-      {[...beats].reverse().map((b, i) => (
+      {[...beats].reverse().map(b => (
         <Entry
-          key={`${b.at}-${i}`}
+          key={`${b.at}-${b.gen}-${b.note.length}`}
           ts={b.at}
           kind={`gen ${b.gen}`}
           tone="text-fg-dim"

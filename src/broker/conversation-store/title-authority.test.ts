@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test'
-import { applyTitleWrite, backfillTitleSetAt, decideTitleWrite, type TitleState } from './title-authority'
+import {
+  applySpawnTitle,
+  applyTitleWrite,
+  backfillTitleSetAt,
+  decideTitleWrite,
+  isEphemeralName,
+  type TitleState,
+} from './title-authority'
 
 const NOW = 1_800_000_000_000
 const MINUTE = 60_000
@@ -173,5 +180,81 @@ describe('backfillTitleSetAt', () => {
   it('does not touch an unpinned or already-stamped conversation', () => {
     expect(backfillTitleSetAt({ title: 'auto' }, NOW)).toBe(false)
     expect(backfillTitleSetAt({ title: 'x', titleUserSet: true, titleSetAt: 5 }, NOW)).toBe(false)
+  })
+})
+
+/**
+ * THE FLAG (2026-08-19). A name is either INTENTIONAL or EPHEMERAL, and every
+ * writer records which on the way in.
+ *
+ * Born from 1194 live conversations whose ephemeral petname carried
+ * `titleUserSet: true` -- the legacy spawn path stamped the boolean on its own
+ * generated name, so all of them read as human-authored and the automatic
+ * renamer could never touch one. The lesson is not "sniff harder": it is that
+ * intent must be RECORDED, never re-derived.
+ */
+describe('titleEphemeral -- intentional vs ephemeral', () => {
+  it('an automatic write leaves the name ephemeral, so a better guess can replace it', () => {
+    const state: TitleState = {}
+    applyTitleWrite(state, { title: 'floppy-panda', origin: 'cc-auto' }, NOW)
+    expect(isEphemeralName(state)).toBe(true)
+    expect(decideTitleWrite(state, { title: 'fix spawn timeout', origin: 'cc-auto' }, NOW)).toMatchObject({
+      accept: true,
+    })
+  })
+
+  it('rename_conversation is an INTENTIONAL rename and clears the flag', () => {
+    const state: TitleState = {}
+    applyTitleWrite(state, { title: 'floppy-panda', origin: 'cc-auto' }, NOW)
+    applyTitleWrite(state, { title: 'the wall', origin: 'agent', at: NOW }, NOW)
+    expect(isEphemeralName(state)).toBe(false)
+    expect(decideTitleWrite(state, { title: 'auto guess', origin: 'cc-auto' }, NOW)).toEqual({
+      accept: false,
+      reason: 'pinned',
+    })
+  })
+
+  it('a human rename clears the flag too', () => {
+    const state: TitleState = {}
+    applyTitleWrite(state, { title: 'mine', origin: 'user', at: NOW }, NOW)
+    expect(isEphemeralName(state)).toBe(false)
+  })
+
+  it('a conversation with no name at all is ephemeral', () => {
+    expect(isEphemeralName({})).toBe(true)
+  })
+
+  it('clearing a title returns it to ephemeral', () => {
+    const state: TitleState = {}
+    applyTitleWrite(state, { title: 'mine', origin: 'user', at: NOW }, NOW)
+    applyTitleWrite(state, { title: undefined, origin: 'user', at: NOW + 1 }, NOW + 1)
+    expect(isEphemeralName(state)).toBe(true)
+  })
+
+  it('the flag wins over the legacy boolean once recorded', () => {
+    const legacyLooksPinned: TitleState = { title: 'floppy-panda', titleUserSet: true, titleEphemeral: true }
+    expect(isEphemeralName(legacyLooksPinned)).toBe(true)
+    expect(decideTitleWrite(legacyLooksPinned, { title: 'real name', origin: 'cc-auto' }, NOW)).toMatchObject({
+      accept: true,
+    })
+  })
+})
+
+describe('spawned conversations follow intent, not their spawn route', () => {
+  it('pins a spawn whose requester supplied a name', () => {
+    const state: TitleState = {}
+    applySpawnTitle(state, 'nightly sweep', 'floppy-panda')
+    expect(state.title).toBe('nightly sweep')
+    expect(decideTitleWrite(state, { title: 'auto', origin: 'cc-auto' }, NOW)).toEqual({
+      accept: false,
+      reason: 'pinned',
+    })
+  })
+
+  it('leaves an unnamed spawn fair game for the renamer', () => {
+    const state: TitleState = {}
+    applySpawnTitle(state, undefined, 'floppy-panda')
+    expect(state.title).toBe('floppy-panda')
+    expect(decideTitleWrite(state, { title: 'derived name', origin: 'cc-auto' }, NOW)).toMatchObject({ accept: true })
   })
 })

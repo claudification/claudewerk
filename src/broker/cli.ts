@@ -13,6 +13,7 @@ import { handleGateway } from './cli/gateway-commands'
 import { handleMaintain } from './cli/maintenance-commands'
 import { type ParsedArgs, parseArgs } from './cli/parse-args'
 import { handleDeletePasskey, handleListPasskeys } from './cli/passkey-commands'
+import { handleReporter } from './cli/reporter-commands'
 import { handleRemoveRole, handleSetRole } from './cli/role-commands'
 import { handleSentinel } from './cli/sentinel-commands'
 import { DEFAULT_CACHE_DIR, printUsage } from './cli/shared'
@@ -154,6 +155,9 @@ async function main(): Promise<void> {
       break
     case 'gateway':
       handleGateway(args)
+      break
+    case 'reporter':
+      handleReporter(args)
       break
     case 'mint-dev-key':
       handleMintDevKey(args)

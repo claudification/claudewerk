@@ -19,8 +19,22 @@ import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
+import {
+  markEngineBoot as markBoot,
+  RESTART_QUARANTINE_MS as QUARANTINE_MS,
+  quarantineRemainingMs as quarantineLeft,
+  quarantineLogLine,
+  resetEngineBoot,
+} from './werk-engine-boot'
+import { werkLiveness } from './werk-liveness'
 
 const SWEEP_MS = 45_000
+
+// The restart quarantine is NOT this engine's -- it belongs to the one unattended
+// runner that nightshift and epic mode are two triggers of
+// (plan-quest-engine.md:189). Re-exported so this module's callers and tests keep
+// one import, but the clock and the rule live in ONE place for both sweeps.
+export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './werk-engine-boot'
 
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
@@ -68,21 +82,16 @@ interface SweepStore {
   broadcastConversationScoped: ActivityBroadcaster['broadcastConversationScoped']
 }
 
-/**
- * A conversation is live if it has not ended, or still holds a socket. Same rule
- * as the nightshift guardian -- an `ended` conversation with an open socket is
- * mid-teardown, not settled.
- */
-function liveness(store: SweepStore): IsLive {
-  return conv => conv.status !== 'ended' || store.getActiveConversationCount(conv.id) > 0
-}
+// The liveness rule is WERK's, shared with the nightshift trigger -- see
+// werk-liveness.ts. It used to be a local copy whose comment said "same rule as
+// the nightshift guardian", which is a duplication describing itself.
 
 /** Build the sweep's dependencies from the real store. */
 export function buildSweepDeps(store: ConversationStore, overrides: Partial<SweepDeps> = {}): SweepDeps {
   const s = store as unknown as SweepStore
   const base: SweepDeps = {
     getAllConversations: s.getAllConversations,
-    isLive: liveness(s),
+    isLive: werkLiveness(s.getActiveConversationCount),
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
     addProjectListener: s.addProjectListener,
@@ -95,7 +104,7 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
       rendezvousCallerConversationId: null,
       // An unattended run must never stall on a human approval dialog.
       bypassApprovalGate: true,
-    } as unknown as Record<string, unknown>,
+    },
     log: line => console.log(line),
     windowOpen: async project => {
       const res = await sendNightshiftOp(s as never, project, { op: 'config_read' })
@@ -128,6 +137,14 @@ function epicsToBeat(deps: SweepDeps): EpicGroup[] {
 export async function sweepEpics(deps: SweepDeps): Promise<void> {
   if (sweeping) {
     deps.log('[epic-sweep] previous tick still running; skipping')
+    return
+  }
+  const quarantine = quarantineLeft(deps.now())
+  if (quarantine > 0) {
+    // Still logged and still published: a run is not stalled, it is waiting, and
+    // the panel must be able to say which.
+    deps.log(quarantineLogLine('[epic-sweep]', quarantine))
+    await deps.publishActivity?.()
     return
   }
   sweeping = true
@@ -168,6 +185,19 @@ export async function beatOneEpic(
   epicId: string,
 ): Promise<{ ok: true; outcome: BeatOutcome } | { ok: false; error: string }> {
   if (sweeping) return { ok: false, error: 'a sweep is already running; try again in a moment' }
+  // Refused rather than honoured: inside the quarantine the conversation
+  // registry is still filling, so a forced beat would dispatch a duplicate seat
+  // for every card that already has one. Saying so is more use than doing it.
+  const quarantine = quarantineLeft(deps.now())
+  if (quarantine > 0) {
+    return {
+      ok: false,
+      error:
+        `the broker restarted ${Math.round((QUARANTINE_MS - quarantine) / 1000)}s ago and agent hosts are ` +
+        `still reconnecting -- beating now would re-dispatch cards that already have a live seat. ` +
+        `Try again in ${Math.ceil(quarantine / 1000)}s.`,
+    }
+  }
   sweeping = true
   try {
     const group = epicsToBeat(deps).find(g => g.epicId === epicId && g.project === project) ?? {
@@ -175,6 +205,7 @@ export async function beatOneEpic(
       project,
       inFlight: [],
       overseerAlive: false,
+      liveOverseers: [],
       settled: [],
       maxGenSeen: 0,
     }
@@ -191,12 +222,26 @@ export async function beatOneEpic(
   }
 }
 
-/** Start the tick. Returns the stop function (tests + clean shutdown). */
+/**
+ * Start the tick. Returns the stop function (tests + clean shutdown).
+ *
+ * NOT yet on `startWerkTick`, and the reason is specific rather than lazy:
+ * `beatOneEpic` deliberately shares THIS loop's reentrancy guard while running
+ * DIFFERENT work (one epic, not all of them). The tick primitive owns its guard
+ * privately, so adopting it here would either hand `beatOneEpic` an unguarded
+ * path -- the exact double-dispatch the guard exists to prevent -- or need a
+ * tick registry so a forced beat can borrow the loop's guard. The quarantine and
+ * the liveness rule are already shared; this last piece is carded, not forgotten.
+ */
 export function startEpicSweep(deps: SweepDeps): () => void {
+  markBoot(deps.now())
   const timer = setInterval(() => {
     void sweepEpics(deps)
   }, SWEEP_MS)
-  deps.log(`[epic-sweep] started (${SWEEP_MS / 1000}s)`)
+  deps.log(
+    `[epic-sweep] started (${SWEEP_MS / 1000}s) -- restart quarantine holds every beat for the first ` +
+      `${QUARANTINE_MS / 1000}s while agent hosts reconnect`,
+  )
   return () => {
     clearInterval(timer)
     deps.log('[epic-sweep] stopped')
@@ -206,4 +251,5 @@ export function startEpicSweep(deps: SweepDeps): () => void {
 /** Tests only -- the module-level guard would otherwise leak between cases. */
 export function resetSweepGuard(): void {
   sweeping = false
+  resetEngineBoot()
 }

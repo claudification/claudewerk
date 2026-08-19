@@ -91,12 +91,27 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     boardFingerprint: boardFingerprint(cards, group.epicId),
   })
 
+  // BEFORE the actions, not after. A beat that crashes mid-dispatch must still
+  // have recorded that this generation was dry, or the brake resets itself every
+  // time the thing it exists to stop actually goes wrong.
+  if (beat.dryGens !== undefined && beat.dryGens !== run.dryGens) {
+    const res = await io.sendEpicOp(deps, group.project, {
+      op: 'patch',
+      epicId: group.epicId,
+      patch: { dryGens: beat.dryGens },
+    })
+    if (!res.ok) deps.log(`${tag(group.epicId, run.gen)} dryGens patch FAILED: ${res.error}`)
+  }
+
   const spawned = await performActions(deps, group, run, beat, {
     batonTail: renderEpicLogTail(view.baton),
     plan,
     settled: pending,
     cardLines: plan.rollup?.children.map(c => `${c.card.slug} -- ${c.card.title} (${c.card.status})`) ?? [],
     epicBody: plan.rollup?.card?.bodyPreview ?? '',
+    // From the SAME read as the run, so the CAS can ask whether THIS holder is
+    // alive rather than whether any overseer is.
+    holder: view.lease,
   })
 
   return finish(deps, group, run.gen, {

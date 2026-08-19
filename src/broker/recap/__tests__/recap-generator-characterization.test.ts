@@ -307,7 +307,7 @@ describe('recap-generator characterization (Phase 1a)', () => {
       expect(body.messages.length).toBe(2)
       expect(body.messages[0].role).toBe('system')
       expect(body.messages[1].role).toBe('user')
-      expect(body.max_tokens).toBe(256)
+      expect(body.max_tokens).toBe(300)
       expect(body.temperature).toBe(0.1)
     })
   })
@@ -398,7 +398,14 @@ describe('recap-generator characterization (Phase 1a)', () => {
       expect(captured.length).toBe(1)
       const body = JSON.parse(captured[0].init.body as string)
       const userPrompt = body.messages[1].content as string
-      expect(userPrompt).toContain('BACKGROUND')
+      // CHANGED by the intent cutover (2026-08-19). The condensed format is
+      // gone; context is now three explicit slots so the classifier can tell an
+      // opening ask from a later redirect from what actually happened.
+      //
+      // Prior `away_summary` recaps still ride along as BACKGROUND -- a long
+      // session must not lose what it already concluded.
+      expect(userPrompt).toContain('INITIAL REQUEST:')
+      expect(userPrompt).toContain('RESULTS SO FAR:')
       expect(userPrompt).toContain('earlier work happened')
     })
   })

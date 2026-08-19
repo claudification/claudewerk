@@ -73,3 +73,45 @@ describe('evaluateLease', () => {
     expect(d.grant && d.lease.gen).toBe(6)
   })
 })
+
+/**
+ * ADOPTION. The wake has to take the lease BEFORE it knows the conversation id
+ * -- the CAS is what decides whether it may spawn at all -- so it takes it under
+ * a `pending-` placeholder and swaps the real id in once the spawn returns.
+ *
+ * Live incident (2026-08-19): the swap was never written. The board read
+ * `overseer: pending-epic-the-wall-6`, a holder no lookup could ever resolve, so
+ * the panel rendered "lease null . never woken" while five overseer generations
+ * ran at once, and break_lease's refuse-while-alive check could not fire either.
+ */
+describe('evaluateLease -- adopting a placeholder', () => {
+  const pending: EpicLease = { convId: 'pending-e1-6', gen: 6, at: new Date(T0).toISOString() }
+
+  test('swaps the real conversation id in WITHOUT burning a generation', () => {
+    const d = evaluateLease(pending, { convId: 'conv_real', expectGen: 6, holderAlive: true, adopt: true }, T0 + 5000)
+    expect(d.grant).toBe(true)
+    expect(d.grant && d.lease.convId).toBe('conv_real')
+    expect(d.grant && d.lease.gen).toBe(6)
+  })
+
+  test('keeps the original take time, so the stale window measures the WAKE', () => {
+    const d = evaluateLease(pending, { convId: 'conv_real', expectGen: 6, holderAlive: true, adopt: true }, T0 + 5000)
+    expect(d.grant && d.lease.at).toBe(pending.at)
+  })
+
+  test('refuses to adopt a generation that has already moved on', () => {
+    const d = evaluateLease(pending, { convId: 'conv_real', expectGen: 5, holderAlive: true, adopt: true }, T0 + 5000)
+    expect(d.grant).toBe(false)
+  })
+
+  test('refuses to adopt when the lease was never taken', () => {
+    expect(evaluateLease(null, { convId: 'conv_real', expectGen: 6, holderAlive: false, adopt: true }, T0).grant).toBe(
+      false,
+    )
+  })
+
+  test('an ordinary wake still advances the generation -- adoption is opt-in', () => {
+    const d = evaluateLease(pending, { convId: 'conv_real', expectGen: 6, holderAlive: false }, T0 + 5000)
+    expect(d.grant && d.lease.gen).toBe(7)
+  })
+})

@@ -19,6 +19,7 @@
  * dispatch table) and `.claude/docs/cc-daemon-control-protocol.md` § 3 / § 5.5
  * (the dispatch op + the DispatchSpec wire shape).
  */
+import { TURN_SUMMARY_ENV } from '../claude-agent-host/turn-summary'
 import type { DaemonResponse, DispatchLaunch, DispatchSpec } from '../shared/cc-daemon/types'
 import { THINKING_DISPLAY_FLAG, thinkingDisplayValue } from '../shared/thinking-display'
 
@@ -162,7 +163,12 @@ export function buildDispatchSpec(opts: DispatchSpecOpts): DispatchSpec {
     source: 'fleet',
     cwd: opts.cwd,
     launch: buildLaunch(opts, flags),
-    env: opts.env ?? {},
+    // TURN_SUMMARY_ENV first so a caller's env still wins. The daemon worker is
+    // forked by CC's own supervisor and never sees the agent host's env, so the
+    // classifier opt-in that stream-backend sets for a direct spawn would be
+    // silently absent here -- and the daemon path is how most conversations
+    // start. See src/claude-agent-host/turn-summary.ts.
+    env: { ...TURN_SUMMARY_ENV, ...(opts.env ?? {}) },
     isolation: 'none',
     respawnFlags: flags,
     seed: buildSeed(opts),

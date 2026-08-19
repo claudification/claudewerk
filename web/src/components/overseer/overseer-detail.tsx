@@ -33,7 +33,17 @@ export function headFacts(data: EpicInspectResult) {
   }
 }
 
-function RunHead({ data, nowMs }: { data: EpicInspectResult; nowMs: number }) {
+function RunHead({
+  data,
+  nowMs,
+  fetchedAt,
+  stale,
+}: {
+  data: EpicInspectResult
+  nowMs: number
+  fetchedAt: number | null
+  stale: boolean
+}) {
   const { run, gen, maxGens, pct, lastBeat, target, concurrency } = headFacts(data)
 
   return (
@@ -55,6 +65,15 @@ function RunHead({ data, nowMs }: { data: EpicInspectResult; nowMs: number }) {
         <span className="text-meta text-muted-foreground shrink-0">
           of {maxGens} max . beat {ago(lastBeat, nowMs)}
         </span>
+        {/* WHEN THIS PANE WAS LAST READ, said out loud. The refresh timer is
+            suspended while the tab is hidden and a sleeping machine fires none at
+            all, so "beat 11s ago" can itself be an hours-old sentence. Without
+            this the pane cannot be distinguished from a live one. */}
+        {stale && fetchedAt !== null && (
+          <span className="text-meta text-warning shrink-0" title={new Date(fetchedAt).toISOString()}>
+            read {ago(new Date(fetchedAt).toISOString(), nowMs)}
+          </span>
+        )}
       </div>
     </div>
   )
@@ -88,12 +107,18 @@ export function OverseerDetail({
   loading,
   nowMs,
   onRefresh,
+  fetchedAt = null,
+  stale = false,
 }: {
   data: EpicInspectResult | null
   error: string | null
   loading: boolean
   nowMs: number
   onRefresh: () => void
+  /** When the displayed snapshot was fetched, and whether that is old enough to
+   *  say so. See use-overseer-inspect.ts for why an open pane can go stale. */
+  fetchedAt?: number | null
+  stale?: boolean
 }) {
   const [tab, setTab] = useState<OverseerTab>('baton')
   const selectConversation = useConversationsStore(s => s.selectConversation)
@@ -104,7 +129,7 @@ export function OverseerDetail({
 
   return (
     <section className="flex-1 min-w-0 flex flex-col">
-      <RunHead data={data} nowMs={nowMs} />
+      <RunHead data={data} nowMs={nowMs} fetchedAt={fetchedAt} stale={stale} />
       <OverseerControls
         project={data.project}
         epicId={data.epicId}

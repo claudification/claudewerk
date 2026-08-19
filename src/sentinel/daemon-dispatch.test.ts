@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { TURN_SUMMARY_ENV } from '../claude-agent-host/turn-summary'
 import type { DaemonResponse } from '../shared/cc-daemon/types'
 import {
   buildDispatchSpec,
@@ -32,9 +33,13 @@ describe('buildDispatchSpec -- common fields', () => {
     expect(typeof spec.createdAt).toBe('number')
   })
 
-  it('passes the worker env delta through verbatim (defaults to {})', () => {
-    expect(buildDispatchSpec(specOpts({ prompt: 'x' })).env).toEqual({})
+  // CHANGED 2026-08-19: the delta is no longer empty by default -- the
+  // classifier opt-in rides here because the daemon worker cannot inherit it
+  // from the agent host. A caller's own keys still pass through untouched.
+  it('passes the worker env delta through, on top of the classifier opt-in', () => {
+    expect(buildDispatchSpec(specOpts({ prompt: 'x' })).env).toEqual(TURN_SUMMARY_ENV)
     expect(buildDispatchSpec(specOpts({ prompt: 'x', env: { CLAUDE_CONFIG_DIR: '/d' } })).env).toEqual({
+      ...TURN_SUMMARY_ENV,
       CLAUDE_CONFIG_DIR: '/d',
     })
   })
@@ -222,5 +227,33 @@ describe('modeDispatchesWorker -- which modes dispatch a worker', () => {
 
   it('ATTACH does not dispatch -- it short-circuits to the roster short', () => {
     expect(modeDispatchesWorker('attach')).toBe(false)
+  })
+})
+
+/**
+ * The daemon worker is forked by CC's own supervisor, so it never inherits the
+ * agent host's env. Without this the classifier opt-in that stream-backend sets
+ * for a DIRECT spawn is silently absent on the daemon path -- which is how most
+ * conversations start, so tier 0 would have looked broken for almost everyone.
+ */
+describe('classifier opt-in rides the worker env delta', () => {
+  const base = { short: 's', nonce: 'n', sessionId: 'sid', cwd: '/x', mode: 'new' as const }
+
+  it('carries the classifier env so CC emits post_turn_summary', () => {
+    const spec = buildDispatchSpec(base)
+    expect(spec.env.CLAUDE_CODE_ENVIRONMENT_KIND).toBe('byoc')
+    expect(spec.env.CLAUDE_CODE_CLASSIFIER_SUMMARY).toBe('1')
+  })
+
+  it('keeps a caller env delta alongside it', () => {
+    const spec = buildDispatchSpec({ ...base, env: { CLAUDE_CONFIG_DIR: '/cfg' } })
+    expect(spec.env.CLAUDE_CONFIG_DIR).toBe('/cfg')
+    expect(spec.env.CLAUDE_CODE_CLASSIFIER_SUMMARY).toBe('1')
+  })
+
+  // An operator override must win -- this is an opt-in, not a mandate.
+  it('lets a caller override it', () => {
+    const spec = buildDispatchSpec({ ...base, env: { CLAUDE_CODE_CLASSIFIER_SUMMARY: '0' } })
+    expect(spec.env.CLAUDE_CODE_CLASSIFIER_SUMMARY).toBe('0')
   })
 })
