@@ -68,3 +68,5 @@ export function registerCardLedgerHandlers(): void {
   registerHandlers({ card_ledger_request: cardLedgerRequest }, CONTROL_PANEL_ONLY)
   registerHandlers({ card_changed: cardChanged }, SENTINEL_ONLY)
 }
+
+export const __testing = { cardChanged, cardLedgerRequest }
