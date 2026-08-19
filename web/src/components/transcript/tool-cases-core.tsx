@@ -1,7 +1,8 @@
 import { EditDiff } from './edit-diff'
-import { cleanCdPrefix, shortPath } from './shared'
+import { cleanCdPrefix } from './shared'
 import type { ToolCaseInput, ToolCaseResult } from './tool-case-types'
-import { BashOutput, DiffView, ReplResult, ReplView, ShellCommand, WritePreview } from './tool-renderers'
+import { fileLabel, filePreview } from './tool-file-view'
+import { BashOutput, DiffView, ReplResult, ReplView, ShellCommand } from './tool-renderers'
 
 export function renderBash({
   input,
@@ -41,133 +42,11 @@ export function renderRepl({ input, result, toolUseResult, isError }: ToolCaseIn
   return { summary, details, inlineContent }
 }
 
-export function renderRead({ input, result, toolUseResult }: ToolCaseInput): ToolCaseResult {
-  const path = input.path as string
-  const readPath = shortPath(path) || path
-
-  if (toolUseResult?.type && toolUseResult.type !== 'text') {
-    return renderBinaryRead(path, readPath, toolUseResult)
-  }
-
-  return renderTextRead(path, readPath, input, result, toolUseResult)
-}
-
-function renderBinaryRead(path: string, readPath: string, toolUseResult: Record<string, unknown>): ToolCaseResult {
-  const binFile = toolUseResult.file as
-    | {
-        url?: string
-        type?: string
-        originalSize?: number
-        dimensions?: {
-          originalWidth: number
-          originalHeight: number
-          displayWidth: number
-          displayHeight: number
-        }
-      }
-    | undefined
-  const binType = toolUseResult.type as string
-  const isImage = binType === 'image'
-  const dims = binFile?.dimensions
-  const dimStr = dims ? `${dims.originalWidth}x${dims.originalHeight}` : ''
-  const sizeKB = binFile?.originalSize ? `${(binFile.originalSize / 1024).toFixed(0)}KB` : ''
-  const summary = (
-    <span className="flex items-center gap-1.5 min-w-0">
-      <span className="truncate text-foreground/90">{readPath}</span>
-      {!isImage && <span className="text-violet-400/70 shrink-0">{binType}</span>}
-      {dimStr && <span className="text-cyan-400/70 shrink-0">{dimStr}</span>}
-      {sizeKB && <span className="text-fg-dim shrink-0">({sizeKB})</span>}
-    </span>
-  )
-  let details = null
-  if (binFile?.url) {
-    if (isImage) {
-      details = (
-        <div className="space-y-1.5 py-1">
-          <img
-            src={binFile.url}
-            alt={path?.split('/').pop() || 'image'}
-            className="max-w-sm max-h-64 rounded border border-border hover:border-primary/50 transition-colors"
-            loading="lazy"
-          />
-        </div>
-      )
-    } else {
-      details = (
-        <div className="text-[10px] font-mono flex items-center gap-2 py-1">
-          {binFile.type && <span className="text-muted-foreground">{binFile.type}</span>}
-          {sizeKB && <span className="text-muted-foreground">{sizeKB}</span>}
-          <a
-            href={binFile.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent hover:text-accent/80 underline"
-          >
-            view file
-          </a>
-        </div>
-      )
-    }
-  } else {
-    details = (
-      <div className="text-[10px] text-muted-foreground font-mono flex items-center gap-2 py-1">
-        {binFile?.type && <span>{binFile.type}</span>}
-        {dimStr && <span>{dimStr}</span>}
-        {sizeKB && <span>{sizeKB}</span>}
-        <span className="text-amber-400/70">(file not available)</span>
-      </div>
-    )
-  }
-  return { summary, details }
-}
-
-function renderTextRead(
-  path: string,
-  readPath: string,
-  input: Record<string, unknown>,
-  result?: string,
-  toolUseResult?: Record<string, unknown>,
-): ToolCaseResult {
-  const readFile = toolUseResult?.file as
-    | { content?: string; filePath?: string; numLines?: number; startLine?: number; totalLines?: number }
-    | undefined
-  const readContent = result || readFile?.content
-  const startLine = readFile?.startLine ?? (input.offset as number | undefined)
-  const numLines = readFile?.numLines
-  const totalLines = readFile?.totalLines
-  const endLine = startLine && numLines ? startLine + numLines - 1 : undefined
-  const isPartial = Boolean(startLine && totalLines && (startLine > 1 || (numLines && numLines < totalLines)))
-  const summary = (
-    <span className="flex items-center gap-1.5 min-w-0">
-      <span className="truncate text-foreground/90">{readPath}</span>
-      {isPartial && startLine && endLine && totalLines ? (
-        <span className="text-fg-muted shrink-0">
-          lines <span className="text-sky-400">{startLine}</span>
-          <span className="text-fg-dim">-</span>
-          <span className="text-sky-400">{endLine}</span>
-          <span className="text-fg-dim"> of </span>
-          <span className="text-foreground/70">{totalLines.toLocaleString()}</span>
-        </span>
-      ) : totalLines ? (
-        <span className="text-fg-muted shrink-0">
-          <span className="text-foreground/70">{totalLines.toLocaleString()}</span>{' '}
-          <span className="text-fg-dim">lines</span>
-        </span>
-      ) : null}
-    </span>
-  )
-  let details = null
-  if (readContent) {
-    details = <WritePreview content={readContent} filePath={path} />
-  }
-  return { summary, details }
-}
-
 export function renderEdit({ input, toolUseResult, isError }: ToolCaseInput): ToolCaseResult {
   const path = input.path as string
   const oldText = input.oldText as string | undefined
   const newText = input.newText as string | undefined
-  const summary = shortPath(path) || path
+  const summary = fileLabel(path)
   let details = null
   if (!isError) {
     const patches = (toolUseResult as { structuredPatch?: Array<{ oldStart: number; lines: string[] }> })
@@ -185,10 +64,15 @@ export function renderEdit({ input, toolUseResult, isError }: ToolCaseInput): To
 export function renderWrite({ input }: ToolCaseInput): ToolCaseResult {
   const path = input.path as string
   const content = input.content as string
-  const summary = `${shortPath(path)} (${content?.length || 0} chars)`
+  const summary = (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="truncate text-foreground/90">{fileLabel(path)}</span>
+      <span className="text-fg-dim shrink-0">({content?.length || 0} chars)</span>
+    </span>
+  )
   let details = null
   if (content) {
-    details = <WritePreview content={content} filePath={path} />
+    details = filePreview(path, content)
   }
   return { summary, details }
 }

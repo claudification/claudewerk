@@ -13,7 +13,6 @@
 
 import { EPIC_TAG } from '@shared/epic-cards'
 import type { ProjectTaskMeta } from '@shared/project-task-types'
-import type { TaskStatus } from '@shared/task-statuses'
 import {
   boardVersion,
   ensureProjectCard,
@@ -25,20 +24,11 @@ import {
 import { subscribeProjectCache } from '@/hooks/project-task-cache'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { parseProjectCardPath } from '@/lib/project-card-link'
+import { BOARD_LANE_STATE } from './board-lanes'
 import { CARD_PROGRESS_BUCKET } from './state-style'
-import type { CardLookup, CardProgress, CardProvider, CardRef, CardState, CardSummary } from './types'
+import type { CardLookup, CardProgress, CardProvider, CardRef, CardSummary } from './types'
 
 const PROJECT_BOARD_PROVIDER = 'project-board'
-
-/** Board lane -> canonical state. The whole backend-specific mapping, in one table. */
-const STATE_BY_LANE: Record<TaskStatus, CardState> = {
-  inbox: 'triage',
-  open: 'todo',
-  'in-progress': 'active',
-  'in-review': 'review',
-  done: 'done',
-  archived: 'dropped',
-}
 
 /** The project the panel is currently looking at. Null when nothing is selected. */
 function ambientProject(): string | null {
@@ -53,7 +43,7 @@ function childrenOf(scope: string, id: string): ProjectTaskMeta[] {
 
 function rollUp(children: ProjectTaskMeta[]): CardProgress {
   const counts = { todo: 0, active: 0, done: 0, dropped: 0 }
-  for (const child of children) counts[CARD_PROGRESS_BUCKET[STATE_BY_LANE[child.status]]]++
+  for (const child of children) counts[CARD_PROGRESS_BUCKET[BOARD_LANE_STATE[child.status]]]++
   const total = children.length - counts.dropped
   return { ...counts, total, pct: total > 0 ? Math.round((counts.done / total) * 100) : null }
 }
@@ -81,7 +71,7 @@ function fullSummary(ref: CardRef, scope: string, meta: ProjectTaskMeta): CardSu
   return {
     ref,
     kind: epic ? 'epic' : 'card',
-    state: STATE_BY_LANE[meta.status],
+    state: BOARD_LANE_STATE[meta.status],
     statusLabel: meta.status,
     detail: 'full',
     title: meta.title,
@@ -115,7 +105,7 @@ export const projectBoardProvider: CardProvider = {
       summary: {
         ref,
         kind: 'card',
-        state: STATE_BY_LANE[entry.status],
+        state: BOARD_LANE_STATE[entry.status],
         statusLabel: entry.status,
         detail: 'partial',
         tags: [],

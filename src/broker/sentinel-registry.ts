@@ -1,64 +1,67 @@
 /**
- * Sentinel Registry -- persisted registry of sentinel hosts.
+ * Sentinel Registry -- persisted registry of fleet nodes.
  *
- * Manages sentinel records in `{cacheDir}/sentinel-registry.json`.
- * Phase 0: single auto-registered sentinel. Phase 1+: per-sentinel secrets + multi-sentinel.
+ * Holds TWO credential classes (see `sentinel-registry-keys.ts`):
+ *   `snt_` sentinels -- spawn authority.
+ *   `rpt_` reporters -- vitals only.
+ *
+ * NEVER A SPAWN TARGET: every roster-shaped query here (`getAll`,
+ * `findByAlias`, `getDefault`) returns SENTINELS ONLY. A reporter is reachable
+ * exclusively through `findBySecret` (auth) and the explicitly named reporter
+ * queries (the CLI). Excluding reporters by construction beats remembering to
+ * filter them at every call site -- every existing caller of `getAll()` is a
+ * spawn-routing or launch-picker surface.
  */
 
-import { randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { writeSecureFileSync } from '../shared/secure-temp'
+import { randomUUID } from 'node:crypto'
+import { emptyRegistryData, readRegistryData, registryFilePath, writeRegistryData } from './sentinel-registry-file'
+import {
+  type CreateNodeOptions,
+  generateReporterSecret,
+  generateSentinelSecret,
+  isReporterRecord,
+  type RegistryKind,
+  type SentinelRecord,
+  type SentinelRecordWithId,
+  type SentinelRegistryData,
+} from './sentinel-registry-keys'
+import {
+  defaultSentinel,
+  findAnyByAlias,
+  findReporterByAlias,
+  findSentinelByAlias,
+  reporterEntries,
+  sentinelEntries,
+} from './sentinel-registry-queries'
 
-const SENTINEL_SECRET_PREFIX = 'snt_'
-
-function generateSentinelSecret(): string {
-  return SENTINEL_SECRET_PREFIX + randomBytes(32).toString('base64url')
-}
-
-export function isSentinelSecret(secret: string): boolean {
-  return secret.startsWith(SENTINEL_SECRET_PREFIX)
-}
-
-const ALIAS_PATTERN = /^[a-z][a-z0-9-]{0,62}$/
-
-export function isValidSentinelAlias(alias: string): boolean {
-  return ALIAS_PATTERN.test(alias)
-}
-
-export interface SentinelRecord {
-  aliases: string[] // first is the display alias; findByAlias matches any
-  secret?: string // per-sentinel secret (Phase 1+; omitted in Phase 0 auto-registration)
-  isDefault: boolean
-  color?: string
-  createdAt: number
-}
-
-export type SentinelRecordWithId = SentinelRecord & { sentinelId: string }
-
-interface SentinelRegistryData {
-  sentinels: Record<string, SentinelRecord>
-  defaultSentinelId?: string
-}
+export {
+  type CreateNodeOptions,
+  isReporterRecord,
+  isReporterSecret,
+  isSentinelSecret,
+  isValidSentinelAlias,
+  type RegistryKind,
+  recordKind,
+  type SentinelRecord,
+  type SentinelRecordWithId,
+} from './sentinel-registry-keys'
 
 export interface SentinelRegistry {
   load(): void
   save(): void
-  create(opts: {
-    alias?: string
-    aliases?: string[]
-    isDefault?: boolean
-    color?: string
-    secret?: string
-    generateSecret?: boolean
-  }): SentinelRecordWithId & { rawSecret?: string }
+  create(opts: CreateNodeOptions): SentinelRecordWithId & { rawSecret?: string }
   update(
     sentinelId: string,
     opts: { alias?: string; color?: string; isDefault?: boolean },
   ): SentinelRecordWithId | undefined
   get(sentinelId: string): SentinelRecord | undefined
+  /** Auth lookup -- the ONE query that spans both kinds. Callers must resolve
+   *  the record's kind through the capability table, never assume sentinel. */
   findBySecret(secret: string): SentinelRecordWithId | undefined
   findByAlias(alias: string): SentinelRecordWithId | undefined
+  findAnyByAlias(alias: string): SentinelRecordWithId | undefined
+  findReporterByAlias(alias: string): SentinelRecordWithId | undefined
+  getAllReporters(): Map<string, SentinelRecord>
   getDefaultId(): string | undefined
   getDefault(): SentinelRecordWithId | undefined
   setDefault(sentinelId: string): boolean
@@ -67,76 +70,42 @@ export interface SentinelRegistry {
 }
 
 export function createSentinelRegistry(cacheDir: string): SentinelRegistry {
-  const filePath = join(cacheDir, 'sentinel-registry.json')
-  let data: SentinelRegistryData = { sentinels: {}, defaultSentinelId: undefined }
-  const secretIndex = new Map<string, string>() // secret -> sentinelId
+  const filePath = registryFilePath(cacheDir)
+  let data: SentinelRegistryData = emptyRegistryData()
+  const secretIndex = new Map<string, string>() // secret -> nodeId
 
-  function rebuildSecretIndex(): void {
+  function load(): void {
+    data = readRegistryData(filePath)
     secretIndex.clear()
     for (const [id, record] of Object.entries(data.sentinels)) {
       if (record.secret) secretIndex.set(record.secret, id)
     }
   }
 
-  function load(): void {
-    try {
-      if (existsSync(filePath)) {
-        const raw = readFileSync(filePath, 'utf8')
-        const parsed = JSON.parse(raw) as SentinelRegistryData
-        data = {
-          sentinels: parsed.sentinels || {},
-          defaultSentinelId: parsed.defaultSentinelId,
-        }
-        for (const record of Object.values(data.sentinels)) {
-          if (!record.aliases) {
-            const legacy = (record as unknown as { alias?: string }).alias
-            record.aliases = legacy ? [legacy] : ['default']
-          }
-        }
-        rebuildSecretIndex()
-      }
-    } catch {
-      data = { sentinels: {}, defaultSentinelId: undefined }
-      secretIndex.clear()
-    }
-  }
-
   function save(): void {
-    try {
-      mkdirSync(cacheDir, { recursive: true })
-      // Holds per-sentinel secrets (snt_) -- 0600.
-      writeSecureFileSync(filePath, JSON.stringify(data, null, 2))
-    } catch (err) {
-      console.error(`[sentinel-registry] Failed to save: ${err}`)
-    }
+    writeRegistryData(cacheDir, filePath, data)
   }
 
-  function create(opts: {
-    alias?: string
-    aliases?: string[]
-    isDefault?: boolean
-    color?: string
-    secret?: string
-    generateSecret?: boolean
-  }): SentinelRecordWithId & { rawSecret?: string } {
+  function create(opts: CreateNodeOptions): SentinelRecordWithId & { rawSecret?: string } {
     const sentinelId = randomUUID()
+    const kind: RegistryKind = opts.kind === 'reporter' ? 'reporter' : 'sentinel'
     const aliases = opts.aliases || (opts.alias ? [opts.alias] : ['default'])
-    const isDefault = opts.isDefault ?? Object.keys(data.sentinels).length === 0
-    const record: SentinelRecord = {
-      aliases,
-      isDefault,
-      color: opts.color,
-      createdAt: Date.now(),
-    }
+    // A reporter is NEVER the default node: the default IS the spawn target
+    // used when a launch names no sentinel, and a reporter cannot spawn.
+    const isDefault = kind === 'reporter' ? false : (opts.isDefault ?? sentinelEntries(data).length === 0)
+    const record: SentinelRecord = { aliases, isDefault, color: opts.color, createdAt: Date.now() }
+    if (kind === 'reporter') record.kind = 'reporter'
+
     let rawSecret: string | undefined
     if (opts.generateSecret) {
-      rawSecret = generateSentinelSecret()
+      rawSecret = kind === 'reporter' ? generateReporterSecret() : generateSentinelSecret()
       record.secret = rawSecret
       secretIndex.set(rawSecret, sentinelId)
     } else if (opts.secret) {
       record.secret = opts.secret
       secretIndex.set(opts.secret, sentinelId)
     }
+
     data.sentinels[sentinelId] = record
     if (isDefault) {
       for (const [id, r] of Object.entries(data.sentinels)) {
@@ -158,51 +127,27 @@ export function createSentinelRegistry(cacheDir: string): SentinelRegistry {
       record.aliases = [opts.alias, ...record.aliases.filter(a => a !== opts.alias)]
     }
     if (opts.color !== undefined) record.color = opts.color
-    if (opts.isDefault === true) {
-      for (const [id, r] of Object.entries(data.sentinels)) {
-        r.isDefault = id === sentinelId
-      }
+    // Promoting a reporter to default would put it in the spawn path. Refused.
+    if (opts.isDefault === true && !isReporterRecord(record)) {
+      for (const [id, r] of Object.entries(data.sentinels)) r.isDefault = id === sentinelId
       data.defaultSentinelId = sentinelId
     }
     save()
     return { sentinelId, ...record }
   }
 
-  function get(sentinelId: string): SentinelRecord | undefined {
-    return data.sentinels[sentinelId]
-  }
-
   function findBySecret(secret: string): SentinelRecordWithId | undefined {
     const sentinelId = secretIndex.get(secret)
     if (!sentinelId) return undefined
     const record = data.sentinels[sentinelId]
-    if (!record) return undefined
-    return { sentinelId, ...record }
-  }
-
-  function findByAlias(alias: string): SentinelRecordWithId | undefined {
-    for (const [sentinelId, record] of Object.entries(data.sentinels)) {
-      if (record.aliases.includes(alias)) return { sentinelId, ...record }
-    }
-    return undefined
-  }
-
-  function getDefaultId(): string | undefined {
-    return data.defaultSentinelId
-  }
-
-  function getDefault(): SentinelRecordWithId | undefined {
-    const id = data.defaultSentinelId
-    if (!id) return undefined
-    const record = data.sentinels[id]
-    if (!record) return undefined
-    return { sentinelId: id, ...record }
+    return record ? { sentinelId, ...record } : undefined
   }
 
   function setDefault(sentinelId: string): boolean {
-    if (!data.sentinels[sentinelId]) return false
+    const target = data.sentinels[sentinelId]
+    if (!target || isReporterRecord(target)) return false
     for (const r of Object.values(data.sentinels)) r.isDefault = false
-    data.sentinels[sentinelId].isDefault = true
+    target.isDefault = true
     data.defaultSentinelId = sentinelId
     save()
     return true
@@ -214,18 +159,12 @@ export function createSentinelRegistry(cacheDir: string): SentinelRegistry {
     if (record.secret) secretIndex.delete(record.secret)
     delete data.sentinels[sentinelId]
     if (data.defaultSentinelId === sentinelId) {
-      const remaining = Object.keys(data.sentinels)
-      data.defaultSentinelId = remaining[0]
-      if (data.defaultSentinelId && data.sentinels[data.defaultSentinelId]) {
-        data.sentinels[data.defaultSentinelId].isDefault = true
-      }
+      const next = sentinelEntries(data)[0]
+      data.defaultSentinelId = next?.[0]
+      if (next) next[1].isDefault = true
     }
     save()
     return true
-  }
-
-  function getAll(): Map<string, SentinelRecord> {
-    return new Map(Object.entries(data.sentinels))
   }
 
   load()
@@ -235,13 +174,16 @@ export function createSentinelRegistry(cacheDir: string): SentinelRegistry {
     save,
     create,
     update,
-    get,
+    get: sentinelId => data.sentinels[sentinelId],
     findBySecret,
-    findByAlias,
-    getDefaultId,
-    getDefault,
+    findByAlias: alias => findSentinelByAlias(data, alias),
+    findAnyByAlias: alias => findAnyByAlias(data, alias),
+    findReporterByAlias: alias => findReporterByAlias(data, alias),
+    getAllReporters: () => new Map(reporterEntries(data)),
+    getDefaultId: () => data.defaultSentinelId,
+    getDefault: () => defaultSentinel(data),
     setDefault,
     remove,
-    getAll,
+    getAll: () => new Map(sentinelEntries(data)),
   }
 }

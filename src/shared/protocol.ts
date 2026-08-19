@@ -32,6 +32,7 @@ import type {
   NightshiftTaskMeta,
   NightshiftTaskPatchInput,
 } from './nightshift-types'
+import type { NodeStatsReport } from './node-stats'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type {
   QuestAcceptanceContract,
@@ -48,6 +49,18 @@ import type { RecapSuiteId } from './recap-suites'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
+// The node-stats contract lives in its own module (see `./node-stats`) because
+// BOTH the sentinel and the standalone reporter implement it. Re-exported here
+// so wire consumers keep importing message types from one place.
+export type {
+  HostMachineRow,
+  LoadAverage,
+  MachineStats,
+  NodeIdentity,
+  NodeStatsReport,
+  NodeStatsSender,
+  SentinelNodeExtras,
+} from './node-stats'
 
 /**
  * Wire protocol version.
@@ -3575,6 +3588,12 @@ export interface Conversation {
   summary?: string // AI-generated conversation summary
   title?: string // custom conversation title (from /rename or auto-generated)
   titleUserSet?: boolean // true if title was explicitly set by user (spawn dialog) -- prevents auto-name overwrite
+  /** Did anybody MEAN this name? `true` = nobody chose it (a generated petname,
+   *  or the automatic renamer's own output) and it is fair game to replace.
+   *  `false` = INTENTIONAL (human, rename_conversation, control_conversation, or
+   *  a spawn that supplied a name) and never overwritten. Recorded on every
+   *  write from the writer's origin -- never re-derived from the text. */
+  titleEphemeral?: boolean
   /** WHO last set `title`, and WHEN by their own clock. Together they decide who
    *  wins when two writers disagree -- see `broker/conversation-store/title-authority.ts`.
    *  `titleSetAt` is what makes a REPLAYED rename lose to a newer one without
@@ -4669,6 +4688,9 @@ export interface EpicLeaseInput {
    *  sentinel cannot know this, and must not guess. */
   holderAlive: boolean
   force?: boolean
+  /** Swap the real conversation id in over a `pending-` placeholder, same
+   *  generation. See `EpicLeaseRequest.adopt` in epic-lease.ts. */
+  adopt?: boolean
 }
 
 /** log_append payload. */
@@ -5986,6 +6008,10 @@ export type SentinelMessage =
   | QuestResult
   | UsageUpdate
   | SentinelUsageReport
+  // Machine vitals. Declared in `./node-stats` because the standalone
+  // node-stats-reporter sends the identical frame -- one contract, two senders.
+  // Plan utilization is NOT on it; that stays on SentinelUsageReport above.
+  | NodeStatsReport
   | LaunchLog
   | DaemonRosterUpdate
   | DaemonJobState
@@ -6389,6 +6415,23 @@ export type BrokerSentinelMessage =
 export interface SentinelStatus {
   type: 'sentinel_status'
   connected: boolean
+}
+
+// Dashboard broadcast: one node's vitals, plus the dedupe verdict for its host.
+// The inbound `node_stats` frame is declared in `./node-stats` (re-exported at
+// the top of this file); this is the outbound fan-out to the control panel.
+//
+// `machineOwner` is the answer to "who counts the machine": exactly ONE node per
+// `hostId` carries it, so a consumer can render N agent rows on one box without
+// adding the same cpu/ram/disk numbers together N times. It is the broker's
+// `dedupeMachineStatsByHost` verdict, delivered on the wire so every consumer
+// does not have to recompute it.
+export interface NodeStatsUpdate {
+  type: 'node_stats_update'
+  report: NodeStatsReport
+  /** ms epoch the broker received it (the sender's clock may be wrong). */
+  receivedAt: number
+  machineOwner: boolean
 }
 
 // Foreground-task fields shared by the broker wire type (ConversationSummary)

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
-import { deriveConversationName, sanitizeConversationName, validateConversationName } from './spawn-naming'
+import {
+  deriveConversationName,
+  sanitizeConversationName,
+  uniqueConversationName,
+  validateConversationName,
+} from './spawn-naming'
 import type { TaskMeta } from './spawn-prompt'
 
 const task: TaskMeta = {
@@ -142,5 +147,58 @@ describe('validateConversationName', () => {
 
   it('detects collision after sanitization (quotes stripped)', () => {
     expect(validateConversationName('"my session"', new Set(['my session']))).toContain('already in use')
+  })
+})
+
+/**
+ * `failOnNameCollision: false` -- the caller that would rather be renamed than
+ * refused. Uniqueness is checked against every conversation that has EVER
+ * existed, which is right for a human at the launch dialog and wrong for an
+ * unattended engine: re-dispatching the same unit of work produces the same name
+ * by construction, so the 400 made retry structurally impossible.
+ */
+describe('uniqueConversationName', () => {
+  it('a free name is returned untouched', () => {
+    expect(uniqueConversationName('feat: the wall', new Set())).toBe('feat: the wall')
+  })
+
+  it('a taken name gets the first free numeric suffix', () => {
+    expect(uniqueConversationName('feat: the wall', new Set(['feat: the wall']))).toBe('feat: the wall (2)')
+  })
+
+  it('it keeps counting past the ones already taken', () => {
+    const taken = new Set(['x', 'x (2)', 'x (3)'])
+    expect(uniqueConversationName('x', taken)).toBe('x (4)')
+  })
+
+  it('it sanitizes first, so it collides on what would actually be STORED', () => {
+    expect(uniqueConversationName('**bold**', new Set(['bold']))).toBe('bold (2)')
+  })
+
+  /**
+   * A name is truncated from the RIGHT. Appending past the budget would slice
+   * the disambiguator straight back off and return a name that still collides --
+   * so the stem is trimmed to make room instead.
+   */
+  it('a name at the length limit is TRIMMED to make room for the suffix', () => {
+    const long = 'w'.repeat(80)
+    const stem = sanitizeConversationName(long)
+    const out = uniqueConversationName(long, new Set([stem]))
+    expect(out.length).toBeLessThanOrEqual(60)
+    expect(out.endsWith(' (2)')).toBe(true)
+    expect(out).not.toBe(stem)
+  })
+
+  it('and the trimmed result is genuinely free, not a re-collision', () => {
+    const long = 'w'.repeat(80)
+    const stem = sanitizeConversationName(long)
+    const first = uniqueConversationName(long, new Set([stem]))
+    const second = uniqueConversationName(long, new Set([stem, first]))
+    expect(second).not.toBe(first)
+    expect(second.length).toBeLessThanOrEqual(60)
+  })
+
+  it('an empty-after-sanitization name stays empty rather than becoming " (2)"', () => {
+    expect(uniqueConversationName('***', new Set(['']))).toBe('')
   })
 })

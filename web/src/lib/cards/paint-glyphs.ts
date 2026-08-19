@@ -5,35 +5,22 @@
  *
  * The glyph is the whole affordance -- SQUARE for a card, DIAMOND for an epic
  * (filled once it is complete), a spinner while the backend is still answering,
- * `?` when nobody claims the id. Colour comes from the canonical state via CSS
- * (`a.file-link-card[data-card-state=...]`), never inline styles.
+ * `?` when nobody claims the id. Which glyph goes with which lookup lives in
+ * `glyph.ts`, shared with the React `CardChip`. Colour comes from the canonical
+ * state via CSS (`a.file-link-card[data-card-state=...]`), never inline styles.
  */
 
+import { cardGlyph } from './glyph'
 import { matchCardHref, peekCard } from './registry'
 import type { CardLookup, CardRef } from './types'
 
-export const CARD_GLYPH = { card: '▪', epic: '◈', epicDone: '◆', resolving: '◜', unknown: '?' } as const
-
-/** Non-ready lookups: what the glyph says and which state class it wears. */
-const PENDING_GLYPH: Record<string, { glyph: string; state: string }> = {
-  resolving: { glyph: CARD_GLYPH.resolving, state: 'resolving' },
-  unknown: { glyph: CARD_GLYPH.unknown, state: 'unknown' },
-  unavailable: { glyph: CARD_GLYPH.card, state: 'offline' },
-}
+export { CARD_GLYPH } from './glyph'
 
 function applyLookup(node: HTMLElement, glyph: HTMLElement, lookup: CardLookup): void {
-  if (lookup.status !== 'ready') {
-    const pending = PENDING_GLYPH[lookup.status] ?? PENDING_GLYPH.resolving
-    node.dataset.cardState = pending.state
-    node.dataset.cardKind = 'card'
-    glyph.textContent = pending.glyph
-    return
-  }
-  const { state, kind, progress } = lookup.summary
-  node.dataset.cardState = state
-  node.dataset.cardKind = kind
-  const complete = kind === 'epic' && progress?.pct === 100
-  glyph.textContent = complete ? CARD_GLYPH.epicDone : CARD_GLYPH[kind]
+  const view = cardGlyph(lookup)
+  node.dataset.cardState = view.dataState
+  node.dataset.cardKind = view.kind
+  glyph.textContent = view.glyph
 }
 
 /** Paint every card link under `root`; returns the refs found, for resolving. */

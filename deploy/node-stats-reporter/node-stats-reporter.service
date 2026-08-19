@@ -1,0 +1,43 @@
+[Unit]
+Description=CLAUDEWERK node-stats-reporter (machine vitals, no spawn authority)
+Documentation=https://github.com/claudification/claudewerk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# The secret lives HERE, 0600, root-owned -- never in this unit file (which is
+# world-readable) and never in argv (which is visible to every `ps` on the box).
+# CLAUDWERK_BROKER + CLAUDWERK_REPORTER_SECRET are read from it.
+EnvironmentFile=/etc/node-stats-reporter/env
+
+ExecStart=/usr/local/bin/node-stats-reporter --disk ${REPORTER_DISK}
+
+# The reporter is a stats loop: if it dies, the box vanishes off the wall, so
+# always come back. RestartSec matches the reporter's own backoff floor so a
+# systemd restart loop cannot out-pace the broker's one-connection-per-key rule.
+Restart=always
+RestartSec=5
+
+# Hardening. Kept to directives that exist in systemd 219 (Synology DSM 7) as
+# well as current Debian -- DynamicUser / ProtectSystem=strict are 232+ and
+# would fail to parse on the NAS.
+# No explicit Group=: systemd uses the user's primary group from /etc/passwd.
+# Hardcoding one is not portable -- Debian's nobody is in `nogroup`, Synology
+# DSM has no such group and puts nobody in `nobody` (216/GROUP at startup).
+User=nobody
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+
+# It reads /proc and statfs and nothing else. No write access is needed at all.
+# (A reporter that could write is a reporter worth stealing.)
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=node-stats-reporter
+
+[Install]
+WantedBy=multi-user.target

@@ -29,9 +29,9 @@ import {
   tryParseProjectUri,
   validateProjectUri,
 } from '../shared/project-uri'
-import type { Conversation, LaunchConfig, ProjectSettings, SpawnResult } from '../shared/protocol'
+import type { Conversation, ProjectSettings, SpawnResult } from '../shared/protocol'
 import { resolveDefaultTransport, resolveSpawnConfig } from '../shared/spawn-defaults'
-import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
+import { deriveConversationName, uniqueConversationName, validateConversationName } from '../shared/spawn-naming'
 import { evaluateSpawnPermission, type SpawnCallerContext } from '../shared/spawn-permissions'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import { resolveBackendByName, type SpawnDeps } from './backends'
@@ -42,27 +42,8 @@ import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
 import { resolveForkFrom } from './resolve-fork-from'
 import { sotuSpawnBrief } from './sotu'
+import { buildLaunchConfig } from './spawn-launch-config'
 import { resolveNotifyParentSettleMs } from './spawn-lineage'
-
-/**
- * Translate the wire-level (`req.profile`, `req.pool`) pair into the
- * persisted `LaunchConfig.sentinelProfile` tagged union (INTENT). The intent
- * round-trips across revive + launch-profile save and feeds the conversation
- * badge UX.
- *
- *  - Absent profile + absent pool   -> undefined (sentinel decides)
- *  - profile = literal name         -> { kind: 'profile', name }
- *                                       (pool is ignored when both are set)
- *  - pool = literal pool name       -> { kind: 'pool', name }
- *
- * Profile and pool are mutually exclusive at the intent layer. The wire
- * accepts both for ergonomics, but profile wins when both are present.
- */
-function intentFromProfileField(profile?: string, pool?: string): LaunchConfig['sentinelProfile'] {
-  if (profile) return { kind: 'profile', name: profile }
-  if (pool) return { kind: 'pool', name: pool }
-  return undefined
-}
 
 /**
  * Stash the spawn request as `pendingSpawnApproval` on the caller conversation
@@ -323,7 +304,8 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
   return result
 }
 
-async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
+async function dispatchClaudeSpawn(reqIn: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
+  let req = reqIn
   // Route to the specified sentinel, or default
   const targetAlias = req.sentinel
   let sentinel: ReturnType<typeof deps.conversationStore.getSentinel>
@@ -415,8 +397,17 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
         .map((s: Conversation) => s.title)
         .filter(Boolean) as string[],
     )
-    const nameErr = validateConversationName(req.name, usedNames)
-    if (nameErr) return { ok: false, error: nameErr, statusCode: 400 }
+    // A machine caller can opt out of the refusal and be RENAMED instead. An
+    // unattended engine re-dispatching the same card produces the same name by
+    // construction, so a hard 400 makes retry structurally impossible.
+    if (req.failOnNameCollision === false) {
+      const unique = uniqueConversationName(req.name, usedNames)
+      if (unique !== req.name) console.log(`[spawn-name] "${req.name}" taken -> "${unique}" (collision opt-out)`)
+      req = { ...req, name: unique }
+    } else {
+      const nameErr = validateConversationName(req.name, usedNames)
+      if (nameErr) return { ok: false, error: nameErr, statusCode: 400 }
+    }
   }
 
   const requestId = randomUUID()
@@ -456,7 +447,6 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     repl,
     thinkingSummaries,
     includePartialMessages,
-    transport,
   } = resolved
 
   if (model) {
@@ -531,30 +521,9 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     // A fork's parent is its SOURCE, not whoever called spawn -- and a panel
     // fork has no caller at all. Recorded here so boot can persist the edge.
     if (req.forkedFrom) deps.conversationStore.setPendingForkSource(conversationId, req.forkedFrom)
-    deps.conversationStore.setPendingLaunchConfig(conversationId, {
-      headless,
-      transport,
-      model,
-      effort,
-      agent,
-      advisor,
-      bare: bare || false,
-      repl: repl || false,
-      thinkingSummaries,
-      permissionMode,
-      autocompactPct,
-      includePartialMessages,
-      maxBudgetUsd,
-      env: req.env || undefined,
-      appendSystemPrompt,
-      // Sentinel-profile INTENT (broker-safe NAME / mode / pool only).
-      // Profile env stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
-      sentinelProfile: intentFromProfileField(req.profile, req.pool),
-      // NIGHTSHIFT origin tag -- persisted on the conversation so the broker
-      // watchdog can identify night-run tasks (caps/429/floor) and the Status
-      // screen can filter rows. Mirrors the preamble decision above.
-      nightshift: req.nightshift,
-    })
+    // ORIGIN TAGS (nightshift, epic) ride along here -- see spawn-launch-config.ts
+    // for why the assembly is a pure function and not a literal in this executor.
+    deps.conversationStore.setPendingLaunchConfig(conversationId, buildLaunchConfig(req, resolved, appendSystemPrompt))
 
     try {
       sentinel.send(

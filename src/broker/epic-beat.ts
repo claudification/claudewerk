@@ -57,9 +57,27 @@ export interface EpicBeat {
   /** One line for the broker log. Never empty -- a beat that did nothing still
    *  has to say why, or a stalled epic is unexplainable from logs alone. */
   note: string
+  /**
+   * What `run.dryGens` should become, when this beat changes it.
+   *
+   * THE BRAKE THAT WAS NEVER WIRED. `dryGens` is read below as the "second dry
+   * generation parks the run" valve, and the overseer prompt reports it -- but
+   * nothing in the engine ever incremented it, so it was permanently 0. The park
+   * was unreachable and the only ceiling on a thrashing run was `maxGens: 40`,
+   * which is 40 overseer generations of billing before anything stops.
+   *
+   * Carried on the beat rather than written by `planBeat` because planning is
+   * pure: the executor owns every write, so a decision and its persistence
+   * cannot disagree about what happened.
+   */
+  dryGens?: number
 }
 
-const beat = (note: string, actions: EpicAction[] = []): EpicBeat => ({ actions, note })
+const beat = (note: string, actions: EpicAction[] = [], dryGens?: number): EpicBeat => ({
+  actions,
+  note,
+  ...(dryGens === undefined ? {} : { dryGens }),
+})
 
 /** Cadence gate. `now` runs whenever; `window` defers dispatch to the night. */
 function dispatchAllowed(run: EpicRunSnapshot, windowOpen: boolean): boolean {
@@ -179,6 +197,10 @@ function workBeat(input: EpicBeatInput): EpicBeat {
       `dispatching ${plan.dispatch.length}, verifying ${plan.verify.length}` +
         (plan.heldBack.length > 0 ? ` (${plan.heldBack.length} held back by the concurrency ceiling)` : ''),
       actions,
+      // Work moved, so the dry streak is over. CONSECUTIVE is the whole point:
+      // a run that alternates between a dry generation and a real one is making
+      // progress, and must never accumulate its way into a park.
+      run.dryGens === 0 ? undefined : 0,
     )
   }
 
@@ -194,7 +216,14 @@ function workBeat(input: EpicBeatInput): EpicBeat {
     ])
   }
 
-  return beat(`nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the overseer to replan`, [
-    { kind: 'wake-overseer', expectGen: run.gen, reason: 'started' },
-  ])
+  // A DRY generation: nothing to dispatch, nothing running, so the overseer gets
+  // one chance to replan. Counting it is what makes the park above reachable --
+  // without the increment this branch is an infinite loop that bills a fresh
+  // overseer every 45s and calls it healthy.
+  return beat(
+    `nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the overseer to replan ` +
+      `(dry generation ${run.dryGens + 1})`,
+    [{ kind: 'wake-overseer', expectGen: run.gen, reason: 'started' }],
+    run.dryGens + 1,
+  )
 }

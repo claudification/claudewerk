@@ -12,6 +12,7 @@ import { registerCardProvider } from './registry'
 
 registerCardProvider(projectBoardProvider)
 
+export { cardGlyph } from './glyph'
 export {
   cardRefKey,
   matchCardHref,

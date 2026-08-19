@@ -45,6 +45,16 @@ interface ModalSurfaceProps {
 /** When maximized, the inline dialog fills the viewport. */
 const MAXIMIZED_CONTENT = 'left-0 top-0 h-screen w-screen max-w-none max-h-screen translate-x-0 translate-y-0'
 
+/**
+ * Re-centre the Dialog's own close X on the surface title bar.
+ *
+ * SurfaceHeader is 32px of content (`py-2` + a 16px row), not the ~44px a padded
+ * dialog header comes out to, so the default `top-2.5` put the 24px close box
+ * 6px BELOW the minimize / maximize / detach glyphs it sits next to -- measured,
+ * not guessed. `top-1` is (32 - 24) / 2.
+ */
+const CLOSE_ON_TITLEBAR = '[&_[data-slot=dialog-close]]:top-1'
+
 /** The body slot takes the space under the header in every host. */
 const BODY_SLOT = 'flex min-h-0 flex-1 flex-col'
 
@@ -85,7 +95,9 @@ function SurfaceHost({ modal, title, icon, headerExtra, className, onClose }: Ho
         if (!o) handleClose()
       }}
     >
-      <DialogContent className={cn('flex flex-col p-0', modal.maximized ? MAXIMIZED_CONTENT : className)}>
+      <DialogContent
+        className={cn('flex flex-col p-0', CLOSE_ON_TITLEBAR, modal.maximized ? MAXIMIZED_CONTENT : className)}
+      >
         {header(false)}
         <SurfaceSlot id={modal.id} className={BODY_SLOT} />
       </DialogContent>

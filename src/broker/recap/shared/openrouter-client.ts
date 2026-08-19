@@ -10,6 +10,7 @@
  * a SEPARATE (smaller) retry budget for timeouts, and normalised usage extraction.
  */
 
+import { type OpenRouterSpendRecord, recordSpend } from '../../openrouter-spend-store'
 import { CancelledError, NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
 import { type NormalizedUsage, normalizeUsage } from './pricing'
 
@@ -136,34 +137,21 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   }
 }
 
-/** One structured record per OpenRouter round-trip (success OR failure). This
- *  is the shape a future persistence sink (a `openrouter_spend` table / kv
- *  rollup) would store -- keep it self-contained so wiring a DB is a one-line
- *  change inside `recordOpenRouterSpend`, not a call-site refactor. */
-interface OpenRouterSpendRecord {
-  /** WHICH broker feature spent (the `feature` tag on the ChatRequest). */
-  feature: string
-  /** Model as REQUESTED (req.model; the response's resolved model lives in usage forensics). */
-  model: string
-  /** Wall-clock ms for the whole call incl. retries. */
-  ms: number
-  /** true = billed a usable completion; false = errored/timed-out (no usable tokens). */
-  ok: boolean
-  /** Normalised token counts + billed cost. Present on success only. */
-  usage?: NormalizedUsage
-  /** Failure message. Present when ok=false. */
-  error?: string
-}
-
 /**
  * THE single spend sink. Every `chat()` call -- the one chokepoint every feature
  * passes through -- funnels here, so `docker compose logs broker | grep
  * '\[openrouter\]'` is the whole spend picture and `grep feature=<x>` attributes
- * cost per feature. Today it emits one greppable line; to later persist spend to
- * a DB/kv, add the write HERE and every existing call site is covered for free.
+ * cost per feature.
+ *
+ * The log line is the debugging path and stays exactly as it was. `recordSpend`
+ * is the durable half: it writes the same record to `openrouter-spend.db` so a
+ * pane can render a by-feature rollup instead of asking someone to grep. It is a
+ * no-op until the broker calls `initOpenRouterSpendStore()`, so importing this
+ * client outside a running broker behaves as before.
  */
 function recordOpenRouterSpend(rec: OpenRouterSpendRecord): void {
   console.log(`[openrouter] ${formatSpendLine(rec)}`)
+  recordSpend(rec)
 }
 
 function formatSpendLine(rec: OpenRouterSpendRecord): string {

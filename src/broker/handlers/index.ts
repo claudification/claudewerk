@@ -26,6 +26,7 @@ import { registerInterConversationHandlers } from './inter-conversation'
 import { registerJsonStreamHandlers } from './json-stream'
 import { registerNightshiftHandlers } from './nightshift'
 import { registerNightshiftWatchdogHandlers } from './nightshift-watchdog'
+import { registerNodeStatsHandlers } from './node-stats'
 import { registerPermissionHandlers } from './permissions'
 import { registerPlanApprovalHandlers } from './plan-approval'
 import { registerProjectHandlers } from './project'
@@ -77,6 +78,7 @@ export function registerAllHandlers(): void {
   registerProjectHandlers()
   registerNightshiftHandlers()
   registerNightshiftWatchdogHandlers()
+  registerNodeStatsHandlers()
   registerQuestHandlers()
   registerEpicHandlers()
   registerRclaudeConfigHandlers()

@@ -60,6 +60,7 @@ import { initGlobalSettings } from './global-settings'
 import type { WsData } from './handler-context'
 import { registerAllHandlers } from './handlers'
 import { leaveAllCanvasRooms } from './handlers/canvas-sync'
+import { forgetNodeStats } from './handlers/node-stats'
 import { startPermissionSweep } from './handlers/permission-sweep'
 import { dropShellViewerSocket, onSentinelDisconnect } from './handlers/shell'
 import { startSpawnApprovalSweep } from './handlers/spawn-approval'
@@ -82,6 +83,7 @@ import { startNightshiftGuardians } from './nightshift-guardians'
 import { startNightshiftOrchestrator } from './nightshift-orchestrator'
 import { startNightshiftScheduler } from './nightshift-scheduler'
 import { startNightshiftWatchdog } from './nightshift-watchdog'
+import { closeOpenRouterSpendStore, initOpenRouterSpendStore } from './openrouter-spend-store'
 import { initParentNotify } from './parent-notify'
 import { addAllowedRoot, addPathMapping, getAllowedRoots } from './path-jail'
 import { allGrantsExpired } from './permissions'
@@ -103,6 +105,12 @@ import { gatherConversations } from './recap/period/gather'
 import { chat } from './recap/shared/openrouter-client'
 import { initRecapOrchestrator } from './recap-orchestrator'
 import { startRecapReaper } from './recap-reaper'
+import {
+  bindReporterSocket,
+  claimReporterSlot,
+  releaseReporterSlot,
+  releaseReporterSocket,
+} from './reporter-connections'
 import { createRouter } from './routes'
 import { setScheduledTaskEngine } from './scheduled-tasks/engine-registry'
 import { wireScheduledTasks } from './scheduled-tasks/wiring'
@@ -409,6 +417,11 @@ async function main() {
 
   // Initialize analytics store (SQLite, non-critical)
   initAnalyticsStore(authCacheDir)
+
+  // Initialize the OpenRouter spend store. MUST come before anything that can
+  // call chat() -- the sink is a silent no-op until this runs, so a call made
+  // earlier logs but never lands a row.
+  initOpenRouterSpendStore(authCacheDir)
 
   // Initialize the SOTU file store (queue.jsonl + chronicle + state under
   // {cacheDir}/sotu/). The contribution spine + lifecycle floor write here.
@@ -771,6 +784,7 @@ async function main() {
     stopExternalStatusPolling()
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
+    closeOpenRouterSpendStore()
     closeProjectStore()
     closeCommitLedger()
     closeChecklistStore()
@@ -1025,6 +1039,33 @@ async function main() {
           // Load grants for permission enforcement on WS messages
           const wsUser = wsUserName ? getUser(wsUserName) : undefined
           const wsData: WsData = { ...connMeta, userName: wsUserName, authToken, grants: wsUser?.grants }
+          if (authResult?.role === 'reporter') {
+            // ONE CONNECTION PER KEY. A key is a node, not a pool: the second
+            // concurrent dial is refused (the incumbent keeps the slot) and
+            // logged with both peers. Claimed BEFORE the upgrade so two
+            // simultaneous dials cannot both win.
+            const claim = claimReporterSlot(authResult.reporterId, authResult.alias, connMeta.remoteAddr)
+            if (!claim.ok) {
+              console.warn(
+                `[reporter] REFUSED second connection reporter=${authResult.reporterId} alias=${authResult.alias} ` +
+                  `from=${connMeta.remoteAddr ?? 'unknown'} -- slot held by ${claim.heldBy} since ` +
+                  `${new Date(claim.heldSince ?? 0).toISOString()} (one connection per key)`,
+              )
+              return new Response('Reporter key already connected', { status: 409 })
+            }
+            wsData.reporterId = authResult.reporterId
+            wsData.reporterAlias = authResult.alias
+            const upgraded = server.upgrade(req, { data: wsData })
+            if (upgraded) {
+              console.log(
+                `[reporter] connected reporter=${authResult.reporterId} alias=${authResult.alias} ` +
+                  `from=${connMeta.remoteAddr ?? 'unknown'} (vitals only, no spawn authority)`,
+              )
+              return undefined
+            }
+            releaseReporterSlot(authResult.reporterId)
+            return new Response('WebSocket upgrade failed', { status: 500 })
+          }
           if (authResult?.role === 'sentinel') {
             wsData.sentinelId = authResult.sentinelId
             wsData.sentinelAlias = authResult.alias
@@ -1052,6 +1093,9 @@ async function main() {
         open(ws) {
           // Track every socket in the live-connection registry (Nerd "Conns" tab).
           registerConnection(ws)
+          // Bind the reporter's socket to the slot it claimed at upgrade, so
+          // close() can release exactly this connection's claim.
+          if (ws.data.reporterId) bindReporterSocket(ws.data.reporterId, ws)
           // Pair a sentinel's dedicated shell-data socket + re-issue shell_attach
           // for any shell that still has viewers (broker restart recovery).
           const machineId = ws.data.isShellData ? ws.data.shellDataMachineId : undefined
@@ -1116,18 +1160,33 @@ async function main() {
           // boot/meta handlers log it on their side; close just logs role+ids.
           const hintConv = ws.data.conversationId?.slice(0, 8)
           const hintConn = (ws.data.connectionId as string | undefined)?.slice(0, 8)
-          const role = ws.data.isControlPanel
-            ? 'dashboard'
-            : ws.data.isSentinel
-              ? 'sentinel'
-              : ws.data.isGateway
-                ? 'gateway'
-                : hintConv
-                  ? 'agent-host'
-                  : 'unknown'
+          const role = ws.data.reporterId
+            ? 'reporter'
+            : ws.data.isControlPanel
+              ? 'dashboard'
+              : ws.data.isSentinel
+                ? 'sentinel'
+                : ws.data.isGateway
+                  ? 'gateway'
+                  : hintConv
+                    ? 'agent-host'
+                    : 'unknown'
           console.log(
             `[ws] Connection closed: role=${role} conv=${hintConv ?? 'none'} conn=${hintConn ?? 'none'} code=${code} reason=${reason || 'none'}`,
           )
+
+          // Reporter closed: free its single slot (so the node can dial back in)
+          // and drop its vitals row -- a row for a node that is not connected is
+          // a lie the fleet view would render as live.
+          if (ws.data.reporterId) {
+            const released = releaseReporterSocket(ws)
+            forgetNodeStats(ws.data.reporterId)
+            console.log(
+              `[reporter] disconnected reporter=${ws.data.reporterId} alias=${ws.data.reporterAlias ?? '-'} ` +
+                `slotReleased=${released ?? 'none'} code=${code}`,
+            )
+            return
+          }
 
           // Dedicated shell-data socket closed: forget the pairing. The control
           // WS owns shell-roster lifecycle, so we do NOT remove shells here --
@@ -1144,7 +1203,11 @@ async function main() {
             // drops the connection (we need its id to scope the removal).
             const sentinelId = conversationStore.getSentinelIdBySocket(ws)
             conversationStore.removeSentinel(ws)
-            if (sentinelId) onSentinelDisconnect(sentinelId, conversationStore)
+            if (sentinelId) {
+              onSentinelDisconnect(sentinelId, conversationStore)
+              // Same rule as a reporter: no connection, no vitals row.
+              forgetNodeStats(sentinelId)
+            }
             if (verbose) {
               console.log('[sentinel] Sentinel disconnected')
             }

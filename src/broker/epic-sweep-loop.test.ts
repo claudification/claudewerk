@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation, EpicResult } from '../shared/protocol'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
-import { beatOneEpic, resetSweepGuard, type SweepDeps, sweepEpics } from './epic-sweep-loop'
+import {
+  beatOneEpic,
+  markEngineBoot,
+  quarantineRemainingMs,
+  RESTART_QUARANTINE_MS,
+  resetSweepGuard,
+  type SweepDeps,
+  sweepEpics,
+} from './epic-sweep-loop'
 
 let beats: string[]
 let log: string[]
@@ -234,6 +242,62 @@ describe('beatOneEpic -- the forced beat', () => {
     })
     convs = [conv('e1', 'implementer', 't1')]
     await sweepEpics(deps())
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+})
+
+/**
+ * A beat decides what to dispatch from "which conversations are live", and on a
+ * fresh broker that answer is empty and wrong -- the agent hosts carrying the
+ * seat tags are still reconnecting. Beat inside that window and every in-flight
+ * card looks abandoned, so the engine dispatches a second seat for every one of
+ * them: a duplicate fleet, on every deploy, with nobody watching.
+ */
+describe('the restart quarantine', () => {
+  const at = (nowMs: number): SweepDeps => ({ ...deps(), now: () => nowMs })
+
+  test('holds every beat for the first two minutes after the engine boots', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    markEngineBoot(0)
+    await sweepEpics(at(60_000))
+    expect(beats).toHaveLength(0)
+    expect(log.join('\n')).toContain('restart quarantine')
+  })
+
+  test('says how much longer, so a held run is never mistaken for a stalled one', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    markEngineBoot(0)
+    await sweepEpics(at(90_000))
+    expect(log.join('\n')).toContain('30s more')
+  })
+
+  test('beats normally the moment the window closes', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    markEngineBoot(0)
+    await sweepEpics(at(RESTART_QUARANTINE_MS))
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('a forced BEAT NOW is refused inside the window, with the reason and the wait', async () => {
+    markEngineBoot(0)
+    const res = await beatOneEpic(at(30_000), 'claude://s/e1', 'e1')
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toContain('still reconnecting')
+    expect(res.ok === false && res.error).toContain('90s')
+  })
+
+  test('an unmarked engine is not quarantined -- a direct call is not a restart', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(deps())
+    expect(beats).toEqual(['claude://s/e1'])
+    expect(quarantineRemainingMs(0)).toBe(0)
+  })
+
+  test('the guard is not consumed by a quarantined tick', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    markEngineBoot(0)
+    await sweepEpics(at(1_000))
+    await sweepEpics(at(RESTART_QUARANTINE_MS + 1))
     expect(beats).toEqual(['claude://s/e1'])
   })
 })
