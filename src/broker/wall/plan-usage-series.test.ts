@@ -99,7 +99,11 @@ describe('plan series accumulation', () => {
   it('appends one sample per profile per report', () => {
     samplePlanUsage([snapshot({ profile: 'a' }), snapshot({ profile: 'b' })], 'studio', T0)
 
-    expect(readPlanSeries(T0).map(s => s.profile).sort()).toEqual(['a', 'b'])
+    expect(
+      readPlanSeries(T0)
+        .map(s => s.profile)
+        .sort(),
+    ).toEqual(['a', 'b'])
   })
 
   it('keeps profile@node separate -- one name on two sentinels is two accounts', () => {
@@ -119,7 +123,11 @@ describe('plan series accumulation', () => {
 
   it('never thins away a jump towards the throttle line', () => {
     samplePlanUsage([snapshot({ fiveHour: { usedPercent: 40, resetAt: RESET_ISO } })], 'studio', T0)
-    const kept = samplePlanUsage([snapshot({ fiveHour: { usedPercent: 95, resetAt: RESET_ISO } })], 'studio', T0 + 3_000)
+    const kept = samplePlanUsage(
+      [snapshot({ fiveHour: { usedPercent: 95, resetAt: RESET_ISO } })],
+      'studio',
+      T0 + 3_000,
+    )
 
     expect(kept).toHaveLength(1)
     expect(readPlanSeries(T0 + 3_000).map(s => s.utilization)).toEqual([40, 95])

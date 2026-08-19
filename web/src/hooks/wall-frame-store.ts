@@ -18,13 +18,13 @@ import type {
   WallPlanSample,
   WallPulseRow,
 } from '@shared/wall'
+import { flattenPlanSeries, foldPlanSamples, prunePlanSeries, type WallPlanSeries } from '@shared/wall-plan-series'
 import { applyCardLedgerFrame } from './card-ledger-feed'
 import { createExternalStoreSignal } from './external-store-utils'
 
 /** Client-side ring caps. Generous next to the broker's per-frame cap, small
  *  enough that a wall left open overnight cannot grow without bound. */
 const COMMIT_RING = 300
-const PLAN_RING = 600
 
 const EMPTY_FLEET: WallFleetCounters = {
   conversations: 0,
@@ -69,6 +69,10 @@ const EMPTY_VIEW: WallView = {
 
 const pulse = new Map<string, WallPulseRow>()
 const hosts = new Map<string, WallHostVitals>()
+/** Per profile@node, oldest first. A flat FIFO would let one busy profile evict
+ *  a quiet one's history and leave S2 drawing a line with a hole in it. Keying,
+ *  window and caps are the broker's policy verbatim -- `@shared/wall-plan-series`. */
+const planSeries: WallPlanSeries = new Map()
 let commits: WallCommitRow[] = []
 let plan: WallPlanSample[] = []
 let fleet = EMPTY_FLEET
@@ -101,6 +105,7 @@ function rebuildView(frame: WallFrame): void {
 function clearPicture(): void {
   pulse.clear()
   hosts.clear()
+  planSeries.clear()
   commits = []
   plan = []
   fleet = EMPTY_FLEET
@@ -128,7 +133,13 @@ export function applyWallFrame(frame: WallFrame): void {
   // section is handed over rather than mirrored into a second copy here.
   if (frame.full || frame.cards?.length) applyCardLedgerFrame(frame.cards ?? [], { full: frame.full })
   if (frame.hosts) for (const h of frame.hosts) hosts.set(h.nodeId, h)
-  if (frame.plan?.length) plan = ring(plan, frame.plan, PLAN_RING)
+  if (frame.plan?.length) {
+    // `minGapMs: 0` -- the broker already decided what is worth keeping. Thinning
+    // a second time here would drop points the chart was sent on purpose.
+    foldPlanSamples(planSeries, frame.plan, frame.at, { minGapMs: 0 })
+    prunePlanSeries(planSeries, frame.at)
+    plan = flattenPlanSeries(planSeries)
+  }
   if (frame.fleet) fleet = frame.fleet
 
   rebuildView(frame)
