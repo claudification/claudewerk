@@ -188,6 +188,70 @@
 	letter-spacing: 0.12em;
 	flex: 0 0 auto;
 }
+/* The font-size lives HERE and the segments inherit it, because it is this
+   element that `useStripMetrics` measures the character advance from. */
+.wall-nowstack {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	height: 16px;
+	border-radius: 3px;
+	overflow: hidden;
+	background: var(--background);
+	font-size: 10px;
+}
+.wall-nowseg {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 0;
+	font-weight: 700;
+	color: var(--background);
+	white-space: nowrap;
+	overflow: hidden;
+	transition: flex-grow 0.5s ease;
+}
+.wall-nowempty {
+	display: flex;
+	align-items: center;
+	padding-left: 6px;
+	color: var(--comment);
+}
+.wall-nowlegend {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex: 0 0 auto;
+	font-size: 10px;
+	color: var(--fg-muted);
+}
+.wall-nowlegend i {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 2px;
+	margin-right: 4px;
+}
+.wall-nowtotal {
+	color: var(--comment);
+}
+/* AMBIENT: A5 has no `hideamb` in the mockup -- it is what is left to read from
+   across a room, so it grows instead of going away. */
+.wall-root[data-ambient] .wall-nowbar {
+	padding: 7px 14px;
+}
+.wall-root[data-ambient] .wall-nowbar-cap,
+.wall-root[data-ambient] .wall-nowstack,
+.wall-root[data-ambient] .wall-nowlegend {
+	font-size: 13px;
+}
+.wall-root[data-ambient] .wall-nowstack {
+	height: 24px;
+}
+.wall-root[data-ambient] .wall-nowlegend i {
+	width: 9px;
+	height: 9px;
+}
 .wall-btn {
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
