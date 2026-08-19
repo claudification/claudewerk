@@ -32,6 +32,7 @@ import type {
   NightshiftTaskMeta,
   NightshiftTaskPatchInput,
 } from './nightshift-types'
+import type { NodeStatsRecord } from './node-stats'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type {
   QuestAcceptanceContract,
@@ -6322,6 +6323,34 @@ export type BrokerSentinelMessage =
 export interface SentinelStatus {
   type: 'sentinel_status'
   connected: boolean
+}
+
+// ─── Node vitals ────────────────────────────────────────────────────────────
+// `report_node_stats` (node -> broker) is NOT declared here: it lives in
+// `src/shared/node-stats.ts` with its cadence constant, its sampler and its one
+// validator, because the standalone node-stats-reporter imports the contract
+// without importing the whole broker protocol. Re-exported so protocol
+// consumers can name the type; this file is not a second definition of it.
+export type {
+  NodeBytes,
+  NodeIdentity,
+  NodeKind,
+  NodeLoad,
+  NodeMachineStats,
+  NodeProfileUtilization,
+  NodeSentinelStats,
+  NodeStatsRecord,
+  ReportNodeStats,
+} from './node-stats'
+
+// Dashboard broadcast: one node's vitals, plus the dedupe verdict for its host.
+// `machineOwner` is the answer to "who counts the machine": exactly one node per
+// hostname carries it, so a consumer can render N agent rows on one box without
+// adding the same cpu/ram/disk numbers together N times.
+export interface NodeStatsUpdate {
+  type: 'node_stats_update'
+  node: NodeStatsRecord
+  machineOwner: boolean
 }
 
 // Foreground-task fields shared by the broker wire type (ConversationSummary)

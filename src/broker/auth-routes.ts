@@ -41,8 +41,9 @@ import {
 
 import type { GatewayRegistry } from './gateway-registry'
 import { isGatewaySecret } from './gateway-registry'
+import { canAuthenticateHttpRoutes } from './node-capability'
 import type { SentinelRegistry } from './sentinel-registry'
-import { isSentinelSecret } from './sentinel-registry'
+import { isReporterRecord, isReporterSecret, isSentinelSecret } from './sentinel-registry'
 
 let rclaudeSecret: string | undefined
 let validateShareFn: ((token: string) => boolean) | undefined
@@ -69,6 +70,8 @@ export type AuthResult =
   | { role: 'admin' }
   | { role: 'sentinel'; sentinelId: string; alias: string }
   | { role: 'gateway'; gatewayId: string; alias: string; gatewayType: string }
+  /** `rpt_` -- one capability (`can_report_node_stats`), WEBSOCKET ONLY. */
+  | { role: 'reporter'; reporterId: string; alias: string }
   | { role: 'none' }
 
 export function resolveAuth(secret: string): AuthResult {
@@ -77,8 +80,16 @@ export function resolveAuth(secret: string): AuthResult {
   }
   if (sentinelRegistryRef && isSentinelSecret(secret)) {
     const sentinel = sentinelRegistryRef.findBySecret(secret)
-    if (sentinel) {
+    // A record found under an `snt_` prefix must actually BE a sentinel. Belt
+    // and braces against a hand-edited registry file.
+    if (sentinel && !isReporterRecord(sentinel)) {
       return { role: 'sentinel', sentinelId: sentinel.sentinelId, alias: sentinel.aliases[0] }
+    }
+  }
+  if (sentinelRegistryRef && isReporterSecret(secret)) {
+    const reporter = sentinelRegistryRef.findBySecret(secret)
+    if (reporter && isReporterRecord(reporter)) {
+      return { role: 'reporter', reporterId: reporter.sentinelId, alias: reporter.aliases[0] }
     }
   }
   if (gatewayRegistryRef && isGatewaySecret(secret)) {
@@ -204,12 +215,19 @@ export function requireAuth(req: Request): Response | null {
   const isAuthenticated = getAuthenticatedUser(req)
   if (isAuthenticated) return null
 
-  // Allow Bearer token auth with admin secret or sentinel secret (for API calls from scripts)
+  // Allow Bearer token auth with admin secret or sentinel secret (for API calls
+  // from scripts). WEBSOCKET ONLY credentials are refused HERE: a reporter's
+  // `rpt_` has no `authenticate_http` capability, so it opens exactly zero HTTP
+  // routes -- not a read route, not the health route. One predicate decides it
+  // (node-capability.ts), so there is one place to audit.
   const authHeader = req.headers.get('authorization')
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (bearerToken) {
     const auth = resolveAuth(bearerToken)
-    if (auth.role !== 'none') return null
+    if (canAuthenticateHttpRoutes(auth.role)) return null
+    if (auth.role !== 'none') {
+      console.log(`[auth] HTTP refused for role=${auth.role} path=${url.pathname} (websocket-only credential)`)
+    }
   }
 
   // Share token auth (guest access via link)

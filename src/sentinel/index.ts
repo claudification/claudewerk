@@ -24,6 +24,7 @@ import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import type { DispatchSpec } from '../shared/cc-daemon/types'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DAEMON_MCP_ENDPOINT_ENV } from '../shared/daemon-mcp-endpoint'
+import type { NodeStatsReporter } from '../shared/node-stats-reporting'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   BrokerSentinelMessage,
@@ -66,6 +67,7 @@ import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { transcriptSlug } from '../shared/transcript-path'
+import { BUILD_VERSION } from '../shared/version'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -92,6 +94,7 @@ import { resolveForkCwds } from './fork-cwds'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
+import { startSentinelNodeStats } from './node-stats'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
 import {
   AdoptedChildren,
@@ -2866,6 +2869,7 @@ function connect(
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let adoptedReapTimer: ReturnType<typeof setInterval> | null = null
+  let nodeStatsReporter: NodeStatsReporter | null = null
   let shouldReconnect = true
 
   log(`Connecting to ${url}...`)
@@ -2969,6 +2973,24 @@ function connect(
         ws.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }))
       } catch {}
     }, HEARTBEAT_INTERVAL_MS)
+
+    // Per-node vitals, on the socket we ALREADY have. The shape, the cadence
+    // and the sampler all come from src/shared/node-stats* -- the same contract
+    // the standalone node-stats-reporter implements. The sentinel's frame is
+    // that frame plus the OPTIONAL `sentinel` block (conversation count +
+    // profile NAMES with utilization). No new connection, no broker polling.
+    nodeStatsReporter = startSentinelNodeStats({
+      nodeId: getMachineId(),
+      agentVersion: BUILD_VERSION.gitHashShort,
+      conversationCount: () => trackedChildren.size + adoptedChildren.size,
+      profileUsage: getLatestProfileUsage,
+      send: frame => {
+        if (ws.readyState !== WebSocket.OPEN) return false
+        ws.send(JSON.stringify(frame))
+        return true
+      },
+      log,
+    })
   }
 
   ws.onmessage = async event => {
@@ -4301,6 +4323,12 @@ function connect(
     stopUsagePolling()
     stopDaemonRosterWatch()
     stopAllWatches(l => log(l))
+    // Same reason as adoptedReapTimer: `connect()` re-runs on reconnect, so an
+    // un-stopped reporter would stack one 5s timer per reconnect.
+    if (nodeStatsReporter) {
+      nodeStatsReporter.stop()
+      nodeStatsReporter = null
+    }
     if (ccVersionWatcher) {
       ccVersionWatcher.stop()
       ccVersionWatcher = null
