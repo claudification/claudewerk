@@ -57,6 +57,7 @@ import { useVacuumOpen } from '@/components/vacuum/vacuum-state'
 import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
 import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
+import { useWallOpen } from '@/components/wall/wall-state'
 import { useBackdropBypass } from '@/hooks/use-backdrop-bypass'
 import { useBuildUpdate } from '@/hooks/use-build-update'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -245,6 +246,16 @@ const OverseerModal = lazyModule(
       default: m.OverseerModal,
     })) as Promise<{ default: ComponentType }>,
   useOverseerOpen,
+)
+// THE WALL -- the whole-fleet command panel. A big surface with eleven panes on
+// it; it must never touch the index bundle, and a session that never opens it
+// never pays for a byte of it.
+const WallModal = lazyModule(
+  () =>
+    import('@/components/wall/wall-modal').then(m => ({
+      default: m.WallModal,
+    })) as Promise<{ default: ComponentType }>,
+  useWallOpen,
 )
 // Mermaid pan/zoom overlay -- chunk loads only when a diagram is first opened.
 const MermaidLightbox = lazyModule(
@@ -600,6 +611,7 @@ function Dashboard() {
       <ManageWorkspacesModal />
       <VacuumModal />
       <OverseerModal />
+      {canAdmin && <WallModal />}
       <LaunchProfileCommands />
       <LaunchToastContainer />
       <TerminateConfirmDialog />
