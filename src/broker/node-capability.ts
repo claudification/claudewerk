@@ -9,7 +9,7 @@
  *   - `requireAuth` (auth-routes.ts) asks `canAuthenticateHttpRoutes` -- a
  *     reporter answers NO on every HTTP route, including /health
  *   - `routeMessage` (message-router.ts) asks `connectionMaySendMessage` -- a
- *     reporter may send exactly `report_node_stats` and nothing else
+ *     reporter may send exactly `node_stats` and nothing else
  *   - the spawn roster asks `canHostSpawns` -- a reporter answers NO, so it can
  *     never be picked as a spawn target
  *
@@ -18,7 +18,9 @@
  * point -- reporters go on machines that must never hold spawn authority.
  */
 
-import { REPORT_NODE_STATS } from '../shared/node-stats'
+/** The one message type a reporter may send. Imported from the CONTRACT, so the
+ *  allowlist and the handler registration cannot name different strings. */
+import { NODE_STATS_MESSAGE } from '../shared/node-stats'
 
 /** Every role a connection or credential can carry, across both the auth
  *  resolver and the WS router. One union so there is one capability table. */
@@ -33,7 +35,9 @@ export type CapabilityRole =
   | 'none'
 
 export type NodeCapability =
-  /** May send the `report_node_stats` frame. */
+  /** May send the `node_stats` frame. Named `report_node_stats` after the
+   *  capability the card specifies (`can_report_node_stats()`), which is the
+   *  ACTION; `node_stats` is the message that action produces. */
   | 'report_node_stats'
   /** May authenticate an HTTP route (bearer secret). */
   | 'authenticate_http'
@@ -87,7 +91,7 @@ export function canHostSpawns(role: CapabilityRole): boolean {
  * falls through to the per-handler role gate as before.
  */
 const RESTRICTED_MESSAGE_TYPES: Partial<Record<CapabilityRole, ReadonlySet<string>>> = {
-  reporter: new Set([REPORT_NODE_STATS]),
+  reporter: new Set([NODE_STATS_MESSAGE]),
 }
 
 /** The allowlist for a restricted role, or undefined when unrestricted. */
@@ -108,7 +112,7 @@ export function connectionMaySendMessage(role: CapabilityRole, type: string): Me
   if (allowed.has(type)) {
     // Belt and braces: the allowlist and the capability table must agree. If
     // someone allowlists a type for a role that lacks the capability, deny.
-    if (type === REPORT_NODE_STATS && !canReportNodeStats(role)) {
+    if (type === NODE_STATS_MESSAGE && !canReportNodeStats(role)) {
       return { ok: false, reason: `${role} lacks can_report_node_stats` }
     }
     return { ok: true }

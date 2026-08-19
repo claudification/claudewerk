@@ -9,13 +9,15 @@
  * Droppable on any box, including one you would never hand an `snt_` to.
  *
  * It implements the contract in `src/shared/node-stats*` and nothing more --
- * the payload, the cadence, the sampler and the validation are the SAME code
- * the sentinel runs. That is the point of the contract: this file contains no
- * shape of its own.
+ * the payload, the cadence, the sampler, the host fingerprint and the
+ * validation are the SAME code the sentinel runs. This file contains no shape
+ * of its own.
  */
 
+import { hostId } from '../shared/host-id'
 import { NODE_STATS_INTERVAL_MS } from '../shared/node-stats'
 import { createNodeStatsReporter, type NodeStatsReporter } from '../shared/node-stats-reporting'
+import { buildNodeIdentity } from '../shared/node-stats-sample'
 import { BUILD_VERSION } from '../shared/version'
 import { backoffMs, parseReporterArgs, type ReporterConfig } from './config'
 
@@ -24,11 +26,9 @@ function log(message: string): void {
 }
 
 function connect(config: ReporterConfig, attempt: number): void {
-  const url = `${config.brokerUrl}?secret=${encodeURIComponent(config.secret)}`
-  // Never log the secret. The URL carries it, so the URL is never logged either.
+  // Never log the URL: it carries the secret.
   log(`Connecting to ${config.brokerUrl} ...`)
-
-  const ws = new WebSocket(url)
+  const ws = new WebSocket(`${config.brokerUrl}?secret=${encodeURIComponent(config.secret)}`)
   let reporter: NodeStatsReporter | null = null
   let reconnected = false
 
@@ -44,20 +44,28 @@ function connect(config: ReporterConfig, attempt: number): void {
 
   ws.onopen = () => {
     log(`Connected. Reporting every ${NODE_STATS_INTERVAL_MS / 1000}s.`)
-    // `nodeId` is advisory: the broker stamps the id it resolved from the key.
-    // We send the hostname so a misconfigured key is greppable in broker logs.
     reporter = createNodeStatsReporter({
-      nodeId: `reporter@${Bun.env.HOSTNAME || 'unknown'}`,
-      agentVersion: BUILD_VERSION.gitHashShort,
+      // `nodeId` is advisory -- the broker stamps the id it resolved from the
+      // key. `hostId` is NOT: it is the machine dedupe key, and it is computed
+      // by the same shared function the sentinel uses, so a sentinel and this
+      // reporter on one box collapse to one machine row instead of two.
+      identity: buildNodeIdentity({
+        nodeId: `reporter@${hostId()}`,
+        hostId: hostId(),
+        agentVersion: BUILD_VERSION.gitHashShort,
+        sender: 'reporter',
+      }),
       diskMount: config.diskMount,
-      send: frame => {
+      send: report => {
         if (ws.readyState !== WebSocket.OPEN) return false
-        ws.send(JSON.stringify(frame))
+        ws.send(JSON.stringify(report))
         if (config.verbose) {
+          const { machine } = report
           log(
-            `sample cpu=${frame.machine.cpuPercent.toFixed(1)}% ` +
-              `load=${frame.machine.load.avg1.toFixed(2)}/${frame.machine.load.cores} ` +
-              `mem=${frame.machine.memory.usedBytes}/${frame.machine.memory.totalBytes}`,
+            `sample cpu=${machine.cpuPercent.toFixed(1)}% ` +
+              `load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
+              `mem=${machine.memory.usedBytes}/${machine.memory.totalBytes} ` +
+              `disk=${machine.disk.usedBytes}/${machine.disk.totalBytes}@${machine.disk.mount}`,
           )
         }
         return true
@@ -67,9 +75,9 @@ function connect(config: ReporterConfig, attempt: number): void {
     reporter.start()
   }
 
-  // The broker rejects everything a reporter is not allowed to send, with a
-  // reason. Surface it rather than swallowing it -- a silent reporter that the
-  // broker is refusing is the worst possible failure mode.
+  // The broker refuses everything a reporter is not allowed to send, with a
+  // reason. Surface it -- a silent reporter the broker is rejecting is the worst
+  // possible failure mode.
   ws.onmessage = event => {
     try {
       const msg = JSON.parse(String(event.data)) as { type?: string; ok?: boolean; error?: string }
@@ -81,10 +89,11 @@ function connect(config: ReporterConfig, attempt: number): void {
 
   ws.onerror = () => reconnect('socket error')
   ws.onclose = (event: CloseEvent) => {
-    // 409 at upgrade = another connection already holds this key. Say so
-    // plainly: "one connection per key" is a rule, not a transient failure.
-    if (event.code === 1006)
-      log('Upgrade refused. If the key is already connected elsewhere, that is the rule: one per key.')
+    // A 409 at upgrade means another connection already holds this key. Say so
+    // plainly: one connection per key is a RULE, not a transient failure.
+    if (event.code === 1006) {
+      log('Upgrade refused. If this key is already connected elsewhere, that is the rule: one connection per key.')
+    }
     reconnect(`code=${event.code}${event.reason ? ` reason=${event.reason}` : ''}`)
   }
 }
@@ -95,8 +104,7 @@ function main(): void {
     console.error(parsed.error)
     process.exit(1)
   }
-  const config = parsed.config
-  log(`node-stats-reporter ${BUILD_VERSION.gitHashShort} starting (vitals only).`)
+  log(`node-stats-reporter ${BUILD_VERSION.gitHashShort} starting (vitals only). host=${hostId()}`)
 
   const shutdown = (signal: string): void => {
     log(`${signal} received. Exiting.`)
@@ -105,7 +113,7 @@ function main(): void {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
   process.on('SIGINT', () => shutdown('SIGINT'))
 
-  connect(config, 0)
+  connect(parsed.config, 0)
 }
 
 main()

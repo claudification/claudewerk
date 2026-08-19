@@ -1,121 +1,195 @@
 /**
- * NODE STATS -- the ONE contract for per-node vitals.
+ * NODE STATS -- one contract, two senders.
  *
- * `report_node_stats` has exactly TWO senders:
- *   1. the SENTINEL (which also spawns, distributes credentials, runs shells)
- *   2. the standalone NODE-STATS-REPORTER (which can do nothing else)
+ * `node_stats` is the single wire message carrying a machine's vitals. It has
+ * exactly two senders and they share this module:
  *
- * Same payload, same cadence, same validation, same broker handler. Neither
- * sender defines its own shape -- two definitions of one shape is exactly the
- * drift the no-duplication covenant exists to prevent. If you are about to add
- * a field for one sender only, it goes on the OPTIONAL `sentinel` block, not on
- * a second interface.
+ *   1. the SENTINEL -- which also spawns, distributes credentials and runs
+ *      shells, and therefore additionally knows how many conversations are
+ *      running on the box;
+ *   2. the standalone NODE-STATS-REPORTER -- which can do nothing else, holds
+ *      a minimal-privilege `rpt_` credential, and simply omits the extras.
  *
- * BOUNDARIES:
- *  - PROFILE-ENV BOUNDARY (src/sentinel/sentinel-config.ts:20): profile NAMES
- *    and a utilization percent may cross to the broker. configDir, `env` and
- *    oauth tokens NEVER do -- `validateNodeStats` rebuilds the frame field by
- *    field, so a misbehaving sender cannot smuggle them past this contract.
- *  - MACHINE facts (cpu/load/mem/disk) are per HOST. SENTINEL facts
- *    (conversation count, profiles) are per SENTINEL and are OPTIONAL on the
- *    shape, absent from a reporter frame. Two agents on one box must not
- *    double-count the machine: rows are keyed by node id, labelled by hostname,
- *    and machine stats are deduped per host (see broker/node-stats-store.ts).
+ * Same payload, same cadence, same validation, same broker handler. A second
+ * definition of this shape in either sender is the drift `feedback_no_duplication`
+ * exists to prevent, so the types, the cadence constant, the validator and the
+ * per-host dedupe all live here and nowhere else. The COLLECTOR that fills the
+ * shape lives next door in `node-stats-sample.ts` (node-only runtime; this file
+ * stays dependency-free so the web bundle can import the types).
  *
- * This file is types + constants. Validation lives in `node-stats-validate.ts`,
- * sampling in `node-stats-sampler.ts`, the cadence runner in
- * `node-stats-reporting.ts` -- all four are the same contract, split only
- * because one file may not cross 200 lines.
+ * WHAT IS NOT ON THIS PAYLOAD: plan WINDOW data. The per-window breakdown, the
+ * reset times and the auth-error states ride `sentinel_usage_report`
+ * (`ProfileUsageSnapshot` in `protocol.ts`) and are read back via
+ * `getSentinelProfileUsage()`. That message stays the SOURCE. What a sentinel
+ * frame may carry is the one DERIVED headline percent per profile, so the wall
+ * can render a node row without joining against a separately-timed second
+ * message. See `NodeProfileUtilization`.
+ *
+ * PROFILE-ENV BOUNDARY (`src/sentinel/sentinel-config.ts`): nothing here carries
+ * a config dir, an env bag or an oauth token. A profile entry is a NAME and a
+ * percent, and the validator REJECTS any other key on it.
+ *
+ * Split for size: the validation helpers live in `node-stats-checks.ts`, the
+ * per-host views in `node-stats-host.ts`. Same contract, three files.
  */
 
-/** The one message type a reporter credential is allowed to send. */
-export const REPORT_NODE_STATS = 'report_node_stats'
+import { checkIdentity, checkMachine, checkSentinelExtras, isRecord, num } from './node-stats-checks'
 
 /**
- * ONE sample every 5s, for BOTH senders. Lives here, not in either sender --
- * a cadence defined twice drifts the moment one side is tuned. The sentinel
- * rides this on its already-open socket (no new connection); the broker never
- * polls for it.
+ * The wire message name. A CONSTANT rather than a bare literal because three
+ * places must agree on it -- the handler that registers it, the reporter
+ * capability allowlist that permits exactly it, and the senders that emit it.
+ * Three hand-typed strings is one typo away from a node that silently reports
+ * into the void.
  */
-export const NODE_STATS_INTERVAL_MS = 5000
+export const NODE_STATS_MESSAGE = 'node_stats'
 
-/** A node whose last sample is older than this is stale, not live. */
-export const NODE_STATS_STALE_MS = NODE_STATS_INTERVAL_MS * 3
+/**
+ * Sampling cadence, shared by both senders. One sample every 5s, emitted on the
+ * sender's existing connection tick -- neither sender gets to pick its own
+ * number, or the broker ring's time axis stops meaning anything.
+ */
+export const NODE_STATS_INTERVAL_MS = 5_000
 
-/** What kind of agent sent the frame. A reporter can never claim 'sentinel':
- *  the broker stamps this from the CREDENTIAL, never from the wire. */
-export type NodeKind = 'sentinel' | 'reporter'
+/**
+ * How long a node may go silent before a consumer must treat its last sample as
+ * stale rather than live. Three missed samples: long enough to ride out one slow
+ * tick, short enough that a dead reporter greys out inside a screen-refresh.
+ */
+export const NODE_STATS_STALE_AFTER_MS = NODE_STATS_INTERVAL_MS * 3
 
-/** Who the node is. Stable across reconnects (nodeId), plus display labels. */
+/** Which of the two senders produced a frame. Drives nothing but display and
+ *  the "extras are allowed here" validation rule. */
+export type NodeStatsSender = 'sentinel' | 'reporter'
+
+/**
+ * Who is reporting, and from where.
+ *
+ * `nodeId` is per AGENT, `hostId` is per HOST. Two agents on one box (a sentinel
+ * and a reporter, or two sentinels) share a `hostId` and MUST NOT double-count
+ * the machine -- see `dedupeMachineStatsByHost`. Rows are keyed by `nodeId` and
+ * labelled by `hostname`.
+ */
 export interface NodeIdentity {
-  /** Stable per-node id. Sentinel: its sentinelId. Reporter: its reporterId.
-   *  Rows are keyed by this -- two agents on one box stay two rows. */
+  /** Stable id for this AGENT. Unique per sender, even on a shared box. */
   nodeId: string
-  /** Display label AND the machine-dedupe key. Two nodes reporting the same
-   *  hostname describe ONE machine. */
+  /** Stable fingerprint of the BOX. Shared by every agent on it; the dedupe key
+   *  for machine facts. Hostname is a label, not a key -- two networks can and
+   *  do produce two `studio`s. */
+  hostId: string
+  /** Display label, e.g. `studio`. Never used as an identity key. */
   hostname: string
-  /** OS/arch label, e.g. `darwin/arm64`. */
-  platform: string
-  /** Agent build the sample came from (git short hash or a version string). */
+  /** OS/arch label, e.g. `darwin/arm64`. One string; consumers render it as-is. */
+  osArch: string
+  /** Version of the agent binary sending this frame. */
   agentVersion: string
-  /** Host uptime in whole seconds. */
+  /** Seconds the HOST has been up (not the agent process). */
   uptimeSec: number
+  /** Which sender built the frame. A `reporter` frame carrying `sentinel`
+   *  extras is rejected by `validateNodeStats`. */
+  sender: NodeStatsSender
 }
 
-/** Load average with the core count needed to read it. `avg1 / cores > 1`
- *  means oversubscribed -- the bare number is meaningless without `cores`. */
-export interface NodeLoad {
-  avg1: number
-  avg5: number
-  avg15: number
+/** Load average with the core count it should be read against. A load of 8 is
+ *  idle on a 32-core box and on fire on a 4-core one; shipping the divisor with
+ *  the number is the difference between a meter and a decoration. */
+export interface LoadAverage {
+  one: number
+  five: number
+  fifteen: number
   cores: number
 }
 
-/** A used/total byte pair. Percentages are derived at render time, never sent
- *  -- one number that can disagree with its own inputs is a bug factory. */
-export interface NodeBytes {
+/** Bytes used out of bytes total. Percentages are a rendering concern. */
+export interface UsedTotal {
   usedBytes: number
   totalBytes: number
 }
 
-/** Per-HOST machine facts. Deduped per hostname broker-side. */
-export interface NodeMachineStats {
-  /** 0-100, averaged across all cores since the previous sample. */
+/** Machine facts. Per HOST -- identical for every agent on the same box. */
+export interface MachineStats {
+  /** Whole-box CPU utilization over the last sampling interval, 0-100. */
   cpuPercent: number
-  load: NodeLoad
-  memory: NodeBytes
-  /** The volume the agent itself runs on, plus its mount point. */
-  disk: NodeBytes & { mount: string }
+  load: LoadAverage
+  memory: UsedTotal
+  /** The volume the agent runs on, plus the mount point it was measured at so a
+   *  consumer can tell `/` from an external disk. */
+  disk: UsedTotal & { mount: string }
 }
 
-/** Profile NAME + plan utilization. The ENTIRE broker-safe profile slice --
- *  configDir and env have no representation here by construction. */
+/**
+ * Profile NAME + plan utilization. The ENTIRE broker-safe profile slice --
+ * `configDir`, `env` and oauth tokens have no representation here by
+ * construction, which is how the PROFILE-ENV BOUNDARY
+ * (`src/sentinel/sentinel-config.ts`) is held on this payload.
+ *
+ * This duplicates a number that also rides `sentinel_usage_report`, and that is
+ * deliberate: the WALL renders one row per NODE and must not have to join
+ * against a second, separately-timed message to fill it in. The usage report
+ * stays the SOURCE (it carries every window, the reset times and the error
+ * states); this is the one derived headline number, sampled on the node tick.
+ */
 export interface NodeProfileUtilization {
   name: string
-  /** 0-100, or undefined when the profile has no usable reading. */
+  /** 0-100. ABSENT when the profile is unauthed or its last poll failed --
+   *  absent is honest, a zero would read as plenty of headroom. */
   utilizationPercent?: number
 }
 
-/** Sentinel-only extras. OPTIONAL on the shape and ABSENT from a reporter
- *  frame -- a reporter has no conversations and no profiles. */
-export interface NodeSentinelStats {
+/**
+ * Facts only a SENTINEL can know. Optional on the shape and absent -- not
+ * zeroed -- from a reporter frame, so "no reporter data" and "reporter with
+ * nothing running" stay distinguishable.
+ */
+export interface SentinelNodeExtras {
+  /** Conversations currently running under this sentinel. */
   conversationCount: number
-  profiles: NodeProfileUtilization[]
+  /** Profile NAMES with their plan utilization. Empty when the sentinel has no
+   *  profiles configured. */
+  profiles?: NodeProfileUtilization[]
 }
 
-/** The wire frame. Both senders emit exactly this. */
-export interface ReportNodeStats extends NodeIdentity {
-  type: typeof REPORT_NODE_STATS
-  /** ms epoch the sample was taken (sender clock). */
-  sampledAt: number
-  machine: NodeMachineStats
+/** The wire message. Sentinel and reporter both send exactly this. */
+export interface NodeStatsReport {
+  type: 'node_stats'
+  node: NodeIdentity
+  machine: MachineStats
   /** Present only on a sentinel frame. */
-  sentinel?: NodeSentinelStats
+  sentinel?: SentinelNodeExtras
+  /** ms epoch the sample was taken (not when it was sent). */
+  sampledAt: number
 }
 
-/** A validated frame plus the facts only the broker knows: which credential
- *  sent it, and when the broker saw it. */
-export interface NodeStatsRecord extends ReportNodeStats {
-  kind: NodeKind
-  receivedAt: number
+/** Validation outcome. Both senders and the broker handler run the same check,
+ *  so a malformed reporter frame and a malformed sentinel frame fail the same
+ *  way with the same reasons. */
+export type NodeStatsValidation = { ok: true; report: NodeStatsReport } | { ok: false; errors: string[] }
+
+/**
+ * The ONE validator. A reporter payload and a sentinel payload are checked by
+ * this function and no other; the only asymmetry is the extras rule, which is
+ * derived from `node.sender` rather than from who happens to be calling.
+ */
+export function validateNodeStats(value: unknown): NodeStatsValidation {
+  const errors: string[] = []
+  if (!isRecord(value)) return { ok: false, errors: ['expected an object'] }
+  if (value.type !== 'node_stats') errors.push("type: expected 'node_stats'")
+
+  checkIdentity(value.node, errors)
+  checkMachine(value.machine, errors)
+
+  if (!num(value.sampledAt) || value.sampledAt <= 0) errors.push('sampledAt: expected a positive ms epoch')
+
+  if (value.sentinel !== undefined) {
+    checkSentinelExtras(value.sentinel, isRecord(value.node) ? value.node.sender : undefined, errors)
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, report: value as unknown as NodeStatsReport }
 }
+// Split for size only -- these are part of the same contract and every consumer
+// keeps importing them from here.
+export {
+  dedupeMachineStatsByHost,
+  type HostMachineRow,
+  isNodeStatsStale,
+} from './node-stats-host'

@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { validateNodeStats } from '../shared/node-stats-validate'
+import { validateNodeStats } from '../shared/node-stats'
 import type { ProfileUsageSnapshot } from '../shared/protocol'
 import { buildProfileUtilizations, profileUtilization, startSentinelNodeStats } from './node-stats'
 
@@ -72,6 +72,7 @@ describe('the sentinel sender', () => {
     const sent: unknown[] = []
     const reporter = startSentinelNodeStats({
       nodeId: 'machine-1',
+      hostId: 'host-1',
       agentVersion: 'abc1234',
       conversationCount: () => 4,
       profileUsage: () => new Map([['default', snap({ profile: 'default', sevenDay: win(61) })]]),
@@ -87,10 +88,12 @@ describe('the sentinel sender', () => {
     const parsed = validateNodeStats(JSON.parse(JSON.stringify(sent[0])))
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    expect(parsed.value.sentinel).toEqual({
+    expect(parsed.report.sentinel).toEqual({
       conversationCount: 4,
       profiles: [{ name: 'default', utilizationPercent: 61 }],
     })
+    expect(parsed.report.node.sender).toBe('sentinel')
+    expect(parsed.report.node.hostId).toBe('host-1')
   })
 
   it('re-evaluates the extras on EVERY tick (a live count, not a snapshot at start)', () => {
@@ -98,6 +101,7 @@ describe('the sentinel sender', () => {
     let conversations = 1
     const reporter = startSentinelNodeStats({
       nodeId: 'machine-1',
+      hostId: 'host-1',
       agentVersion: 'abc1234',
       conversationCount: () => conversations,
       profileUsage: () => new Map(),
@@ -118,6 +122,7 @@ describe('the sentinel sender', () => {
     const logs: string[] = []
     const reporter = startSentinelNodeStats({
       nodeId: 'machine-1',
+      hostId: 'host-1',
       agentVersion: 'abc1234',
       conversationCount: () => 0,
       profileUsage: () => new Map(),

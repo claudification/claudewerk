@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { REPORT_NODE_STATS } from '../shared/node-stats'
+import { NODE_STATS_MESSAGE } from '../shared/node-stats'
 import {
   type CapabilityRole,
   canAuthenticateHttpRoutes,
@@ -70,8 +70,8 @@ describe('reporter capability: exactly one', () => {
 
 describe('reporter capability: the message allowlist', () => {
   it('a reporter may send exactly report_node_stats', () => {
-    expect([...(restrictedMessageTypes('reporter') ?? [])]).toEqual([REPORT_NODE_STATS])
-    expect(connectionMaySendMessage('reporter', REPORT_NODE_STATS)).toEqual({ ok: true })
+    expect([...(restrictedMessageTypes('reporter') ?? [])]).toEqual([NODE_STATS_MESSAGE])
+    expect(connectionMaySendMessage('reporter', NODE_STATS_MESSAGE)).toEqual({ ok: true })
   })
 
   it('every other message type is refused WITH A REASON', () => {

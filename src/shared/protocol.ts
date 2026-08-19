@@ -32,7 +32,7 @@ import type {
   NightshiftTaskMeta,
   NightshiftTaskPatchInput,
 } from './nightshift-types'
-import type { NodeStatsRecord } from './node-stats'
+import type { NodeStatsReport } from './node-stats'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
 import type {
   QuestAcceptanceContract,
@@ -49,6 +49,18 @@ import type { RecapSuiteId } from './recap-suites'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
+// The node-stats contract lives in its own module (see `./node-stats`) because
+// BOTH the sentinel and the standalone reporter implement it. Re-exported here
+// so wire consumers keep importing message types from one place.
+export type {
+  HostMachineRow,
+  LoadAverage,
+  MachineStats,
+  NodeIdentity,
+  NodeStatsReport,
+  NodeStatsSender,
+  SentinelNodeExtras,
+} from './node-stats'
 
 /**
  * Wire protocol version.
@@ -5920,6 +5932,10 @@ export type SentinelMessage =
   | QuestResult
   | UsageUpdate
   | SentinelUsageReport
+  // Machine vitals. Declared in `./node-stats` because the standalone
+  // node-stats-reporter sends the identical frame -- one contract, two senders.
+  // Plan utilization is NOT on it; that stays on SentinelUsageReport above.
+  | NodeStatsReport
   | LaunchLog
   | DaemonRosterUpdate
   | DaemonJobState
@@ -6325,31 +6341,20 @@ export interface SentinelStatus {
   connected: boolean
 }
 
-// ─── Node vitals ────────────────────────────────────────────────────────────
-// `report_node_stats` (node -> broker) is NOT declared here: it lives in
-// `src/shared/node-stats.ts` with its cadence constant, its sampler and its one
-// validator, because the standalone node-stats-reporter imports the contract
-// without importing the whole broker protocol. Re-exported so protocol
-// consumers can name the type; this file is not a second definition of it.
-export type {
-  NodeBytes,
-  NodeIdentity,
-  NodeKind,
-  NodeLoad,
-  NodeMachineStats,
-  NodeProfileUtilization,
-  NodeSentinelStats,
-  NodeStatsRecord,
-  ReportNodeStats,
-} from './node-stats'
-
 // Dashboard broadcast: one node's vitals, plus the dedupe verdict for its host.
-// `machineOwner` is the answer to "who counts the machine": exactly one node per
-// hostname carries it, so a consumer can render N agent rows on one box without
-// adding the same cpu/ram/disk numbers together N times.
+// The inbound `node_stats` frame is declared in `./node-stats` (re-exported at
+// the top of this file); this is the outbound fan-out to the control panel.
+//
+// `machineOwner` is the answer to "who counts the machine": exactly ONE node per
+// `hostId` carries it, so a consumer can render N agent rows on one box without
+// adding the same cpu/ram/disk numbers together N times. It is the broker's
+// `dedupeMachineStatsByHost` verdict, delivered on the wire so every consumer
+// does not have to recompute it.
 export interface NodeStatsUpdate {
   type: 'node_stats_update'
-  node: NodeStatsRecord
+  report: NodeStatsReport
+  /** ms epoch the broker received it (the sender's clock may be wrong). */
+  receivedAt: number
   machineOwner: boolean
 }
 

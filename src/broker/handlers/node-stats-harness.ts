@@ -6,30 +6,29 @@
  */
 
 import type { ServerWebSocket } from 'bun'
-import { REPORT_NODE_STATS, type ReportNodeStats } from '../../shared/node-stats'
+import type { NodeStatsReport } from '../../shared/node-stats'
+import { FIXTURE_MACHINE, FIXTURE_REPORTER_IDENTITY, FIXTURE_SAMPLED_AT } from '../../shared/node-stats-fixture'
+import { buildNodeStatsReport } from '../../shared/node-stats-sample'
 import type { HandlerContext, WsData } from '../handler-context'
 
-export const HARNESS_MACHINE = {
-  cpuPercent: 71,
-  load: { avg1: 2, avg5: 2, avg15: 2, cores: 8 },
-  memory: { usedBytes: 4, totalBytes: 8 },
-  disk: { usedBytes: 1, totalBytes: 4, mount: '/' },
-}
+export const HARNESS_MACHINE = FIXTURE_MACHINE
 
-/** A wire frame. `nodeId` deliberately does NOT match either credential, so the
- *  credential-stamping rule is exercised by default. */
-export function frame(over: Partial<ReportNodeStats> = {}): Record<string, unknown> {
-  return {
-    type: REPORT_NODE_STATS,
-    nodeId: 'wire-id',
-    hostname: 'beast',
-    platform: 'linux/x64',
-    agentVersion: 'abc1234',
-    uptimeSec: 100,
-    sampledAt: 1_700_000_000_000,
-    machine: HARNESS_MACHINE,
-    ...over,
-  }
+/**
+ * A wire frame, built from the shared builder and then bent -- the tests need to
+ * send hostile/malformed input, but the BASE must still come from the one
+ * builder or this file becomes a second declaration of the shape.
+ *
+ * `node.nodeId` deliberately does NOT match either credential, so every test
+ * exercises the credential-stamping rule by default.
+ */
+export function frame(over: { node?: Partial<NodeStatsReport['node']> } & Record<string, unknown> = {}) {
+  const { node, ...rest } = over
+  const base = buildNodeStatsReport(
+    { ...FIXTURE_REPORTER_IDENTITY, nodeId: 'wire-id', uptimeSec: 100 },
+    HARNESS_MACHINE,
+    FIXTURE_SAMPLED_AT,
+  )
+  return { ...base, node: { ...base.node, ...node }, ...rest } as Record<string, unknown>
 }
 
 export interface Harness {

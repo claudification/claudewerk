@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'bun:test'
-import { REPORT_NODE_STATS } from '../../shared/node-stats'
+import { NODE_STATS_MESSAGE } from '../../shared/node-stats'
 import { ANY_ROLE, registerHandlers, routeMessage } from '../message-router'
 import { nodeStatsStore } from '../node-stats-store'
 import { registerAllHandlers } from './index'
@@ -79,16 +79,16 @@ describe('a reporter key is REJECTED on every other message type', () => {
 
   it('the ONE allowed type still gets through', () => {
     const h = asReporter()
-    expect(routeMessage(h.ctx, REPORT_NODE_STATS, frame())).toBe(true)
+    expect(routeMessage(h.ctx, NODE_STATS_MESSAGE, frame())).toBe(true)
     expect(h.replies.some(r => r.ok === false)).toBe(false)
     expect(nodeStatsStore.size()).toBe(1)
   })
 })
 
 describe('a socket with no node credential cannot report at all', () => {
-  it('refuses a dashboard socket that forges a report_node_stats frame', () => {
+  it('refuses a dashboard socket that forges a node_stats frame', () => {
     const h = asDashboard()
-    routeMessage(h.ctx, REPORT_NODE_STATS, frame())
+    routeMessage(h.ctx, NODE_STATS_MESSAGE, frame())
     expect(nodeStatsStore.size()).toBe(0)
     expect(h.replies.some(r => r.ok === false)).toBe(true)
   })
