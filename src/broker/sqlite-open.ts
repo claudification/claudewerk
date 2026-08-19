@@ -26,3 +26,26 @@ export function openWalDatabase(dbPath: string): Database {
 export function openBrokerDatabase(dbPath: string, opts: { readonly?: boolean } = {}): Database {
   return new Database(dbPath, { strict: true, ...(opts.readonly && { readonly: true }) })
 }
+
+/** Pages between automatic WAL checkpoints. 1000 (~4 MB) is SQLite's own
+ *  default; stating it makes the knob visible instead of implied. */
+const STORE_WAL_AUTOCHECKPOINT_PAGES = 1000
+
+/**
+ * Open the main store (store.db) -- the one multi-GB database the broker keeps
+ * open for its whole life.
+ *
+ * It used to be the only database in the broker opened with a bare
+ * `new Database(...)`, skipping every pragma the small stores get: no explicit
+ * journal_mode, no autocheckpoint, and a 2 MB page cache against a 10 GB file.
+ * A larger cache is the point here -- the small-store 2 MB default turns
+ * ordinary reads into disk traffic at this size.
+ */
+export function openStoreDatabase(dbPath: string): Database {
+  const db = new Database(dbPath, { strict: true })
+  db.run('PRAGMA journal_mode = WAL')
+  db.run('PRAGMA synchronous = NORMAL')
+  db.run('PRAGMA cache_size = -65536') // 64MB -- this is the big one
+  db.run(`PRAGMA wal_autocheckpoint = ${STORE_WAL_AUTOCHECKPOINT_PAGES}`)
+  return db
+}
