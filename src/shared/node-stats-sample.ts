@@ -60,13 +60,41 @@ export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number {
 }
 
 /**
+ * THE definition of `usedBytes`, and the only place it is computed.
+ *
+ * `total - available`, where available is what an UNPRIVILEGED writer can still
+ * use: `statfs.bavail`, or df's `Available` column. The root-reserved blocks
+ * therefore count as USED, because "space this agent can actually write" is the
+ * number a disk meter should show -- one that says 5% free while every write
+ * fails is a broken meter.
+ *
+ * df's own `Used` column (field 3) is the OTHER definition: it excludes the
+ * reserve, so it reads low by ~5% of a default ext4 and by 38 GB on the APFS
+ * volume this was caught on. The fallback used to take it, which made the one
+ * node that needs the fallback -- the 30TB Synology -- read systematically low
+ * against every other node on the wall. Never field 3.
+ *
+ * Null on a volume that reports no blocks at all: a pseudo-filesystem is not a
+ * disk, and 0/0 renders as "unknown" rather than as an empty drive.
+ */
+export function usedFromAvailable(totalBytes: number, availBytes: number): UsedTotal | null {
+  if (!Number.isFinite(totalBytes) || !Number.isFinite(availBytes) || totalBytes <= 0) return null
+  return { usedBytes: Math.max(0, totalBytes - availBytes), totalBytes }
+}
+
+/**
  * Parse `df -Pk <dir>` output into the used/total bytes for the volume, plus
- * the mount point it was measured at.
+ * the mount point df says it lives on.
  *
  * POSIX `-P` output is one header line and one data line per filesystem; the
  * blocks are 1 KiB. Long device names wrap in the non-`-P` form, which is
  * exactly why `-P` is not optional here. Returns null on anything unexpected --
  * a missing disk field is honest, a fabricated zero is not.
+ *
+ * `usedBytes` comes from fields 2 and 4 via `usedFromAvailable`, NOT from df's
+ * field 3. The `mount` here is df's own answer, which is a strictly better fact
+ * than the collector can otherwise get -- but it is NOT what ships on the wire;
+ * see `readDisk` for why the contract field means the directory measured.
  */
 export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) | null {
   const lines = stdout
@@ -77,11 +105,10 @@ export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) |
   const fields = lines[lines.length - 1].split(/\s+/)
   // filesystem, 1024-blocks, used, available, capacity, mounted-on
   if (fields.length < 6) return null
-  const totalKb = Number(fields[1])
-  const usedKb = Number(fields[2])
+  const volume = usedFromAvailable(Number(fields[1]) * 1024, Number(fields[3]) * 1024)
   const mount = fields.slice(5).join(' ')
-  if (!Number.isFinite(totalKb) || !Number.isFinite(usedKb) || mount.length === 0) return null
-  return { usedBytes: usedKb * 1024, totalBytes: totalKb * 1024, mount }
+  if (!volume || mount.length === 0) return null
+  return { ...volume, mount }
 }
 
 /**
@@ -90,19 +117,20 @@ export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) |
  * read three numbers the kernel hands over in one syscall.
  *
  * `bavail` (free to an unprivileged user) rather than `bfree`: the reserved
- * blocks root can still write into are not space this agent can use, and a disk
- * meter that says 5% free when every write fails is a broken meter.
+ * blocks root can still write into are not space this agent can use. That is
+ * `usedFromAvailable`, the one definition both readers share.
  *
  * Returns null when statfs cannot describe the volume -- see `readDiskViaDf`.
+ *
+ * Exported for the test that runs one volume through BOTH readers; production
+ * goes through `readDisk`.
  */
-function readDiskViaStatfs(dir: string): (UsedTotal & { mount: string }) | null {
+export function readDiskViaStatfs(dir: string): (UsedTotal & { mount: string }) | null {
   try {
     const fs = statfsSync(dir)
     const blockSize = Number(fs.bsize)
-    const totalBytes = Number(fs.blocks) * blockSize
-    const availBytes = Number(fs.bavail) * blockSize
-    if (!Number.isFinite(totalBytes) || totalBytes <= 0) return null
-    return { usedBytes: Math.max(0, totalBytes - availBytes), totalBytes, mount: dir }
+    const volume = usedFromAvailable(Number(fs.blocks) * blockSize, Number(fs.bavail) * blockSize)
+    return volume ? { ...volume, mount: dir } : null
   } catch {
     return null
   }
@@ -120,21 +148,35 @@ function readDiskViaStatfs(dir: string): (UsedTotal & { mount: string }) | null 
  * `node:child_process`, not `Bun.spawnSync`: `web/tsconfig.json` typechecks all
  * of `src/shared` with no Bun globals. The fork cost is fine HERE because this
  * only runs for volumes that failed the syscall, not on the common tick.
+ *
+ * Exported for the test that runs one volume through BOTH readers; production
+ * goes through `readDisk`.
  */
-function readDiskViaDf(dir: string): (UsedTotal & { mount: string }) | null {
+export function readDiskViaDf(dir: string): (UsedTotal & { mount: string }) | null {
   try {
     const stdout = execFileSync('df', ['-Pk', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    return parseDfOutput(stdout)
+    const volume = parseDfOutput(stdout)
+    // df knows the real mount point and statfs cannot know it at all, so the
+    // honest common answer is the DIRECTORY that was measured. Reporting df's
+    // `/volume1` from the fallback while every statfs node reports the agent's
+    // working directory is the same bug as two `usedBytes` under one name.
+    return volume ? { ...volume, mount: dir } : null
   } catch {
     return null
   }
 }
 
-/** Syscall first, `df` when it cannot answer. Null when neither can -- callers
- *  fall back to a zeroed disk with the mount they asked about, which validates
- *  and renders as "unknown" rather than blocking the whole frame. */
-function readDisk(dir: string): (UsedTotal & { mount: string }) | null {
-  return readDiskViaStatfs(dir) ?? readDiskViaDf(dir)
+/**
+ * Syscall first, `df` when it cannot answer, and the ONE place `mount` is
+ * stamped so no reader can drift into a second meaning of it.
+ *
+ * Never null: when neither reader can describe the volume this is a zeroed disk
+ * at the directory asked about, which validates and renders as "unknown"
+ * rather than blocking the whole frame over one missing field.
+ */
+function readDisk(dir: string): UsedTotal & { mount: string } {
+  const volume = readDiskViaStatfs(dir) ?? readDiskViaDf(dir)
+  return { usedBytes: volume?.usedBytes ?? 0, totalBytes: volume?.totalBytes ?? 0, mount: dir }
 }
 
 /** OS/arch label as the contract wants it: one string, e.g. `darwin/arm64`. */
@@ -167,7 +209,7 @@ export function createMachineSampler(dir: string = process.cwd()): MachineSample
       // reclaimable cache, so this reads high versus Activity Monitor. It is
       // the only figure available identically on every platform, so both
       // senders are wrong in exactly the same way rather than differently.
-      const disk = readDisk(dir) ?? { usedBytes: 0, totalBytes: 0, mount: dir }
+      const disk = readDisk(dir)
       return {
         cpuPercent,
         load: { one, five, fifteen, cores: Math.max(1, cpus().length) },
