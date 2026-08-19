@@ -26,6 +26,8 @@ import { refetchStaleTranscripts } from './transcript-refetch'
 import { handleBgTaskOutputMessage, resolveConfigResponse, useConversationsStore } from './use-conversations'
 import { dispatchShellData } from './use-shells'
 import { type DashboardMessage, handlers } from './use-websocket-handlers'
+import { resetWallFrames } from './wall-frame-store'
+import { resubscribeWall } from './wall-subscription'
 import { recordIn, recordOut } from './ws-stats'
 
 let _wsUrl: string | null = null
@@ -241,6 +243,14 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
         // by a held scope, so this subsumes the old single-agent re-subscribe.
         resubscribeAgentScopes(send)
 
+        // Same contract for THE WALL's single channel: the panes are still
+        // mounted, so the client still holds the refcount -- re-assert the
+        // subscription without touching it. The broker answers with a fresh
+        // `full: true` snapshot, which is why the local picture is dropped
+        // first rather than left to drift against a wall we are no longer on.
+        resetWallFrames()
+        resubscribeWall(send)
+
         // Re-advertise the web debug-control grant if one is active. The grant
         // lives in localStorage so it survives full reload / SW update; on every
         // (re)connect we re-announce the SAME stable clientId so the agent keeps
@@ -380,12 +390,9 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
             return
           }
 
-          // Card-ledger feed -> its own handler. `card_changed` is the live push,
-          // `card_ledger_result` is the cold-start seed off the broker's ring.
-          if (msg.type === 'card_changed' || msg.type === 'card_ledger_result') {
-            useConversationsStore.getState().cardLedgerHandler?.(msg as unknown as Record<string, unknown>)
-            return
-          }
+          // (No card-ledger bypass here on purpose. Card moves reach the panel
+          // inside the `wall` frame -- ring on subscribe, deltas after -- so the
+          // wall is ONE subscription rather than one plus a private route.)
 
           // Per-project checklist messages -> direct handler callback. Covers the
           // live `checklist_changed` broadcast and the request/reply results

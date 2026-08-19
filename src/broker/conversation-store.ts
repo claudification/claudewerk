@@ -101,6 +101,8 @@ import { listShares } from './shares'
 import { recentCutoff, recentLimit, resolveRecentWindow } from './store/recent-window'
 import type { ConversationStats, RecentScopeFilter, StoreDriver, TaskRecord } from './store/types'
 import type { TerminationLog } from './termination-log'
+import { dropWallSubscriber, publishWallPulseGone } from './wall'
+import { attachWallSources, pushWallPulse } from './wall/wall-sources'
 
 export type { ControlPanelMessage, ConversationSummary }
 
@@ -975,6 +977,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         continue
       }
 
+      // THE WALL fans in here rather than on its own poll: this flush is already
+      // the universal "a conversation really changed" chokepoint. No-op (and no
+      // projection built) while nobody is watching the wall.
+      pushWallPulse(summary)
+
       if (delta.mode === 'patch') {
         broadcastConversationScoped(
           {
@@ -1005,6 +1012,11 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
   if (store) {
     loadFromStore()
   }
+
+  // THE WALL accumulates nothing while unwatched, so the first subscriber pulls
+  // the current fleet through this seam instead of waiting for conversations to
+  // change. Reads the in-memory map only -- no store round-trip.
+  attachWallSources(() => getAllConversations().map(conv => getSummaryEntry(conv).summary))
 
   // Periodically mark idle conversations, clean stale agents, evict old conversations, and save state
   const ENDED_EVICTION_TTL_MS = 90 * 24 * 60 * 60 * 1000 // 90 days after ending, then cascade-deleted (retention)
@@ -2088,6 +2100,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     }
     conversations.delete(conversationId)
     conversationSockets.delete(conversationId)
+    // The row is gone, not idle -- tell the wall so its pulse pane drops it
+    // instead of showing a conversation that no longer exists.
+    publishWallPulseGone(conversationId)
     invalidateSummary(conversationId)
     lastBroadcastSummary.delete(conversationId)
     transcriptCache.delete(conversationId)
@@ -2601,6 +2616,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     controlPanelSubscribers.delete(ws)
     // Unregister from channel registry (removes v2, unsubscribes all channels, deletes registry entry)
     channelRegistry.unregisterSubscriber(ws)
+    // The wall hub keeps its OWN subscriber set (it filters and serializes per
+    // socket, which the generic channel broadcast cannot), so the close path
+    // has to tell it too or it would keep flushing into a dead socket.
+    dropWallSubscriber(ws)
     // Orb status watches are SOCKET-scoped: this close is their end of life. The
     // panel re-asserts what it still wants on reconnect (voice_watch_assert).
     forgetWatcher(ws)

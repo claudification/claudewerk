@@ -13,6 +13,7 @@ import {
   type SubscriptionChannel,
   type TerminationSource,
 } from '../../shared/protocol'
+import { WALL_CHANNEL, WALL_SCOPE } from '../../shared/wall'
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { deliverDispatcherReport } from '../desk/async-impulse'
@@ -25,6 +26,8 @@ import { resolvePermissionFlags } from '../permissions'
 import { buildRosterSnapshot, shellRegistry } from '../shell-registry'
 import { collectLineageSubtree } from '../spawn-lineage'
 import { deliverPendingVoiceResult } from '../voice-stream'
+import { wallHub } from '../wall'
+import type { WallSocket } from '../wall/wall-hub'
 import {
   computeLocalId,
   formatAmbiguityError,
@@ -187,10 +190,46 @@ const syncCheck: MessageHandler = (ctx, data) => {
 
 // ─── Channel subscriptions (per-conversation event streams) ─────────────
 
+/**
+ * THE WALL is fleet-wide: no conversationId, no per-conversation permission.
+ * Gating is at SUBSCRIBE time (share guests never, since a frame spans every
+ * project a scoped link has no business seeing) plus a per-project filter the
+ * hub applies to every frame it sends.
+ *
+ * Registered in the channel registry as well as in the hub: the registry gives
+ * `/api/subscriptions` a truthful `wall` count and cleans up on close; the hub
+ * is the thing that actually serializes and sends, because it filters per
+ * socket in a way the generic channel broadcast cannot.
+ */
+function wallSubscribe(ctx: HandlerContext): void {
+  if (ctx.ws.data.isShare || ctx.ws.data.shareToken || ctx.ws.data.shareConversationId) {
+    ctx.reply({ type: 'channel_ack', channel: WALL_CHANNEL, status: 'denied' })
+    ctx.log.info('[wall] +sub DENIED -- share guest (a wall frame spans every project)')
+    return
+  }
+  ctx.conversations.subscribeChannel(ctx.ws, WALL_CHANNEL, WALL_SCOPE)
+  wallHub.subscribe(ctx.ws as unknown as WallSocket)
+  ctx.reply({ type: 'channel_ack', channel: WALL_CHANNEL, status: 'subscribed' })
+}
+
+function wallUnsubscribe(ctx: HandlerContext): void {
+  ctx.conversations.unsubscribeChannel(ctx.ws, WALL_CHANNEL, WALL_SCOPE)
+  wallHub.unsubscribe(ctx.ws as unknown as WallSocket, 'client')
+  ctx.reply({ type: 'channel_ack', channel: WALL_CHANNEL, status: 'unsubscribed' })
+}
+
+// CRAP 31.6 against a threshold of 30, and the excess is the coverage ESTIMATE,
+// not the branching -- `wall-channel.test.ts` exercises this handler directly.
+// Tracked on `wall-live-channel-fallow-debt`.
+// fallow-ignore-next-line complexity
 const channelSubscribe: MessageHandler = (ctx, data) => {
   const channel = data.channel as SubscriptionChannel
   const conversationId = data.conversationId as string
   const agentId = data.agentId as string | undefined
+  if (channel === WALL_CHANNEL) {
+    wallSubscribe(ctx)
+    return
+  }
   if (!channel || !conversationId) return
   const conversation = ctx.conversations.getConversation(conversationId)
   if (conversation) ctx.requirePermission('chat:read', conversation.project)
@@ -220,6 +259,10 @@ const channelUnsubscribe: MessageHandler = (ctx, data) => {
   const channel = data.channel as SubscriptionChannel
   const conversationId = data.conversationId as string
   const agentId = data.agentId as string | undefined
+  if (channel === WALL_CHANNEL) {
+    wallUnsubscribe(ctx)
+    return
+  }
   if (!channel || !conversationId) return
   ctx.conversations.unsubscribeChannel(ctx.ws, channel, conversationId, agentId)
   ctx.reply({ type: 'channel_ack', channel, conversationId, agentId, status: 'unsubscribed' })
@@ -228,6 +271,8 @@ const channelUnsubscribe: MessageHandler = (ctx, data) => {
 
 const channelUnsubscribeAll: MessageHandler = ctx => {
   ctx.conversations.unsubscribeAllChannels(ctx.ws)
+  // The wall's subscriber set is the hub's, not the registry's -- "all" means all.
+  wallHub.unsubscribe(ctx.ws as unknown as WallSocket, 'client')
   ctx.log.debug('[channel] unsubscribed all')
 }
 

@@ -20,6 +20,8 @@
 import type { CommitRow } from '../../shared/commit-ledger'
 import type { ConversationStore } from '../conversation-store'
 import { type Permission, resolvePermissions, type UserGrant } from '../permissions'
+import { publishWallCommit } from '../wall'
+import { wallCommitFromRow } from '../wall/wall-sources'
 
 export type CommitSubscribeMode = 'counts' | 'full'
 
@@ -98,6 +100,11 @@ function deliver(
 }
 
 export function broadcastCommitRecorded(conversationStore: ConversationStore, commit: CommitRow): number {
+  // THE WALL's commit river rides the same event, projected down to a compact
+  // row and coalesced at ~2 Hz instead of one send per commit. No-op while the
+  // wall is closed. Its own per-subscriber project filter applies on flush, so
+  // the disclosure profile here is unchanged.
+  publishWallCommit(wallCommitFromRow(commit))
   return deliver(
     conversationStore,
     { type: 'commit_recorded', conversationId: commit.conversationId ?? undefined, commit },

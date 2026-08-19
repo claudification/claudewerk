@@ -21,6 +21,7 @@ import type { CardChanged } from '../../shared/protocol'
 import { readCardLedger, recordCardMoves } from '../card-ledger-ring'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
+import { publishWallCardMoves } from '../wall'
 
 /**
  * `chat:read`, NOT `files:read`, on purpose: the push side is `broadcastScoped`,
@@ -53,6 +54,9 @@ const cardChanged: MessageHandler = (ctx: HandlerContext, data: MessageData) => 
   }
   recordCardMoves(moves)
   for (const m of moves) ctx.log.info(`[card-ledger] ${m.id}: ${m.from} -> ${m.to} (source=sentinel, ${project})`)
+  // THE WALL takes the same moves through its one channel, coalesced at ~2 Hz
+  // and filtered per subscriber on flush. No-op while no wall is open.
+  publishWallCardMoves(moves)
   ctx.broadcastScoped({ type: 'card_changed', project, moves }, project)
 }
 

@@ -1,13 +1,19 @@
 /**
  * The client half of THE WALL's card ledger (P3).
  *
- * ONE module-level feed, not one per pane. A cold surface seeds itself from the
- * broker's ring (`card_ledger_request`) and then appends live `card_changed`
- * pushes on top -- so the pane has history the instant it mounts instead of an
- * empty box until somebody happens to move a card.
+ * ONE module-level feed, not one per pane. A cold surface is seeded from the
+ * broker's ring and then appends live moves on top -- so the pane has history
+ * the instant it mounts instead of an empty box until somebody happens to move
+ * a card.
  *
- * Module-global for the same reason `project-task-cache.ts` is: the socket
- * handler slot is a singleton, so the state it feeds has to be too. A second
+ * TRANSPORT: the `wall` channel, not a private socket route. Both halves ride
+ * the frame -- the ring arrives in the `full: true` snapshot the broker sends
+ * on subscribe, and live moves arrive in the deltas after it. That is why the
+ * old `card_ledger_request` round trip and the `card_changed` bypass in
+ * use-websocket.ts are gone: one channel, one subscription, per the epic.
+ *
+ * Module-global for the same reason `project-task-cache.ts` is: the frame
+ * handler is a singleton, so the state it feeds has to be too. A second
  * subscriber costs one listener, not a second request.
  *
  * Epics are absent because the SENTINEL never sends them. Nothing here filters,
@@ -15,76 +21,37 @@
  */
 
 import type { CardMove } from '@shared/protocol'
-import { createWsRequestChannel } from '@/lib/ws-request'
-import { useConversationsStore } from './use-conversations'
 
 /** The client's own render bound. Mirrors the broker ring's cap in spirit; it
  *  does not have to match it, because a slow surface should still be able to
  *  hold less than the broker is willing to serve. */
 export const LEDGER_RENDER_MAX = 300
 
-/** NUL is the separator because it cannot occur in a project name, a card id or
- *  an ISO timestamp, so no pair of fields can ever run together into a false
- *  match. It is built from its char code rather than typed into the template:
- *  a raw control byte in a source file makes git classify the whole file as
- *  BINARY, which costs every future line diff and every three-way merge on it. */
-const KEY_SEP = String.fromCharCode(0)
-const moveKey = (m: CardMove): string => `${m.project}${KEY_SEP}${m.id}${KEY_SEP}${m.ts}`
-
-const channel = createWsRequestChannel('card ledger')
-
 /** Newest first, same order the broker serves. */
 let moves: CardMove[] = []
 const listeners = new Set<() => void>()
-let installed = false
-let seeding: Promise<void> | null = null
 
 function publish(next: CardMove[]): void {
   moves = next.length > LEDGER_RENDER_MAX ? next.slice(0, LEDGER_RENDER_MAX) : next
   for (const notify of listeners) notify()
 }
 
-/** Install the one shared handler. Idempotent -- a remount must not re-install. */
-export function installCardLedgerHandler(): void {
-  if (installed) return
-  installed = true
-  useConversationsStore.setState({
-    cardLedgerHandler: (msg: Record<string, unknown>) => {
-      if (msg.type !== 'card_changed') {
-        channel.settle(msg)
-        return
-      }
-      const incoming = Array.isArray(msg.moves) ? (msg.moves as CardMove[]) : []
-      if (incoming.length === 0) return
-      // The sentinel emits a batch in board order; newest-first means the batch
-      // is reversed before it goes on top.
-      publish([...[...incoming].reverse(), ...moves])
-    },
-  })
-}
-
 /**
- * Seed from the broker's ring. Runs at most once per page life -- the live push
- * keeps the feed current afterwards, so a second pane mounting is free.
- * A failed seed leaves the feed empty rather than throwing at the caller: the
- * ring is a nicety, and a wall with no history is still a working wall.
+ * Fold one wall frame's `cards` section into the feed. The section is already
+ * newest-first (the broker orders it to match `readCardLedger()`), so a delta
+ * simply goes on top.
+ *
+ * `full` REPLACES rather than merges: it is the broker's authoritative ring
+ * after a fresh subscribe or a reconnect, and merging would resurrect moves
+ * that have since aged out of it.
  */
-export function seedCardLedger(limit = LEDGER_RENDER_MAX): Promise<void> {
-  installCardLedgerHandler()
-  if (seeding) return seeding
-  seeding = channel
-    .send({ type: 'card_ledger_request', limit })
-    .then(reply => {
-      const seed = Array.isArray(reply.moves) ? (reply.moves as CardMove[]) : []
-      // Anything that arrived live while the request was in flight is NEWER
-      // than the ring snapshot, so it stays on top.
-      const known = new Set(moves.map(moveKey))
-      publish([...moves, ...seed.filter(m => !known.has(moveKey(m)))])
-    })
-    .catch(() => {
-      /* no ring, no history -- the live feed still works */
-    })
-  return seeding
+export function applyCardLedgerFrame(incoming: CardMove[], opts: { full: boolean }): void {
+  if (opts.full) {
+    publish([...incoming])
+    return
+  }
+  if (incoming.length === 0) return
+  publish([...incoming, ...moves])
 }
 
 export function getCardLedger(): CardMove[] {
@@ -102,6 +69,4 @@ export function subscribeCardLedger(listener: () => void): () => void {
 export function resetCardLedger(): void {
   moves = []
   listeners.clear()
-  installed = false
-  seeding = null
 }
