@@ -15,6 +15,7 @@ import { epicIo, tag } from './epic-io'
 import { forgetArmedEpic } from './epic-registry'
 import {
   type EpicSpawnCtx,
+  type EpicSpawnPlan,
   planImplementerSpawn,
   planOverseerSpawn,
   planPlannerSpawn,
@@ -79,10 +80,10 @@ async function spawnSeat(
   deps: BeatDeps,
   group: EpicGroup,
   gen: number,
-  spawn: unknown,
+  spawn: EpicSpawnPlan,
   what: string,
 ): Promise<string | null> {
-  const out = await epicIo().dispatchSpawn(spawn as never, deps.spawnContext as never)
+  const out = await epicIo().dispatchSpawn(spawn, deps.spawnContext)
   if (!out.ok) {
     deps.log(`${tag(group.epicId, gen)} ${what} spawn FAILED: ${out.error}`)
     return null
@@ -131,7 +132,7 @@ async function spawnForCard(
   const io = epicIo()
   const ctx = spawnCtx(group, gen)
   const spawn = role === 'dispatch' ? planImplementerSpawn(ctx, cardId) : planVerifierSpawn(ctx, cardId)
-  const out = await io.dispatchSpawn(spawn as never, deps.spawnContext as never)
+  const out = await io.dispatchSpawn(spawn, deps.spawnContext)
   if (!out.ok) {
     deps.log(`${tag(group.epicId, gen)} ${role} FAILED for ${cardId}: ${out.error}`)
     return null

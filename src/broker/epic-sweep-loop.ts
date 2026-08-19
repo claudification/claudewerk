@@ -95,7 +95,7 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
       rendezvousCallerConversationId: null,
       // An unattended run must never stall on a human approval dialog.
       bypassApprovalGate: true,
-    } as unknown as Record<string, unknown>,
+    },
     log: line => console.log(line),
     windowOpen: async project => {
       const res = await sendNightshiftOp(s as never, project, { op: 'config_read' })

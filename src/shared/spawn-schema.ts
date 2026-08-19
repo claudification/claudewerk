@@ -307,6 +307,23 @@ export const spawnRequestSchema = z.object({
         'night-run worker for runId/taskId; the night manager correlates its result back into .nightshift/. ' +
         'Absent => an ordinary spawn.',
     ),
+  epic: z
+    .object({
+      epicId: z.string().min(1).describe('The epic CARD id this seat serves.'),
+      role: z.enum(['overseer', 'implementer', 'verifier']).describe('Which seat: overseer | implementer | verifier.'),
+      cardId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('The card being implemented or verified. Absent for the overseer, which serves the whole epic.'),
+      gen: z.number().int().min(0).describe('Overseer generation that dispatched this seat. Makes a wake idempotent.'),
+    })
+    .optional()
+    .describe(
+      'Tags this spawn as an EPIC MODE seat (origin marker, never a capability). Present => the epic engine ' +
+        'recognises the conversation as its own and counts it against the concurrency ceiling instead of ' +
+        're-dispatching the card. Absent => an ordinary spawn.',
+    ),
   notifyParent: z
     .boolean()
     .optional()

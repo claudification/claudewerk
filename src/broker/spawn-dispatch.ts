@@ -42,27 +42,8 @@ import type { ConversationStore } from './conversation-store'
 import type { GlobalSettings } from './global-settings'
 import { resolveForkFrom } from './resolve-fork-from'
 import { sotuSpawnBrief } from './sotu'
+import { buildLaunchConfig } from './spawn-launch-config'
 import { resolveNotifyParentSettleMs } from './spawn-lineage'
-
-/**
- * Translate the wire-level (`req.profile`, `req.pool`) pair into the
- * persisted `LaunchConfig.sentinelProfile` tagged union (INTENT). The intent
- * round-trips across revive + launch-profile save and feeds the conversation
- * badge UX.
- *
- *  - Absent profile + absent pool   -> undefined (sentinel decides)
- *  - profile = literal name         -> { kind: 'profile', name }
- *                                       (pool is ignored when both are set)
- *  - pool = literal pool name       -> { kind: 'pool', name }
- *
- * Profile and pool are mutually exclusive at the intent layer. The wire
- * accepts both for ergonomics, but profile wins when both are present.
- */
-function intentFromProfileField(profile?: string, pool?: string): LaunchConfig['sentinelProfile'] {
-  if (profile) return { kind: 'profile', name: profile }
-  if (pool) return { kind: 'pool', name: pool }
-  return undefined
-}
 
 /**
  * Stash the spawn request as `pendingSpawnApproval` on the caller conversation
@@ -531,30 +512,9 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
     // A fork's parent is its SOURCE, not whoever called spawn -- and a panel
     // fork has no caller at all. Recorded here so boot can persist the edge.
     if (req.forkedFrom) deps.conversationStore.setPendingForkSource(conversationId, req.forkedFrom)
-    deps.conversationStore.setPendingLaunchConfig(conversationId, {
-      headless,
-      transport,
-      model,
-      effort,
-      agent,
-      advisor,
-      bare: bare || false,
-      repl: repl || false,
-      thinkingSummaries,
-      permissionMode,
-      autocompactPct,
-      includePartialMessages,
-      maxBudgetUsd,
-      env: req.env || undefined,
-      appendSystemPrompt,
-      // Sentinel-profile INTENT (broker-safe NAME / mode / pool only).
-      // Profile env stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
-      sentinelProfile: intentFromProfileField(req.profile, req.pool),
-      // NIGHTSHIFT origin tag -- persisted on the conversation so the broker
-      // watchdog can identify night-run tasks (caps/429/floor) and the Status
-      // screen can filter rows. Mirrors the preamble decision above.
-      nightshift: req.nightshift,
-    })
+    // ORIGIN TAGS (nightshift, epic) ride along here -- see spawn-launch-config.ts
+    // for why the assembly is a pure function and not a literal in this executor.
+    deps.conversationStore.setPendingLaunchConfig(conversationId, buildLaunchConfig(req, resolved, appendSystemPrompt))
 
     try {
       sentinel.send(
