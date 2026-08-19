@@ -22,7 +22,7 @@
 
 import type { SheafResponse } from '../../shared/sheaf-types'
 
-export { summarizeSheaf, type SheafProjectSummary, type SheafSummary } from '../../shared/sheaf-summary'
+export { type SheafProjectSummary, type SheafSummary, summarizeSheaf } from '../../shared/sheaf-summary'
 
 export type FleetSheafProvider = (windowH: number) => SheafResponse
 
