@@ -75,6 +75,15 @@ const RESOLVERS: Array<(c: Conversation, f: PulseAttentionFlags) => string | und
   c => (c.liveStatus?.state === 'done' && c.liveStatus.done ? firstLine(c.liveStatus.done) : undefined),
   c => (c.planMode ? 'plan mode' : undefined),
   c => (c.lastError?.errorType ? `error: ${c.lastError.errorType}` : undefined),
+  // CC's per-turn classification -- the machine-derived answer. It sits BELOW
+  // every authored or blocking signal above (those are deliberate; this is
+  // automatic) and ABOVE the lifecycle word, because "wiring swipe into app
+  // shell" is the whole point and "working" tells you nothing.
+  //
+  // ACTIVE only, deliberately: the label describes the last turn, so on an idle
+  // or ended row it would assert work that stopped happening. The lifecycle word
+  // is the honest answer there.
+  c => (c.status === 'active' && c.turnSummary?.detail ? firstLine(c.turnSummary.detail, 48) : undefined),
   c => STATUS_LABEL[c.status],
 ]
 
