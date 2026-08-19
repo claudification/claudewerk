@@ -28,6 +28,7 @@ import { dispatchSpawn, type SpawnDispatchDeps } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
 import { listWebControlClients, resolveImplicitClient, sendWebControlRequest } from '../web-control'
 import { registerArchiveTools } from './mcp-archive-tools'
+import { defineTool } from './mcp-define-tool'
 
 type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean }
 
@@ -125,7 +126,8 @@ export function createMcpServer(
   registerArchiveTools(mcp)
 
   // ─── notify ─────────────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'notify',
     "Send a push notification to the user's registered devices (phone, browser). Use when a long-running task completes or you need the user's attention. Delivered via VAPID web-push to all subscribed devices AND broadcast to live dashboard sockets.",
     { message: z.string(), title: z.string().optional() },
@@ -169,7 +171,8 @@ export function createMcpServer(
   )
 
   // ─── search_transcripts ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'search_transcripts',
     'Search OR browse the HOT transcript store. With `query`: FTS5 full-text -- indexed, ranked, stemmed, answers in milliseconds, the first resort for finding prior decisions, code snippets or context. WITHOUT `query`: browse mode -- the newest entries matching the filters, newest first. `search_transcripts({ conversationId, types: ["user"], limit: 3, output: "snippets" })` is how you read back the last 3 messages the user sent. Default `output: "conversations"` returns one row per conversation; `output: "snippets"` returns the actual transcript entries with seq numbers (feed seq into get_transcript_context to expand, or call it with `tail` to read the end of a conversation outright). NOTE: months older than the hot window (~90 days) are moved out to cold archives and are NOT in this index -- an empty result for old material means "not hot", not "never happened". For those, cost the scan with archive_search_plan and then use search_archives (slow, unindexed).',
     {
@@ -224,7 +227,8 @@ export function createMcpServer(
   )
 
   // ─── get_transcript_context ─────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'get_transcript_context',
     'Read transcript entries: a window around a given seq, or the END of a conversation. Use after search_transcripts (with output:"snippets") to expand context around a hit -- pass the conversationId and seq from the search result. OR pass `tail: N` with no seq to read the last N entries directly, which is the fast path for "what just happened in that conversation". Output is compact text by default: per-entry header + canonical body, base64 stripped, duplicate tool_result wrappers collapsed, per-entry byte cap, walk pointers at the bottom. Set format:"json" for the raw row dump.',
     {
@@ -260,7 +264,8 @@ export function createMcpServer(
   )
 
   // ─── send_message ───────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'send_message',
     'Send a message to one or more other conversations (CC, Hermes, chat-api, etc.). The recipient sees the message wrapped in a <channel> tag with the from/intent/conversation_id attributes preserved -- they reply by calling this tool back with the same conversation_id. Pass `to` as a string for one recipient or an array for multicast (max 25). Multicast returns a per-target breakdown. Reserved targets (always allowed, no link approval): `dispatcher` reports a dispatched quest\'s findings back to your dispatcher; `orb` speaks your message aloud to the user through the voice orb (use for a short spoken heads-up, e.g. "the deploy is blocked on you") -- the orb prefixes it with your conversation name.',
     {
@@ -355,7 +360,8 @@ export function createMcpServer(
   )
 
   // ─── spawn_conversation ──────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'spawn_conversation',
     'Spawn a new conversation (a fresh Claude Code session or chat-api worker). Use when the user asks to "delegate this", "start a new session", or when a task needs an isolated context. Returns the conversationId so you can send_message to coordinate with it.\n\nSentinel profiles (multi-account fan-out): the optional `profile` / `pool` params pick which sentinel-profile (a separate Claude account / config dir on the host) the worker runs under. `profile` is either a literal profile name (Fixed selection, e.g. "work") or a SelectionMode token ("default" | "balanced" | "random"); "default" is the implicit profile ($HOME/.claude) when omitted. `pool` names a profile subset that constrains Balanced/Random selection. When `profile` is a literal name (Fixed), it wins and `pool` is ignored. ONLY set them if the user explicitly asks for a specific profile or pool ("run on the work profile", "use pool X"); otherwise leave both unset and the sentinel applies its defaultSelection. Discover a sentinel\'s profiles + pools via list_hosts.',
     {
@@ -435,7 +441,8 @@ export function createMcpServer(
   )
 
   // ─── dispatch (Front Desk routing brain) ─────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'dispatch',
     'Front Desk dispatcher: hand it an INTENT and it decides the disposition -- spawn a NEW conversation, ROUTE the message into an existing live one, or REVIVE an ended one -- then executes via the existing spawn/route handlers. Returns the structured decision (disposition, target, confidence, reasoning, cost, candidates). Pass only `intent` to let it decide; pass `target`/`disposition` to override. A very-expensive route (large context / cold cache / Opus) is HELD with `awaitingConfirmation` until you re-call with `confirmedExpensive: true`. If unsure it returns disposition `ask` with candidate conversations to choose from. Only projects opted into the dispatcher status feed are considered. A NEW spawn needs `cwd`; with `worktreeName` the worker is placed worktree-correctly (a cwd=main+worktree combo is refused).',
     {
@@ -469,7 +476,8 @@ export function createMcpServer(
   )
 
   // ─── list_threads (dispatcher near-memory) ───────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'list_threads',
     "List the dispatcher's threads -- its near-memory of what it is managing right now. Each thread is a tiny local State-of-the-Union: a title + summary + the conversations it has used WITH a last-used timestamp per conversation. This is what the dispatcher remembers.",
     { limit: z.number().int().positive().optional().describe('Max threads (default 50).') },
@@ -477,7 +485,8 @@ export function createMcpServer(
   )
 
   // ─── list_conversations ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'list_conversations',
     "List Claudwerk conversations (CC, Hermes, chat-api). Default excludes ended sessions. Pass status:'all' to see the full graveyard. Lineage filters: rootConversationId returns a whole spawn subtree (conv X + everything spawned from it, transitively); parentConversationId returns just direct children of X. The two are mutually exclusive. format:'tree' renders an ASCII spawn tree instead of JSON. Returns conversationId, title, project, status, model, agentHostType, startedAt, lastActivity, parentConversationId, rootConversationId, directChildCount for each row.",
     {
@@ -556,7 +565,8 @@ export function createMcpServer(
   )
 
   // ─── project_list ───────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'project_list',
     "List tasks on the user's kanban-style project board. Status columns: inbox, open, in-progress, in-review, done, archived. Each task has id, title, priority, tags, refs.",
     { status: z.string().optional().describe('Filter by column. Omit for all tasks.') },
@@ -579,7 +589,8 @@ export function createMcpServer(
   )
 
   // ─── project_set_status ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'project_set_status',
     'Move a project task between status columns',
     {
@@ -612,7 +623,8 @@ export function createMcpServer(
   // Always start with web_list_clients to see what's available.
 
   // ─── web_list_clients ────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_list_clients',
     'List control-panel browsers that have opted in to agent remote-control. Returns clientId (stable, pass it to the other web_* tools), label, userName, capabilities, and ttlMs (ms left on the 1h grant). Empty list = nobody opted in; ask the user to enable it in Settings > System > Debug. When exactly one client is opted-in you may omit clientId on the other tools and it is used implicitly.',
     {},
@@ -628,7 +640,8 @@ export function createMcpServer(
   )
 
   // ─── web_screenshot ──────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_screenshot',
     'Capture a screenshot of the opted-in control-panel browser and return a public image URL (fetch it to view). Optionally pass a CSS `selector` to capture just one element instead of the whole app.',
     {
@@ -645,7 +658,8 @@ export function createMcpServer(
   )
 
   // ─── web_list_commands ───────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_list_commands',
     'List the command-palette commands currently registered (and visible) in the opted-in browser. Returns id, label, and group for each. Feed an id into web_execute_command.',
     {
@@ -655,7 +669,8 @@ export function createMcpServer(
   )
 
   // ─── web_execute_command ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_execute_command',
     'Run a command-palette command in the opted-in browser by its id (discover ids via web_list_commands). Opting in grants full palette access, including destructive commands -- the user authorized this by enabling remote-control.',
     {
@@ -667,7 +682,8 @@ export function createMcpServer(
   )
 
   // ─── web_set_conversation ────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_set_conversation',
     'Navigate the opted-in browser to a specific conversation (selects it as the active conversation).',
     {
@@ -678,7 +694,8 @@ export function createMcpServer(
   )
 
   // ─── web_read_transcript ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_read_transcript',
     "Read the transcript as rendered in the opted-in browser. Defaults to the browser's currently-active conversation; pass conversationId to read a specific one (must be loaded in that browser). format:'text' (default) returns a compact text rendering; format:'json' returns the raw entry array.",
     {
@@ -694,7 +711,8 @@ export function createMcpServer(
   )
 
   // ─── web_send_prompt ─────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_send_prompt',
     'Type and send a prompt to a conversation through the opted-in browser (same path as a user typing in the input box, including client-side control verbs like /clear or /model).',
     {
@@ -714,7 +732,8 @@ export function createMcpServer(
   // beat -> web_terminal_read / web_terminal_write -> web_terminal_detach.
 
   // ─── web_terminal_list ───────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_list',
     'List host shells visible to the opted-in browser. Returns shellId, title, path, projectUri, status, agentAttached (driven by you, off-screen) and readable (has a live buffer you can read now). Start a new one with web_terminal_start or attach an existing one with web_terminal_attach.',
     { clientId: z.string().optional().describe('Target browser. Omit if exactly one is opted-in.') },
@@ -722,7 +741,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_start ──────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_start',
     'Open a NEW host shell in the given project and attach to it detached (off-screen, never pops the overlay). Title is prefixed "[debug] ". Returns shellId. After ~1.5s the buffer is ready for web_terminal_read. projectUri is claude://sentinel/path -- discover via list_hosts / list_conversations.',
     {
@@ -734,7 +754,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_attach ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_attach',
     "Attach to an EXISTING host shell (by shellId from web_terminal_list) detached/off-screen so you can read and write it without taking over the user's screen. Wait ~1.5s after attaching before web_terminal_read.",
     {
@@ -745,7 +766,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_detach ─────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_detach',
     'Detach from a host shell (unmounts the off-screen pane / unsubscribes). The shell keeps running; you just stop reading it.',
     {
@@ -756,7 +778,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_read ───────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_read',
     "Read a host shell's terminal buffer (scrollback + viewport) as plain text. The shell must be attached first (web_terminal_start / web_terminal_attach). Capped to the last maxLines rows (default 2000).",
     {
@@ -768,7 +791,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_write ──────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_write',
     'Write raw bytes to a host shell (keystrokes / input). Text is sent EXACTLY as given -- append "\\n" (or "\\r") yourself to submit a command. Control chars work too (e.g. "\\x03" for Ctrl-C). The shell need not be attached to write, but attach to read the result.',
     {
@@ -780,7 +804,8 @@ export function createMcpServer(
   )
 
   // ─── web_terminal_screenshot ─────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_terminal_screenshot',
     "Screenshot a host shell's terminal surface and return a public image URL. The shell must be attached first. Usually web_terminal_read (text) is more useful; use this for TUIs / rendering issues.",
     {
@@ -791,7 +816,8 @@ export function createMcpServer(
   )
 
   // ─── web_set_perf_monitor ────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_set_perf_monitor',
     'Turn the control-panel performance monitor (the "Details for Nerds" perf HUD) ON or OFF in the opted-in browser. It is OFF by default and records nothing until enabled. Turn it ON, ask the user to reproduce the slow activity (switch conversations, stream a turn, etc.), THEN call web_perf_report. Turn it OFF when done -- the Profiler wrappers add per-commit overhead while on.',
     {
@@ -802,7 +828,8 @@ export function createMcpServer(
   )
 
   // ─── web_perf_report ─────────────────────────────────────────────────
-  mcp.tool(
+  defineTool(
+    mcp,
     'web_perf_report',
     'Grab the performance report from the opted-in browser as markdown: a per-category Summary (count/avg/p95/max), a By-message impact rollup (apply vs render vs paint vs grouping cost per wire-message type), and a chronological Timeline of perf samples interleaved with debug-log lines. Requires the perf monitor to be ON (web_set_perf_monitor {enabled:true}) and some activity to have occurred since. See docs/perf-monitor.md for what each metric means.',
     {

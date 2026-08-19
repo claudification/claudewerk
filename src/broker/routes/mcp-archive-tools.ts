@@ -11,6 +11,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { planArchiveSearch, searchArchives } from '../archive'
 import type { ArchiveSearchOptions } from '../archive/search'
+import { defineTool } from './mcp-define-tool'
 
 const ARCHIVE_DIR = existsSync('/data/archives') ? '/data/archives' : ''
 
@@ -69,13 +70,14 @@ function toSearchOptions(input: SearchToolInput): ArchiveSearchOptions {
 }
 
 export function registerArchiveTools(mcp: McpServer): void {
-  mcp.tool('archive_search_plan', PLAN_DESCRIPTION, { month: z.string().optional() }, async ({ month }) => {
+  defineTool(mcp, 'archive_search_plan', PLAN_DESCRIPTION, { month: z.string().optional() }, async ({ month }) => {
     if (!ARCHIVE_DIR) return text('Cold archives are not configured on this broker.')
     const plan = planArchiveSearch(ARCHIVE_DIR, month ? [month] : undefined)
     return text(JSON.stringify(plan, null, 2))
   })
 
-  mcp.tool(
+  defineTool(
+    mcp,
     'search_archives',
     SEARCH_DESCRIPTION,
     {
