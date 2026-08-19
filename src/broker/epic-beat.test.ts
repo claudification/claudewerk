@@ -201,3 +201,44 @@ describe('the planning generation', () => {
     expect(kinds(b)).toEqual([])
   })
 })
+
+/**
+ * THE BRAKE THAT WAS NEVER WIRED. `dryGens` is read as the "second consecutive
+ * dry generation parks the run" valve and reported in the overseer's briefing,
+ * but nothing ever incremented it -- so it sat at 0 forever, the park was
+ * unreachable, and the only ceiling on a thrashing run was maxGens: 40. That is
+ * 40 billed overseer generations before anything stops.
+ */
+describe('dryGens -- counting the generations that found nothing', () => {
+  test('a dry generation asks for the counter to go up', () => {
+    const out = beat({}, {}, { dryGens: 0 })
+    expect(out.dryGens).toBe(1)
+    expect(kinds(out)).toEqual(['wake-overseer'])
+  })
+
+  test('and says which dry generation it is, so a log reader sees the streak', () => {
+    expect(beat({}, {}, { dryGens: 0 }).note).toContain('dry generation 1')
+  })
+
+  test('the SECOND consecutive dry generation parks the run instead of waking again', () => {
+    expect(kinds(beat({}, {}, { dryGens: 1 }))).toEqual(['park'])
+  })
+
+  /**
+   * CONSECUTIVE is the whole point. A run that alternates dry and productive
+   * generations is making progress and must never accumulate its way into a
+   * park.
+   */
+  test('a beat that dispatches CLEARS the streak', () => {
+    const out = beat({}, { dispatch: [card('t1')] }, { dryGens: 1 })
+    expect(out.dryGens).toBe(0)
+  })
+
+  test('a dispatching beat on an already-clear counter asks for no write at all', () => {
+    expect(beat({}, { dispatch: [card('t1')] }, { dryGens: 0 }).dryGens).toBeUndefined()
+  })
+
+  test('a beat that is merely WAITING on in-flight work is not dry', () => {
+    expect(beat({ inFlight: ['t1'] }, {}, { dryGens: 0 }).dryGens).toBeUndefined()
+  })
+})
