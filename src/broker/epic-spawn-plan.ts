@@ -57,6 +57,13 @@ export interface EpicSpawnPlan {
   settingsInline: Record<string, unknown>
   epic: EpicLaunchTag
   name: string
+  /**
+   * A WERK seat would rather be renamed than refused. The generation below
+   * already makes a retry a different name in the normal case; this covers the
+   * one it cannot -- two long sibling card ids that truncate to the same 60
+   * characters at the same generation.
+   */
+  failOnNameCollision: false
 }
 
 export interface EpicSpawnCtx {
@@ -68,6 +75,36 @@ export interface EpicSpawnCtx {
   gen: number
   /** Per-project extra allow/deny rules layered on the unattended defaults. */
   permissions?: UnattendedPermissionConfig
+}
+
+/**
+ * `sanitizeConversationName` truncates to this, and the spawn gate then refuses
+ * a name any conversation has EVER used -- including ended ones. So a name built
+ * past this length is not merely trimmed, it is trimmed into somebody else's.
+ */
+const NAME_BUDGET = 60
+
+/**
+ * A seat's conversation name: readable, and UNIQUE PER ATTEMPT.
+ *
+ * The names used to be purely deterministic -- `[epic X] <cardId>` -- and the
+ * spawn gate enforces global uniqueness across every conversation that has ever
+ * existed, ended ones included. So the FIRST dispatch of a card claimed the name
+ * forever and every retry after that died on
+ * `Session name "..." is already in use`. A bounced card could never be
+ * re-dispatched, and a run that tried filled the broker log with the refusal
+ * every 45 seconds. The generation is what makes a second attempt a second name.
+ *
+ * The generation goes at the END and the CARD ID is what gets shortened, because
+ * truncation happens from the right: put the discriminator in the tail and the
+ * truncation eats the very thing that makes the name unique.
+ */
+function seatName(epicId: string, gen: number, cardId: string | undefined, prefix = ''): string {
+  const suffix = ` g${gen}`
+  const head = `[${epicId}] ${prefix}`
+  if (!cardId) return `${head}overseer${suffix}`.slice(0, NAME_BUDGET)
+  const room = NAME_BUDGET - head.length - suffix.length
+  return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
 }
 
 function base(
@@ -83,7 +120,8 @@ function base(
     permissionMode: 'bypassPermissions',
     settingsInline: buildEpicWorkerSettings(role, ctx.permissions),
     epic: { epicId: ctx.epicId, role, gen: ctx.gen, ...(cardId ? { cardId } : {}) },
-    name: name.slice(0, 80),
+    name,
+    failOnNameCollision: false,
   }
 }
 
@@ -94,7 +132,7 @@ function base(
  */
 export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCtx): EpicSpawnPlan {
   return {
-    ...base(ctx, 'overseer', undefined, `[epic ${ctx.epicId}] overseer gen ${ctx.gen}`),
+    ...base(ctx, 'overseer', undefined, seatName(ctx.epicId, ctx.gen, undefined)),
     prompt: buildOverseerPrompt(promptCtx),
   }
 }
@@ -113,7 +151,7 @@ export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCt
  */
 export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx): EpicSpawnPlan {
   return {
-    ...base(ctx, 'overseer', undefined, `[epic ${ctx.epicId}] planner`),
+    ...base(ctx, 'overseer', undefined, seatName(ctx.epicId, ctx.gen, undefined, 'planner ')),
     prompt: buildPlannerPrompt(promptCtx),
   }
 }
@@ -122,7 +160,7 @@ export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx)
 export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef = 'main'): EpicSpawnPlan {
   const branch = `epic/${ctx.epicId}/${cardId}`
   return {
-    ...base(ctx, 'implementer', cardId, `[epic ${ctx.epicId}] ${cardId}`),
+    ...base(ctx, 'implementer', cardId, seatName(ctx.epicId, ctx.gen, cardId)),
     worktree: branch,
     prompt: buildImplementerPrompt({
       projectUri: ctx.project,
@@ -143,7 +181,7 @@ export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef 
  */
 export function planVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
   return {
-    ...base(ctx, 'verifier', cardId, `[epic ${ctx.epicId}] verify ${cardId}`),
+    ...base(ctx, 'verifier', cardId, seatName(ctx.epicId, ctx.gen, cardId, 'verify ')),
     worktree: `epic/${ctx.epicId}/verify-${cardId}`,
     prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId }),
   }

@@ -83,6 +83,36 @@ export function validateConversationName(name: string, existingNames: Set<string
   return null
 }
 
+/**
+ * The same name, made free -- for a caller that would rather be renamed than
+ * refused (`failOnNameCollision: false`).
+ *
+ * WHY THIS EXISTS. Uniqueness is checked against every conversation that has
+ * EVER existed, ended ones included, and the check is a hard 400. That is right
+ * for a human at the launch dialog, who would otherwise end up with two
+ * identical rows in the sidebar. It is wrong for a machine: an unattended engine
+ * dispatching the same card a second time after a bounce produces the same name
+ * by construction, and the refusal makes retry structurally impossible. Live on
+ * 2026-08-19 an epic run logged `Session name "..." is already in use` every 45
+ * seconds and never progressed.
+ *
+ * The suffix is ` (2)`, ` (3)` ... and the STEM is trimmed to make room, because
+ * a name is truncated from the right -- appending past the budget would slice the
+ * disambiguator straight back off and return a name that still collides.
+ */
+export function uniqueConversationName(name: string, existingNames: Set<string>): string {
+  const stem = sanitizeConversationName(name)
+  if (!stem) return stem
+  if (!existingNames.has(stem)) return stem
+  for (let n = 2; n < 1000; n++) {
+    const suffix = ` (${n})`
+    const candidate = `${stem.slice(0, MAX_NAME_LEN - suffix.length).trimEnd()}${suffix}`
+    if (!existingNames.has(candidate)) return candidate
+  }
+  // A thousand conversations sharing one name is not a case to paper over.
+  return stem
+}
+
 export function deriveConversationName(req: Partial<SpawnRequest>, task?: TaskMeta): string | null {
   if (req.name) {
     const n = sanitizeConversationName(req.name)

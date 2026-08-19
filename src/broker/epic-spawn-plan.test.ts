@@ -168,3 +168,56 @@ describe('the prompts say the load-bearing things', () => {
     expect(planImplementerSpawn(long, 'another-really-long-card-id-here').name.length).toBeLessThanOrEqual(80)
   })
 })
+
+/**
+ * THE NAMES USED TO BE PURELY DETERMINISTIC, and the spawn gate refuses any name
+ * that ANY conversation has ever held -- ended ones included (spawn-naming.ts:82,
+ * over the whole conversation store). So the first dispatch of a card claimed its
+ * name forever and every retry after a bounce died on
+ * `Session name "..." is already in use`. Live on 2026-08-19 that refusal filled
+ * the broker log every 45 seconds while the run made no progress at all.
+ */
+describe('seat names are unique per ATTEMPT, not just per card', () => {
+  const ctx = (gen: number): EpicSpawnCtx => ({ ...CTX, gen })
+  const seat = (gen: number) =>
+    planOverseerSpawn(ctx(gen), {
+      projectUri: CTX.project,
+      projectRoot: CTX.projectRoot,
+      run: { ...RUN, digest: 'x' },
+      plan: PLAN,
+      batonTail: '_(empty)_',
+      wake: 'card-settled',
+      settled: [],
+    }).name
+
+  test('two generations of the same card get different names', () => {
+    expect(planImplementerSpawn(ctx(1), 'wall-filter-store').name).not.toBe(
+      planImplementerSpawn(ctx(5), 'wall-filter-store').name,
+    )
+  })
+
+  test('a verifier never collides with the implementer of the same card and generation', () => {
+    expect(planVerifierSpawn(ctx(6), 'card-a').name).not.toBe(planImplementerSpawn(ctx(6), 'card-a').name)
+  })
+
+  test('two overseer generations get different names', () => {
+    expect(seat(6)).not.toBe(seat(7))
+  })
+
+  /**
+   * The name is truncated to 60 from the RIGHT, so a discriminator in the tail is
+   * the first thing destroyed. These pin that the generation survives a card id
+   * long enough to overflow the budget.
+   */
+  test('a very long card id is shortened, and the generation SURVIVES', () => {
+    const name = planVerifierSpawn(ctx(6), 'main-biome-residue-conversation-item-helpers-and-then-some').name
+    expect(name.length).toBeLessThanOrEqual(60)
+    expect(name.endsWith(' g6')).toBe(true)
+  })
+
+  test('the name still says which epic and which card, for a human reading the list', () => {
+    const name = planImplementerSpawn(ctx(6), 'wall-filter-store').name
+    expect(name).toContain(CTX.epicId)
+    expect(name).toContain('wall-filter-store')
+  })
+})

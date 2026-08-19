@@ -307,6 +307,15 @@ export const spawnRequestSchema = z.object({
         'night-run worker for runId/taskId; the night manager correlates its result back into .nightshift/. ' +
         'Absent => an ordinary spawn.',
     ),
+  failOnNameCollision: z
+    .boolean()
+    .optional()
+    .describe(
+      'Default TRUE: a `name` that any conversation has ever used (ended ones included) is a hard 400, so a ' +
+        'human never ends up with two identical rows. Set FALSE and the broker RENAMES instead -- appending ' +
+        '" (2)", " (3)" -- which is what an unattended engine needs: re-dispatching the same unit of work ' +
+        'produces the same name by construction, and a refusal there makes retry structurally impossible.',
+    ),
   epic: z
     .object({
       epicId: z.string().min(1).describe('The epic CARD id this seat serves.'),

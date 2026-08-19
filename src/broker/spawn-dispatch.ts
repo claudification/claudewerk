@@ -31,7 +31,7 @@ import {
 } from '../shared/project-uri'
 import type { Conversation, ProjectSettings, SpawnResult } from '../shared/protocol'
 import { resolveDefaultTransport, resolveSpawnConfig } from '../shared/spawn-defaults'
-import { deriveConversationName, validateConversationName } from '../shared/spawn-naming'
+import { deriveConversationName, uniqueConversationName, validateConversationName } from '../shared/spawn-naming'
 import { evaluateSpawnPermission, type SpawnCallerContext } from '../shared/spawn-permissions'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import { resolveBackendByName, type SpawnDeps } from './backends'
@@ -304,7 +304,8 @@ export async function dispatchSpawn(rawReq: SpawnRequest, deps: SpawnDispatchDep
   return result
 }
 
-async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
+async function dispatchClaudeSpawn(reqIn: SpawnRequest, deps: SpawnDispatchDeps): Promise<SpawnDispatchResult> {
+  let req = reqIn
   // Route to the specified sentinel, or default
   const targetAlias = req.sentinel
   let sentinel: ReturnType<typeof deps.conversationStore.getSentinel>
@@ -396,8 +397,17 @@ async function dispatchClaudeSpawn(req: SpawnRequest, deps: SpawnDispatchDeps): 
         .map((s: Conversation) => s.title)
         .filter(Boolean) as string[],
     )
-    const nameErr = validateConversationName(req.name, usedNames)
-    if (nameErr) return { ok: false, error: nameErr, statusCode: 400 }
+    // A machine caller can opt out of the refusal and be RENAMED instead. An
+    // unattended engine re-dispatching the same card produces the same name by
+    // construction, so a hard 400 makes retry structurally impossible.
+    if (req.failOnNameCollision === false) {
+      const unique = uniqueConversationName(req.name, usedNames)
+      if (unique !== req.name) console.log(`[spawn-name] "${req.name}" taken -> "${unique}" (collision opt-out)`)
+      req = { ...req, name: unique }
+    } else {
+      const nameErr = validateConversationName(req.name, usedNames)
+      if (nameErr) return { ok: false, error: nameErr, statusCode: 400 }
+    }
   }
 
   const requestId = randomUUID()
