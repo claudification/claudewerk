@@ -7,19 +7,22 @@
  * store's picture is a zeroed struct, which is NOT the same statement as "zero
  * hosts", so the tile dashes until `frames > 0`.
  *
- * SOCKET is the deviation this pane had to make, and it is written down rather
- * than papered over. The mockup's tile is `WS RTT 14ms / 2 queued`; the card
- * points at `ws-stats.ts` for it. `ws-stats.ts` measures THROUGHPUT -- messages
- * and bytes per second over a 3s window -- and there is no application-level
- * ping/pong anywhere on this wire, so no round trip is measurable from the
- * browser today. The measured number therefore takes the headline (msg/s, which
- * is the liveness question a wall actually asks of a socket) and the round trip
- * takes the dash it has earned. `wall-ws-rtt-probe` is the card that would give
- * this tile a real latency feed.
+ * SOCKET is the mockup's tile: `WS RTT 14ms / 2 queued`. Every number in it is
+ * measured. The round trip is a MEDIAN over a rolling window of real `ws_ping` /
+ * `ws_pong` round trips (`ws-rtt.ts`), never a single sample; the queue depth is
+ * the rAF flush backlog; `ws-stats.ts` still contributes the throughput, demoted
+ * to the sub-line where it belongs now that the headline has the latency the
+ * mockup asked for. The tile dashes until the first pong returns and dashes
+ * again the moment the socket drops -- a latency for a wire that is down is the
+ * one thing worse than no latency at all.
+ *
+ * The probe is held by THIS component: mounted -> one ping every 5 s, unmounted
+ * -> nothing on the wire. An idle panel does not heartbeat the broker.
  */
 
 import { useSyncExternalStore } from 'react'
 import { useWallChannel } from '@/hooks/use-wall-channel'
+import { useWsRtt } from '@/hooks/ws-rtt'
 import { getRates, subscribe as subscribeRates } from '@/hooks/ws-stats'
 import { FleetKpi } from './fleet-kpi'
 
@@ -35,8 +38,17 @@ export function FleetHosts() {
   )
 }
 
+/** Send-side backlog, shown only when there IS one -- `0 B out` on every tile
+ *  forever would be noise, a non-zero value means this browser is the slow end. */
+function outBacklog(bytes: number): string | null {
+  if (bytes <= 0) return null
+  return bytes < 1024 ? `${bytes} B out` : `${(bytes / 1024).toFixed(1)} KB out`
+}
+
 export function FleetSocket() {
   const rates = useSyncExternalStore(subscribeRates, getRates)
+  const { medianMs, queued, bufferedBytes } = useWsRtt()
   const perSec = Math.round(rates.msgInPerSec + rates.msgOutPerSec)
-  return <FleetKpi label="WS" value={String(perSec)} unit="/s" sub="— ms rtt (no probe)" />
+  const sub = [`${queued} queued`, `${perSec}/s`, outBacklog(bufferedBytes)].filter(Boolean).join(' · ')
+  return <FleetKpi label="WS RTT" value={medianMs == null ? null : String(medianMs)} unit="ms" sub={sub} />
 }
