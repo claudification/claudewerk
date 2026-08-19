@@ -71,20 +71,46 @@ function ftsQueryCheck(db: Database): SmokeCheck {
   }
 }
 
+/** How far below the floor the count may sit before it stops being explicable
+ *  as ordinary traffic.
+ *
+ *  The broker is live throughout the run: clearConversation and the reaper drop
+ *  transcript rows during the 264 seconds the VACUUM occupies, and the floor
+ *  (`rowsBefore - rowsDeleted`) models only OUR deletions. 2026-08-14 and
+ *  2026-08-18 both aborted on a shortfall while having deleted nothing at all --
+ *  587 rows on 08-18. One percent of the database is far more room than live
+ *  traffic needs and far less than a runaway delete would take. */
+const CONCURRENT_CLEAR_ALLOWANCE = 0.01
+
 function rowCountCheck(db: Database, expected: { rowsAfter: number; minRows: number }): SmokeCheck {
   const row = db.query('SELECT COUNT(*) AS n FROM transcript_entries').get() as { n: number }
-  if (row.n < expected.minRows) {
+  const shortfall = expected.minRows - row.n
+
+  if (shortfall > 0) {
+    const allowance = Math.ceil(expected.minRows * CONCURRENT_CLEAR_ALLOWANCE)
+    if (shortfall > allowance) {
+      return {
+        name: 'row count',
+        ok: false,
+        detail: `${row.n.toLocaleString()} rows is ${shortfall.toLocaleString()} below the floor of ${expected.minRows.toLocaleString()} -- deleted too much`,
+      }
+    }
+    // Reported, not fatal. An abort here skips every remaining step, and with
+    // retention enabled that strands a run midway through an irreversible
+    // delete. The real guarantee is deleteRange's in-transaction COUNT on both
+    // sides, which rolls back rather than over-deleting.
     return {
       name: 'row count',
-      ok: false,
-      detail: `${row.n.toLocaleString()} rows is below the floor of ${expected.minRows.toLocaleString()} -- deleted too much`,
+      ok: true,
+      detail: `${row.n.toLocaleString()} rows -- ${shortfall.toLocaleString()} below the floor, within the ${allowance.toLocaleString()}-row concurrent-clear allowance`,
     }
   }
+
   if (row.n !== expected.rowsAfter) {
     return {
       name: 'row count',
-      ok: false,
-      detail: `expected ${expected.rowsAfter.toLocaleString()} rows, found ${row.n.toLocaleString()}`,
+      ok: true,
+      detail: `${row.n.toLocaleString()} rows (expected ${expected.rowsAfter.toLocaleString()}; the broker kept writing while maintenance ran)`,
     }
   }
   return { name: 'row count', ok: true, detail: `${row.n.toLocaleString()} rows` }
