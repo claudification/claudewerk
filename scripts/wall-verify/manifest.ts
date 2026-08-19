@@ -83,10 +83,16 @@ export const ASPECTS: Aspect[] = [
     artifacts: [{ path: `${PANES}/a2-burn.tsx` }],
     feeds: [
       { path: 'src/broker/analytics-store.ts', needle: 'queryTimeSeries' },
-      // NOT `recordOpenRouterSpend` -- that exists and is a console.log
-      // (openrouter-client.ts:166). A logger is not a feed. The pane needs
-      // something it can QUERY, so the probe asks for the reader, not the writer.
-      { path: 'src/broker/**/*.ts', needle: 'queryOpenRouterSpend', as: 'a QUERYABLE OpenRouter spend store' },
+      // The pane needs something it can QUERY, so the probe asks for the READER,
+      // never the writer -- `recordOpenRouterSpend` existed all along as a
+      // console.log (openrouter-client.ts:166) and a logger is not a feed.
+      // Shipped as `querySpendRollup` in openrouter-spend-store.ts; this probe
+      // guessed `queryOpenRouterSpend` and cried wolf until it was corrected.
+      {
+        path: 'src/broker/openrouter-spend-store.ts',
+        needle: 'querySpendRollup',
+        as: 'a QUERYABLE OpenRouter spend store',
+      },
     ],
     feedFrom: 'wall-openrouter-spend-store',
   },
@@ -141,6 +147,17 @@ export const ASPECTS: Aspect[] = [
     promise: 'Unattended runs: epic DAG, overseer lease age, baton tail, nightshift',
     artifacts: [{ path: `${PANES}/a7-runs.tsx` }],
     feeds: [{ path: 'src/broker/routes/epic.ts' }, { path: 'src/broker/routes/nightshift.ts' }],
+  },
+  {
+    code: 'A8',
+    card: 'wall-pane-pinned-epics',
+    promise: 'Pinned epics: pin from the board, progress bar plus what is LEFT',
+    artifacts: [
+      { path: `${PANES}/a8-pinned.tsx` },
+      { path: WALL, needle: 'useWallPins', as: 'the useWallPins contract symbol' },
+      { path: 'web/src/**/*.ts*', needle: 'WALL_PINNED_KEY', as: 'the pin state key, shared by board and wall' },
+    ],
+    feeds: [{ path: 'src/shared/frontmatter.ts', needle: 'parseFrontmatter' }],
   },
   {
     code: 'W1',

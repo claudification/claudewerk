@@ -24,6 +24,8 @@ import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import type { DispatchSpec } from '../shared/cc-daemon/types'
 import { claudeConfigDir } from '../shared/claude-config-dir'
 import { DAEMON_MCP_ENDPOINT_ENV } from '../shared/daemon-mcp-endpoint'
+import { hostId } from '../shared/host-id'
+import type { NodeStatsReporter } from '../shared/node-stats-reporting'
 import { cwdToProjectUri, parseProjectUri } from '../shared/project-uri'
 import type {
   BrokerSentinelMessage,
@@ -66,6 +68,7 @@ import { DEFAULT_BROKER_URL, HEARTBEAT_INTERVAL_MS } from '../shared/protocol'
 import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { transcriptSlug } from '../shared/transcript-path'
+import { BUILD_VERSION } from '../shared/version'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
@@ -92,6 +95,7 @@ import { resolveForkCwds } from './fork-cwds'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
 import { handleNightshiftOp } from './nightshift-handlers'
+import { startSentinelNodeStats } from './node-stats'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
 import {
   AdoptedChildren,
@@ -185,36 +189,15 @@ function consumePreflightWarnings(conversationId: string): string[] | undefined 
 // Re-export for type-checking on the issue shape.
 export type { PreflightIssue }
 
-function getRawMachineId(): string {
-  const platform = process.platform
-
-  if (platform === 'darwin') {
-    try {
-      const result = Bun.spawnSync(['ioreg', '-rd1', '-c', 'IOPlatformExpertDevice'], {
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-      if (result.success) {
-        const output = result.stdout.toString()
-        const match = output.match(/"IOPlatformUUID"\s*=\s*"([^"]+)"/)
-        if (match) return match[1]
-      }
-    } catch {}
-  }
-
-  if (platform === 'linux') {
-    try {
-      const id = readFileSync('/etc/machine-id', 'utf8').trim()
-      if (id) return id
-    } catch {}
-  }
-
-  return osHostname()
-}
-
+/**
+ * The sentinel's machine id IS the shared host fingerprint. It moved to
+ * `src/shared/host-id.ts` so the standalone node-stats-reporter can compute the
+ * SAME value -- if the two disagreed, a sentinel and a reporter on one box would
+ * show up as two machines at double the RAM. Same algorithm, same output; this
+ * is a re-export, not a re-implementation.
+ */
 function getMachineId(): string {
-  const raw = getRawMachineId()
-  return createHash('sha256').update(raw).digest('hex').slice(0, 16)
+  return hostId()
 }
 
 const RECONNECT_DELAY_MS = 5000
@@ -2866,6 +2849,7 @@ function connect(
   const wsUrl = secret ? `${url}?secret=${encodeURIComponent(secret)}` : url
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let adoptedReapTimer: ReturnType<typeof setInterval> | null = null
+  let nodeStatsReporter: NodeStatsReporter | null = null
   let shouldReconnect = true
 
   log(`Connecting to ${url}...`)
@@ -2969,6 +2953,29 @@ function connect(
         ws.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() }))
       } catch {}
     }, HEARTBEAT_INTERVAL_MS)
+
+    // Per-node vitals, on the socket we ALREADY have. The shape, the cadence
+    // and the sampler all come from src/shared/node-stats* -- the same contract
+    // the standalone node-stats-reporter implements. The sentinel's frame is
+    // that frame plus the OPTIONAL `sentinel` block (conversation count +
+    // profile NAMES with utilization). No new connection, no broker polling.
+    nodeStatsReporter = startSentinelNodeStats({
+      // nodeId is per AGENT, hostId is per HOST. On this box they come from the
+      // same fingerprint because a sentinel is one agent per machine; a reporter
+      // running alongside reports the SAME hostId and a different nodeId, which
+      // is exactly what lets the broker collapse them to one machine row.
+      nodeId: getMachineId(),
+      hostId: getMachineId(),
+      agentVersion: BUILD_VERSION.gitHashShort,
+      conversationCount: () => trackedChildren.size + adoptedChildren.size,
+      profileUsage: getLatestProfileUsage,
+      send: frame => {
+        if (ws.readyState !== WebSocket.OPEN) return false
+        ws.send(JSON.stringify(frame))
+        return true
+      },
+      log,
+    })
   }
 
   ws.onmessage = async event => {
@@ -4301,6 +4308,12 @@ function connect(
     stopUsagePolling()
     stopDaemonRosterWatch()
     stopAllWatches(l => log(l))
+    // Same reason as adoptedReapTimer: `connect()` re-runs on reconnect, so an
+    // un-stopped reporter would stack one 5s timer per reconnect.
+    if (nodeStatsReporter) {
+      nodeStatsReporter.stop()
+      nodeStatsReporter = null
+    }
     if (ccVersionWatcher) {
       ccVersionWatcher.stop()
       ccVersionWatcher = null

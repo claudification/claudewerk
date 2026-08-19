@@ -220,16 +220,48 @@ describe('dedupeMachineStatsByHost', () => {
 describe('one contract, one utilization path', () => {
   const contractSources = ['src/shared/node-stats.ts', 'src/shared/node-stats-sample.ts']
 
-  it('carries no plan-utilization field on the node-stats payload', () => {
-    // Plan windows ride `sentinel_usage_report` / ProfileUsageSnapshot. A second
-    // path here is exactly the duplication this card exists to prevent.
-    const banned = /\b(utilization|fiveHour|sevenDay|planUsage|usageWindow)\b/i
+  // RESOLVED 2026-08-19. This test previously banned the word `utilization` from
+  // the contract outright, on the rule "plan windows ride sentinel_usage_report,
+  // a second path here is duplication".
+  //
+  // The CARD (`node-stats-contract`) asks for the opposite in as many words:
+  // "Sentinel-only extras ... running conversation count, profile NAMES with
+  // plan utilization". Both cannot hold, so the rule is narrowed rather than
+  // dropped: what is forbidden is a second copy of the WINDOW DATA (the reset
+  // times, the per-window breakdown, the error states). `ProfileUsageSnapshot`
+  // remains the single SOURCE of those. What the payload may carry is the one
+  // DERIVED headline number per profile, so the wall can render a node row
+  // without joining against a separately-timed second message.
+  //
+  // (The old assertion would not have caught this anyway: `\butilization\b` does
+  // not match `utilizationPercent`, so it passed on a word-boundary accident.
+  // Encoding the real rule is the point.)
+  it('carries no WINDOW data -- ProfileUsageSnapshot stays the source for that', () => {
+    const banned = /\b(fiveHour|sevenDay|sevenDayOpus|sevenDaySonnet|resetAt|planUsage|usageWindow|extraUsage)\b/i
     for (const rel of contractSources) {
       const code = readFileSync(join(ROOT, rel), 'utf8')
       // Strip block comments -- the prose deliberately NAMES the other path.
       const withoutComments = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
       expect({ rel, hit: banned.test(withoutComments) }).toEqual({ rel, hit: false })
     }
+  })
+
+  it('carries at most ONE derived number per profile, and its NAME', () => {
+    // The whole permitted profile surface, pinned. Anything else on a profile
+    // entry -- a window, a reset time, a configDir -- is rejected by the
+    // validator, so widening this shape cannot happen quietly.
+    const parsed = validateNodeStats(
+      frame({
+        sentinel: {
+          conversationCount: 1,
+          // Deliberately invalid: a window field is exactly what must not ride here.
+          profiles: [{ name: 'work', utilizationPercent: 50, sevenDay: { usedPercent: 50 } }],
+        },
+      } as unknown as Partial<NodeStatsReport>),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes('sevenDay: not allowed'))).toBe(true)
   })
 
   it('declares the node_stats wire shape exactly once in the tree', () => {

@@ -7,11 +7,11 @@
  * incomparable numbers under one field name, which is worse than having no
  * number at all.
  *
- * Node-only (`node:os` + `df`). Kept out of `node-stats.ts` so the contract
+ * Node-only (`node:os` + `node:fs`). Kept out of `node-stats.ts` so the contract
  * module stays runtime-free and safe for the web bundle to import.
  */
 
-import { execFileSync } from 'node:child_process'
+import { statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem, uptime } from 'node:os'
 import type {
   MachineStats,
@@ -58,43 +58,30 @@ export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number {
 }
 
 /**
- * Parse `df -Pk <dir>` output into the used/total bytes for the volume, plus
- * the mount point it was measured at.
+ * Disk usage for the volume `dir` lives on, via `statfs(2)`.
  *
- * POSIX `-P` output is one header line and one data line per filesystem; the
- * blocks are 1 KiB. Long device names wrap in the non-`-P` form, which is
- * exactly why `-P` is not optional here. Returns null on anything unexpected --
- * a missing disk field is honest, a fabricated zero is not.
+ * NOT `df`. This runs every 5s on every node forever -- forking a process for it
+ * is ~17k spawns per node per day to read three numbers the kernel will hand
+ * over in one syscall. `node:fs.statfsSync` is plain Node (no Bun global), so it
+ * satisfies the same `web/tsconfig` constraint that ruled out `Bun.spawnSync`,
+ * without the fork.
+ *
+ * `bavail` (free to an unprivileged user) rather than `bfree`: the reserved
+ * blocks root can still write into are not space this agent can use, and a disk
+ * meter that says 5% free when every write fails is a broken meter.
+ *
+ * Null when statfs is unavailable or nonsensical -- callers fall back to a
+ * zeroed disk with the mount they asked about, which validates and renders as
+ * "unknown" rather than blocking the whole frame.
  */
-export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) | null {
-  const lines = stdout
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-  if (lines.length < 2) return null
-  const fields = lines[lines.length - 1].split(/\s+/)
-  // filesystem, 1024-blocks, used, available, capacity, mounted-on
-  if (fields.length < 6) return null
-  const totalKb = Number(fields[1])
-  const usedKb = Number(fields[2])
-  const mount = fields.slice(5).join(' ')
-  if (!Number.isFinite(totalKb) || !Number.isFinite(usedKb) || mount.length === 0) return null
-  return { usedBytes: usedKb * 1024, totalBytes: totalKb * 1024, mount }
-}
-
-/** `df -Pk` for the volume `dir` lives on. Null when df is unavailable or its
- *  output does not parse -- callers fall back to a zeroed disk with the mount
- *  they asked about, which validates and renders as "unknown" rather than
- *  blocking the whole frame. */
 function readDisk(dir: string): (UsedTotal & { mount: string }) | null {
   try {
-    // `node:child_process`, not `Bun.spawnSync`: `web/tsconfig.json` typechecks
-    // all of `../src/shared/**` with `types: ["node"]` and no Bun globals, so a
-    // `Bun.` reference here breaks the web typecheck even though the web never
-    // imports this file. execFileSync throws on a non-zero exit; the catch is
-    // the "df is missing" path.
-    const stdout = execFileSync('df', ['-Pk', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    return parseDfOutput(stdout)
+    const fs = statfsSync(dir)
+    const blockSize = Number(fs.bsize)
+    const totalBytes = Number(fs.blocks) * blockSize
+    const availBytes = Number(fs.bavail) * blockSize
+    if (!Number.isFinite(totalBytes) || totalBytes <= 0) return null
+    return { usedBytes: Math.max(0, totalBytes - availBytes), totalBytes, mount: dir }
   } catch {
     return null
   }

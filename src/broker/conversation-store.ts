@@ -1238,6 +1238,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           resolvedProfile: fullMeta.resolvedProfile as string | undefined,
           title: rec.title || (fullMeta.title as string | undefined),
           titleUserSet: fullMeta.titleUserSet as boolean | undefined,
+          titleEphemeral: fullMeta.titleEphemeral as boolean | undefined,
           titleOrigin: fullMeta.titleOrigin as Conversation['titleOrigin'],
           titleSetAt: fullMeta.titleSetAt as number | undefined,
           formerSlugs: full?.formerSlugs as Conversation['formerSlugs'],
@@ -1345,6 +1346,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         recapFresh: conv.recapFresh,
         resolvedProfile: conv.resolvedProfile,
         titleUserSet: conv.titleUserSet,
+        // Did anybody MEAN this name. Persisted so the renamer's contract survives
+        // a restart instead of falling back to the boolean that caused the freeze.
+        titleEphemeral: conv.titleEphemeral,
         titleOrigin: conv.titleOrigin,
         titleSetAt: conv.titleSetAt,
         description: conv.description,

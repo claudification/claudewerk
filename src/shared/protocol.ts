@@ -3588,6 +3588,12 @@ export interface Conversation {
   summary?: string // AI-generated conversation summary
   title?: string // custom conversation title (from /rename or auto-generated)
   titleUserSet?: boolean // true if title was explicitly set by user (spawn dialog) -- prevents auto-name overwrite
+  /** Did anybody MEAN this name? `true` = nobody chose it (a generated petname,
+   *  or the automatic renamer's own output) and it is fair game to replace.
+   *  `false` = INTENTIONAL (human, rename_conversation, control_conversation, or
+   *  a spawn that supplied a name) and never overwritten. Recorded on every
+   *  write from the writer's origin -- never re-derived from the text. */
+  titleEphemeral?: boolean
   /** WHO last set `title`, and WHEN by their own clock. Together they decide who
    *  wins when two writers disagree -- see `broker/conversation-store/title-authority.ts`.
    *  `titleSetAt` is what makes a REPLAYED rename lose to a newer one without
@@ -6342,6 +6348,23 @@ export type BrokerSentinelMessage =
 export interface SentinelStatus {
   type: 'sentinel_status'
   connected: boolean
+}
+
+// Dashboard broadcast: one node's vitals, plus the dedupe verdict for its host.
+// The inbound `node_stats` frame is declared in `./node-stats` (re-exported at
+// the top of this file); this is the outbound fan-out to the control panel.
+//
+// `machineOwner` is the answer to "who counts the machine": exactly ONE node per
+// `hostId` carries it, so a consumer can render N agent rows on one box without
+// adding the same cpu/ram/disk numbers together N times. It is the broker's
+// `dedupeMachineStatsByHost` verdict, delivered on the wire so every consumer
+// does not have to recompute it.
+export interface NodeStatsUpdate {
+  type: 'node_stats_update'
+  report: NodeStatsReport
+  /** ms epoch the broker received it (the sender's clock may be wrong). */
+  receivedAt: number
+  machineOwner: boolean
 }
 
 // Foreground-task fields shared by the broker wire type (ConversationSummary)
