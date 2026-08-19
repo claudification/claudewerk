@@ -1,6 +1,6 @@
 /** The task/hook lane. */
-import type { Describer, SystemEntry } from './types'
-import { bag, clamp, firstLine, num, str } from './types'
+import type { Describer } from './types'
+import { bag, clamp, firstLine, messageText, num, str } from './types'
 
 // `task-status` and `task-progress` have no describer on purpose: they are hidden kinds. The
 // tasks panel owns task lifecycle, and at 24k/47k rows in the store they would bury the
@@ -42,14 +42,6 @@ const hookFailed: Describer = entry => {
     text: clamp(detail ? `${head}: ${detail}` : head),
     severity: outcome === 'cancelled' ? 'warn' : 'error',
   }
-}
-
-/** Text blocks of a message payload, flattened -- hook feedback arrives as a user entry. */
-function messageText(entry: SystemEntry): string {
-  const content = (entry.message as { content?: unknown } | undefined)?.content
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return str(entry.content)
-  return content.map(block => (block as { text?: string })?.text ?? '').join('')
 }
 
 /**

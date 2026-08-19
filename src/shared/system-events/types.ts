@@ -68,6 +68,19 @@ export function bag(value: unknown): SystemEntry {
   return value && typeof value === 'object' ? (value as SystemEntry) : {}
 }
 
+/**
+ * Text blocks of a message payload, flattened. Some kinds are synthesized by the
+ * grouper out of a Claude Code USER entry -- hook feedback, harness meta -- so the
+ * prose sits at `message.content` (string OR text-block array) rather than the
+ * `content` field a native system entry uses. Read all three shapes.
+ */
+export function messageText(entry: SystemEntry): string {
+  const content = (entry.message as { content?: unknown } | undefined)?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return str(entry.content)
+  return content.map(block => (block as { text?: string })?.text ?? '').join('')
+}
+
 /** First non-empty line of a multi-line payload (hook stderr, feedback text). */
 export function firstLine(text: string): string {
   for (const line of text.split('\n')) {

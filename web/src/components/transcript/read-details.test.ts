@@ -5,7 +5,30 @@
  */
 
 import { describe, expect, test } from 'vitest'
+import { imageScale } from './read-binary'
 import { readExtent } from './read-details'
+
+describe('imageScale', () => {
+  test('says nothing when the read was not downscaled', () => {
+    expect(imageScale({ originalWidth: 974, originalHeight: 222, displayWidth: 974, displayHeight: 222 })).toBeNull()
+  })
+
+  test('says nothing without dimensions at all', () => {
+    expect(imageScale(undefined)).toBeNull()
+  })
+
+  test('reports the displayed size and the factor back to the original', () => {
+    expect(imageScale({ originalWidth: 736, originalHeight: 2854, displayWidth: 516, displayHeight: 2000 })).toEqual({
+      width: 516,
+      height: 2000,
+      factor: 1.43,
+    })
+  })
+
+  test('ignores a zero display width rather than dividing by it', () => {
+    expect(imageScale({ originalWidth: 736, originalHeight: 2854, displayWidth: 0, displayHeight: 0 })).toBeNull()
+  })
+})
 
 describe('readExtent', () => {
   test('says nothing when the tool reported no line counts', () => {

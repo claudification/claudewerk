@@ -49,6 +49,7 @@ const CC_SYSTEM: Record<string, string> = {
   scheduled_task_fire: 'scheduled-fire',
   thinking: 'thinking-text',
   away_summary: 'recap',
+  harness_meta: 'harness-meta', // synthesized by the grouper from an isMeta CC user entry
 
   // capability / state lane
   memory_saved: 'memory-saved',
