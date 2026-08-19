@@ -25,7 +25,7 @@ import { buildAttentionQueue } from './attention-queue'
  * extra trailing `undefined`. What the pane sends is exactly what the
  * transcript's own button sends, which is the whole claim this pane makes.
  */
-export const STORE_ANSWERS: AttentionAnswers = {
+const STORE_ANSWERS: AttentionAnswers = {
   respondToPermission: (...a) => useConversationsStore.getState().respondToPermission(...a),
   allowPermissionAlways: (...a) => useConversationsStore.getState().allowPermissionAlways(...a),
   respondToProjectLink: (...a) => useConversationsStore.getState().respondToProjectLink(...a),

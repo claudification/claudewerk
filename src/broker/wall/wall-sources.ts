@@ -11,6 +11,7 @@ import type { CommitRow } from '../../shared/commit-ledger'
 import type { ConversationSummary } from '../../shared/protocol'
 import type { WallCommitRow, WallPulseRow } from '../../shared/wall'
 import { readCardLedger } from '../card-ledger-ring'
+import { seedWallHostVitals } from './host-vitals'
 import { publishWallCardMoves, publishWallPlanSample, publishWallPulse, setWallSeed, wallActive } from './index'
 import { readPlanSeries } from './plan-usage-series'
 
@@ -86,6 +87,10 @@ export function pushWallPulse(summary: ConversationSummary): void {
  *     chart of the last FIVE HOURS, so a wall opened now has to be handed the
  *     five hours that happened before it opened. That series is the one thing
  *     on the wall kept while nobody is watching; see that file for why.
+ *   - `node-stats-store.ts` plus the CPU ring in `host-vitals.ts`, for S1. Same
+ *     reasoning as the card ledger: the vitals series exists whether or not the
+ *     wall is open, so a cold wall shows five minutes of history rather than one
+ *     dot per node.
  *
  * Commits are NOT seeded: unlike card moves the broker keeps no in-memory river
  * of them, and the ledger they live in is a SQLite table the commit-river pane
@@ -112,9 +117,10 @@ export function attachWallSources(getSummaries: () => ConversationSummary[]): vo
     const plan = readPlanSeries()
     for (const sample of plan) publishWallPlanSample(sample)
 
+    const hosts = seedWallHostVitals()
     console.log(
       `[wall] seed: ${summaries.length} conversation(s) + ${ledger.length} card move(s)` +
-        ` + ${plan.length} plan sample(s) into the first snapshot`,
+        ` + ${plan.length} plan sample(s) + ${hosts} node(s) into the first snapshot`,
     )
   })
 }

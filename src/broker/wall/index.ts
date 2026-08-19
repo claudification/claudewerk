@@ -90,10 +90,7 @@ export function publishWallCardMoves(moves: CardMove[]): void {
   for (const move of moves) wallHub.state.noteCard(move)
 }
 
-/** Producer: `wall-host-vitals`. */
-// The producer card is still in flight, so nothing imports this yet. Delete the
-// suppression the day `wall-host-vitals` merges -- it is not permanent debt.
-// fallow-ignore-next-line unused-export
+/** Producer: `wall-host-vitals`, merged 2026-08-20 -- `host-vitals.ts` imports it. */
 export function publishWallHostVitals(vitals: WallHostVitals): void {
   if (!wallActive()) return
   wallHub.state.noteHost(vitals)

@@ -60,7 +60,6 @@ function Tier({
   )
 }
 
-// fallow-ignore-next-line unused-export -- mounted through the registry's dynamic import()
 export default function AttentionPane() {
   const now = useNowTick()
   const queue = useAttentionQueue(now)

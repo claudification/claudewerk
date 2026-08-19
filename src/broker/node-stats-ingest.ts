@@ -20,6 +20,7 @@
 
 import { type NodeStatsReport, type NodeStatsSender, validateNodeStats } from '../shared/node-stats'
 import { nodeStatsStore } from './node-stats-store'
+import { recordWallHostVitals } from './wall/host-vitals'
 
 /** Who the BROKER decided this sender is, resolved from the secret it presented.
  *  Never from the payload. */
@@ -88,6 +89,13 @@ export function ingestNodeStats(
   const receivedAt = Date.now()
   const machineOwner = nodeStatsStore.record(report, receivedAt)
   logSample(deps, report, machineOwner)
+
+  // THE WALL's S1 pane rides the same accepted frame -- it gets no ingest path,
+  // no cadence and no validator of its own. The CPU ring behind it fills whether
+  // or not anyone is watching; the publish inside is the part that no-ops. It
+  // sits HERE rather than in the WS transport so an HTTP-only node lands on the
+  // wall too -- one contract, two transports, one body.
+  recordWallHostVitals(report)
 
   deps.broadcast({ type: 'node_stats_update', report, receivedAt, machineOwner })
   return { ok: true, report, receivedAt, machineOwner }

@@ -1,3 +1,10 @@
+// `protocol.ts` re-exports this module and this module imports back from it.
+// DEFERRED, not accepted (overseer ruling, gen 15, re-affirmed gen 17): breaking
+// the cycle rewrites imports in files no pane branch has in its diff, which is
+// exactly the merge hazard that bit `wall-navigate.ts` at the gen-14 integration.
+// It goes LAST, after every pane merges, in a commit that touches nothing else.
+// Owner: `wall-integration-fallow-debt` -- delete this line there.
+// fallow-ignore-file re-export-cycle
 /**
  * THE WALL live channel -- the ONE typed frame the wall surface subscribes to.
  *
@@ -106,6 +113,16 @@ export interface WallCommitRow {
 // section is NEWEST FIRST in both full and delta frames, matching
 // `readCardLedger()` -- a ledger is read from the top.
 
+/**
+ * How many CPU samples the broker keeps per node for the sparkline. Shared
+ * rather than broker-local because the client renders the array it is handed and
+ * must agree on the bound -- a pane that assumed a different length would draw a
+ * different time axis than the one the ring actually spans.
+ *
+ * At the node-stats cadence (5s) this is a five-minute window.
+ */
+export const WALL_HOST_CPU_SAMPLES = 60
+
 /** One node's vitals sample. Producer: `wall-host-vitals`. */
 export interface WallHostVitals {
   nodeId: string
@@ -116,6 +133,20 @@ export interface WallHostVitals {
   diskPct?: number
   load1?: number
   conversations?: number
+  /** Cores the load should be read against. A load of 8 is idle on a 32-core box
+   *  and on fire on a 4-core one, so the divisor travels with the number. */
+  cores?: number
+  /**
+   * CPU history, OLDEST FIRST, at most `WALL_HOST_CPU_SAMPLES` long, with the
+   * last element equal to `cpuPct`.
+   *
+   * Carried on EVERY row rather than only on the snapshot. The wall's fan-in map
+   * is latest-value-wins, so a history sent once at seed would be overwritten by
+   * the next live sample and a subscriber that joined afterwards would get a
+   * sparkline of one point. Sixty small numbers every five seconds per node is
+   * the cheaper mistake.
+   */
+  cpuHistory?: number[]
 }
 
 /**

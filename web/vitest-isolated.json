@@ -67,6 +67,7 @@
   "src/components/voice-orb/voice-orb-tone.test.ts",
   "src/components/voice-permission-gate.test.tsx",
   "src/components/wall/attention-pane.test.tsx",
+  "src/components/wall/panes/s1-host-vitals.test.tsx",
   "src/components/wall/pinned-epics.test.tsx",
   "src/components/wall/plan/plan-pane.test.tsx",
   "src/components/wall/wall-ambient.test.tsx",

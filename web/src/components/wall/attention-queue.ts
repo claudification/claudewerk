@@ -144,6 +144,12 @@ function planActions(src: AttentionSources, conversationId: string, dialogId: st
   ]
 }
 
+// Cognitive 18 vs a threshold of 15, ruled DEFER at the merge (overseer, gen 17):
+// this is one of the six protocol folds and splitting it mid-fan-out would put a
+// second writer in a file three pane cards still branch from. The fix is owned by
+// `wall-integration-fallow-debt`, which runs after the panes drain -- delete this
+// suppression there, do not renew it.
+// fallow-ignore-next-line complexity
 function dialogRows(src: AttentionSources, who: (id: string) => Who): AttentionEntry[] {
   const rows: AttentionEntry[] = []
   for (const [conversationId, d] of Object.entries(src.dialogs)) {
@@ -246,6 +252,9 @@ function spawnRows(src: AttentionSources, who: (id: string) => Who): AttentionEn
  * permission never renders twice -- once from its slice and once from the
  * umbrella that describes the same gate.
  */
+// Same ruling as `dialogRows` above: cognitive 16, deferred to
+// `wall-integration-fallow-debt`, not permanent.
+// fallow-ignore-next-line complexity
 function conversationRows(src: AttentionSources, who: (id: string) => Who, detailed: Set<string>): AttentionEntry[] {
   const rows: AttentionEntry[] = []
   for (const c of src.conversations) {

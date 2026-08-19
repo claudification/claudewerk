@@ -24,7 +24,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /** Which entry a digit answers, or null when the digit is not ours. */
-export function entryForKey(entries: readonly AttentionEntry[], key: string): AttentionEntry | null {
+function entryForKey(entries: readonly AttentionEntry[], key: string): AttentionEntry | null {
   if (!/^[1-9]$/.test(key)) return null
   const index = Number(key)
   if (index > ATTENTION_KEYS) return null
