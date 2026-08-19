@@ -3,7 +3,7 @@ import { parseRecapContent } from '../../shared/recap'
 import { recordHookEvent } from '../analytics-store'
 import { rearmAttentionNotify } from '../attention-notify'
 import { getProjectSettings } from '../project-settings'
-import { MAX_EVENTS, PASSIVE_HOOKS, TRANSCRIPT_KICK_EVENT_THRESHOLD } from './constants'
+import { MAX_EVENTS, PASSIVE_HOOKS, TEARDOWN_HOOKS, TRANSCRIPT_KICK_EVENT_THRESHOLD } from './constants'
 import type { ConversationStoreContext } from './event-context'
 import { handleCompactEvent } from './event-handlers/compact'
 import { handleNotification } from './event-handlers/notification'
@@ -54,7 +54,6 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
   if (conv.events.length > MAX_EVENTS) {
     conv.events.splice(0, conv.events.length - MAX_EVENTS)
   }
-  conv.lastActivity = Date.now()
 
   // Feed analytics store (non-blocking, fire-and-forget)
   recordHookEvent(conversationId, event.hookEvent, (event.data || {}) as Record<string, unknown>, {
@@ -82,6 +81,19 @@ export function addEvent(ctx: ConversationStoreContext, conversationId: string, 
   // typed HookEventDataMap entry, so a one-shot narrow cast is the cleanest option.
   const eventInput = (event.data as { input?: { type?: unknown; subtype?: unknown; content?: unknown } }).input
   const isRecap = eventInput?.type === 'system' && eventInput?.subtype === 'away_summary'
+
+  // THE ACTIVITY STAMP -- deliberately AFTER the two classifications above,
+  // because it depends on both. `lastActivity` means WORK HAPPENED, and neither
+  // a teardown nor a system-generated recap is work. This used to sit at the top
+  // of the function and fire unconditionally, which made closing a conversation
+  // indistinguishable from finishing one (see TEARDOWN_HOOKS) and let a
+  // background recap refresh a dormant conversation on every recency surface --
+  // even though the very next branch already knew the recap was "system-
+  // generated, not real user activity".
+  if (!TEARDOWN_HOOKS.has(event.hookEvent) && !isRecap) {
+    conv.lastActivity = Date.now()
+  }
+
   if (isRecap && typeof eventInput?.content === 'string') {
     const parsed = parseRecapContent(eventInput.content)
     conv.recap = { content: parsed.recap, title: parsed.title || undefined, timestamp: event.timestamp }
