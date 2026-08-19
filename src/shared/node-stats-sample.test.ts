@@ -126,6 +126,9 @@ describe('one definition of usedBytes -- both readers, one number', () => {
     expect(parsed?.usedBytes).toBeGreaterThan(Number(dfUsedKb) * 1024)
   })
 
+  // Cyclomatic 11 here is eleven `?.` guards on four assertions, not eleven
+  // code paths. The test has one branch: none.
+  // fallow-ignore-next-line complexity
   it('both readers describe the live volume the same way', () => {
     const dir = process.cwd()
     const viaStatfs = readDiskViaStatfs(dir)

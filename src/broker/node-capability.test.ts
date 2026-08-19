@@ -13,6 +13,7 @@ import {
   type CapabilityRole,
   canAuthenticateHttpRoutes,
   canHostSpawns,
+  canIngestNodeStatsHttp,
   canReportNodeStats,
   connectionMaySendMessage,
   restrictedMessageTypes,
@@ -34,27 +35,42 @@ describe('reporter capability: exactly one', () => {
     expect(canReportNodeStats('reporter')).toBe(true)
   })
 
-  it('a reporter authenticates ZERO HTTP routes', () => {
+  it('a reporter authenticates ZERO general HTTP routes', () => {
     expect(canAuthenticateHttpRoutes('reporter')).toBe(false)
+  })
+
+  it('a reporter may POST vitals to the ONE ingest path', () => {
+    // AMENDED by card `node-stats-http-ingest` (2026-08-19). A separate row, so
+    // the general-HTTP predicate above keeps answering NO.
+    expect(canIngestNodeStatsHttp('reporter')).toBe(true)
   })
 
   it('a reporter can NEVER host spawns', () => {
     expect(canHostSpawns('reporter')).toBe(false)
   })
 
-  it('report_node_stats is the reporter role`s ONLY capability', () => {
+  it('reporting vitals -- over either transport -- is the reporter role`s ONLY capability', () => {
     const held = [
       canReportNodeStats('reporter') && 'report_node_stats',
+      canIngestNodeStatsHttp('reporter') && 'ingest_node_stats_http',
       canAuthenticateHttpRoutes('reporter') && 'authenticate_http',
       canHostSpawns('reporter') && 'host_spawns',
     ].filter(Boolean)
-    expect(held).toEqual(['report_node_stats'])
+    // Two rows, ONE act. Widening this list is the thing to argue about.
+    expect(held).toEqual(['report_node_stats', 'ingest_node_stats_http'])
   })
 
-  it('a sentinel keeps all three -- the reporter is a LESSER rung, not a rename', () => {
+  it('a sentinel keeps all four -- the reporter is a LESSER rung, not a rename', () => {
     expect(canReportNodeStats('sentinel')).toBe(true)
     expect(canAuthenticateHttpRoutes('sentinel')).toBe(true)
+    expect(canIngestNodeStatsHttp('sentinel')).toBe(true)
     expect(canHostSpawns('sentinel')).toBe(true)
+  })
+
+  it('nobody else may POST vitals -- an admin secret has no node row to write', () => {
+    for (const role of ALL_ROLES.filter(r => r !== 'reporter' && r !== 'sentinel')) {
+      expect(canIngestNodeStatsHttp(role)).toBe(false)
+    }
   })
 
   it('no OTHER role gains spawn authority by accident', () => {
@@ -118,8 +134,8 @@ const MAY_BRANCH_ON_REPORTER: Record<string, string> = {
   'node-capability.ts': 'the capability table itself',
   'index.ts':
     'WS upgrade: turns the resolved auth role into a socket tag. Not an authz decision -- every authz decision downstream reads the table.',
-  'handlers/node-stats.ts':
-    'strips the sentinel-only block from a reporter FRAME. A payload-shape rule, not a permission.',
+  'routes/node-stats-http.ts':
+    'HTTP ingest: turns an already-authorized AuthResult into the node id to stamp. The authz ran one line above it (canIngestNodeStatsHttp); this branch only knows which field of the union carries the id.',
 }
 
 /** Strip comments so prose quoting the forbidden pattern cannot trip the scan. */

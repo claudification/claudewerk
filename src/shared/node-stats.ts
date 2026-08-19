@@ -45,6 +45,19 @@ import { checkIdentity, checkMachine, checkSentinelExtras, isRecord, num } from 
 export const NODE_STATS_MESSAGE = 'node_stats'
 
 /**
+ * The ONE HTTP ingest path. Same contract as the WS message, second transport:
+ * `POST` this path with a `node_stats` frame and an `rpt_`/`snt_` bearer and it
+ * runs the same validator, the same handler body and the same store.
+ *
+ * A CONSTANT because four places must agree on the string -- the route that
+ * serves it, the `requireAuth` exception that opens it, the denial test that
+ * proves it is the only one, and the shell reporter that curls it. It exists so
+ * a node that should never hold a toolchain can report vitals with fifteen
+ * lines of `sh` instead of a 93 MB compiled binary.
+ */
+export const NODE_STATS_INGEST_PATH = '/api/node-stats'
+
+/**
  * Sampling cadence, shared by both senders. One sample every 5s, emitted on the
  * sender's existing connection tick -- neither sender gets to pick its own
  * number, or the broker ring's time axis stops meaning anything.

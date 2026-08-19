@@ -1,3 +1,8 @@
+// fallow-ignore-file unused-file
+//   No consumer yet BY DESIGN: the pane that reads this hook is
+//   `wall-pane-card-ledger` (WALL P3), still open in `epic-the-wall`. The feed
+//   half landed first so the ring + socket could be proven on their own.
+//   DELETE THIS LINE when P3 lands -- a stale suppression is the next lie.
 /**
  * `useCardLedger()` -- the card ledger as React state.
  *
