@@ -90,9 +90,90 @@
 	}
 }
 
+/* W2 filter -- inert until wall-filter-bus lands. */
+.wall-filter {
+	flex: 1 1 320px;
+	min-width: 180px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	background: var(--surface-inset);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 3px 8px;
+}
+.wall-filter:focus-within {
+	border-color: var(--border-strong);
+}
+.wall-filter input {
+	flex: 1;
+	min-width: 0;
+	background: none;
+	border: none;
+	outline: none;
+	color: var(--foreground);
+	font: inherit;
+	padding: 2px 0;
+}
+.wall-filter input::placeholder {
+	color: var(--comment);
+}
+
+/* W1 time cursor -- inert until wall-time-cursor lands. */
+.wall-scrub {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: 1 1 280px;
+	min-width: 180px;
+}
+.wall-scrub-label {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.1em;
+	flex: 0 0 auto;
+}
+.wall-scrub input {
+	flex: 1;
+	min-width: 0;
+	accent-color: var(--foreground);
+}
+.wall-scrub-value {
+	flex: 0 0 48px;
+	text-align: right;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--success);
+}
+
 .wall-btns {
 	display: flex;
 	gap: 4px;
+	flex: 0 0 auto;
+}
+.wall-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+.wall-btn:disabled:hover {
+	border-color: var(--border);
+	color: var(--fg-muted);
+}
+
+/* ---------- A5 NOW strip ---------- */
+.wall-nowbar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 4px 12px;
+	border-bottom: 1px solid var(--border-subtle);
+	background: var(--card);
+	flex: 0 0 auto;
+}
+.wall-nowbar-cap {
+	color: var(--comment);
+	font-size: 10px;
+	letter-spacing: 0.12em;
 	flex: 0 0 auto;
 }
 .wall-btn {

@@ -1,20 +1,18 @@
 /**
- * The wall's own header bar: identity on the left, controls on the right, and
- * the whole middle left free for the two mechanics that land on their own cards
- * (W2 the filter, W1 the time cursor). Both mount HERE, between the brand and
- * the buttons -- that is the only reason this row is not just a title.
+ * The wall's own header bar, in the mockup's order: brand, W2 filter, W1
+ * scrubber, buttons. The two middle slots ship inert (see wall-header-slots.tsx)
+ * so the cards that wire them do not have to reshape this row.
  *
- * DEVIATION from the mockup, stated per epic rule 1: the mockup's LAYOUT and
- * DETACH buttons are not here. LAYOUT is a control for the configurable grid the
- * epic explicitly defers to FUTURE, and a button that does nothing is worse than
- * no button. DETACH is already in the managed surface's own title bar directly
- * above this row; a second one would be two controls for one action.
+ * LAYOUT is rendered DISABLED, exactly as the card asks: it drives the
+ * configurable pane grid the epic defers to FUTURE, and a button that silently
+ * does nothing is worse than one that says it cannot yet.
  */
 
 import { WallClock } from './wall-clock'
+import { WallFilterSlot, WallScrubSlot } from './wall-header-slots'
 import { useWallStore } from './wall-state'
 
-function WallAmbientButton({ ambient }: { ambient: boolean }) {
+function AmbientButton({ ambient }: { ambient: boolean }) {
   const toggleAmbient = useWallStore(s => s.toggleAmbient)
   return (
     <button type="button" className="wall-btn" data-on={ambient || undefined} onClick={toggleAmbient}>
@@ -24,7 +22,7 @@ function WallAmbientButton({ ambient }: { ambient: boolean }) {
   )
 }
 
-export function WallHeader({ ambient }: { ambient: boolean }) {
+export function WallHeader({ ambient, onDetach }: { ambient: boolean; onDetach?: () => void }) {
   return (
     <header className="wall-header">
       <div className="wall-brand">
@@ -33,11 +31,19 @@ export function WallHeader({ ambient }: { ambient: boolean }) {
         <WallClock />
       </div>
 
-      {/* W2 filter and W1 time cursor mount here. */}
-      <span className="flex-1" />
+      <WallFilterSlot />
+      <WallScrubSlot />
 
       <div className="wall-btns">
-        <WallAmbientButton ambient={ambient} />
+        <button type="button" className="wall-btn wall-hide-ambient" disabled title="FUTURE: pick panes, save layouts">
+          LAYOUT
+        </button>
+        {onDetach && (
+          <button type="button" className="wall-btn wall-hide-ambient" onClick={onDetach}>
+            DETACH
+          </button>
+        )}
+        <AmbientButton ambient={ambient} />
       </div>
     </header>
   )

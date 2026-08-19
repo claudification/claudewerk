@@ -27,7 +27,12 @@ export function WallModal() {
       icon={<Grid2x2 className="size-4 text-[color:var(--info)]" />}
       className="max-w-none w-[97vw] top-[2vh] translate-y-0 h-[94vh]"
     >
-      <WallSurface visible={modal.presentation !== 'docked'} />
+      {/* The header's DETACH only exists while there is somewhere to detach TO;
+          detached, the surface's own title bar offers re-attach instead. */}
+      <WallSurface
+        visible={modal.presentation !== 'docked'}
+        onDetach={modal.presentation === 'inline' ? modal.detach : undefined}
+      />
     </ModalSurface>
   )
 }

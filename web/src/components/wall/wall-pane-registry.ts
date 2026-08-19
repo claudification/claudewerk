@@ -1,55 +1,57 @@
 /**
- * THE HARD GRID -- the layout is data, and it is FIXED in v1.
+ * THE STUB REGISTRY -- the file that lets twelve pane cards run at once.
  *
- * Every column, cap and reference code below is read straight off the approved
- * mockup (.claude/temp/the-wall.html). This is deliberately NOT a layout engine:
- * the epic says a configurable pane grid is FUTURE, so the shell owns one
- * hard-coded arrangement and each pane card fills in a `load`.
+ * Twelve worktrees land after this one, in parallel. If a pane card had to add
+ * itself to the grid, twelve agents would edit one file and every merge after
+ * the first would conflict. So every pane already exists as a stub under
+ * `panes/`, already wired HERE, and a pane card rewrites exactly ONE stub file
+ * and touches no shared file at all.
  *
- * `load` is a dynamic import per pane, so a pane that nobody scrolls to still
- * costs nothing until the surface mounts it. Until a pane card lands, every
- * entry points at the shared placeholder body -- swap YOUR pane's `load` and
- * nothing else moves.
+ * That is also why this file holds nothing but a code, a column and a path.
+ * Title, sizing, tabs, counts and the ambient opt-out all live in the stub, on
+ * its own <WallPane> -- otherwise "rewrite one file" would be a lie.
+ *
+ * `load` is a per-pane dynamic import(), so the wall's own chunk carries the
+ * frame and nothing else.
+ *
+ * THE LAYOUT IS HARD in v1. This is a fixed arrangement read off the approved
+ * mockup, not a layout engine; the epic defers a configurable grid to FUTURE.
  */
 
 import type { ComponentType } from 'react'
 
 export type WallColumn = 'a' | 'b' | 'c'
 
-export interface WallPaneSpec {
-  /** Reference code from the mockup (P1, A7, S2 ...). Rendered next to the title. */
+export interface WallPaneEntry {
+  /** Reference code from the mockup. How a human and an agent point at a pane. */
   code: string
-  title: string
-  column: WallColumn
-  /** Takes the leftover column height. At most one per non-scrolling column. */
-  grow?: boolean
-  /** Cap as a share of the column, straight from the mockup's inline styles. */
-  maxHeight?: string
-  /** The mockup's `.count` slot -- a static caption until a feed supplies one. */
-  caption?: string
-  /** Hidden in ambient mode. Prose nobody can read from across a room. */
-  hideInAmbient?: boolean
   load: () => Promise<{ default: ComponentType }>
 }
 
-const placeholder = () => import('./wall-pane-placeholder')
-
-export const WALL_PANES: WallPaneSpec[] = [
-  { code: 'P1', title: 'PULSE', column: 'a', grow: true, load: placeholder },
-  { code: 'A7', title: 'UNATTENDED RUNS', column: 'a', maxHeight: '38%', load: placeholder },
-
-  { code: 'A1', title: 'BLOCKED ON YOU', column: 'b', maxHeight: '34%', load: placeholder },
-  { code: 'P2', title: 'COMMIT RIVER', column: 'b', grow: true, load: placeholder },
-  { code: 'P3', title: 'CARD LEDGER', column: 'b', maxHeight: '32%', load: placeholder },
-
-  { code: 'A2', title: 'BURN', column: 'c', caption: 'last 60m', load: placeholder },
-  { code: 'S2', title: 'PLAN USAGE', column: 'c', caption: '5h window', load: placeholder },
-  { code: 'A6', title: 'SHEAF', column: 'c', load: placeholder },
-  { code: 'S1', title: 'HOST VITALS', column: 'c', load: placeholder },
-  { code: 'P4', title: 'FLEET', column: 'c', load: placeholder },
-  { code: 'A4', title: 'STATE OF THE UNION', column: 'c', hideInAmbient: true, load: placeholder },
-]
-
-export function panesInColumn(column: WallColumn): WallPaneSpec[] {
-  return WALL_PANES.filter(p => p.column === column)
+export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
+  a: [
+    { code: 'P1', load: () => import('./panes/p1-pulse') },
+    { code: 'A7', load: () => import('./panes/a7-unattended-runs') },
+  ],
+  b: [
+    { code: 'A1', load: () => import('./panes/a1-attention') },
+    { code: 'P2', load: () => import('./panes/p2-commit-river') },
+    { code: 'P3', load: () => import('./panes/p3-card-ledger') },
+  ],
+  c: [
+    { code: 'A2', load: () => import('./panes/a2-burn') },
+    { code: 'S2', load: () => import('./panes/s2-plan-usage') },
+    { code: 'A6', load: () => import('./panes/a6-sheaf') },
+    { code: 'S1', load: () => import('./panes/s1-host-vitals') },
+    { code: 'P4', load: () => import('./panes/p4-fleet') },
+    { code: 'A4', load: () => import('./panes/a4-sotu') },
+  ],
 }
+
+/** A5 is not in a column -- it is the strip between the header and the grid. */
+export const NOW_BAR: WallPaneEntry = { code: 'A5', load: () => import('./panes/a5-now-bar') }
+
+export const WALL_PANE_CODES: string[] = [
+  ...Object.values(WALL_COLUMNS).flatMap(entries => entries.map(e => e.code)),
+  NOW_BAR.code,
+]
