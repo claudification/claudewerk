@@ -364,8 +364,10 @@ function defaultShellClass(isSelected: boolean, planMode: boolean, ghost: boolea
     'p-2 pl-4 text-[11px]',
     isSelected && planMode
       ? 'border-blue-500 bg-blue-500/15 ring-1 ring-blue-500/50 shadow-[0_0_8px_rgba(59,130,246,0.2)]'
-      : isSelected
-        ? 'border-accent bg-accent/15 ring-1 ring-accent/50 shadow-[0_0_8px_rgba(122,162,247,0.15)]'
+      : // Selection colour is the PROJECT's, so it is painted inline in
+        // defaultShellStyle where the hex is available. Nothing here.
+        isSelected
+        ? ''
         : planMode
           ? 'border-blue-500/40 hover:border-blue-400/60'
           : displayColor
@@ -376,6 +378,9 @@ function defaultShellClass(isSelected: boolean, planMode: boolean, ghost: boolea
   )
 }
 
+/** A project with no colour of its own still has to look selected. */
+const SELECTION_FALLBACK_COLOR = 'var(--accent)'
+
 function defaultShellStyle(isSelected: boolean, planMode: boolean, displayColor: string | undefined) {
   if (isSelected && planMode) return { borderLeftColor: 'rgb(59 130 246)', borderLeftWidth: '3px' }
   if (planMode)
@@ -384,8 +389,33 @@ function defaultShellStyle(isSelected: boolean, planMode: boolean, displayColor:
       borderLeftWidth: '3px',
       backgroundColor: 'color-mix(in oklch, rgb(59 130 246) 8%, transparent)',
     }
-  if (displayColor && !isSelected)
-    return { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
+
+  /*
+   * SELECTION WEARS THE PROJECT'S COLOUR.
+   *
+   * It used to be a thin accent-yellow ring, and the `!isSelected` guard below
+   * meant selecting a row THREW AWAY the one piece of colour that said which
+   * project you were in -- the moment you most want to know. Yellow also
+   * collided with the accent used by buttons and badges, so "selected" and
+   * "actionable" read the same.
+   *
+   * Painted all the way around now, not just the left spine, with the spine
+   * kept thicker so the row still scans as belonging to its group. Projects
+   * without a colour fall back to the accent, which is what selection has
+   * always been -- so nothing loses its marker, it just stops being the only
+   * answer.
+   */
+  const color = displayColor ?? SELECTION_FALLBACK_COLOR
+  if (isSelected)
+    return {
+      borderColor: color,
+      borderLeftColor: color,
+      borderLeftWidth: '3px',
+      backgroundColor: `color-mix(in oklch, ${color} 16%, transparent)`,
+      boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${color} 55%, transparent), 0 0 10px color-mix(in oklch, ${color} 22%, transparent)`,
+    }
+
+  if (displayColor) return { borderLeftColor: displayColor, borderLeftWidth: '3px', backgroundColor: `${displayColor}15` }
   return undefined
 }
 
