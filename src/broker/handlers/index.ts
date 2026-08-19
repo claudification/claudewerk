@@ -45,6 +45,7 @@ import { registerStatusHandlers } from './status'
 import { registerTerminalHandlers } from './terminal'
 import { registerThinkingProgressHandlers } from './thinking-progress'
 import { registerTranscriptHandlers } from './transcript'
+import { registerTurnSummaryHandlers } from './turn-summary'
 import { registerVoiceHandlers } from './voice'
 import { registerVoiceOrbHandlers } from './voice-orb-actions'
 import { registerWebControlHandlers } from './web-control'
@@ -93,6 +94,7 @@ export function registerAllHandlers(): void {
   registerTerminalHandlers()
   registerThinkingProgressHandlers()
   registerTranscriptHandlers()
+  registerTurnSummaryHandlers()
   registerVoiceHandlers()
   registerWebControlHandlers()
 }

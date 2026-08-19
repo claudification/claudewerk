@@ -784,6 +784,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
       planMode: conv.planMode || undefined,
       pendingAttention: conv.pendingAttention,
       liveStatus: conv.liveStatus,
+      turnSummary: conv.turnSummary,
       // Last user-impulse time (UserPromptSubmit). The UI pairs it with
       // liveStatus.updatedAt to tell when the agent's self-report has been
       // SUPERSEDED by a later user message -- a stale status must not read as
@@ -1255,6 +1256,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
           pendingDialog: fullMeta.pendingDialog as Conversation['pendingDialog'],
           liveDialog: fullMeta.liveDialog as Conversation['liveDialog'],
           liveStatus: fullMeta.liveStatus as Conversation['liveStatus'],
+          turnSummary: fullMeta.turnSummary as Conversation['turnSummary'],
           notifyParentSettleMs: fullMeta.notifyParentSettleMs as number | undefined,
           pendingPlanApproval: fullMeta.pendingPlanApproval as Conversation['pendingPlanApproval'],
           pendingPermission: fullMeta.pendingPermission as Conversation['pendingPermission'],
@@ -1368,6 +1370,10 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
         // THE STATUS: the agent's self-reported task state, persisted so the
         // badge survives a broker restart (reset to `working` on next user turn).
         liveStatus: conv.liveStatus,
+        // Machine-classified "what is it doing right now" (CC's own per-turn
+        // classifier). Persisted so a fleet view still reads correctly after a
+        // broker restart instead of blanking until each conversation next speaks.
+        turnSummary: conv.turnSummary,
         // EXPENSIVE report-back config: persist so a still-running child keeps
         // reporting to its parent after a broker restart. backgroundBusy is
         // transient (memory-only) and intentionally NOT persisted.

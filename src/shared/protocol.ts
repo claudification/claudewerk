@@ -940,6 +940,40 @@ export interface AgentStatusMessage {
   status: LiveStatus
 }
 
+/**
+ * MACHINE-derived answer to "what is this conversation doing right now",
+ * classified by CC itself (`system/post_turn_summary`) once per turn.
+ *
+ * Deliberately a SEPARATE slot from `liveStatus`, never a writer to it.
+ * `liveStatus` is the agent's own deliberate `set_status` claim -- authored,
+ * high-trust, and the thing a human triages on. This is automatic, cheap, and
+ * lower-trust. Collapsing them would let a routine classifier label overwrite a
+ * considered "needs_you", which is exactly the signal a fleet view must not lose.
+ * Consumers prefer `liveStatus` when both exist.
+ *
+ * Single live slot per conversation; a new one REPLACES it. AGENT_HOST_ONLY origin.
+ */
+export interface TurnSummary {
+  /** `blocked` when CC wants a human, else `review_ready`. CC's permission
+   *  interceptor also synthesizes `failed` / `need_input` without an LLM call. */
+  category: string
+  /** What the agent is doing right now. CC targets a ~30-char
+   *  git-commit-subject, so render it as a title and never as a sentence. */
+  detail: string
+  /** What a human must do to unblock. Only set when `category` is blocked. */
+  needsAction?: string
+  /** uuid of the transcript message this summarizes -- the join key back. */
+  summarizesUuid?: string
+  /** Host wall-clock at classify time. */
+  updatedAt: number
+}
+
+export interface TurnSummaryMessage {
+  type: 'turn_summary'
+  conversationId: string
+  summary: TurnSummary
+}
+
 /** First frame from the agent host after the WS handshake, sent BEFORE CC has
  *  produced a session id. Gives the broker enough to create a
  *  placeholder "booting" conversation so the dashboard shows progress from t=0. */
@@ -1114,6 +1148,7 @@ export type AgentHostMessage =
   | DialogPatchMessage
   | DialogReopenMessage
   | AgentStatusMessage
+  | TurnSummaryMessage
   | DialogOrphanedMessage
   | DialogLiveDismissedMessage
   | PlanApprovalRequest
@@ -3483,6 +3518,14 @@ export interface Conversation {
    * `state` drives the per-conversation attention badge; the text fields expand.
    */
   liveStatus?: LiveStatus
+  /**
+   * Machine-classified "what is this doing RIGHT NOW", derived per turn from
+   * CC's own classifier rather than self-reported. Single live slot, replaced
+   * each turn. Strictly LOWER trust than `liveStatus` and never written from
+   * it or into it: consumers prefer liveStatus when both exist, and fall back
+   * here for the ~everything that never calls `set_status`.
+   */
+  turnSummary?: TurnSummary
   pendingPlanApproval?: {
     requestId: string
     toolUseId?: string
@@ -6366,6 +6409,9 @@ export interface ConversationSummary extends ConversationTaskFields {
   pendingAttention?: Conversation['pendingAttention']
   /** THE STATUS — agent self-reported task state; drives the attention badge. */
   liveStatus?: LiveStatus
+  /** Machine-classified "what is it doing right now". Lower trust than
+   *  liveStatus and never a substitute for it — see TurnSummary. */
+  turnSummary?: TurnSummary
   /** Last user-impulse time (UserPromptSubmit). Paired with liveStatus.updatedAt
    *  so the UI can mark a status SUPERSEDED by a later user message. */
   lastInputAt?: number
