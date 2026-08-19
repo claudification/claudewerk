@@ -46,7 +46,8 @@ function windowCfg(key: WindowKey) {
   return WINDOWS.find(w => w.key === key) ?? WINDOWS[0]
 }
 
-function formatTokens(n: number): string {
+/** Shared with THE WALL's P4 tile -- one token formatter per feed, not two. */
+export function formatTokens(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`
   return `${Math.round(n)}`
@@ -84,8 +85,14 @@ interface StackedBarsProps {
   hoverIdx?: number | null
 }
 
-/** Inline stacked sparkline: input (bottom) + output (top), scaled to the busiest bucket. */
-function StackedBars({ buckets, width, height, gap = 0.5, onHover, hoverIdx }: StackedBarsProps) {
+/**
+ * Inline stacked sparkline: input (bottom) + output (top), scaled to the busiest
+ * bucket. THE token sparkline primitive -- exported because THE WALL's P4 tile
+ * rides the same ring and must not draw a second one. (`cost-sparkline.tsx`,
+ * which the P4 card first pointed at, is a cost WIDGET with its own window tabs
+ * and dollar formatting, not a primitive.)
+ */
+export function StackedBars({ buckets, width, height, gap = 0.5, onHover, hoverIdx }: StackedBarsProps) {
   const n = Math.max(1, buckets.length)
   const slot = width / n
   const barW = Math.max(1, slot - gap)
