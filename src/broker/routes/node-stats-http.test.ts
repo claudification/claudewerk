@@ -46,8 +46,10 @@ function wireFrame(identity = FIXTURE_REPORTER_IDENTITY): string {
   return json
 }
 
-function post(body: string, secret?: string, path = NODE_STATS_INGEST_PATH): Promise<Response> {
-  return app.request(`http://localhost:9999${path}`, {
+// `app.request` is typed `Response | Promise<Response>`; awaiting it here keeps
+// the union off every call site rather than pushing it onto all of them.
+async function post(body: string, secret?: string, path = NODE_STATS_INGEST_PATH): Promise<Response> {
+  return await app.request(`http://localhost:9999${path}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',

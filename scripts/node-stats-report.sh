@@ -41,6 +41,12 @@
 set -eu
 
 SCRIPT_VERSION="sh-1"
+# The ingest route. `sh` cannot import `NODE_STATS_INGEST_PATH` from
+# `src/shared/node-stats.ts`, so this is the one unavoidable copy of it -- and
+# `scripts/node-stats-report.test.ts` asserts this line equals the constant, and
+# that the literal appears nowhere else below. Without that pin, moving the route
+# leaves the script posting into a 404 with every other test still green.
+INGEST_PATH="/api/node-stats"
 PROC="${NODE_STATS_PROC_ROOT:-/proc}"
 URL=""
 SECRET=""
@@ -203,7 +209,7 @@ build_frame() {
 post_frame() {
   printf 'header = "Authorization: Bearer %s"\n' "$SECRET" |
     curl --config - -sS -o /dev/null -w '%{http_code}' \
-      -X POST -H 'Content-Type: application/json' --data "$1" "$URL/api/node-stats"
+      -X POST -H 'Content-Type: application/json' --data "$1" "$URL$INGEST_PATH"
 }
 
 # ─── Entry ─────────────────────────────────────────────────────────────────
@@ -263,7 +269,7 @@ while :; do
     # LOG EVERYTHING that is not a 200: a reporter the broker is quietly
     # refusing is the worst failure mode there is.
     if [ "$CODE" != "200" ]; then
-      echo "node-stats-report.sh: POST $URL/api/node-stats -> $CODE" >&2
+      echo "node-stats-report.sh: POST $URL$INGEST_PATH -> $CODE" >&2
     elif [ "$VERBOSE" -eq 1 ]; then
       echo "node-stats-report.sh: posted cpu=${CPU}%"
     fi

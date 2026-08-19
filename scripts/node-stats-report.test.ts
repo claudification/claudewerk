@@ -20,13 +20,13 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ingestNodeStats } from '../src/broker/node-stats-ingest'
 import { nodeStatsStore } from '../src/broker/node-stats-store'
 import { hostId } from '../src/shared/host-id'
-import { validateNodeStats } from '../src/shared/node-stats'
+import { NODE_STATS_INGEST_PATH, validateNodeStats } from '../src/shared/node-stats'
 import { cpuPercentFromDelta, cpuTotals, createMachineSampler, osArchLabel } from '../src/shared/node-stats-sample'
 
 const SCRIPT = join(import.meta.dirname, 'node-stats-report.sh')
@@ -271,6 +271,29 @@ describe('the script`s bytes feed the SAME broker ingest as every other sender',
     // Keyed by the CREDENTIAL, not the `sh@<hostId>` the script put on the wire.
     expect(nodeStatsStore.get('rpt-from-sh')).toBeDefined()
     nodeStatsStore.clear()
+  })
+})
+
+// The one thing the script copies instead of importing. Everything else it
+// shares with the TS senders is pinned by comparing NUMBERS; the route is a
+// STRING, and a wrong one fails silently -- the script posts into a 404 while
+// every other test in this file stays green. So it gets its own pin.
+describe('the route the script posts to', () => {
+  const source = readFileSync(SCRIPT, 'utf8')
+
+  it('declares exactly the shared NODE_STATS_INGEST_PATH', () => {
+    const declared = source.match(/^INGEST_PATH="([^"]*)"$/m)?.[1]
+    expect(declared).toBe(NODE_STATS_INGEST_PATH)
+  })
+
+  it('copies that literal ONCE -- every other use goes through $INGEST_PATH', () => {
+    // Comments may name the path; shell code may not. A second copy is a second
+    // place to forget, which is the whole failure this test exists to stop.
+    const code = source
+      .split('\n')
+      .filter(line => !line.trimStart().startsWith('#'))
+      .filter(line => !/^INGEST_PATH="/.test(line))
+    expect(code.filter(line => line.includes(NODE_STATS_INGEST_PATH))).toEqual([])
   })
 })
 
