@@ -299,11 +299,19 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
         minHeight,
       },
       '.cm-cursor': { borderLeftColor: 'var(--color-primary)' },
+      /* A SELECTION MUST NOT BE TINTED WITH A SYNTAX COLOUR.
+         This used --primary, and so do .cm-md-link, -heading and -emphasis --
+         so selecting a markdown link put primary text on a primary fill, with
+         the alpha as the only thing keeping them apart. Tokyo Night survived it
+         at 5.16:1; seven of the other themes did not, landing as low as 4.22:1.
+         A neutral tint has no hue to collide with, which fixes every theme at
+         once instead of hand-tuning thirteen alphas.
+         Guarded by cm-selection-contrast.test.ts. */
       '.cm-selectionBackground': {
-        backgroundColor: 'color-mix(in oklch, var(--color-primary) 20%, transparent) !important',
+        backgroundColor: 'color-mix(in oklch, var(--color-border-strong) 32%, transparent) !important',
       },
       '&.cm-focused .cm-selectionBackground': {
-        backgroundColor: 'color-mix(in oklch, var(--color-primary) 30%, transparent) !important',
+        backgroundColor: 'color-mix(in oklch, var(--color-border-strong) 45%, transparent) !important',
       },
       '.cm-scroller': { overflow: 'auto', maxHeight, lineHeight: '1.5' },
       '.cm-placeholder': { color: 'color-mix(in oklch, var(--color-muted-foreground) 45%, transparent)' },

@@ -395,6 +395,25 @@
 	pointer-events: none;
 }
 
+/*
+ * SELECTED TEXT.
+ *
+ * There was no `::selection` rule at all, so every selection in the transcript
+ * was the browser default -- a fixed blue that knows nothing about the theme
+ * and lands on top of syntax colours, links and neon status text alike.
+ *
+ * The fix that actually generalises is forcing `color` as well as the
+ * background. A tinted background alone leaves the text its original hue, so
+ * legibility depends on every syntax colour happening to contrast with the
+ * fill -- which is exactly the coin-flip that made selected markdown links
+ * unreadable. Pinning the foreground makes the syntax hue irrelevant: whatever
+ * you select, it turns into one known-contrast pair.
+ */
+::selection {
+	background-color: color-mix(in oklch, var(--border-strong) 62%, transparent);
+	color: var(--foreground);
+}
+
 * {
 	border-color: var(--border);
 }
