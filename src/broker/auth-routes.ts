@@ -39,9 +39,10 @@ import {
   validateInvite,
 } from './auth'
 
+import { NODE_STATS_INGEST_PATH } from '../shared/node-stats'
 import type { GatewayRegistry } from './gateway-registry'
 import { isGatewaySecret } from './gateway-registry'
-import { canAuthenticateHttpRoutes } from './node-capability'
+import { canAuthenticateHttpRoutes, canIngestNodeStatsHttp } from './node-capability'
 import type { SentinelRegistry } from './sentinel-registry'
 import { isReporterRecord, isReporterSecret, isSentinelSecret } from './sentinel-registry'
 
@@ -157,6 +158,17 @@ const PUBLIC_AUTH_ROUTES = new Set([
 ])
 
 /**
+ * The one HTTP request a node-only credential may make: POST the vitals frame.
+ *
+ * METHOD AND PATH BOTH, exactly. A GET on the same path is not this request, and
+ * a prefix match would hand `/api/node-stats-anything-else` to a credential that
+ * is allowed to say one thing.
+ */
+function isNodeStatsIngest(req: Request, url: URL): boolean {
+  return req.method === 'POST' && url.pathname === NODE_STATS_INGEST_PATH
+}
+
+/**
  * Auth middleware check. Returns null if authenticated, or a Response to send.
  * Skips auth if no users exist yet (first-time setup).
  *
@@ -216,17 +228,22 @@ export function requireAuth(req: Request): Response | null {
   if (isAuthenticated) return null
 
   // Allow Bearer token auth with admin secret or sentinel secret (for API calls
-  // from scripts). WEBSOCKET ONLY credentials are refused HERE: a reporter's
-  // `rpt_` has no `authenticate_http` capability, so it opens exactly zero HTTP
-  // routes -- not a read route, not the health route. One predicate decides it
-  // (node-capability.ts), so there is one place to audit.
+  // from scripts). NODE-ONLY credentials are refused HERE: a reporter's `rpt_`
+  // has no `authenticate_http` capability, so it opens exactly ONE HTTP route --
+  // the vitals ingest below -- and nothing else. Not a read route, not the
+  // health route. Two predicates decide it (node-capability.ts), so there is
+  // still one place to audit.
   const authHeader = req.headers.get('authorization')
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (bearerToken) {
     const auth = resolveAuth(bearerToken)
     if (canAuthenticateHttpRoutes(auth.role)) return null
+    if (isNodeStatsIngest(req, url) && canIngestNodeStatsHttp(auth.role)) return null
     if (auth.role !== 'none') {
-      console.log(`[auth] HTTP refused for role=${auth.role} path=${url.pathname} (websocket-only credential)`)
+      console.log(
+        `[auth] HTTP refused for role=${auth.role} path=${url.pathname} ` +
+          `(node credential: opens only POST ${NODE_STATS_INGEST_PATH})`,
+      )
     }
   }
 

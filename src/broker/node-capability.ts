@@ -8,6 +8,8 @@
  *   - `resolveAuth` (auth-routes.ts) turns a secret into a role
  *   - `requireAuth` (auth-routes.ts) asks `canAuthenticateHttpRoutes` -- a
  *     reporter answers NO on every HTTP route, including /health
+ *   - `requireAuth` then asks `canIngestNodeStatsHttp` for the ONE exception:
+ *     `POST /api/node-stats`, whose whole body is a vitals frame
  *   - `routeMessage` (message-router.ts) asks `connectionMaySendMessage` -- a
  *     reporter may send exactly `node_stats` and nothing else
  *   - the spawn roster asks `canHostSpawns` -- a reporter answers NO, so it can
@@ -41,6 +43,19 @@ export type NodeCapability =
   | 'report_node_stats'
   /** May authenticate an HTTP route (bearer secret). */
   | 'authenticate_http'
+  /**
+   * May POST a vitals frame to `NODE_STATS_INGEST_PATH` -- and to nothing else.
+   *
+   * A SEPARATE ROW, deliberately: `authenticate_http` is "this credential opens
+   * HTTP routes", and a reporter must keep answering NO to that. This is "this
+   * credential opens ONE route whose entire body is a `node_stats` frame". A
+   * grep for `authenticate_http` still finds every general HTTP door; the
+   * one-route door is visible next to it rather than hidden inside it.
+   *
+   * Added by card `node-stats-http-ingest` (2026-08-19) so a reporter can be
+   * fifteen lines of `sh` and a `curl` instead of 93 MB of compiled Bun.
+   */
+  | 'ingest_node_stats_http'
   /** May enter the sentinel roster used for spawn routing. */
   | 'host_spawns'
 
@@ -54,11 +69,17 @@ export type NodeCapability =
  * appear here only so the table is total.
  */
 const CAPABILITIES: Record<CapabilityRole, ReadonlySet<NodeCapability>> = {
+  // No `ingest_node_stats_http`: an admin secret has no node id, so there is no
+  // row for it to write. It reaches the route through `authenticate_http` like
+  // any other API caller and is turned away by the handler for want of an
+  // identity -- which is the honest answer, not an accident.
   admin: new Set(['authenticate_http']),
-  sentinel: new Set(['report_node_stats', 'authenticate_http', 'host_spawns']),
+  sentinel: new Set(['report_node_stats', 'authenticate_http', 'ingest_node_stats_http', 'host_spawns']),
   gateway: new Set(['authenticate_http']),
-  // THE reporter row. One capability. Deliberately tiny.
-  reporter: new Set(['report_node_stats']),
+  // THE reporter row. Two capabilities now, both of them the SAME act (report
+  // vitals) over the two transports it is allowed to use. Still no
+  // `authenticate_http`: the general HTTP surface stays shut.
+  reporter: new Set(['report_node_stats', 'ingest_node_stats_http']),
   'control-panel': new Set(),
   'agent-host': new Set(),
   share: new Set(),
@@ -74,10 +95,17 @@ export function canReportNodeStats(role: CapabilityRole): boolean {
   return roleHasCapability(role, 'report_node_stats')
 }
 
-/** WEBSOCKET ONLY: a reporter authenticates ZERO HTTP routes. Not a read
- *  route, not a health route. */
+/** A reporter authenticates ZERO general HTTP routes. Not a read route, not a
+ *  health route. Its one door is `canIngestNodeStatsHttp` below, which opens
+ *  exactly one path and reads exactly one message. */
 export function canAuthenticateHttpRoutes(role: CapabilityRole): boolean {
   return roleHasCapability(role, 'authenticate_http')
+}
+
+/** THE ONE HTTP DOOR a websocket-only node credential opens: `POST
+ *  NODE_STATS_INGEST_PATH`, body = a `node_stats` frame, nothing else. */
+export function canIngestNodeStatsHttp(role: CapabilityRole): boolean {
+  return roleHasCapability(role, 'ingest_node_stats_http')
 }
 
 /** A role that cannot host spawns must never enter the spawn roster. */
