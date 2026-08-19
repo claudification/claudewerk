@@ -53,10 +53,18 @@ BRANCH_NAME="worktree-$WT_NAME"
 # branch, reuse it instead of failing on "branch already exists" / "path
 # already used". This makes the hook safe to re-run when a parent spawns
 # multiple children into the same worktree (e.g. chain protocol phases).
+#
+# awk MUST NOT `exit` on the match, and `| head -1` is the same bug one stage
+# later. Leaving early while `git worktree list` is still writing gives git
+# SIGPIPE -> 141; `pipefail` promotes it and `set -e` aborts -- silently, because
+# this is a command-substitution assignment. That killed every spawn into an
+# existing worktree once this repo passed ~400 worktrees (the output stopped
+# fitting the 64 KB pipe buffer). Draining costs one pass over the porcelain,
+# which is nothing next to the `git worktree add` below.
 EXISTING_WT_BRANCH="$(git worktree list --porcelain 2>/dev/null \
   | awk -v p="$WORKTREE_PATH" '
       /^worktree / {cur=$2; next}
-      /^branch refs\/heads\// && cur==p {sub(/^branch refs\/heads\//,""); print; exit}
+      /^branch refs\/heads\// && cur==p {sub(/^branch refs\/heads\//,""); print}
     ')"
 SKIP_INIT=
 if [[ "$EXISTING_WT_BRANCH" == "$BRANCH_NAME" ]]; then
