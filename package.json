@@ -45,6 +45,7 @@
     "lint:fallow": "fallow audit --dead-code-baseline .fallow/dead-code-baseline.json --health-baseline .fallow/health-baseline.json --dupes-baseline .fallow/dupes-baseline.json",
     "lint:biome": "bunx biome check --fix .",
     "lint:boundary": "bun run scripts/lint-boundary.ts",
+    "verify:wall": "bun run scripts/wall-verify.ts",
     "lint:inline-import-type": "bun run scripts/lint-inline-import-type.ts",
     "lint:board-contrast": "bun run scripts/lint-board-contrast.ts",
     "lint:patterns": "bun run scripts/lint-patterns.ts",
