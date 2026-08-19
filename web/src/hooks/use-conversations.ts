@@ -479,6 +479,11 @@ interface ConversationsState {
   setJsonStreamHandler: (handler: ((msg: JsonStreamMessage) => void) | null) => void
   projectHandler: ((msg: Record<string, unknown>) => void) | null
   checklistHandler: ((msg: Record<string, unknown>) => void) | null
+  /** Card-ledger feed (`card_changed` pushes + `card_ledger_result` replies).
+   *  Its own slot rather than a fold into projectHandler: the board panel and
+   *  THE WALL mount independently, so sharing a slot would let closing one take
+   *  the other's feed with it. */
+  cardLedgerHandler: ((msg: Record<string, unknown>) => void) | null
   /** Canvas live-multiplayer messages (canvas_*), dispatched by canvasId. */
   canvasHandler: ((msg: Record<string, unknown>) => void) | null
   /** Canvas CHAT messages, dispatched by canvasId. Separate slot from
@@ -986,6 +991,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   jsonStreamHandler: null,
   projectHandler: null,
   checklistHandler: null,
+  cardLedgerHandler: null,
   canvasHandler: null,
   canvasChatHandler: null,
   nightshiftHandler: null,
