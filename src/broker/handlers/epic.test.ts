@@ -29,17 +29,12 @@ function res(over: Partial<EpicResult> = {}): EpicResult {
 }
 
 describe('which ops write', () => {
-  test.each([
-    'start',
-    'patch',
-    'log_append',
-    'lease',
-    'release',
-    'pause',
-    'abort',
-  ] as const)('%s needs write permission', op => {
-    expect(WRITE_OPS.has(op)).toBe(true)
-  })
+  test.each(['start', 'patch', 'log_append', 'lease', 'release', 'pause', 'abort'] as const)(
+    '%s needs write permission',
+    op => {
+      expect(WRITE_OPS.has(op)).toBe(true)
+    },
+  )
 
   test('get is the only pure read', () => {
     expect(WRITE_OPS.has('get')).toBe(false)

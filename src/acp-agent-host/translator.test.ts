@@ -177,12 +177,12 @@ describe('translator: tool_call lifecycle (live commits)', () => {
     expect(out.entries).toHaveLength(2)
     const [textEntry, toolEntry] = out.entries as [TranscriptAssistantEntry, TranscriptAssistantEntry]
     expect(textEntry.type).toBe('assistant')
-    expect((textEntry.message?.content as TranscriptContentBlock[])[0]).toMatchObject({
+    expect((textEntry.message?.content as TranscriptContentBlock[])?.[0]).toMatchObject({
       type: 'text',
       text: 'About to run ls.',
     })
     expect(toolEntry.type).toBe('assistant')
-    expect((toolEntry.message?.content as TranscriptContentBlock[])[0]).toMatchObject({ type: 'tool_use' })
+    expect((toolEntry.message?.content as TranscriptContentBlock[])?.[0]).toMatchObject({ type: 'tool_use' })
     // Closing message_stop should be in stream deltas (clear live buffer).
     expect(out.streamDeltas).toContainEqual({ type: 'message_stop' })
   })
@@ -201,7 +201,7 @@ describe('translator: tool_call lifecycle (live commits)', () => {
     )
     expect(out.entries).toHaveLength(2) // tool_use + tool_result
     const result = out.entries[1] as TranscriptUserEntry
-    const block = (result.message?.content as TranscriptContentBlock[])[0]
+    const block = (result.message?.content as TranscriptContentBlock[])?.[0]
     expect(block.type).toBe('tool_result')
     expect(block.is_error).toBe(true)
     expect(block.content).toBe('permission denied')
@@ -220,7 +220,7 @@ describe('translator: tool_call lifecycle (live commits)', () => {
       s,
     )
     const resultEntry = out.entries.find(e => e.type === 'user') as TranscriptUserEntry | undefined
-    const block = (resultEntry?.message?.content as TranscriptContentBlock[])[0]
+    const block = (resultEntry?.message?.content as TranscriptContentBlock[])?.[0]
     expect(block.is_error).toBe(true)
   })
 
@@ -275,7 +275,7 @@ describe('translator: tool_call lifecycle (live commits)', () => {
       s,
     )
     const result = finalOut.entries.find(e => e.type === 'user') as TranscriptUserEntry | undefined
-    const block = (result?.message?.content as TranscriptContentBlock[])[0]
+    const block = (result?.message?.content as TranscriptContentBlock[])?.[0]
     expect(block.content).toBe('final output\n')
   })
 
@@ -328,7 +328,7 @@ describe('translator: tool_call lifecycle (live commits)', () => {
     )
     // tool_use committed with stable name "read"
     const toolUse = o2.entries[0] as TranscriptAssistantEntry
-    const block = (toolUse.message?.content as TranscriptContentBlock[])[0]
+    const block = (toolUse.message?.content as TranscriptContentBlock[])?.[0]
     expect(block.name).toBe('read')
 
     // completed event tries to overwrite title with a file path
@@ -366,7 +366,7 @@ describe('translator: tool_call lifecycle (live commits)', () => {
       s,
     )
     const toolUse = out.entries.find(e => e.type === 'assistant') as TranscriptAssistantEntry
-    const block = (toolUse.message?.content as TranscriptContentBlock[])[0]
+    const block = (toolUse.message?.content as TranscriptContentBlock[])?.[0]
     expect(block.name).toBe('read')
   })
 })
@@ -539,13 +539,13 @@ describe('translator: end-to-end against spike-shaped events', () => {
     // tool_result user entry, final text assistant entry, turn_duration system.
     expect(allEntries.map(e => e.type)).toEqual(['assistant', 'assistant', 'user', 'assistant', 'system'])
     const thinkingEntry = allEntries[0] as TranscriptAssistantEntry
-    expect((thinkingEntry.message?.content as TranscriptContentBlock[])[0]?.type).toBe('thinking')
+    expect((thinkingEntry.message?.content as TranscriptContentBlock[])?.[0]?.type).toBe('thinking')
     const toolUseEntry = allEntries[1] as TranscriptAssistantEntry
-    expect((toolUseEntry.message?.content as TranscriptContentBlock[])[0]?.type).toBe('tool_use')
+    expect((toolUseEntry.message?.content as TranscriptContentBlock[])?.[0]?.type).toBe('tool_use')
     const toolResultEntry = allEntries[2] as TranscriptUserEntry
-    expect((toolResultEntry.message?.content as TranscriptContentBlock[])[0]?.type).toBe('tool_result')
+    expect((toolResultEntry.message?.content as TranscriptContentBlock[])?.[0]?.type).toBe('tool_result')
     const finalText = allEntries[3] as TranscriptAssistantEntry
-    expect((finalText.message?.content as TranscriptContentBlock[])[0]).toMatchObject({
+    expect((finalText.message?.content as TranscriptContentBlock[])?.[0]).toMatchObject({
       type: 'text',
       text: 'Done.',
     })

@@ -60,7 +60,7 @@ describe('applyDialogOps', () => {
   test('does not mutate the input snapshot', () => {
     const s = snap()
     applyDialogOps(s, [{ op: 'replace', id: 'intro', block: { type: 'Markdown', id: 'intro', content: 'new' } }])
-    expect((s.layout.body?.[0] as { content: string }).content).toBe('hi')
+    expect((s.layout.body?.[0] as { content: string } | undefined)?.content).toBe('hi')
     expect(s.state.name).toBe('ada')
   })
 

@@ -45,7 +45,7 @@ const BLOCK_RE = /<(?:antml:)?parameter\s+name="([a-z_]+)"\s*>([\s\S]*?)(?:<\/(?
  * Returns the cleaned value for the field itself plus anything recovered. When
  * there is no leak the value is returned untouched and `repaired` is false.
  */
-export function repairStatusField(field: StatusTextField, raw: string): { value: string } & RepairResult {
+export function repairStatusField(_field: StatusTextField, raw: string): { value: string } & RepairResult {
   const cut = raw.search(LEAK_RE)
   if (cut < 0) return { value: raw, fields: {}, repaired: false }
 

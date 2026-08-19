@@ -68,7 +68,9 @@ describe('transcriptEntries divert (Checkpoint A)', () => {
 
     // Parent channel broadcast carries only the parent entry (zero agent chatter).
     const parentBroadcast = broadcasts.find(b => b.channel === 'conversation:transcript')
-    expect((parentBroadcast?.message as { entries: TranscriptEntry[] }).entries.map(x => x.uuid)).toEqual(['p1'])
+    expect((parentBroadcast?.message as { entries: TranscriptEntry[] } | undefined)?.entries.map(x => x.uuid)).toEqual([
+      'p1',
+    ])
     const subBroadcast = broadcasts.find(b => b.channel === 'conversation:subagent_transcript')
     expect(subBroadcast?.agentId).toBe('task_1')
   })
