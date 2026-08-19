@@ -44,3 +44,15 @@ export function closeCardHover(): void {
   clearTimeout(openTimer)
   if (useCardHover.getState().anchor) useCardHover.getState().hide()
 }
+
+/**
+ * Shut the panel only if `anchor` is the element it is pointing at.
+ *
+ * For unmount cleanup: transcript rows are virtualized, so a chip can leave the
+ * DOM while its own panel is open (which would then hang off a detached node)
+ * -- but ALSO while a DIFFERENT card's panel is open, and closing that one is a
+ * panel that vanishes under the pointer.
+ */
+export function closeCardHoverFor(anchor: HTMLElement | null): void {
+  if (anchor && useCardHover.getState().anchor === anchor) closeCardHover()
+}
