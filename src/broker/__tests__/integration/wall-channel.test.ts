@@ -9,19 +9,24 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { WallFrame } from '../../../shared/wall'
-import { wallHub } from '../../wall'
+import type { CardMove, WallFrame } from '../../../shared/wall'
+import { clearCardLedger, recordCardMoves } from '../../card-ledger-ring'
+import { publishWallCardMoves, wallHub } from '../../wall'
 import { createTestHarness, type TestHarness, testId } from './test-harness'
 
 let h: TestHarness
 
 beforeEach(() => {
   wallHub.reset()
+  // The card ring is process-global; a sibling suite's moves must not leak into
+  // this one's seed.
+  clearCardLedger()
   h = createTestHarness()
 })
 
 afterEach(() => {
   wallHub.reset()
+  clearCardLedger()
   h.cleanup()
 })
 
@@ -95,6 +100,43 @@ describe('wall channel subscription', () => {
 
     h.conversationStore.removeSubscriber(dashboard.ws)
     expect(wallHub.subscriberCount()).toBe(0)
+  })
+
+  it('seeds the card ledger from the broker ring instead of a second round trip', () => {
+    const move: CardMove = {
+      id: 'wall-live-channel',
+      project: 'claude:///home/user/project',
+      title: 'a card that moved before the wall opened',
+      from: 'open',
+      to: 'done',
+      ts: 1,
+    }
+    recordCardMoves([move])
+
+    const dashboard = h.connectDashboard()
+    h.dashboardSend(dashboard, { type: 'channel_subscribe', channel: 'wall' })
+
+    // No `card_ledger_request` was sent and none is needed: the ring is IN the
+    // snapshot, which is the whole point of folding P3 into this channel.
+    expect(framesOn(dashboard)[0]?.cards?.map(c => c.id)).toEqual(['wall-live-channel'])
+  })
+
+  it('a live card move rides the frame, newest first', () => {
+    const dashboard = h.connectDashboard()
+    h.dashboardSend(dashboard, { type: 'channel_subscribe', channel: 'wall' })
+    dashboard.clearMessages()
+
+    publishWallCardMoves([
+      { id: 'a', project: 'claude:///home/user/project', title: 'a', from: 'open', to: 'in-progress', ts: 1 },
+      { id: 'b', project: 'claude:///home/user/project', title: 'b', from: 'open', to: 'done', ts: 2 },
+    ])
+    wallHub.tick()
+
+    expect(
+      framesOn(dashboard)
+        .at(-1)
+        ?.cards?.map(c => c.id),
+    ).toEqual(['b', 'a'])
   })
 
   it('a live conversation change reaches the wall as a coalesced delta', async () => {

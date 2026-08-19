@@ -6,15 +6,15 @@
  * watching. That gate is what makes "no wall open => zero extra broker work"
  * true at the SOURCE rather than at the socket.
  *
- * Three of the six sections have no producer in this codebase yet: `hosts`
- * belongs to `wall-host-vitals`, `plan` to `wall-plan-usage-series`, and
- * `cards` to `board-card-change-events`. Their seams are live and typed --
- * those cards call `publishWallHostVitals` / `publishWallPlanSample` /
- * `publishWallCardMove` and their data appears on the wall with no change here.
+ * Two of the six sections have no producer in this codebase yet: `hosts`
+ * belongs to `wall-host-vitals` and `plan` to `wall-plan-usage-series`. Their
+ * seams are live and typed -- those cards call `publishWallHostVitals` /
+ * `publishWallPlanSample` and their data appears on the wall with no change
+ * here.
  */
 
 import type { ServerWebSocket } from 'bun'
-import type { WallCardMove, WallCommitRow, WallHostVitals, WallPlanSample, WallPulseRow } from '../../shared/wall'
+import type { CardMove, WallCommitRow, WallHostVitals, WallPlanSample, WallPulseRow } from '../../shared/wall'
 import type { WsData } from '../handler-context'
 import { type SubscriberAuth, subscriberMayReceive } from '../permissions'
 import type { ProjectFilter } from './wall-frame'
@@ -79,10 +79,15 @@ export function publishWallCommit(commit: WallCommitRow): void {
   wallHub.state.noteCommit(commit)
 }
 
-/** Producer: `board-card-change-events`. */
-export function publishWallCardMove(move: WallCardMove): void {
+/**
+ * Producer: `board-card-change-events`' `card_changed` relay. Batched because
+ * one board write moves several cards and the sentinel sees them in one diff.
+ * Arrival order in, so the ring stays oldest-first and the frame builder is the
+ * single place that decides the wire's newest-first order.
+ */
+export function publishWallCardMoves(moves: CardMove[]): void {
   if (!wallActive()) return
-  wallHub.state.noteCard(move)
+  for (const move of moves) wallHub.state.noteCard(move)
 }
 
 /** Producer: `wall-host-vitals`. */

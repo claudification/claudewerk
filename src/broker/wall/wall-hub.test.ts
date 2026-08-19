@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { WALL_FRAME_INTERVAL_MS, type WallFrame, type WallPulseRow } from '../../shared/wall'
+import { type CardMove, WALL_FRAME_INTERVAL_MS, type WallFrame, type WallPulseRow } from '../../shared/wall'
 import { createWallHub, type WallHubDeps, type WallSocket } from './wall-hub'
 
 const SILENT = { info: () => {}, warn: () => {} }
@@ -195,6 +195,59 @@ describe('wall hub: coalescing', () => {
       expect(frame.pulse?.changed).toHaveLength(100)
     }
     expect(WALL_FRAME_INTERVAL_MS).toBe(500)
+  })
+})
+
+describe('wall hub: card moves ride the same frame', () => {
+  const card = (id: string, ts: number): CardMove => ({
+    id,
+    project: 'claude://default/p',
+    title: id,
+    from: 'open',
+    to: 'done',
+    ts,
+  })
+
+  it('serves cards NEWEST FIRST, the order a ledger is read in', () => {
+    const { hub, fire } = testHub()
+    const ws = fakeSocket()
+    hub.subscribe(ws)
+
+    // Arrival order in (one board write, several cards).
+    hub.state.noteCard(card('first', 1))
+    hub.state.noteCard(card('second', 2))
+    fire()
+
+    expect(ws.frames.at(-1)?.cards?.map(c => c.id)).toEqual(['second', 'first'])
+  })
+
+  it('seeds the snapshot with the ring so a cold wall has history', () => {
+    const { hub } = testHub({
+      onFirstSubscriber: () => {
+        // The seed walks the ring oldest-first; the wire flips it back.
+        hub.state.noteCard(card('older', 1))
+        hub.state.noteCard(card('newer', 2))
+      },
+    })
+    const ws = fakeSocket()
+    hub.subscribe(ws)
+
+    expect(ws.frames[0]?.full).toBe(true)
+    expect(ws.frames[0]?.cards?.map(c => c.id)).toEqual(['newer', 'older'])
+  })
+
+  it('filters card moves by the subscriber’s projects like everything else', () => {
+    const { hub, fire } = testHub({
+      projectFilter: () => p => p === 'claude://default/mine',
+    })
+    const ws = fakeSocket()
+    hub.subscribe(ws)
+
+    hub.state.noteCard({ ...card('hidden', 1), project: 'claude://default/theirs' })
+    hub.state.noteCard({ ...card('shown', 2), project: 'claude://default/mine' })
+    fire()
+
+    expect(ws.frames.at(-1)?.cards?.map(c => c.id)).toEqual(['shown'])
   })
 })
 

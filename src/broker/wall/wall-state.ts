@@ -12,8 +12,8 @@
  */
 
 import {
+  type CardMove,
   WALL_SECTION_CAP,
-  type WallCardMove,
   type WallCommitRow,
   type WallFleetCounters,
   type WallHostVitals,
@@ -30,7 +30,7 @@ export interface WallDelta {
   pulseChanged: WallPulseRow[]
   pulseGone: string[]
   commits: WallCommitRow[]
-  cards: WallCardMove[]
+  cards: CardMove[]
   hosts: WallHostVitals[]
   plan: WallPlanSample[]
   fleetDirty: boolean
@@ -43,7 +43,7 @@ export interface WallDelta {
 export interface WallSnapshot {
   pulse: WallPulseRow[]
   commits: WallCommitRow[]
-  cards: WallCardMove[]
+  cards: CardMove[]
   hosts: WallHostVitals[]
   plan: WallPlanSample[]
 }
@@ -64,7 +64,7 @@ export interface WallState {
   notePulse: (row: WallPulseRow) => void
   notePulseGone: (id: string) => void
   noteCommit: (commit: WallCommitRow) => void
-  noteCard: (move: WallCardMove) => void
+  noteCard: (move: CardMove) => void
   noteHost: (vitals: WallHostVitals) => void
   notePlan: (sample: WallPlanSample) => void
   /** Anything pending for the next frame? */
@@ -84,12 +84,12 @@ export function createWallState(): WallState {
   const hosts = new Map<string, WallHostVitals>()
   const plan = new Map<string, WallPlanSample>()
   const commitRing: WallCommitRow[] = []
-  const cardRing: WallCardMove[] = []
+  const cardRing: CardMove[] = []
 
   let dirtyPulse = new Set<string>()
   let gonePulse = new Set<string>()
   let pendingCommits: WallCommitRow[] = []
-  let pendingCards: WallCardMove[] = []
+  let pendingCards: CardMove[] = []
   let dirtyHosts = new Set<string>()
   let dirtyPlan = new Set<string>()
   let fleetDirty = false
@@ -121,7 +121,7 @@ export function createWallState(): WallState {
     coalesced++
   }
 
-  function noteCard(move: WallCardMove): void {
+  function noteCard(move: CardMove): void {
     dropped += pushRing(pendingCards, move)
     pushRing(cardRing, move)
     coalesced++

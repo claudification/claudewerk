@@ -6581,6 +6581,12 @@ export type SubscriptionChannel =
   // see the `wall` branch in handlers/channel.ts. Types: shared/wall.ts.
   | 'wall'
 
+/** The `wall` channel's one wire message. Defined in `shared/wall.ts` -- the
+ *  wall has six sections and a coalescing contract worth its own module -- and
+ *  re-exported here so the protocol index still names every frame that crosses
+ *  the socket. */
+export type { WallFrame } from './wall'
+
 // Control Panel -> Broker: channel subscription management
 export interface ChannelSubscribe {
   type: 'channel_subscribe'

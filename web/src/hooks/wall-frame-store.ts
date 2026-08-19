@@ -11,7 +11,6 @@
  */
 
 import type {
-  WallCardMove,
   WallCommitRow,
   WallFleetCounters,
   WallFrame,
@@ -19,12 +18,12 @@ import type {
   WallPlanSample,
   WallPulseRow,
 } from '@shared/wall'
+import { applyCardLedgerFrame } from './card-ledger-feed'
 import { createExternalStoreSignal } from './external-store-utils'
 
 /** Client-side ring caps. Generous next to the broker's per-frame cap, small
  *  enough that a wall left open overnight cannot grow without bound. */
 const COMMIT_RING = 300
-const CARD_RING = 300
 const PLAN_RING = 600
 
 const EMPTY_FLEET: WallFleetCounters = {
@@ -36,10 +35,12 @@ const EMPTY_FLEET: WallFleetCounters = {
   hosts: 0,
 }
 
+/** Card moves are deliberately absent: they live in `card-ledger-feed.ts`,
+ *  which owned that state before the wall existed and still does. This store is
+ *  their transport, not their home -- read them with `useCardLedger()`. */
 export interface WallView {
   pulse: WallPulseRow[]
   commits: WallCommitRow[]
-  cards: WallCardMove[]
   hosts: WallHostVitals[]
   plan: WallPlanSample[]
   fleet: WallFleetCounters
@@ -57,7 +58,6 @@ export interface WallView {
 const EMPTY_VIEW: WallView = {
   pulse: [],
   commits: [],
-  cards: [],
   hosts: [],
   plan: [],
   fleet: EMPTY_FLEET,
@@ -70,7 +70,6 @@ const EMPTY_VIEW: WallView = {
 const pulse = new Map<string, WallPulseRow>()
 const hosts = new Map<string, WallHostVitals>()
 let commits: WallCommitRow[] = []
-let cards: WallCardMove[] = []
 let plan: WallPlanSample[] = []
 let fleet = EMPTY_FLEET
 let lastSeq = 0
@@ -89,7 +88,6 @@ function rebuildView(frame: WallFrame): void {
   view = {
     pulse: [...pulse.values()],
     commits,
-    cards,
     hosts: [...hosts.values()],
     plan,
     fleet,
@@ -104,7 +102,6 @@ function clearPicture(): void {
   pulse.clear()
   hosts.clear()
   commits = []
-  cards = []
   plan = []
   fleet = EMPTY_FLEET
   frames = 0
@@ -126,7 +123,10 @@ export function applyWallFrame(frame: WallFrame): void {
     for (const id of frame.pulse.gone ?? []) pulse.delete(id)
   }
   if (frame.commits?.length) commits = ring(commits, frame.commits, COMMIT_RING)
-  if (frame.cards?.length) cards = ring(cards, frame.cards, CARD_RING)
+  // Card moves belong to `card-ledger-feed.ts`, which owns the P3 ledger's
+  // ordering and bound. The wall channel is only its transport now, so the
+  // section is handed over rather than mirrored into a second copy here.
+  if (frame.full || frame.cards?.length) applyCardLedgerFrame(frame.cards ?? [], { full: frame.full })
   if (frame.hosts) for (const h of frame.hosts) hosts.set(h.nodeId, h)
   if (frame.plan?.length) plan = ring(plan, frame.plan, PLAN_RING)
   if (frame.fleet) fleet = frame.fleet
@@ -139,6 +139,9 @@ export function applyWallFrame(frame: WallFrame): void {
  *  Cleared rather than left to rot -- the resubscribe brings a full snapshot. */
 export function resetWallFrames(): void {
   clearPicture()
+  // The ledger rides the same frames, so it is just as unverified. Emptying it
+  // is honest: the resubscribe's full snapshot repopulates it from the ring.
+  applyCardLedgerFrame([], { full: true })
   lastSeq = 0
   gaps = 0
   view = EMPTY_VIEW

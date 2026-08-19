@@ -13,13 +13,20 @@
  * `WallFrame.dropped`, because a slow client wants the latest state, not a
  * backlog of stale frames.
  *
- * PRODUCERS. `pulse`, `fleet` and `commits` are fed by sources that exist today
- * (the conversation store's coalesced update flush, and the commit ledger).
- * `hosts`, `plan` and `cards` are typed slots with publish seams on the hub,
- * waiting for the cards that own those producers (`wall-host-vitals`,
- * `wall-plan-usage-series`, `board-card-change-events`). The pipe does not care
- * which of them are live.
+ * PRODUCERS. `pulse`, `fleet`, `commits` and `cards` are fed by sources that
+ * exist today (the conversation store's coalesced update flush, the commit
+ * ledger, and `board-card-change-events`' card-ledger ring). `hosts` and `plan`
+ * are typed slots with live publish seams on the hub, waiting for the cards
+ * that own those producers (`wall-host-vitals`, `wall-plan-usage-series`). The
+ * pipe does not care which of them are live.
  */
+
+import type { CardMove } from './protocol'
+
+/** Board lane moves ride the wall as `CardMove`, the shape
+ *  `board-card-change-events` already put on the wire. Re-exported so a wall
+ *  consumer imports one module, not two. */
+export type { CardMove }
 
 /** The subscription channel name. One channel, fleet-wide. */
 export const WALL_CHANNEL = 'wall' as const
@@ -86,16 +93,12 @@ export interface WallCommitRow {
   committedAt: number
 }
 
-/** One board card changing lane. Producer: `board-card-change-events`. */
-export interface WallCardMove {
-  id: string
-  project: string
-  title: string
-  priority?: string
-  from: string
-  to: string
-  at: number
-}
+// Card moves are `CardMove` (protocol.ts), produced by
+// `board-card-change-events` and remembered in the broker's
+// `card-ledger-ring.ts`. THE WALL fans that ring in rather than defining a
+// second card-move shape or opening a second subscription for it. The `cards`
+// section is NEWEST FIRST in both full and delta frames, matching
+// `readCardLedger()` -- a ledger is read from the top.
 
 /** One node's vitals sample. Producer: `wall-host-vitals`. */
 export interface WallHostVitals {
@@ -158,7 +161,7 @@ export interface WallFrame {
   dropped?: number
   pulse?: WallPulseSection
   commits?: WallCommitRow[]
-  cards?: WallCardMove[]
+  cards?: CardMove[]
   hosts?: WallHostVitals[]
   plan?: WallPlanSample[]
   fleet?: WallFleetCounters
