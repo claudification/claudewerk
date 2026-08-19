@@ -14,7 +14,8 @@ import type { Conversation } from '@/lib/types'
 import { projectPath } from '@/lib/types'
 import { haptic } from '@/lib/utils'
 import { buildForkSpawnRequest, type ForkLaunchOverrides } from './build-fork-spawn'
-import { type FoldStats, forkCcSession, forkSummary } from './fork-api'
+import { type FoldStats, type ForkCutResult, forkCcSession, forkSummary } from './fork-api'
+import type { ForkPointRequest } from './fork-point'
 import { FORK_STRATEGIES, type ForkStrategy } from './fork-strategy'
 
 export type { ForkLaunchOverrides } from './build-fork-spawn'
@@ -29,11 +30,15 @@ export type ForkPhase = 'config' | 'forking' | 'ready' | 'launching'
 export interface ForkTarget {
   cwd?: string
   worktree?: string
+  /** Fold one side of a boundary entry instead of the whole session. */
+  forkPoint?: ForkPointRequest
 }
 
 export interface UseForkAction {
   phase: ForkPhase
   stats: FoldStats | null
+  /** Present only for a point-in-time fork: how the boundary actually landed. */
+  cut: ForkCutResult | null
   /** Mode C only: the generated summary, shown for review before launching. */
   summary: string | null
   error: string | null
@@ -50,6 +55,7 @@ export interface UseForkAction {
 export function useForkAction(conversation: Conversation | undefined): UseForkAction {
   const [phase, setPhase] = useState<ForkPhase>('config')
   const [stats, setStats] = useState<FoldStats | null>(null)
+  const [cut, setCut] = useState<ForkCutResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [resumeId, setResumeId] = useState<string | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
@@ -59,6 +65,7 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
   const reset = useCallback(() => {
     setPhase('config')
     setStats(null)
+    setCut(null)
     setError(null)
     setResumeId(null)
     setSummary(null)
@@ -104,6 +111,7 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
         tailTokenBudget: Number.isSafeInteger(spec.tailTokenBudget) ? spec.tailTokenBudget : undefined,
         targetWorktree: target.worktree?.trim() || undefined,
         targetCwd: explicitCwd && explicitCwd !== sourceCwd ? explicitCwd : undefined,
+        forkPoint: target.forkPoint,
       })
 
       if (!result.ok) {
@@ -114,6 +122,7 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
       }
       setResumeId(result.resumeId)
       setStats(result.stats ?? null)
+      setCut(result.cut ?? null)
       setPhase('ready')
       haptic('success')
     },
@@ -146,5 +155,5 @@ export function useForkAction(conversation: Conversation | undefined): UseForkAc
     [conversation, resumeId, seedPrompt],
   )
 
-  return { phase, stats, summary, error, resumeId, spawnedConversationId, runFork, runLaunch, reset }
+  return { phase, stats, cut, summary, error, resumeId, spawnedConversationId, runFork, runLaunch, reset }
 }

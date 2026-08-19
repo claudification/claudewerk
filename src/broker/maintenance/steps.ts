@@ -6,6 +6,10 @@ export function storeDbPath(cacheDir: string): string {
   return join(cacheDir, 'store.db')
 }
 
+function fmtMb(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 export function dbSizeBytes(cacheDir: string): number {
   const p = storeDbPath(cacheDir)
   if (!existsSync(p)) return 0
@@ -28,12 +32,24 @@ export function transcriptRowCount(cacheDir: string): number {
   }
 }
 
+/** Bytes of the -wal sidecar, 0 when it does not exist. */
+export function walBytes(cacheDir: string): number {
+  const p = `${storeDbPath(cacheDir)}-wal`
+  return existsSync(p) ? statSync(p).size : 0
+}
+
 /** Fold the WAL back into the main database and truncate it.
  *
  *  The WAL had grown to 675 MB, which is 675 MB that every backup copies and
  *  every restart replays. TRUNCATE (not PASSIVE) is the point -- PASSIVE leaves
- *  the file at its high-water mark. */
+ *  the file at its high-water mark.
+ *
+ *  Reports before/after bytes, not just frames: on 2026-08-19 the WAL was
+ *  10.4 GB while the checkpoint honestly logged "checkpointed 0 frames" -- the
+ *  frames really were folded in already, and the file was still 10.4 GB. Frame
+ *  count alone said everything was fine. Only the byte size showed the problem. */
 export function checkpointWal(cacheDir: string): string {
+  const before = walBytes(cacheDir)
   const db = openBrokerDatabase(storeDbPath(cacheDir))
   try {
     const row = db.query('PRAGMA wal_checkpoint(TRUNCATE)').get() as {
@@ -41,9 +57,13 @@ export function checkpointWal(cacheDir: string): string {
       log: number
       checkpointed: number
     } | null
-    if (!row) return 'checkpoint returned no result'
-    if (row.busy !== 0) return `busy=${row.busy} -- readers held the WAL open, checkpoint incomplete`
-    return `checkpointed ${row.checkpointed} frames, WAL truncated`
+    const after = walBytes(cacheDir)
+    const sizes = `WAL ${fmtMb(before)} -> ${fmtMb(after)} (reclaimed ${fmtMb(before - after)})`
+    if (!row) return `checkpoint returned no result -- ${sizes}`
+    if (row.busy !== 0) {
+      return `busy=${row.busy} -- readers held the WAL open, checkpoint incomplete; ${sizes}`
+    }
+    return `checkpointed ${row.checkpointed} frames, ${row.log} in log, WAL truncated -- ${sizes}`
   } finally {
     db.close()
   }

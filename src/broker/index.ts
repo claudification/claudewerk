@@ -74,6 +74,7 @@ import {
   SCAVENGER_CREATED_BY,
   saveLedger,
 } from './lessons-store'
+import { startWalTicker } from './maintenance/wal-ticker'
 import { drain, enqueue, getQueueSize, initMessageQueue } from './message-queue'
 import { routeMessage } from './message-router'
 import { initModelPricing } from './model-pricing'
@@ -1389,6 +1390,13 @@ async function main() {
   // THEIR OWN ZONE (this container runs in UTC, so an unzoned cron would lie).
   // Inert until a schedule exists; on boot it reconciles what an outage missed.
   setScheduledTaskEngine(wireScheduledTasks(store, conversationStore))
+
+  // WAL TICKER: fold store.db-wal back into the database whenever it grows past
+  // its threshold. The nightly maintenance run also checkpoints, but it aborts
+  // at the first failed step and only runs once a day -- on 2026-08-19 a VACUUM
+  // left a 10.4 GB WAL that the broker then carried for 24h. This is the net
+  // under that, and it runs whether or not anything else succeeded.
+  startWalTicker({ cacheDir: authCacheDir })
 
   // NIGHTSHIFT GUARDIANS (plan-quest-engine.md §2a / §6c / §6d): the deterministic
   // POKE protocol (prod a dead-but-non-terminal worker, then mechanically stamp

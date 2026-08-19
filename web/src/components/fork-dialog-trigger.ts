@@ -1,8 +1,14 @@
 import { createLazyBus } from '@/lib/lazy-bus'
+import type { ForkPointSeed } from './fork-dialog/fork-point'
 
 export interface ForkDialogOptions {
   /** The conversation being forked FROM. */
   conversationId: string
+  /**
+   * The transcript entry the fork was started from, when it was started from
+   * one. Absent = fork from HEAD, the original behaviour.
+   */
+  forkPoint?: ForkPointSeed
 }
 
 /** Buffering open bus for the (lazy-mounted) fork dialog -- same contract as

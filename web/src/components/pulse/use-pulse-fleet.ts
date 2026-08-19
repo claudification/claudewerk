@@ -2,11 +2,19 @@ import { projectIdentityKey } from '@shared/project-uri'
 import { useEffect, useMemo, useState } from 'react'
 import { useConversations, useConversationsStore } from '@/hooks/use-conversations'
 import { pulseActionText, pulseTag } from '@/lib/pulse/action-text'
-import { bandOf, compareInBand, PULSE_BANDS, type PulseBand } from '@/lib/pulse/bands'
+import {
+  bandOf,
+  compareInBand,
+  hardBlockOf,
+  PULSE_BANDS,
+  type PulseAttentionFlags,
+  type PulseBand,
+} from '@/lib/pulse/bands'
 import { isEmptyQuery, matchesPulseQuery, type PulseQuery, parsePulseQuery } from '@/lib/pulse/filter'
 import { isManaged, type ManagedInfo, managedInfo } from '@/lib/pulse/managed'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { projectDisplayName } from '@/lib/utils'
+import { useAttentionFlags } from './use-attention-flags'
 
 /** Bands that render as rows. `expired` is a collapsed count, never a band. */
 export const VISIBLE_BANDS = PULSE_BANDS.filter(b => b !== 'expired')
@@ -23,6 +31,9 @@ export interface PulseRow {
   projectIcon?: string
   projectColor?: string
   action: string
+  /** Which un-fakeable interaction is holding this conversation, when one is.
+   *  Present exactly on `blocked` rows — drives the row marker. */
+  blockedBy?: string
   tag?: string
   ageMs: number
   /** `$` axis — total spend so far. */
@@ -73,7 +84,13 @@ function useNowTick(intervalMs = 1_000): number {
   return now
 }
 
-function toRow(c: Conversation, band: PulseBand, now: number, ps?: ProjectSettings): PulseRow {
+function toRow(
+  c: Conversation,
+  band: PulseBand,
+  now: number,
+  flags: PulseAttentionFlags,
+  ps?: ProjectSettings,
+): PulseRow {
   const managedBy = managedInfo(c)
   return {
     managedBy,
@@ -85,7 +102,8 @@ function toRow(c: Conversation, band: PulseBand, now: number, ps?: ProjectSettin
     project: projectDisplayName(c.project, ps?.label),
     projectIcon: ps?.icon,
     projectColor: ps?.color,
-    action: pulseActionText(c),
+    action: pulseActionText(c, flags),
+    blockedBy: hardBlockOf(c, flags),
     tag: pulseTag(c),
     ageMs: Math.max(0, now - c.lastActivity),
     costUsd: c.stats?.totalCostUsd,
@@ -104,29 +122,14 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
   const conversations = useConversations()
   const now = useNowTick(tickMs)
 
-  // Select the raw arrays (stable refs) and derive Sets in a memo — returning a
-  // new Set straight from a selector re-fires every render (React #185).
-  const pendingPermissions = useConversationsStore(s => s.pendingPermissions)
-  const pendingProjectLinks = useConversationsStore(s => s.pendingProjectLinks)
   const projectSettings = useConversationsStore(s => s.projectSettings)
-
-  const permissionIds = useMemo(() => new Set(pendingPermissions.map(p => p.conversationId)), [pendingPermissions])
-  const linkIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const r of pendingProjectLinks) {
-      ids.add(r.fromConversation)
-      ids.add(r.toConversation)
-    }
-    return ids
-  }, [pendingProjectLinks])
-
+  const flagsFor = useAttentionFlags()
   const query = useMemo(() => parsePulseQuery(rawQuery), [rawQuery])
 
   return useMemo(() => {
     const byBand = new Map<PulseBand, Conversation[]>(PULSE_BANDS.map(b => [b, []]))
     for (const c of conversations) {
-      const band = bandOf(c, { hasPendingPermission: permissionIds.has(c.id), hasPendingLink: linkIds.has(c.id) }, now)
-      byBand.get(band)?.push(c)
+      byBand.get(bandOf(c, flagsFor(c.id), now))?.push(c)
     }
 
     // Chip counts must agree with what the list can actually show. While
@@ -141,7 +144,7 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       (byBand.get(band) ?? [])
         .slice()
         .sort((a, b) => compareInBand(band, a, b))
-        .map(c => toRow(c, band, now, projectSettings[projectIdentityKey(c.project)]))
+        .map(c => toRow(c, band, now, flagsFor(c.id), projectSettings[projectIdentityKey(c.project)]))
         .filter(row => matchesPulseQuery(row, query))
 
     const groups = VISIBLE_BANDS.map(band => ({ band, rows: build(band) })).filter(g => g.rows.length > 0)
@@ -163,5 +166,5 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       query,
       isEmpty: isEmptyQuery(query),
     }
-  }, [conversations, permissionIds, linkIds, projectSettings, query, now])
+  }, [conversations, flagsFor, projectSettings, query, now])
 }

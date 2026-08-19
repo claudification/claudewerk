@@ -1,8 +1,9 @@
 /** The grammar cheat-sheet. Tapping a sigil types it, so the surface teaches
  *  itself on a phone where there are no hints to hover. */
 const SIGILS: Array<{ key: string; label: string }> = [
-  { key: '!', label: 'needs' },
+  { key: '!', label: 'wants you' },
   { key: '!!', label: '+working' },
+  { key: '!!!', label: 'blocked' },
   { key: '@', label: 'project' },
   { key: '#', label: 'tag' },
   { key: '~30m', label: 'window' },

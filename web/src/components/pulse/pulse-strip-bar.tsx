@@ -1,7 +1,7 @@
 import { pulseAge } from '@/lib/pulse/action-text'
 import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
 import type { PulseBand } from '@/lib/pulse/bands'
-import { PULSE_BANDS } from '@/lib/pulse/bands'
+import { isAttentionBand, PULSE_BANDS } from '@/lib/pulse/bands'
 import { cn } from '@/lib/utils'
 import type { PulseRow } from './use-pulse-fleet'
 
@@ -20,7 +20,7 @@ export function PulseStripBar({
   open: boolean
   onToggle: () => void
 }) {
-  const urgent = lead?.band === 'needs'
+  const urgent = lead !== null && isAttentionBand(lead.band)
   // Deliberately 30px and flush to the bottom edge on EVERY viewport.
   //
   // It was briefly taller on mobile with safe-area padding, to make it a real
@@ -45,7 +45,9 @@ export function PulseStripBar({
                 !n && 'opacity-35',
               )}
             >
-              <span className={cn('size-1.5 rounded-full', style.dot, band === 'needs' && n > 0 && 'animate-pulse')} />
+              <span
+                className={cn('size-1.5 rounded-full', style.dot, isAttentionBand(band) && n > 0 && 'animate-pulse')}
+              />
               {n}
             </span>
           )
@@ -63,7 +65,7 @@ export function PulseStripBar({
           <span
             className={cn(
               'text-[11px] truncate hidden sm:inline',
-              urgent ? PULSE_BAND_STYLE.needs.text : 'text-accent',
+              urgent ? PULSE_BAND_STYLE[lead.band].text : 'text-accent',
             )}
           >
             {lead.action}

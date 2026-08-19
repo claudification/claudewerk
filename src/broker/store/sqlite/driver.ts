@@ -1,5 +1,5 @@
-import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
+import { openStoreDatabase } from '../../sqlite-open'
 import type { StoreConfig, StoreDriver } from '../types'
 import { createSqliteAddressBookStore } from './address-book'
 import { createSqliteConversationStore } from './conversations'
@@ -21,7 +21,7 @@ import { createSqliteTranscriptStore } from './transcripts'
 
 export function createSqliteDriver(config: StoreConfig): StoreDriver {
   const filename = config.filename ?? join(config.dataDir ?? '.', 'store.db')
-  const rawDb = new Database(filename, { strict: true })
+  const rawDb = openStoreDatabase(filename)
 
   // Migrations and schema creation run against the RAW handle: they are one-off
   // startup DDL, they are legitimately slow, and logging them would bury the
@@ -63,6 +63,10 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
       // reporting it as a slow query is noise, not signal.
       rawDb.run('PRAGMA wal_checkpoint(TRUNCATE)')
       rawDb.run('VACUUM')
+      // The VACUUM rewrote the whole database through the WAL, so the WAL is now
+      // the size of the store. Checkpointing only before it would leave that
+      // behind -- see reclaimPhase for the incident this cost us.
+      rawDb.run('PRAGMA wal_checkpoint(TRUNCATE)')
     },
   }
 }

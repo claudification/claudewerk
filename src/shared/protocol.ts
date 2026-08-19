@@ -17,6 +17,7 @@ import type {
   EpicRunFull,
   EpicRunStatus,
 } from './epic-run-types'
+import type { CutBoundary } from './fork-cut'
 import type {
   NightshiftBlocked,
   NightshiftConfig,
@@ -3891,6 +3892,20 @@ export interface ForkCcSessionResult {
     droppedThinking: number
     collapsedReads: number
   }
+  /**
+   * How a requested point-in-time cut actually landed. Present only when the
+   * request carried a `forkPoint`.
+   *
+   * `resolvedBy: 'none'` means the boundary could not be located and the WHOLE
+   * transcript was carried -- a legitimate outcome, not an error, but the user
+   * asked for a slice and did not get one, so it is reported rather than
+   * swallowed (EVERYTHING IS A STRUCTURED MESSAGE).
+   */
+  cut?: {
+    resolvedBy: 'uuid' | 'timestamp' | 'none'
+    keptEntries: number
+    droppedEntries: number
+  }
   error?: string
 }
 
@@ -6156,6 +6171,33 @@ export interface ForkCcSession {
   digestOverTokens?: number
   /** Keep this many tokens of the most recent turns verbatim. */
   tailTokenBudget?: number
+  /** Fold only one side of a boundary entry. Omitted = fold from HEAD. */
+  forkPoint?: ForkPoint
+}
+
+/**
+ * A point-in-time boundary for a fork: which message to slice at, and which side
+ * of it to carry.
+ *
+ * The boundary carries BOTH a uuid and a timestamp because the control panel's
+ * transcript is not a 1:1 view of CC's JSONL. Assistant rows carry the real CC
+ * uuid essentially always, user rows ~91% of the time (voice-dictated and
+ * system-reminder-wrapped prompts diverge from their file row), and rclaude's own
+ * chrome -- boot, launch, queue-operation -- has no file row at all. The sentinel
+ * resolves uuid-first and falls back to the last file row at or before the
+ * timestamp, so every entry the user can see is a legal cut point.
+ */
+export interface ForkPoint extends CutBoundary {
+  /**
+   * Replace the discarded slice with one summary message at the top of the fork.
+   *
+   * Only meaningful for `after`, where the dropped slice is the ancient history
+   * you are leaving behind: a paragraph standing in for 500 turns, with the
+   * recent ones kept verbatim. For `before` the dropped slice is the future being
+   * re-done, and summarizing it into the preamble would bias the very turn the
+   * fork exists to retry.
+   */
+  summarizeDropped?: boolean
 }
 
 export interface RclaudeConfigGet {

@@ -65,3 +65,35 @@ describe('buildForkMessage', () => {
     expect(canFork(conv({ agentHostMeta: {} }))).toBe(false)
   })
 })
+
+describe('buildForkMessage -- point-in-time', () => {
+  const point = { uuid: 'entry-9', timestamp: '2026-08-19T10:00:00.000Z', direction: 'after', inclusive: true } as const
+
+  test('forwards the boundary untouched -- the SENTINEL resolves it', () => {
+    expect(buildForkMessage(conv(), 'req1', { forkPoint: point })?.forkPoint).toEqual(point)
+  })
+
+  test('a fork from HEAD carries no boundary at all', () => {
+    expect(buildForkMessage(conv(), 'req1')?.forkPoint).toBeUndefined()
+  })
+
+  test('extra provenance lands BELOW the fork header, not instead of it', () => {
+    const msg = buildForkMessage(conv({ title: 'voice latency' }), 'req1', {
+      forkPoint: point,
+      extraProvenance: '[earlier context -- 20 turns, summarized]\n\nThey renamed the slug helper.',
+    })
+    const block = msg?.provenanceBlock ?? ''
+    expect(block).toContain('voice latency')
+    expect(block).toContain('They renamed the slug helper.')
+    expect(block.indexOf('voice latency')).toBeLessThan(block.indexOf('They renamed'))
+  })
+
+  test('no extra provenance leaves the header exactly as it was', () => {
+    const withOut = buildForkMessage(conv({ title: 'voice latency' }), 'req1')?.provenanceBlock
+    const withEmpty = buildForkMessage(conv({ title: 'voice latency' }), 'req1', {
+      extraProvenance: '',
+    })?.provenanceBlock
+    expect(withEmpty).toBe(withOut as string)
+    expect(withOut?.endsWith('\n')).toBe(false)
+  })
+})

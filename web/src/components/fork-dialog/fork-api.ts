@@ -7,6 +7,8 @@
  * lost work.
  */
 
+import type { ForkPointRequest } from './fork-point'
+
 export interface FoldStats {
   beforeTokens: number
   afterTokens: number
@@ -32,9 +34,21 @@ export interface ForkRequest {
    */
   targetWorktree?: string
   targetCwd?: string
+  /** Fold one side of a boundary entry instead of the whole session. */
+  forkPoint?: ForkPointRequest
 }
 
-export type ForkResponse = { ok: true; resumeId: string; stats?: FoldStats } | { ok: false; error: string }
+/** How a requested cut actually landed. `none` = the boundary was not found and
+ *  the WHOLE transcript came across, which the user asked not to happen. */
+export interface ForkCutResult {
+  resolvedBy: 'uuid' | 'timestamp' | 'none'
+  keptEntries: number
+  droppedEntries: number
+}
+
+export type ForkResponse =
+  | { ok: true; resumeId: string; stats?: FoldStats; cut?: ForkCutResult }
+  | { ok: false; error: string }
 
 export type ForkSummaryResponse = { ok: true; summary: string; seedPrompt: string } | { ok: false; error: string }
 
@@ -72,6 +86,7 @@ export async function forkCcSession(req: ForkRequest): Promise<ForkResponse> {
     const data = (await res.json().catch(() => null)) as {
       resumeId?: string
       stats?: FoldStats
+      cut?: ForkCutResult
       error?: string
     } | null
 
@@ -79,7 +94,7 @@ export async function forkCcSession(req: ForkRequest): Promise<ForkResponse> {
       return { ok: false, error: data?.error || `Fork failed (HTTP ${res.status})` }
     }
     if (!data.resumeId) return { ok: false, error: 'Fork returned no session to resume' }
-    return { ok: true, resumeId: data.resumeId, stats: data.stats }
+    return { ok: true, resumeId: data.resumeId, stats: data.stats, cut: data.cut }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }

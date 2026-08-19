@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Conversation, LiveStatus, LiveStatusState } from '@/lib/types'
-import { bandOf, compareInBand, JUST_DONE_WINDOW_MS, PULSE_BANDS, wantsAttention } from './bands'
+import { bandOf, compareInBand, hardBlockOf, JUST_DONE_WINDOW_MS, PULSE_BANDS, wantsAttention } from './bands'
 
 const NOW = 1_800_000_000_000
 
@@ -21,13 +21,15 @@ const live = (state: LiveStatusState, over: Partial<LiveStatus> = {}): LiveStatu
   ({ state, seq: 1, updatedAt: NOW - 5_000, ...over }) as LiveStatus
 
 describe('PULSE_BANDS', () => {
-  it('leads with WORKING, then JUST DONE, then NEEDS YOU', () => {
-    // Two reorderings, both driven by real fleet data. needs-first buried the
+  it('leads with BLOCKED ON YOU, then WORKING, then JUST DONE, then NEEDS YOU', () => {
+    // Three reorderings, all driven by real fleet data. needs-first buried the
     // dozen things actually running under three dozen that mostly were not
     // blocked. Then working -> needs -> done pushed JUST DONE below a 30-row
     // needs band, i.e. off screen -- and a finished run is the most perishable
-    // row on the board (merge it, ship it, or catch a bad landing).
-    expect([...PULSE_BANDS]).toEqual(['working', 'done', 'needs', 'idle', 'expired'])
+    // row on the board (merge it, ship it, or catch a bad landing). Both left
+    // the genuinely BLOCKED sorted by age against thirty soft asks, which on
+    // 2026-08-19 hid an unanswered dialog for twelve minutes.
+    expect([...PULSE_BANDS]).toEqual(['blocked', 'working', 'done', 'needs', 'idle', 'expired'])
   })
 
   it('keeps the two perishable bands above the long queue', () => {
@@ -96,9 +98,9 @@ describe('wantsAttention', () => {
 })
 
 describe('bandOf', () => {
-  it('puts attention above liveness — an active conversation asking a question is NEEDS', () => {
+  it('puts attention above liveness — an active conversation asking a question is BLOCKED', () => {
     const c = conv({ status: 'active', pendingAttention: { type: 'permission', timestamp: NOW } })
-    expect(bandOf(c, {}, NOW)).toBe('needs')
+    expect(bandOf(c, {}, NOW)).toBe('blocked')
   })
 
   it('bands live statuses as working', () => {
@@ -190,14 +192,87 @@ describe('bandOf', () => {
     ]
     for (const c of samples) expect(PULSE_BANDS).toContain(bandOf(c, {}, NOW))
   })
+
+  it('bands an open dialog as BLOCKED from the store flag alone', () => {
+    // THE 2026-08-19 BUG. The broker cleared `pendingAttention` 200 ms after
+    // setting it (PostToolUse fires the instant the dialog tool returns, and the
+    // dialog tool returns as soon as the dialog is SHOWN). With the card's
+    // umbrella empty, the store's own dialog map is the only thing left that
+    // knows a human is being waited on -- and Pulse never read it.
+    const c = conv({ status: 'active', liveStatus: live('working') })
+    expect(bandOf(c, { hasOpenDialog: true }, NOW)).toBe('blocked')
+  })
+
+  it('bands an outstanding AskUserQuestion as BLOCKED from the store flag alone', () => {
+    const c = conv({ status: 'active', liveStatus: live('working') })
+    expect(bandOf(c, { hasPendingAsk: true }, NOW)).toBe('blocked')
+  })
+
+  it('keeps a hard block above a self-reported working claim', () => {
+    // An agent parked inside a blocking tool call cannot also be working, no
+    // matter what its last self-report said.
+    const c = conv({ status: 'active', liveStatus: live('working') })
+    expect(bandOf(c, { hasPendingPermission: true }, NOW)).toBe('blocked')
+  })
+
+  it('does not let a typed-since impulse dismiss a hard block', () => {
+    // `superseded` retires a SELF-REPORT. A dialog does not stop blocking
+    // because you typed something else at the conversation -- the tool call is
+    // still parked and only an answer releases it.
+    const c = conv({ status: 'active', lastInputAt: NOW })
+    expect(bandOf(c, { hasOpenDialog: true }, NOW)).toBe('blocked')
+  })
+
+  it('bands a self-reported working conversation as WORKING while the broker says idle', () => {
+    // Live trace 2026-08-19: broker `status: idle` between two tool calls with
+    // `liveStatus.state: working`. It landed in IDLE -- the bottom band, under
+    // ~30 needs rows, off the screen entirely.
+    const c = conv({ status: 'idle', liveStatus: live('working'), lastActivity: NOW - 60_000 })
+    expect(bandOf(c, {}, NOW)).toBe('working')
+  })
+
+  it('does not let a stale working claim hold the WORKING band', () => {
+    const c = conv({ status: 'idle', liveStatus: live('working'), lastActivity: NOW - JUST_DONE_WINDOW_MS - 1 })
+    expect(bandOf(c, {}, NOW)).toBe('idle')
+  })
+
+  it('keeps an ended conversation out of BLOCKED for every hard-block source', () => {
+    const c = conv({ status: 'ended', lastActivity: NOW - 60_000 })
+    for (const flags of [{ hasOpenDialog: true }, { hasPendingAsk: true }, { hasPendingPermission: true }]) {
+      expect(bandOf(c, flags, NOW)).toBe('done')
+    }
+  })
+})
+
+describe('hardBlockOf', () => {
+  it('names the interaction so the row can say which one it is', () => {
+    expect(hardBlockOf(conv(), { hasOpenDialog: true })).toBe('dialog')
+    expect(hardBlockOf(conv(), { hasPendingPermission: true })).toBe('permission')
+    expect(hardBlockOf(conv(), { hasPendingAsk: true })).toBe('ask')
+    expect(hardBlockOf(conv(), { hasPendingLink: true })).toBe('link')
+  })
+
+  it('falls back to the card umbrella when no store flag is set', () => {
+    expect(hardBlockOf(conv({ pendingAttention: { type: 'plan_approval', timestamp: NOW } }))).toBe('plan_approval')
+  })
+
+  it('is undefined for a soft self-reported ask — that is not a hard block', () => {
+    // `needs_you` is over-reported: agents raise it for "here is my result, what
+    // next?" as readily as for a genuine block. Only un-fakeable interactions
+    // reach the top band.
+    expect(hardBlockOf(conv({ liveStatus: live('needs_you') }))).toBeUndefined()
+    expect(hardBlockOf(conv({ liveStatus: live('blocked') }))).toBeUndefined()
+  })
 })
 
 describe('compareInBand', () => {
   const older = conv({ lastActivity: NOW - 600_000 })
   const newer = conv({ lastActivity: NOW - 1_000 })
 
-  it('sorts NEEDS oldest first — the request rotting longest is the most urgent', () => {
-    expect([newer, older].sort((a, b) => compareInBand('needs', a, b))[0]).toBe(older)
+  it('sorts BLOCKED and NEEDS oldest first — the request rotting longest is the most urgent', () => {
+    for (const band of ['blocked', 'needs'] as const) {
+      expect([newer, older].sort((a, b) => compareInBand(band, a, b))[0]).toBe(older)
+    }
   })
 
   it('sorts every other band freshest first', () => {
