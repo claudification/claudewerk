@@ -27,6 +27,10 @@ export interface IntentContext {
   userMessages: IntentUserMessage[]
   /** Condensed activity: assistant text snippets and tool labels. */
   activity: string[]
+  /** Recap text from EARLIER passes over this same conversation. Continuity for
+   *  a long session: without it each recap re-describes only the recent tail and
+   *  loses what the session already concluded. */
+  background?: string
 }
 
 interface ContentPart {
@@ -110,7 +114,7 @@ const INJECTED_PREFIXES = [
   'this session is being continued',
 ]
 
-function isInjected(text: string): boolean {
+export function isInjected(text: string): boolean {
   const head = text.trimStart().toLowerCase()
   return INJECTED_PREFIXES.some(p => head.startsWith(p))
 }

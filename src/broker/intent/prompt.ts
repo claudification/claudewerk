@@ -84,6 +84,8 @@ messages are short follow-ups (commit confirmations, acknowledgements, "done",
 "thanks", "go"), describe the substantial work they conclude -- never the
 follow-up itself.
 
+BACKGROUND, when present, is what earlier recaps of this same session already
+concluded -- prior context, not new work.
 INITIAL REQUEST is what the session was opened for. USER INPUTS SINCE are newer
 and may SUPERSEDE it: if a later message clearly redirects the work, follow the
 redirect and name the session for where it is now, not where it started.
@@ -119,6 +121,10 @@ export function intentUserPrompt(ctx: IntentContext): string {
       .map(m => `- ${clip(m.text, 400)}`)
       .join('\n')
     parts.push(`USER INPUTS SINCE (newest first):\n${since}`)
+  }
+
+  if (ctx.background?.trim()) {
+    parts.push(`BACKGROUND (earlier recaps of this same session):\n${clip(ctx.background.trim(), 800)}`)
   }
 
   if (ctx.activity.length) {

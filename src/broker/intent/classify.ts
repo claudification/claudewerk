@@ -32,7 +32,11 @@ export function parseIntent(raw: string): ConversationIntent | null {
     const name = str(j.name)
     const title = str(j.title)
     if (!name && !title) return null
-    return { name, title, description: str(j.description), intent: str(j.intent) }
+    // `recap` is the field the previous away-summary prompt asked for. Accepted
+    // as an alias so a model echoing the older key does not silently produce an
+    // empty recap -- caught by the characterization suite during the cutover.
+    const description = str(j.description) || str(j.recap)
+    return { name, title, description, intent: str(j.intent) }
   } catch {
     return null
   }
@@ -40,6 +44,9 @@ export function parseIntent(raw: string): ConversationIntent | null {
 
 export interface ClassifyOptions {
   model?: string
+  /** Retry budget. Background callers pass 0 to fail fast rather than hold a
+   *  slow provider open -- a recap nobody is waiting for must not retry. */
+  retries?: number
   /** Override the system prompt -- the benchmark uses this to compare strategies. */
   system?: string
   feature?: string
@@ -58,6 +65,7 @@ export async function classifyConversation(
     maxTokens: INTENT_MAX_TOKENS,
     temperature: INTENT_TEMPERATURE,
     responseFormat: { type: 'json_object' },
+    ...(opts.retries !== undefined && { retries: opts.retries }),
   })
   return parseIntent(res.content ?? '')
 }
