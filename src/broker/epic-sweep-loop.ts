@@ -25,7 +25,8 @@ import {
   quarantineRemainingMs as quarantineLeft,
   quarantineLogLine,
   resetEngineBoot,
-} from './unattended-engine-boot'
+} from './werk-engine-boot'
+import { werkLiveness } from './werk-liveness'
 
 const SWEEP_MS = 45_000
 
@@ -33,7 +34,7 @@ const SWEEP_MS = 45_000
 // runner that nightshift and epic mode are two triggers of
 // (plan-quest-engine.md:189). Re-exported so this module's callers and tests keep
 // one import, but the clock and the rule live in ONE place for both sweeps.
-export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './unattended-engine-boot'
+export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './werk-engine-boot'
 
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
@@ -81,21 +82,16 @@ interface SweepStore {
   broadcastConversationScoped: ActivityBroadcaster['broadcastConversationScoped']
 }
 
-/**
- * A conversation is live if it has not ended, or still holds a socket. Same rule
- * as the nightshift guardian -- an `ended` conversation with an open socket is
- * mid-teardown, not settled.
- */
-function liveness(store: SweepStore): IsLive {
-  return conv => conv.status !== 'ended' || store.getActiveConversationCount(conv.id) > 0
-}
+// The liveness rule is WERK's, shared with the nightshift trigger -- see
+// werk-liveness.ts. It used to be a local copy whose comment said "same rule as
+// the nightshift guardian", which is a duplication describing itself.
 
 /** Build the sweep's dependencies from the real store. */
 export function buildSweepDeps(store: ConversationStore, overrides: Partial<SweepDeps> = {}): SweepDeps {
   const s = store as unknown as SweepStore
   const base: SweepDeps = {
     getAllConversations: s.getAllConversations,
-    isLive: liveness(s),
+    isLive: werkLiveness(s.getActiveConversationCount),
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
     addProjectListener: s.addProjectListener,
@@ -226,7 +222,17 @@ export async function beatOneEpic(
   }
 }
 
-/** Start the tick. Returns the stop function (tests + clean shutdown). */
+/**
+ * Start the tick. Returns the stop function (tests + clean shutdown).
+ *
+ * NOT yet on `startWerkTick`, and the reason is specific rather than lazy:
+ * `beatOneEpic` deliberately shares THIS loop's reentrancy guard while running
+ * DIFFERENT work (one epic, not all of them). The tick primitive owns its guard
+ * privately, so adopting it here would either hand `beatOneEpic` an unguarded
+ * path -- the exact double-dispatch the guard exists to prevent -- or need a
+ * tick registry so a forced beat can borrow the loop's guard. The quarantine and
+ * the liveness rule are already shared; this last piece is carded, not forgotten.
+ */
 export function startEpicSweep(deps: SweepDeps): () => void {
   markBoot(deps.now())
   const timer = setInterval(() => {
