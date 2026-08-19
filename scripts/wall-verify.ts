@@ -54,7 +54,14 @@ async function unmergedBranches(card: string): Promise<string> {
 for (const r of results) {
   if (r.verdict === 'VERIFIED') continue
   const own = await unmergedBranches(r.aspect.card)
-  if (own) r.failures.push(`built but NOT MERGED: ${own}`)
+  if (own) {
+    r.failures.push(`built but NOT MERGED: ${own}`)
+    // A `done` card whose artifacts are absent while its own branch carries
+    // commits has not lied -- it has not merged. Calling that a FALSE DONE
+    // burns the one verdict that should mean somebody claimed work they did
+    // not do.
+    if (r.verdict === 'MISSING') r.verdict = 'BLOCKED'
+  }
 
   // A dead feed whose owner is DONE but unmerged is a merge away, not a dead
   // end. Shouting CANNOT DELIVER at work that is finished and sitting on a
