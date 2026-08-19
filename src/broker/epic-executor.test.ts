@@ -41,13 +41,26 @@ function card(slug: string, status: TaskStatus, over: Partial<ProjectTaskMeta> =
 }
 
 function group(over: Partial<EpicGroup> = {}): EpicGroup {
-  return { epicId: 'e1', project: PROJECT, inFlight: [], overseerAlive: false, settled: [], maxGenSeen: 3, ...over }
+  return {
+    epicId: 'e1',
+    project: PROJECT,
+    inFlight: [],
+    overseerAlive: false,
+    liveOverseers: [],
+    settled: [],
+    maxGenSeen: 3,
+    ...over,
+  }
 }
 
 /** Every effect the executor can have, recorded. */
 let log: string[]
 let baton: EpicLogEntry[]
-let ops: Array<{ op: string; patch?: unknown }>
+let ops: Array<{
+  op: string
+  patch?: unknown
+  lease?: { convId: string; expectGen: number; holderAlive?: boolean; adopt?: boolean }
+}>
 let spawns: Array<{ name: string; epic: Record<string, unknown> }>
 let leaseGranted: boolean
 let cards: ProjectTaskMeta[]
@@ -88,7 +101,7 @@ beforeEach(() => {
       return { type: 'epic_result', requestId: 'r', op: 'log_append', ok: true } as EpicResult
     },
     sendEpicOp: async (_d, _p, op) => {
-      ops.push({ op: op.op, patch: op.patch })
+      ops.push({ op: op.op, patch: op.patch, lease: op.lease })
       if (op.op === 'lease') {
         return {
           type: 'epic_result',
@@ -144,6 +157,50 @@ describe('runEpicBeat', () => {
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(ops.some(o => o.op === 'lease')).toBe(true)
     expect(spawns[0].epic).toMatchObject({ role: 'overseer', gen: 4 })
+  })
+
+  /**
+   * The wake takes the lease before it can know its conversation id, so it takes
+   * it under a `pending-` placeholder. Live incident 2026-08-19: the swap to the
+   * real id was never written, so the board named a holder nothing could resolve
+   * -- the panel showed "lease null . never woken" while five generations ran.
+   */
+  test('waking ADOPTS the lease under the real conversation id, same generation', async () => {
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    const leases = ops.filter(o => o.op === 'lease')
+    expect(leases[0]?.lease?.convId).toStartWith('pending-')
+    const adopt = leases.find(o => o.lease?.adopt)
+    expect(adopt?.lease?.convId).toBe('conv_1')
+    // Same generation as the wake -- adoption is bookkeeping, not a second wake.
+    expect(adopt?.lease?.expectGen).toBe(4)
+  })
+
+  /**
+   * `overseerAlive` says SOME overseer lives, which reads true in exactly the
+   * case the CAS exists to refuse -- a second overseer already running beside a
+   * stale holder. The CAS asks about THE HOLDER named on the board.
+   *
+   * NOTE ON REACH: `planBeat` holds the whole beat on the group-wide
+   * `overseerAlive` before the CAS is consulted, so today only the false case is
+   * reachable from here. That gate is the one that should become holder-specific
+   * too; until it does, this pins the input so the CAS cannot silently go back
+   * to answering the group-wide question.
+   */
+  test('the CAS is told about THE HOLDER named on the board, not about any overseer', async () => {
+    configureEpicIo({ fetchEpicRun: async () => ({ run, baton, lease: { convId: 'conv_holder', gen: 4, at: '' } }) })
+    await runEpicBeat(deps(), group({ settled: ['t1'], liveOverseers: ['conv_someone_else'] }))
+    expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
+  })
+
+  test('with no holder on the board it falls back to the conservative group-wide answer', async () => {
+    await runEpicBeat(deps(), group({ settled: ['t1'], overseerAlive: false, liveOverseers: [] }))
+    expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
+  })
+
+  test('a spawn that never happened leaves the placeholder alone rather than adopting nothing', async () => {
+    configureEpicIo({ dispatchSpawn: (async () => ({ ok: false, error: 'name in use' })) as never })
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(ops.filter(o => o.lease?.adopt)).toHaveLength(0)
   })
 
   test('a REFUSED lease spawns nothing and is logged as normal, not as an error', async () => {

@@ -97,6 +97,9 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     settled: pending,
     cardLines: plan.rollup?.children.map(c => `${c.card.slug} -- ${c.card.title} (${c.card.status})`) ?? [],
     epicBody: plan.rollup?.card?.bodyPreview ?? '',
+    // From the SAME read as the run, so the CAS can ask whether THIS holder is
+    // alive rather than whether any overseer is.
+    holder: view.lease,
   })
 
   return finish(deps, group, run.gen, {

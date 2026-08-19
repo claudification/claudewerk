@@ -22,6 +22,39 @@ import { getProjectSettings } from './project-settings'
 
 const SWEEP_MS = 45_000
 
+/**
+ * THE RESTART QUARANTINE -- how long after the engine starts before it may act.
+ *
+ * A beat decides what to dispatch by asking which conversations are live. On a
+ * fresh broker that answer is EMPTY and wrong: the agent hosts are still
+ * reconnecting, each one carrying the seat tag that tells the engine "this card
+ * already has somebody on it". Beat inside that window and every in-flight card
+ * looks abandoned, so the engine dispatches a second seat for every one of them
+ * -- a duplicate fleet, on every deploy, exactly when nobody is watching.
+ *
+ * Two minutes is the reconnect budget, not a guess at how long a beat takes. It
+ * is a floor: the run loses at most one tick of progress, and buys back the
+ * guarantee that the first decision it makes is made on a complete picture.
+ */
+export const RESTART_QUARANTINE_MS = 120_000
+
+/**
+ * When the engine started, or null when it has not been marked -- a direct
+ * `sweepEpics` call (a test, a one-off) is not a restart and is not quarantined.
+ */
+let bootAtMs: number | null = null
+
+/** Start the quarantine clock. Called by `startEpicSweep`; idempotent per boot. */
+export function markEngineBoot(nowMs: number): void {
+  bootAtMs = nowMs
+}
+
+/** Milliseconds left in the quarantine, or 0 when it is over (or never started). */
+export function quarantineRemainingMs(nowMs: number): number {
+  if (bootAtMs === null) return 0
+  return Math.max(0, bootAtMs + RESTART_QUARANTINE_MS - nowMs)
+}
+
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
   isLive: IsLive
@@ -95,7 +128,7 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
       rendezvousCallerConversationId: null,
       // An unattended run must never stall on a human approval dialog.
       bypassApprovalGate: true,
-    } as unknown as Record<string, unknown>,
+    },
     log: line => console.log(line),
     windowOpen: async project => {
       const res = await sendNightshiftOp(s as never, project, { op: 'config_read' })
@@ -128,6 +161,14 @@ function epicsToBeat(deps: SweepDeps): EpicGroup[] {
 export async function sweepEpics(deps: SweepDeps): Promise<void> {
   if (sweeping) {
     deps.log('[epic-sweep] previous tick still running; skipping')
+    return
+  }
+  const quarantine = quarantineRemainingMs(deps.now())
+  if (quarantine > 0) {
+    // Still logged and still published: a run is not stalled, it is waiting, and
+    // the panel must be able to say which.
+    deps.log(`[epic-sweep] restart quarantine -- holding every beat for ${Math.ceil(quarantine / 1000)}s more`)
+    await deps.publishActivity?.()
     return
   }
   sweeping = true
@@ -168,6 +209,19 @@ export async function beatOneEpic(
   epicId: string,
 ): Promise<{ ok: true; outcome: BeatOutcome } | { ok: false; error: string }> {
   if (sweeping) return { ok: false, error: 'a sweep is already running; try again in a moment' }
+  // Refused rather than honoured: inside the quarantine the conversation
+  // registry is still filling, so a forced beat would dispatch a duplicate seat
+  // for every card that already has one. Saying so is more use than doing it.
+  const quarantine = quarantineRemainingMs(deps.now())
+  if (quarantine > 0) {
+    return {
+      ok: false,
+      error:
+        `the broker restarted ${Math.round((RESTART_QUARANTINE_MS - quarantine) / 1000)}s ago and agent hosts are ` +
+        `still reconnecting -- beating now would re-dispatch cards that already have a live seat. ` +
+        `Try again in ${Math.ceil(quarantine / 1000)}s.`,
+    }
+  }
   sweeping = true
   try {
     const group = epicsToBeat(deps).find(g => g.epicId === epicId && g.project === project) ?? {
@@ -175,6 +229,7 @@ export async function beatOneEpic(
       project,
       inFlight: [],
       overseerAlive: false,
+      liveOverseers: [],
       settled: [],
       maxGenSeen: 0,
     }
@@ -193,10 +248,14 @@ export async function beatOneEpic(
 
 /** Start the tick. Returns the stop function (tests + clean shutdown). */
 export function startEpicSweep(deps: SweepDeps): () => void {
+  markEngineBoot(deps.now())
   const timer = setInterval(() => {
     void sweepEpics(deps)
   }, SWEEP_MS)
-  deps.log(`[epic-sweep] started (${SWEEP_MS / 1000}s)`)
+  deps.log(
+    `[epic-sweep] started (${SWEEP_MS / 1000}s) -- restart quarantine holds every beat for the first ` +
+      `${RESTART_QUARANTINE_MS / 1000}s while agent hosts reconnect`,
+  )
   return () => {
     clearInterval(timer)
     deps.log('[epic-sweep] stopped')
@@ -206,4 +265,5 @@ export function startEpicSweep(deps: SweepDeps): () => void {
 /** Tests only -- the module-level guard would otherwise leak between cases. */
 export function resetSweepGuard(): void {
   sweeping = false
+  bootAtMs = null
 }

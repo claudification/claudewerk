@@ -4616,6 +4616,9 @@ export interface EpicLeaseInput {
    *  sentinel cannot know this, and must not guess. */
   holderAlive: boolean
   force?: boolean
+  /** Swap the real conversation id in over a `pending-` placeholder, same
+   *  generation. See `EpicLeaseRequest.adopt` in epic-lease.ts. */
+  adopt?: boolean
 }
 
 /** log_append payload. */

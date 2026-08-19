@@ -29,6 +29,15 @@ export interface EpicGroup {
   inFlight: string[]
   /** Is a conversation holding the overseer seat still alive? */
   overseerAlive: boolean
+  /**
+   * The ids of the live overseer-seat conversations, not just whether any exist.
+   *
+   * The lease CAS asks "is THE HOLDER alive", and `overseerAlive` cannot answer
+   * that -- it says only that SOME overseer lives, which is a different question
+   * and reads `true` in exactly the case the CAS exists to stop (a second
+   * overseer already running alongside a stale holder).
+   */
+  liveOverseers: string[]
   /** Cards whose every backing conversation has ended. Candidates for a wake. */
   settled: string[]
   /** The highest generation seen across this epic's conversations. Diagnostic
@@ -47,7 +56,7 @@ export type IsLive = (conv: Conversation) => boolean
 type CardLiveness = Map<string, Map<string, boolean>>
 
 function emptyGroup(epicId: string, project: string): EpicGroup {
-  return { epicId, project, inFlight: [], overseerAlive: false, settled: [], maxGenSeen: 0 }
+  return { epicId, project, inFlight: [], overseerAlive: false, liveOverseers: [], settled: [], maxGenSeen: 0 }
 }
 
 /** OR-fold one card's liveness. Its own function because the OR is the subtle
@@ -71,7 +80,10 @@ function absorb(conv: Conversation, isLive: IsLive, groups: Map<string, EpicGrou
 
   const live = isLive(conv)
   if (tag.role === 'overseer') {
-    if (live) group.overseerAlive = true
+    if (live) {
+      group.overseerAlive = true
+      group.liveOverseers.push(conv.id)
+    }
     return
   }
   if (tag.cardId) noteCardLiveness(cards, tag.epicId, tag.cardId, live)
