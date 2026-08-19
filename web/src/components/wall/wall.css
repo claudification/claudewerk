@@ -960,6 +960,94 @@
 	color: var(--foreground);
 }
 
+/* ---------- P3 card ledger ---------- */
+.wall-ledger-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 3px 4px;
+	border-radius: 4px;
+	cursor: pointer;
+}
+.wall-ledger-row:hover {
+	background: var(--surface-inset);
+}
+.wall-ledger-row:focus-visible {
+	outline: 1px solid var(--border-strong);
+	outline-offset: -1px;
+}
+.wall-ledger-t {
+	flex: 0 0 32px;
+	color: var(--comment);
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+}
+/* THE PROJECT DOT. A 10px slot that holds the project's icon when it has one and
+   a plain filled disc when it does not -- either way it is the project's own
+   colour and the width never changes, so the titles stay in a column. It is a
+   click target (scope the wall) but never a <button>: the row around it already
+   is one, and the capture handler is what keeps the two apart. */
+.wall-ledger-dot {
+	flex: 0 0 10px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	align-self: center;
+	height: 10px;
+	cursor: pointer;
+	color: var(--fg-muted);
+}
+.wall-ledger-dot i {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: currentColor;
+}
+.wall-ledger-dot:hover {
+	opacity: 0.75;
+}
+.wall-ledger-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-ledger-prio {
+	flex: 0 0 auto;
+	padding: 0 4px;
+	border-radius: 3px;
+	border-width: 1px;
+	font-size: 9px;
+	line-height: 14px;
+}
+.wall-ledger-move {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	font-size: 10px;
+	white-space: nowrap;
+}
+.wall-ledger-from {
+	color: var(--comment);
+}
+/* Below the text floor on purpose: an arrow is punctuation, not a word, and it
+   owes 3:1 as a UI component rather than 4.5:1 as small text. */
+.wall-ledger-arrow {
+	color: var(--border-strong);
+}
+.wall-ledger-to {
+	color: var(--fg-muted);
+}
+/* THE ONE LINE YOU SCAN FOR. Everything else on this pane is bookkeeping; a card
+   reaching `done` is the event, so it is the only destination that gets weight
+   and the board's own done colour. */
+.wall-ledger-done {
+	color: var(--active);
+	font-weight: 600;
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
