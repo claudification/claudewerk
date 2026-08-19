@@ -26,7 +26,7 @@ import {
   planPlannerSpawn,
   planVerifierSpawn,
 } from './epic-spawn-plan'
-import { buildLaunchConfig, ORIGIN_TAGS } from './spawn-launch-config'
+import { buildLaunchConfig, WERK_TAGS } from './spawn-launch-config'
 
 const PROJECT = 'claude://default/Users/jonas/projects/remote-claude'
 const CTX: EpicSpawnCtx = { project: PROJECT, projectRoot: PROJECT, epicId: 'epic-the-wall', gen: 6 }
@@ -112,7 +112,7 @@ describe('the spawn plan is not silently trimmed by the schema', () => {
   })
 })
 
-describe('buildLaunchConfig persists the origin tags', () => {
+describe('buildLaunchConfig persists the werk tags', () => {
   const base: SpawnRequest = { cwd: PROJECT }
   const resolved = { headless: true }
 
@@ -126,19 +126,19 @@ describe('buildLaunchConfig persists the origin tags', () => {
     expect(buildLaunchConfig({ ...base, nightshift }, resolved, undefined).nightshift).toEqual(nightshift)
   })
 
-  it('omits an origin tag the request did not carry', () => {
+  it('omits a werk tag the request did not carry', () => {
     const cfg = buildLaunchConfig(base, resolved, undefined)
     expect(cfg.epic).toBeUndefined()
     expect(cfg.nightshift).toBeUndefined()
   })
 
-  it('carries EVERY declared origin tag -- a new one must be wired, never hand-copied', () => {
+  it('carries EVERY declared werk tag -- a new one must be wired, never hand-copied', () => {
     const cfg = buildLaunchConfig(
       { ...base, epic: { epicId: 'e', role: 'overseer', gen: 1 }, nightshift: { runId: 'r', taskId: 't' } },
       resolved,
       undefined,
     ) as unknown as Record<string, unknown>
-    for (const tag of ORIGIN_TAGS) expect(cfg[tag]).toBeDefined()
+    for (const tag of WERK_TAGS) expect(cfg[tag]).toBeDefined()
   })
 
   it('still resolves the sentinel-profile intent', () => {

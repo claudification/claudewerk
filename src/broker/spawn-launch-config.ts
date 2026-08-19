@@ -10,10 +10,11 @@
  * single conversation it had spawned: zero seats, a lease pinned to a holder that
  * never existed, and the same card dispatched generation after generation.
  *
- * ORIGIN TAGS ARE THE POINT. `nightshift` and `epic` are how the broker later
+ * WERK TAGS ARE THE POINT. WERK is the one unattended engine and `nightshift` and
+ * `epic` are two of its TRIGGERS, which is why one list serves both. `nightshift` and `epic` are how the broker later
  * recognises work it started itself. Dropping one does not fail loudly -- it makes
  * the owning engine blind, which is the most expensive shape a bug can take here.
- * Anything added to that family goes in `ORIGIN_TAGS` below and is covered by the
+ * Anything added to that family goes in `WERK_TAGS` below and is covered by the
  * round-trip test; a new tag copied by hand is the same bug again.
  */
 
@@ -41,7 +42,7 @@ function intentFromProfileField(profile?: string, pool?: string): LaunchConfig['
 }
 
 /**
- * Every ORIGIN TAG a spawn request can carry onto the conversation. These are
+ * Every WERK TAG a spawn request can carry onto the conversation. These are
  * markers the broker groups on later -- never capabilities. What a nightshift
  * task or an epic seat is ALLOWED to do is enforced by the settings the spawn
  * carried; nothing re-reads these to decide what an agent may do.
@@ -50,12 +51,12 @@ function intentFromProfileField(profile?: string, pool?: string): LaunchConfig['
  * so adding a tag to `LaunchConfig` without wiring it here fails a test rather
  * than blinding whatever engine was going to read it back.
  */
-export const ORIGIN_TAGS = ['nightshift', 'epic'] as const
+export const WERK_TAGS = ['nightshift', 'epic'] as const
 
-/** Copy the origin tags a request carries, dropping the absent ones. */
-function originTags(req: SpawnRequest): Pick<LaunchConfig, (typeof ORIGIN_TAGS)[number]> {
-  const out: Pick<LaunchConfig, (typeof ORIGIN_TAGS)[number]> = {}
-  for (const tag of ORIGIN_TAGS) {
+/** Copy the werk tags a request carries, dropping the absent ones. */
+function werkTags(req: SpawnRequest): Pick<LaunchConfig, (typeof WERK_TAGS)[number]> {
+  const out: Pick<LaunchConfig, (typeof WERK_TAGS)[number]> = {}
+  for (const tag of WERK_TAGS) {
     if (req[tag] !== undefined) Object.assign(out, { [tag]: req[tag] })
   }
   return out
@@ -93,6 +94,6 @@ export function buildLaunchConfig(
     // Sentinel-profile INTENT (broker-safe NAME / mode / pool only). Profile env
     // stays sentinel-side (PROFILE-ENV BOUNDARY covenant).
     sentinelProfile: intentFromProfileField(req.profile, req.pool),
-    ...originTags(req),
+    ...werkTags(req),
   }
 }
