@@ -621,6 +621,11 @@ export function useGlobalCommands(toggleSidebar: () => void) {
 
   useCommand('theme', () => {}, { label: 'Theme', group: 'System', submenu: 'theme:' })
 
+  useCommand('theme-playground', () => window.dispatchEvent(new Event('open-theme-playground')), {
+    label: 'Theme playground',
+    group: 'System',
+  })
+
   useCommand('manage-users', () => window.dispatchEvent(new Event('open-user-admin')), {
     label: 'Manage users',
     group: 'System',

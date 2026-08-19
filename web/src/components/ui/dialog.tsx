@@ -74,6 +74,17 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
              edge and the rim-light. */
           'border border-border-strong bg-popover elevation-window',
           'flex flex-col',
+          /* RESERVE THE CLOSE BUTTON'S CORNER.
+             The X below is absolutely positioned, so it floats OVER whatever
+             occupies the top of the dialog. Every surface with full-width
+             header content therefore had to remember to leave clearance --
+             ModalWindowControls does it by hand with `mr-6` -- and the ones
+             that forgot got the X sitting on top of their content. Settings
+             was one: its filter input ran under the button and the focus ring
+             collided with it.
+             Reserving the gutter on the dialog's own first child makes it
+             structural, so nothing downstream has to remember. */
+          '[&>*:first-child]:pr-11',
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
           'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -82,7 +93,7 @@ function DialogContent({ className, children, ...props }: React.ComponentProps<t
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors">
+        <DialogPrimitive.Close className="absolute right-2.5 top-2.5 grid size-6 place-items-center rounded text-fg-muted transition-colors hover:bg-surface-hover hover:text-foreground">
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

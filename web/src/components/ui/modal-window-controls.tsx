@@ -2,7 +2,12 @@
  * Maximize / minimize controls for a managed modal's title bar.
  *
  * Every managed surface grew its own copy of these two buttons; this is the one
- * definition. `mr-6` clears the Dialog's own close button.
+ * definition.
+ *
+ * The `mr-6` that used to sit here cleared the Dialog's own close button by
+ * hand. That clearance is structural now (DialogContent reserves the corner on
+ * its first child), so keeping it would double the gap -- and hand-reserving it
+ * was what every surface WITHOUT these controls forgot to do.
  */
 
 import { Maximize2, Minimize2, Minus } from 'lucide-react'
@@ -15,7 +20,7 @@ interface Props {
 
 export function ModalWindowControls({ maximized, onToggleMaximize, onMinimize }: Props) {
   return (
-    <div className="ml-auto mr-6 flex items-center gap-1.5 text-muted-foreground">
+    <div className="ml-auto flex items-center gap-1.5 text-fg-muted">
       <button
         type="button"
         onClick={onToggleMaximize}

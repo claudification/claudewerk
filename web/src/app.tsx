@@ -74,6 +74,10 @@ import { useAgentShellsStore } from '@/lib/web-control-shells'
 const WebTerminal = lazy(() => import('@/components/web-terminal').then(m => ({ default: m.WebTerminal })))
 const ShellPane = lazy(() => import('@/components/shell-pane').then(m => ({ default: m.ShellPane })))
 const UserAdminDialog = lazy(() => import('@/components/user-admin').then(m => ({ default: m.UserAdminDialog })))
+// LAZY LOAD: preset table + slider UI, nowhere near the hot path.
+const ThemePlaygroundModal = lazy(() =>
+  import('@/components/theme-playground/theme-playground-modal').then(m => ({ default: m.ThemePlaygroundModal })),
+)
 const SentinelManagerDialog = lazy(() =>
   import('@/components/sentinel-manager').then(m => ({ default: m.SentinelManagerDialog })),
 )
@@ -296,6 +300,7 @@ function handleSwitcherSelect(id: string) {
 function Dashboard() {
   const sidebar = useSidebarOpen()
   const [showUserAdmin, setShowUserAdmin] = useState(false)
+  const [showThemePlayground, setShowThemePlayground] = useState(false)
   const [showSentinelManager, setShowSentinelManager] = useState(false)
   const [showGatewayManager, setShowGatewayManager] = useState(false)
   const [showSearchIndex, setShowSearchIndex] = useState(false)
@@ -338,6 +343,16 @@ function Dashboard() {
     }
     window.addEventListener('open-user-admin', handleOpen)
     return () => window.removeEventListener('open-user-admin', handleOpen)
+  }, [])
+
+  // Theme playground: opened from the command palette AND from Settings, so it
+  // mounts once here rather than living inside the settings row.
+  useEffect(() => {
+    function handleOpen() {
+      setShowThemePlayground(true)
+    }
+    window.addEventListener('open-theme-playground', handleOpen)
+    return () => window.removeEventListener('open-theme-playground', handleOpen)
   }, [])
 
   // Listen for sentinel manager open event (from command palette)
@@ -528,6 +543,12 @@ function Dashboard() {
       {showUserAdmin && (
         <Suspense fallback={null}>
           <UserAdminDialog open={showUserAdmin} onOpenChange={setShowUserAdmin} />
+        </Suspense>
+      )}
+
+      {showThemePlayground && (
+        <Suspense fallback={null}>
+          <ThemePlaygroundModal open={showThemePlayground} onOpenChange={setShowThemePlayground} />
         </Suspense>
       )}
 

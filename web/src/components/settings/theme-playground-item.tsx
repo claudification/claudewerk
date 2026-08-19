@@ -1,25 +1,15 @@
-import { lazy, Suspense, useState } from 'react'
-
 import { Button } from '@/components/ui/button'
 
-/* LAZY LOAD covenant: the playground pulls in the preset table and the slider
-   UI, none of which the hot path needs. It travels in its own chunk. */
-const ThemePlaygroundModal = lazy(() =>
-  import('../theme-playground/theme-playground-modal').then(m => ({ default: m.ThemePlaygroundModal })),
-)
-
+/**
+ * The playground mounts once in `app.tsx`, because it is reachable from BOTH
+ * the command palette and this settings row. Holding it here with local state
+ * would give the two entry points separate instances -- and separate unsaved
+ * slider positions.
+ */
 export function ThemePlaygroundItem() {
-  const [open, setOpen] = useState(false)
   return (
-    <>
-      <Button variant="outline" size="xs" onClick={() => setOpen(true)}>
-        Open playground
-      </Button>
-      {open && (
-        <Suspense fallback={null}>
-          <ThemePlaygroundModal open={open} onOpenChange={setOpen} />
-        </Suspense>
-      )}
-    </>
+    <Button variant="outline" size="xs" onClick={() => window.dispatchEvent(new Event('open-theme-playground'))}>
+      Open playground
+    </Button>
   )
 }
