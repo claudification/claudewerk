@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { pulseAge } from '@/lib/pulse/action-text'
 import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
+import { isAttentionBand } from '@/lib/pulse/bands'
 import { cn } from '@/lib/utils'
 import { ProjectTag } from '../project-tag'
 import type { PulseFleet, PulseRow } from './use-pulse-fleet'
@@ -50,7 +51,10 @@ function TideRow({
   onHover?: () => void
 }) {
   const style = PULSE_BAND_STYLE[row.band]
-  const needs = row.band === 'needs'
+  // Both attention bands widen the gutter and carry the glyph — the tide is a
+  // time axis, and the point of the gutter is that you can find what wants you
+  // without reading a single row.
+  const needs = isAttentionBand(row.band)
   return (
     <button
       type="button"

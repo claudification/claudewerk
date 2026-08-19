@@ -126,15 +126,27 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
   const jsonPayload = JSON.stringify(payload)
   let sent = 0
   let failed = 0
+  // Why a user got nothing. A push that silently reaches zero devices is
+  // indistinguishable from a push that was never attempted, so count the
+  // skip reasons and report them with the outcome.
+  let skippedNoSubs = 0
+  let skippedNoPermission = 0
   const staleEntries: Array<{ userName: string; endpoint: string }> = []
 
   for (const user of getAllUsers()) {
-    if (user.revoked || !user.pushSubscriptions?.length) continue
+    if (user.revoked) continue
+    if (!user.pushSubscriptions?.length) {
+      skippedNoSubs++
+      continue
+    }
 
     // Check if user has notifications permission for this conversation's project
     if (payload.project) {
       const { permissions } = resolvePermissions(user.grants, payload.project)
-      if (!permissions.has('notifications')) continue
+      if (!permissions.has('notifications')) {
+        skippedNoPermission++
+        continue
+      }
     }
 
     for (const entry of user.pushSubscriptions) {
@@ -162,5 +174,8 @@ export async function sendPushToAll(payload: PushPayload): Promise<{ sent: numbe
     }
   }
 
+  console.log(
+    `[push] sendToAll "${payload.title}" conv=${payload.conversationId?.slice(0, 8) ?? '-'} sent=${sent} failed=${failed} skipped(no-subs)=${skippedNoSubs} skipped(no-permission)=${skippedNoPermission}`,
+  )
   return { sent, failed }
 }

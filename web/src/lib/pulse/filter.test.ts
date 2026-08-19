@@ -49,9 +49,13 @@ describe('parsePulseQuery', () => {
     expect(isEmptyQuery(parsePulseQuery('   '))).toBe(true)
   })
 
-  it('parses ! as needs and !! as needs+working', () => {
-    expect(parsePulseQuery('!').bands).toEqual(['needs'])
-    expect(parsePulseQuery('!!').bands).toEqual(['needs', 'working'])
+  it('parses ! as both attention bands, !! adds working, !!! is hard blocks only', () => {
+    // `!` means "who wants me" and has to mean BOTH halves: an un-fakeable block
+    // and a self-reported ask. A shorthand covering only one would be a second
+    // way to miss a stuck agent.
+    expect(parsePulseQuery('!').bands).toEqual(['blocked', 'needs'])
+    expect(parsePulseQuery('!!').bands).toEqual(['blocked', 'needs', 'working'])
+    expect(parsePulseQuery('!!!').bands).toEqual(['blocked'])
   })
 
   it('parses @project and #tag', () => {
@@ -70,7 +74,7 @@ describe('parsePulseQuery', () => {
     expect(q.project).toBe('remote')
     expect(q.tag).toBe('epic')
     expect(q.windowMs).toBe(300_000)
-    expect(q.bands).toEqual(['needs'])
+    expect(q.bands).toEqual(['blocked', 'needs'])
   })
 
   it('keeps a bare sigil as free text rather than eating the query', () => {
@@ -98,7 +102,7 @@ describe('parsePulseQuery', () => {
 
   it('parses the whole sigil set in one query', () => {
     const q = parsePulseQuery('! @remote #epic ~30m $1 %80 &studio :opus ceiling')
-    expect(q.bands).toEqual(['needs'])
+    expect(q.bands).toEqual(['blocked', 'needs'])
     expect(q.project).toBe('remote')
     expect(q.tag).toBe('epic')
     expect(q.windowMs).toBe(1_800_000)
