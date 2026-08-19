@@ -1,5 +1,7 @@
-import { isStatusSuperseded } from '@/lib/status-style'
 import type { Conversation } from '@/lib/types'
+import { isFreshlyDone, isHardBlocked, isWorking, type PulseAttentionFlags, wantsAttention } from './signals'
+
+export { hardBlockOf, JUST_DONE_WINDOW_MS, type PulseAttentionFlags, wantsAttention } from './signals'
 
 /**
  * PULSE — the fleet grouped by ACTIVITY rather than by project.
@@ -10,7 +12,7 @@ import type { Conversation } from '@/lib/types'
  *
  *   blocked  a human is the only thing that can move this — un-fakeable
  *   working  active and streaming right now
- *   done     finished inside JUST_DONE_WINDOW_MS, still worth a look
+ *   done     the agent REPORTED done inside JUST_DONE_WINDOW_MS -- not "closed"
  *   needs    the agent SAYS it wants you — self-reported, over-reported
  *   idle     alive, quiet, nobody waiting
  *   expired  ended/reaped and past the window — collapsed to a count
@@ -53,101 +55,6 @@ export function isAttentionBand(band: PulseBand): boolean {
   return ATTENTION_BANDS.has(band)
 }
 
-/** How long a finished conversation stays in JUST DONE before falling to expired. */
-export const JUST_DONE_WINDOW_MS = 30 * 60_000
-
-/**
- * Store-held attention signals that live outside the Conversation record.
- *
- * The conversation card alone can't see these — they hang off the broker's
- * pending queues — so the caller passes them in rather than us reaching into
- * the store from a pure module.
- *
- * They are also the SECOND, INDEPENDENT PATH to the blocked band. The card's own
- * `pendingAttention` is a denormalized umbrella the broker maintains, and on
- * 2026-08-19 a single broker bug (`PostToolUse` clearing it 200 ms after
- * `dialog_show` set it) made an open dialog invisible on every surface at once.
- * One field must never again be the only thing standing between a stuck agent
- * and the human it is waiting for.
- */
-export interface PulseAttentionFlags {
-  hasPendingPermission?: boolean
-  hasPendingLink?: boolean
-  /** A dialog is on screen, unanswered — store `pendingDialogs` map. */
-  hasOpenDialog?: boolean
-  /** An AskUserQuestion is outstanding — store `pendingAskQuestions`. */
-  hasPendingAsk?: boolean
-}
-
-/** Statuses that mean the agent host is up and doing something. */
-const LIVE_STATUSES: ReadonlySet<Conversation['status']> = new Set(['active', 'starting', 'booting'])
-
-/**
- * HARD BLOCK — a human is the only thing that can move this conversation.
- *
- * Every source here is un-fakeable: the agent is parked inside a tool call that
- * does not return until someone answers. That is categorically different from
- * `liveStatus.state === 'needs_you'`, which the agent writes about itself and
- * raises as readily for "here is my result, what next?" as for a real block.
- *
- * Read BOTH the card's umbrella and the store flags — see PulseAttentionFlags.
- */
-export function hardBlockOf(c: Conversation, flags: PulseAttentionFlags = {}): string | undefined {
-  if (flags.hasPendingPermission) return 'permission'
-  if (flags.hasOpenDialog) return 'dialog'
-  if (flags.hasPendingAsk) return 'ask'
-  if (flags.hasPendingLink) return 'link'
-  if (c.pendingSpawnApproval) return 'spawn_approval'
-  if (c.pendingAttention) return c.pendingAttention.type
-  return undefined
-}
-
-function isHardBlocked(c: Conversation, flags: PulseAttentionFlags = {}): boolean {
-  return hardBlockOf(c, flags) !== undefined
-}
-
-/**
- * Does this conversation want a human RIGHT NOW?
- *
- * Deliberately broad: a false negative here is a conversation silently rotting,
- * which is the exact failure Pulse exists to kill. A false positive only costs
- * one extra row in the top band.
- *
- * `superseded` matters: if the user has already typed since the agent raised its
- * hand, the request is stale and no longer wants them. That applies ONLY to the
- * self-reported half — a dialog does not stop blocking because you typed
- * something else at it.
- */
-export function wantsAttention(c: Conversation, flags: PulseAttentionFlags = {}): boolean {
-  if (isHardBlocked(c, flags)) return true
-  const state = c.liveStatus?.state
-  if (state !== 'needs_you' && state !== 'blocked') return false
-  return !isStatusSuperseded(c.liveStatus, c.lastInputAt)
-}
-
-/** Has this conversation reported a terminal `done` that is still fresh? */
-function isFreshlyDone(c: Conversation, now: number): boolean {
-  if (c.liveStatus?.state !== 'done') return false
-  if (isStatusSuperseded(c.liveStatus, c.lastInputAt)) return false
-  return now - c.lastActivity <= JUST_DONE_WINDOW_MS
-}
-
-/**
- * Is the agent doing something, whoever says so?
- *
- * The broker `status` only reads `active` while a turn is actually streaming, so
- * a live conversation between two tool calls reads `idle` — and used to fall to
- * the bottom band under thirty NEEDS rows, off the screen. The agent's own
- * `working` self-report covers that gap, fenced by the JUST_DONE window so a
- * week-old conversation that never got a terminal status cannot claim to be
- * running.
- */
-function isWorking(c: Conversation, now: number): boolean {
-  if (LIVE_STATUSES.has(c.status)) return true
-  if (c.liveStatus?.state !== 'working') return false
-  return now - c.lastActivity <= JUST_DONE_WINDOW_MS
-}
-
 /**
  * Assign one conversation to exactly one band.
  *
@@ -165,9 +72,14 @@ export function bandOf(c: Conversation, flags: PulseAttentionFlags = {}, now: nu
   // final act was `needs_you` parked itself at the top of NEEDS YOU forever --
   // unanswerable, unclearable, and pushing live work down the page.
   if (c.status === 'ended') {
-    // Recently ended is still worth a glance; past the window it drops out of
-    // sight entirely.
-    return now - c.lastActivity <= JUST_DONE_WINDOW_MS ? 'done' : 'expired'
+    // CLOSED IS NOT DONE. This used to band every recently-ended conversation as
+    // `done`, which asserted a completion nobody had reported: kill a running
+    // conversation and it claimed success on the board. JUST DONE now means one
+    // thing only -- the agent reported `done` and that report is still fresh --
+    // so the same `isFreshlyDone` gate applies whether the process is still
+    // around or not. Everything else that ended is CLOSED and collapses into the
+    // `expired` count.
+    return isFreshlyDone(c, now) ? 'done' : 'expired'
   }
 
   if (isHardBlocked(c, flags)) return 'blocked'
