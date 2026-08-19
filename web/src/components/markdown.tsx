@@ -14,7 +14,8 @@ import { isMobileViewport } from '@/lib/utils'
 import { renderAnvilFence } from './anvil/render'
 import { playAudio } from './audio-player-bus'
 import { closeCardHover, openCardHover } from './card-hover/card-hover-bus'
-import { openProjectCard } from './conversation-detail/open-project-card'
+import { openCardMenu } from './cards/card-menu-bus'
+import { openProjectCard } from './conversation-detail/project-card-verbs'
 import { CopyMenu } from './copy-menu'
 import { openLinkPreview } from './link-preview-bus'
 import { filenameFromUrl, type MediaKind, openMediaLightbox } from './media-lightbox-bus'
@@ -799,11 +800,34 @@ export const Markdown = memo(function Markdown({ children, inline, copyable }: M
     else closeCardHover()
   }, [])
 
+  // Right-clicking a CARD link opens the card menu; right-clicking anything else
+  // in here falls through untouched, so the fork menu on the surrounding chat
+  // bubble keeps working exactly as before. Delegated rather than a prop because
+  // these anchors are raw HTML strings -- there is no React element to hang a
+  // handler on. `openCardMenu` is the same entry point `CardChip` uses.
+  const handleCardMenu = useCallback((e: React.MouseEvent) => {
+    const link = (e.target as HTMLElement).closest?.('a.file-link-card') as HTMLElement | null
+    const path = link?.getAttribute('data-file-path')
+    const cardRef = path ? matchCardHref(path) : null
+    if (!link || !path || !cardRef) return
+    // The INNER menu wins, and it takes both lines. preventDefault kills the
+    // browser's own menu AND is what the fork menu above actually reads: Radix
+    // composes handlers with `checkForDefaultPrevented`, so a defaultPrevented
+    // contextmenu never reaches its trigger. stopPropagation is the explicit
+    // half -- it does not depend on that Radix detail staying true.
+    // Verified by removing them: both menus draw at once.
+    e.preventDefault()
+    e.stopPropagation()
+    closeCardHover()
+    openCardMenu({ ref: cardRef, path, x: e.clientX, y: e.clientY })
+  }, [])
+
   const inner = (
     <div
       ref={ref}
       role="document"
       className="prose-hacker [overflow-wrap:break-word]"
+      onContextMenu={handleCardMenu}
       onMouseOver={handleCardHover}
       onMouseLeave={closeCardHover}
       onFocus={handleCardHover}

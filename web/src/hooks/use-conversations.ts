@@ -505,6 +505,15 @@ interface ConversationsState {
   /** A card to open, by id. No lane: a card's id is its whole address. */
   pendingTaskEdit: { slug: string } | null
   setPendingTaskEdit: (task: { slug: string } | null) => void
+  /** A card to LAUNCH -- spawn ONE conversation for it. Parked here for the same
+   *  reason as `pendingTaskEdit`: the caller is a transcript card link, and the
+   *  run dialog lives beside the transcript rather than under the link. */
+  pendingCardLaunch: { slug: string } | null
+  setPendingCardLaunch: (card: { slug: string } | null) => void
+  /** An epic to RUN -- hand the whole thing to the engine. A DIFFERENT verb from
+   *  LAUNCH (one conversation vs the unattended fleet), so a different slot. */
+  pendingEpicRun: { epicId: string } | null
+  setPendingEpicRun: (run: { epicId: string } | null) => void
   /** An epic to REVEAL on the board's EPICS view. Parked here rather than
    *  passed, because the caller is often somewhere with no board mounted yet
    *  (the card editor beside the transcript) -- the board claims it on arrival. */
@@ -1207,6 +1216,10 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   requestedTabSeq: 0,
   pendingTaskEdit: null,
   setPendingTaskEdit: task => set({ pendingTaskEdit: task }),
+  pendingCardLaunch: null,
+  setPendingCardLaunch: card => set({ pendingCardLaunch: card }),
+  pendingEpicRun: null,
+  setPendingEpicRun: run => set({ pendingEpicRun: run }),
   pendingEpicReveal: null,
   setPendingEpicReveal: reveal => set({ pendingEpicReveal: reveal }),
   renamingConversationId: null,

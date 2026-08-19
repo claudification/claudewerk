@@ -1,6 +1,6 @@
 import type React from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { openProjectCard } from '../conversation-detail/open-project-card'
+import { openProjectCard } from '../conversation-detail/project-card-verbs'
 import { selectConversationFromPalette } from './palette-navigate'
 import type { CommandModeState, RegistryCommand } from './use-command-mode'
 import type { ConversationModeState } from './use-conversation-mode'

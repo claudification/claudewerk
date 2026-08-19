@@ -1,4 +1,4 @@
-import { openProjectCard } from '../conversation-detail/open-project-card'
+import { openProjectCard } from '../conversation-detail/project-card-verbs'
 import type { TaskModeState } from './use-task-mode'
 
 type Task = TaskModeState['filteredTasks'][number]

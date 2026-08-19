@@ -7,11 +7,21 @@
  * down here removes eight props of drilling with it.
  */
 
+import { useConversationsStore } from '@/hooks/use-conversations'
+import { lazyModule, named } from '@/lib/lazy-module'
 import { ShareBanner } from '../share-panel'
 import { ClipboardBanners } from './conversation-banners'
 import { DialogOverlay } from './conversation-input'
 import { TaskEditorOverlay } from './task-editor-overlay'
 import { useTaskEditor } from './use-task-editor'
+
+// RUN drags the whole epic-run dialog (briefing, plan, settings) behind it, and
+// it is raised from ONE menu item on a card link. It stays out of the transcript
+// chunk until someone picks that item.
+const EpicRunOverlay = lazyModule(
+  named(() => import('./epic-run-overlay'), 'EpicRunOverlay'),
+  () => useConversationsStore(s => s.pendingEpicRun !== null),
+)
 
 interface DetailOverlaysProps {
   conversationId: string
@@ -40,6 +50,8 @@ export function DetailOverlays({ conversationId, conversationProject, canAdmin }
         onCloseRunDialog={() => setRunTaskFromEditor(null)}
         onSetTaskEditorTask={setTaskEditorTask}
       />
+
+      <EpicRunOverlay conversationId={conversationId} />
     </>
   )
 }

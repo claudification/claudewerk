@@ -6,9 +6,10 @@
  * filename throws all three away, so the tool lines render this instead.
  *
  * This is the React twin of the `a.file-link-card` anchor the markdown renderer
- * emits -- same glyph, same hover panel, same click target. Two implementations
- * exist because that one is a raw HTML string painted imperatively and this one
- * is a component; they share `cardGlyph()` so they cannot drift.
+ * emits -- same glyph, same hover panel, same click target, same RIGHT-click
+ * menu. Two implementations exist because that one is a raw HTML string painted
+ * imperatively and this one is a component; they share `cardGlyph()` and
+ * `openCardMenu()` so they cannot drift.
  *
  * SCOPE is ambient (the selected conversation's project, resolved inside the
  * provider), which is what every other transcript surface already does. The
@@ -21,7 +22,8 @@ import { useCardLookup } from '@/hooks/use-card-lookup'
 import { CARD_STATE_STYLE, type CardRef, cardGlyph, matchCardHref } from '@/lib/cards'
 import { cn } from '@/lib/utils'
 import { closeCardHover, closeCardHoverFor, openCardHover } from '../card-hover/card-hover-bus'
-import { openProjectCard } from '../conversation-detail/open-project-card'
+import { openProjectCard } from '../conversation-detail/project-card-verbs'
+import { openCardMenu } from './card-menu-bus'
 
 export function CardChip({ path, scope, fallback }: { path: string; scope?: string; fallback?: string }) {
   const ref = useMemo<CardRef | null>(() => {
@@ -54,6 +56,15 @@ export function CardChip({ path, scope, fallback }: { path: string; scope?: stri
         e.preventDefault()
         e.stopPropagation()
         openProjectCard(ref.id)
+      }}
+      onContextMenu={e => {
+        // A chip lives inside a chat bubble that already owns right-click (see
+        // fork-point-menu). The INNER menu wins, and it takes both lines -- the
+        // markdown renderer's twin handler carries the full note on why.
+        e.preventDefault()
+        e.stopPropagation()
+        closeCardHover()
+        openCardMenu({ ref, path, x: e.clientX, y: e.clientY })
       }}
       onMouseEnter={e => openCardHover(ref, e.currentTarget)}
       onMouseLeave={closeCardHover}
