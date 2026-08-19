@@ -23,7 +23,7 @@ export async function runMaintenance(opts: MaintenanceOptions): Promise<Maintena
   await gatePhase(r, opts)
   const monthsArchived = await archivePhase(r, opts)
   const rowsDeleted = await deletePhase(r, opts, monthsArchived)
-  await reclaimPhase(r, opts)
+  await reclaimPhase(r, opts, rowsDeleted)
 
   const rowsAfter = transcriptRowCount(opts.cacheDir)
   await smoketestPhase(r, opts, { rowsAfter, minRows: Math.max(0, rowsBefore - rowsDeleted) })

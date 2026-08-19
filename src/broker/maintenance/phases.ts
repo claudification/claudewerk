@@ -67,8 +67,19 @@ export async function deletePhase(r: Runner, opts: MaintenanceOptions, verified:
   return rowsDeleted
 }
 
-/** Fold the WAL back in, then reclaim the pages the delete freed. */
-export async function reclaimPhase(r: Runner, opts: MaintenanceOptions): Promise<void> {
+/** Fold the WAL back in, reclaim the pages the delete freed, then fold the WAL
+ *  back in AGAIN.
+ *
+ *  The second checkpoint is not belt-and-braces. In WAL mode a VACUUM rewrites
+ *  the whole database through the WAL, so the vacuum itself produces a WAL the
+ *  size of the store -- 10.4 GB against a 10.2 GB database on 2026-08-19. The
+ *  broker holds store.db open around the clock, so SQLite never gets the
+ *  last-connection-closes moment where it would truncate that file on its own,
+ *  and the broker carried it until the next night: page-cache churn at
+ *  ~250 MB/s, a 6 GB sawtooth in container memory, 295% CPU, and 10 GB added to
+ *  every backup. Checkpointing only BEFORE the vacuum cannot clean up what the
+ *  vacuum writes. */
+export async function reclaimPhase(r: Runner, opts: MaintenanceOptions, rowsDeleted: number): Promise<void> {
   if (opts.dryRun) {
     r.skip('checkpoint', 'dry run')
   } else {
@@ -77,6 +88,14 @@ export async function reclaimPhase(r: Runner, opts: MaintenanceOptions): Promise
 
   if (opts.dryRun || opts.skipVacuum) {
     r.skip('vacuum', opts.dryRun ? 'dry run' : 'skipVacuum set')
+    return
+  }
+
+  // A VACUUM only reclaims pages the delete freed. With CONFIRM_DELETE off --
+  // the production default -- nothing is ever deleted, so the nightly run spent
+  // 264s rewriting 9.7 GB to reclaim 0 MB, and paid for it with a 10 GB WAL.
+  if (rowsDeleted === 0) {
+    r.skip('vacuum', 'nothing deleted -- no freed pages to reclaim')
     return
   }
 
@@ -90,6 +109,7 @@ export async function reclaimPhase(r: Runner, opts: MaintenanceOptions): Promise
     return
   }
   await r.step('vacuum', () => vacuumDatabase(opts.cacheDir))
+  await r.step('checkpoint:post-vacuum', () => checkpointWal(opts.cacheDir))
 }
 
 /** Always runs, even after an abort, so the report says whether the database is
