@@ -29,7 +29,16 @@ interface ProjectTagProps {
 export function ProjectTag({ name, icon, color, className, iconClassName = 'size-3' }: ProjectTagProps) {
   const tint: CSSProperties | undefined = color ? { color } : undefined
   return (
-    <span className={cn('inline-flex items-center gap-1 min-w-0', className)} style={tint} title={name}>
+    <span
+      className={cn('inline-flex items-center gap-1 min-w-0', className)}
+      style={tint}
+      title={name}
+      // The seam THE WALL clicks. A tag renders inside rows that are already
+      // <button>s, so it cannot be one itself; a surface that wants "click the
+      // project to scope everything" delegates on this attribute instead. Purely
+      // additive -- no listener, no behaviour, nothing to opt into.
+      data-project={name}
+    >
       {icon && <ProjectIcon iconId={icon} className={cn('shrink-0', iconClassName)} />}
       <span className="truncate">{name}</span>
     </span>
