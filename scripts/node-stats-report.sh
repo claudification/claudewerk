@@ -86,14 +86,22 @@ cpu_totals() {
 }
 
 # Whole-box utilization between two /proc/stat snapshots, 0-100, one decimal.
-# Mirrors `cpuPercentFromDelta`: 0 when no time elapsed (never a NaN), clamped,
-# and rounded HALF UP like JS `Math.round`, not to-even like printf "%.1f".
+# Mirrors `cpuPercentFromDelta`: NOTHING (an empty line) when the window is too
+# short to divide, clamped otherwise, and rounded HALF UP like JS `Math.round`,
+# not to-even like printf "%.1f".
+#
+# THE FLOOR IS THE SAME PHYSICAL WINDOW, IN THIS FILE'S OWN UNITS. `os.cpus()`
+# hands the Bun sampler milliseconds and it floors at CPU_SAMPLE_FLOOR_MS (100);
+# /proc/stat is in USER_HZ jiffies, 100 per second on every Linux this runs on,
+# so the same 100ms is 10 of them. Writing `100` here would be a tenfold
+# different rule wearing the same number.
+CPU_FLOOR_JIFFIES=10
 cpu_percent_between() {
   # shellcheck disable=SC2046  # word splitting is the mechanism: "idle total" x2
   set -- $(cpu_totals "$1") $(cpu_totals "$2")
-  awk -v pi="$1" -v pt="$2" -v ni="$3" -v nt="$4" 'BEGIN {
+  awk -v pi="$1" -v pt="$2" -v ni="$3" -v nt="$4" -v floor="$CPU_FLOOR_JIFFIES" 'BEGIN {
     td = nt - pt
-    if (td <= 0) { print "0"; exit }
+    if (td < floor) { print ""; exit }
     busy = ((td - (ni - pi)) / td) * 100
     if (busy < 0) busy = 0
     if (busy > 100) busy = 100
@@ -178,9 +186,16 @@ os_arch() {
 
 # ─── The frame ─────────────────────────────────────────────────────────────
 
-# build_frame <cpuPercent> -- everything else is read fresh here.
+# build_frame <cpuPercent> -- everything else is read fresh here. An EMPTY
+# cpuPercent means the window was too short to measure, and the field is then
+# left off the frame entirely rather than sent as a zero the wall would paint.
 build_frame() {
   cpu="$1"
+  if [ -n "$cpu" ]; then
+    cpu_field=$(printf '"cpuPercent":%s,' "$cpu")
+  else
+    cpu_field=""
+  fi
   # shellcheck disable=SC2046  # each helper prints one space-separated row
   set -- $(load_avg)
   l1="$1" l5="$2" l15="$3" cores="$4"
@@ -197,8 +212,8 @@ build_frame() {
   printf '{"type":"node_stats",'
   printf '"node":{"nodeId":"sh@%s","hostId":"%s","hostname":"%s","osArch":"%s","agentVersion":"%s","uptimeSec":%s,"sender":"reporter"},' \
     "$hid" "$hid" "$(hostname)" "$(os_arch)" "$SCRIPT_VERSION" "$(uptime_sec)"
-  printf '"machine":{"cpuPercent":%s,"load":{"one":%s,"five":%s,"fifteen":%s,"cores":%s},' \
-    "$cpu" "$l1" "$l5" "$l15" "$cores"
+  printf '"machine":{%s"load":{"one":%s,"five":%s,"fifteen":%s,"cores":%s},' \
+    "$cpu_field" "$l1" "$l5" "$l15" "$cores"
   printf '"memory":{"usedBytes":%s,"totalBytes":%s},' "$mem_used" "$mem_total"
   printf '"disk":{"usedBytes":%s,"totalBytes":%s,"mount":"%s"}},' "$disk_used" "$disk_total" "$MOUNT"
   printf '"sampledAt":%s000}\n' "$(date +%s)"
@@ -271,7 +286,7 @@ while :; do
     if [ "$CODE" != "200" ]; then
       echo "node-stats-report.sh: POST $URL$INGEST_PATH -> $CODE" >&2
     elif [ "$VERBOSE" -eq 1 ]; then
-      echo "node-stats-report.sh: posted cpu=${CPU}%"
+      echo "node-stats-report.sh: posted cpu=${CPU:--}%"
     fi
   fi
 

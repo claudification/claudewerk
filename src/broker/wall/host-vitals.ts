@@ -43,9 +43,22 @@ function share(used: number, total: number): number | undefined {
   return total > 0 ? pct((used / total) * 100) : undefined
 }
 
-/** Append one sample and return the ring as it now stands. */
-function pushCpu(nodeId: string, cpuPercent: number): number[] {
+/**
+ * Append one sample and return the ring as it now stands.
+ *
+ * A frame with NO cpuPercent appends nothing. The collector omits the field when
+ * its delta spanned no measurable window (the first tick after a node connects
+ * or reconnects), and a ring is a time series of readings -- filing a
+ * placeholder for "we did not measure" would draw a spike or a dip that the box
+ * never had, and keep drawing it for the next five minutes. The series simply
+ * has one fewer point; the next real sample lands 5s later.
+ */
+function pushCpu(nodeId: string, cpuPercent: number | undefined): number[] {
   const ring = cpuRings.get(nodeId) ?? []
+  if (cpuPercent === undefined) {
+    cpuRings.set(nodeId, ring)
+    return ring
+  }
   ring.push(pct(cpuPercent))
   if (ring.length > WALL_HOST_CPU_SAMPLES) ring.splice(0, ring.length - WALL_HOST_CPU_SAMPLES)
   cpuRings.set(nodeId, ring)
@@ -65,7 +78,10 @@ export function wallHostVitalsFrom(report: NodeStatsReport, cpuHistory: readonly
     nodeId: node.nodeId,
     alias: node.hostname,
     at: report.sampledAt,
-    cpuPct: pct(machine.cpuPercent),
+    // Absent when the frame carried no reading, which S1 already renders as a
+    // dash on the neutral track -- the same treatment `memPct` and `diskPct` get
+    // when their denominator is missing.
+    ...(machine.cpuPercent !== undefined ? { cpuPct: pct(machine.cpuPercent) } : {}),
     ...(memPct !== undefined ? { memPct } : {}),
     ...(diskPct !== undefined ? { diskPct } : {}),
     load1: pct(machine.load.one),
@@ -97,7 +113,8 @@ export function recordWallHostVitals(report: NodeStatsReport): void {
 export function seedWallHostVitals(): number {
   const stored = nodeStatsStore.nodes()
   for (const entry of stored) {
-    const history = cpuRings.get(entry.report.node.nodeId) ?? [pct(entry.report.machine.cpuPercent)]
+    const seed = entry.report.machine.cpuPercent
+    const history = cpuRings.get(entry.report.node.nodeId) ?? (seed === undefined ? [] : [pct(seed)])
     publishWallHostVitals(wallHostVitalsFrom(entry.report, history))
   }
   return stored.length

@@ -27,7 +27,13 @@ import { ingestNodeStats } from '../src/broker/node-stats-ingest'
 import { nodeStatsStore } from '../src/broker/node-stats-store'
 import { hostId } from '../src/shared/host-id'
 import { NODE_STATS_INGEST_PATH, validateNodeStats } from '../src/shared/node-stats'
-import { cpuPercentFromDelta, cpuTotals, createMachineSampler, osArchLabel } from '../src/shared/node-stats-sample'
+import {
+  CPU_SAMPLE_FLOOR_MS,
+  cpuPercentFromDelta,
+  cpuTotals,
+  createMachineSampler,
+  osArchLabel,
+} from '../src/shared/node-stats-sample'
 
 const SCRIPT = join(import.meta.dirname, 'node-stats-report.sh')
 
@@ -71,19 +77,20 @@ function asCpusEntry(cpu: CpuLine) {
 }
 
 /** What the Bun sampler would compute for this pair of snapshots. */
-function bunPercent(prev: CpuLine, next: CpuLine): number {
+function bunPercent(prev: CpuLine, next: CpuLine): number | undefined {
   return cpuPercentFromDelta(cpuTotals(asCpusEntry(prev)), cpuTotals(asCpusEntry(next)))
 }
 
-/** What the shell script computes for the same pair. */
-function shellPercent(prev: CpuLine, next: CpuLine): number {
+/** What the shell script computes for the same pair. Empty output is the
+ *  script's "no reading", and maps to the sampler's `undefined`. */
+function shellPercent(prev: CpuLine, next: CpuLine): number | undefined {
   const dir = mkdtempSync(join(tmpdir(), 'node-stats-cpu-'))
   try {
     writeFileSync(join(dir, 'prev'), statFile(prev))
     writeFileSync(join(dir, 'next'), statFile(next))
     const { out, err, code } = run(['cpu-percent', join(dir, 'prev'), join(dir, 'next')])
     expect({ code, err }).toEqual({ code: 0, err: '' })
-    return Number(out)
+    return out === '' ? undefined : Number(out)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -109,9 +116,17 @@ describe('CPU: the script and the Bun sampler compute the same number', () => {
       next: { ...IDLE, user: 1100 },
     },
     {
-      name: 'no time elapsed -- 0, never a NaN',
+      name: 'no time elapsed -- no reading, never a NaN and never a fabricated 0',
       prev: IDLE,
       next: IDLE,
+    },
+    {
+      // The `[0, 0, 100, ...]` window: one tick of delta can only come out as 0
+      // or 100 depending on which column it landed in, so neither reader is
+      // allowed to call it a measurement.
+      name: 'a single tick of delta -- below both floors, so neither answers',
+      prev: IDLE,
+      next: { ...IDLE, user: IDLE.user + 1 },
     },
     {
       name: 'a counter that went BACKWARDS (a reboot mid-interval)',
@@ -150,6 +165,17 @@ describe('CPU: the script and the Bun sampler compute the same number', () => {
 
     expect(shellPercent(IDLE, busyPlusNoise)).toBe(shellPercent(IDLE, busy))
     expect(shellPercent(IDLE, busyPlusNoise)).toBe(bunPercent(IDLE, busyPlusNoise))
+  })
+
+  it('floors on the same PHYSICAL window, in each reader`s own unit', () => {
+    // THE ONE SCALE-DEPENDENT RULE, and the only place the two readers are not
+    // unit-agnostic. `os.cpus()` hands the sampler MILLISECONDS; /proc/stat is
+    // USER_HZ JIFFIES, 100 per second, so the sampler's 100ms floor is the
+    // script's 10 jiffies. Same 100ms of summed CPU time, two spellings -- and a
+    // careless `100` in the script would be a tenfold different rule wearing the
+    // same digits. Every shared case above sits clear of BOTH floors on purpose.
+    expect(CPU_SAMPLE_FLOOR_MS).toBe(100)
+    expect(readFileSync(SCRIPT, 'utf8')).toContain(`CPU_FLOOR_JIFFIES=${CPU_SAMPLE_FLOOR_MS / 10}`)
   })
 
   it('rounds half UP like JS Math.round, not half-to-even like printf', () => {

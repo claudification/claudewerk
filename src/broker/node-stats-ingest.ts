@@ -106,7 +106,8 @@ function logSample(deps: NodeStatsIngestDeps, report: NodeStatsReport, machineOw
   const { node, machine } = report
   deps.log.debug(
     `[node-stats] node=${node.nodeId} sender=${node.sender} host=${node.hostname}/${node.hostId} ` +
-      `cpu=${machine.cpuPercent.toFixed(1)}% load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
+      `cpu=${machine.cpuPercent === undefined ? '-' : `${machine.cpuPercent.toFixed(1)}%`} ` +
+      `load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
       `mem=${machine.memory.usedBytes}/${machine.memory.totalBytes} ` +
       `disk=${machine.disk.usedBytes}/${machine.disk.totalBytes}@${machine.disk.mount} ` +
       `convs=${report.sentinel?.conversationCount ?? '-'} ` +

@@ -121,8 +121,17 @@ export interface UsedTotal {
 
 /** Machine facts. Per HOST -- identical for every agent on the same box. */
 export interface MachineStats {
-  /** Whole-box CPU utilization over the last sampling interval, 0-100. */
-  cpuPercent: number
+  /**
+   * Whole-box CPU utilization over the last sampling interval, 0-100.
+   *
+   * OPTIONAL, and absent -- never zero -- when there was no interval to measure.
+   * CPU is the one field here that is a DELTA rather than a point-in-time
+   * reading, so the first frame after a sender starts has nothing to divide: it
+   * used to ship a coin-flip 0 or 100 that S1 then filed into a 60-sample ring
+   * and drew for five minutes. Same absent-vs-zero rule as
+   * `SentinelNodeExtras.conversationCount`; consumers render `--`.
+   */
+  cpuPercent?: number
   load: LoadAverage
   memory: UsedTotal
   /**

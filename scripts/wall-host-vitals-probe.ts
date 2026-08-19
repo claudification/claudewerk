@@ -149,9 +149,16 @@ async function main(): Promise<void> {
 
   // The one invariant worth asserting rather than eyeballing: the ring is a
   // series, it grew, and its last point IS the meter's number.
+  //
+  // ONE SHORT OF `seen`, and that is the fix working. The cold first frame
+  // carries no cpuPercent at all now (card `node-stats-first-tick-is-noise`), so
+  // it contributes no ring point instead of a fabricated 0 or 100 that would sit
+  // at the head of the sparkline for five minutes.
   const history = last?.cpuHistory ?? []
-  const rolled = history.length === seen.length && history.at(-1) === last?.cpuPct
-  console.log(`\n  series length ${history.length} of ${seen.length} samples, tail matches cpuPct: ${rolled}`)
+  const rolled = history.length === seen.length - 1 && history.at(-1) === last?.cpuPct
+  console.log(
+    `\n  series length ${history.length} of ${seen.length - 1} measurable samples, tail matches cpuPct: ${rolled}`,
+  )
   if (!rolled) process.exitCode = 1
 }
 
