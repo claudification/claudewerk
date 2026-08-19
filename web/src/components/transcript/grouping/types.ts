@@ -21,6 +21,9 @@ export interface DisplayGroup {
     | 'boot'
     | 'launch'
     | 'spawn_notification'
+    /** A tool-permission gate: the ASK entry, plus its decision receipt once
+     *  one arrives (folded in by requestId -- see process-entry.ts). */
+    | 'permission'
     | 'shell'
     | 'advisor'
     /** Header card for a forked conversation, parsed from the `<forked ...>`

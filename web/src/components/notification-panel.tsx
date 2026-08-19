@@ -26,7 +26,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
     selectConversation,
     pendingPermissions: perms,
     respondToPermission: respondPerm,
-    sendPermissionRule: sendRule,
+    allowPermissionAlways: allowAlways,
     pendingProjectLinks: links,
     respondToProjectLink: respondLink,
     pendingAskQuestions: asks,
@@ -40,7 +40,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       selectConversation: s.selectConversation,
       pendingPermissions: s.pendingPermissions,
       respondToPermission: s.respondToPermission,
-      sendPermissionRule: s.sendPermissionRule,
+      allowPermissionAlways: s.allowPermissionAlways,
       pendingProjectLinks: s.pendingProjectLinks,
       respondToProjectLink: s.respondToProjectLink,
       pendingAskQuestions: s.pendingAskQuestions,
@@ -67,7 +67,7 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
       key: `perm-${p.requestId}`,
       conversationId: p.conversationId,
       timestamp: p.timestamp,
-      render: () => <PermissionRow item={p} respondPerm={respondPerm} sendRule={sendRule} />,
+      render: () => <PermissionRow item={p} respondPerm={respondPerm} allowAlways={allowAlways} />,
     })
   }
 

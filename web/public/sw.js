@@ -256,15 +256,52 @@ self.addEventListener('push', event => {
     vibrate: [200, 100, 200],
   }
 
+  // A permission gate blocks the session until someone answers, so its
+  // notification carries the answer itself. Platforms that don't support
+  // notification actions (iOS Safari among them) ignore this key and fall back
+  // to plain tap-to-open -- which is why the click handler still deep-links.
+  if (payload.data?.permissionRequestId) {
+    options.actions = [
+      { action: 'permission-allow', title: 'Allow' },
+      { action: 'permission-deny', title: 'Deny' },
+    ]
+  }
+
   event.waitUntil(self.registration.showNotification(title, options))
 })
+
+/** Answer a permission gate straight from the notification. The session cookie
+ *  rides along automatically, which is the only reason a service worker can do
+ *  this at all. */
+function respondToPermission(data, behavior) {
+  return fetch('/api/permissions/respond', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({
+      conversationId: data.conversationId,
+      requestId: data.permissionRequestId,
+      behavior,
+    }),
+  }).catch(() => {
+    // Offline or logged out: the gate stays pending and the panel still has it.
+  })
+}
 
 self.addEventListener('notificationclick', event => {
   event.notification.close()
 
-  const url = event.notification.data?.url || '/'
-  const conversationId = event.notification.data?.conversationId
-  const taskId = event.notification.data?.taskId
+  const data = event.notification.data || {}
+  const url = data.url || '/'
+  const conversationId = data.conversationId
+  const taskId = data.taskId
+
+  // An action button answers in place: no window is opened and nothing is
+  // focused, because the whole point is not having to look at the panel.
+  if (event.action === 'permission-allow' || event.action === 'permission-deny') {
+    event.waitUntil(respondToPermission(data, event.action === 'permission-allow' ? 'allow' : 'deny'))
+    return
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {

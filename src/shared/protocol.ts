@@ -736,6 +736,63 @@ export interface TranscriptSpawnNotificationEntry extends TranscriptEntryBase {
   persistChosen: boolean
 }
 
+/**
+ * The ASK half of an inline tool-permission gate, stamped into the transcript
+ * at the moment CC asked -- so the prompt lives WHERE the tool call is, and the
+ * fact that a gate happened survives reload, restart, and scrollback.
+ *
+ * Pairs with {@link TranscriptPermissionDecisionEntry} by `requestId`. The two
+ * are separate append-only entries rather than one mutated row because the
+ * transcript store is INSERT-OR-IGNORE by uuid (add-transcript-entries.ts): a
+ * re-sent uuid is DROPPED, so an in-place "resolve" would silently never land.
+ * The control panel folds the pair into a single card.
+ */
+export interface TranscriptPermissionRequestEntry extends TranscriptEntryBase {
+  type: 'permission_request'
+  /** Whose gate this is. Carried ON the entry so the inline card answers the
+   *  conversation it was rendered from rather than whatever the panel happens
+   *  to have selected -- a popout showing another conversation would otherwise
+   *  grant the wrong session's permission. */
+  conversationId: string
+  /** CC's `request_id` -- the correlator for the decision entry. */
+  requestId: string
+  /** CC's `tool_use_id`, when it supplied one. */
+  toolUseId?: string
+  toolName: string
+  description?: string
+  /** JSON.stringify(input), truncated upstream by the agent host. */
+  inputPreview?: string
+}
+
+/** What ended a permission gate. `auto` = a standing rule / unattended policy
+ *  approved it with no human in the loop; `expired` = the sweep auto-denied it. */
+export type PermissionOutcome = 'allowed' | 'allowed_always' | 'denied' | 'auto' | 'expired'
+
+/**
+ * The ANSWER half of an inline tool-permission gate: the durable receipt naming
+ * the outcome, the human, and the wait. Folded into the matching
+ * {@link TranscriptPermissionRequestEntry} card by `requestId`; renders on its
+ * own when the request scrolled out of the loaded window.
+ */
+export interface TranscriptPermissionDecisionEntry extends TranscriptEntryBase {
+  type: 'permission_decision'
+  /** See {@link TranscriptPermissionRequestEntry.conversationId}. */
+  conversationId: string
+  requestId: string
+  toolUseId?: string
+  toolName: string
+  outcome: PermissionOutcome
+  decidedAt: number
+  /** Identity that answered (broker-stamped from the socket, never client-supplied).
+   *  Absent for `auto` and `expired` -- no human was involved. */
+  decidedBy?: string
+  /** How long the gate blocked, request -> decision. */
+  waitedMs?: number
+  /** True when the answer also installed a conversation-scoped auto-allow rule
+   *  for this tool (the ALWAYS button). */
+  ruleCreated?: boolean
+}
+
 /** Head / launch entry of an inline agent's transcript sub-stream. Carries the
  *  big mission/prompt + bulky launch args that must NOT ride the broadcast
  *  roster card (per plan-agent-transcript-separation 3b). Durable + FTS-searchable
@@ -793,6 +850,8 @@ export type TranscriptEntry =
   | TranscriptAdvisorEntry
   | TranscriptAgentLaunchEntry
   | TranscriptSpawnNotificationEntry
+  | TranscriptPermissionRequestEntry
+  | TranscriptPermissionDecisionEntry
   | TranscriptShellEntry
   | (TranscriptEntryBase & Record<string, unknown>) // fallback for unknown types
 
@@ -2226,6 +2285,11 @@ export interface PermissionResponse {
   requestId: string
   behavior: 'allow' | 'deny'
   toolUseId?: string
+  /** ALWAYS was pressed: this answer also installs a conversation-scoped
+   *  auto-allow rule (sent separately as `permission_rule`). Display-only --
+   *  it folds the pair into ONE `allowed_always` receipt instead of two.
+   *  The identity on the receipt is stamped from the socket, never from here. */
+  rule?: boolean
 }
 
 // Broker -> dashboard broadcast: a pending permission request was resolved (by

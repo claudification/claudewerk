@@ -17,6 +17,7 @@ import { AdvisorCard } from './advisor-card'
 import { BootTimeline } from './boot-timeline'
 import type { DisplayGroup } from './grouping'
 import { LaunchTimeline } from './launch-timeline'
+import { PermissionCard } from './permission-card'
 import { ShellReceipt } from './shell-receipt'
 import { SpawnNotification } from './spawn-notification'
 import { SystemLine } from './system-line'
@@ -28,6 +29,7 @@ const CHROME_GROUPS: Record<string, ChromeRenderer> = {
   boot: group => <BootTimeline group={group} />,
   launch: group => <LaunchTimeline group={group} />,
   spawn_notification: group => <SpawnNotification group={group} />,
+  permission: group => <PermissionCard group={group} />,
   shell: group => <ShellReceipt group={group} />,
   advisor: group => <AdvisorCard group={group} />,
   system: (group, ts) => {

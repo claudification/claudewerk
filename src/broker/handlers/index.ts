@@ -3,11 +3,13 @@
  * Call registerAllHandlers() once at startup before accepting connections.
  */
 
+import { registerAskQuestionHandlers } from './ask-question'
 import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerCanvasChatHandlers } from './canvas-chat'
 import { registerCanvasSyncHandlers } from './canvas-sync'
 import { registerChannelHandlers } from './channel'
 import { registerChecklistHandlers } from './checklist'
+import { registerClipboardHandlers } from './clipboard'
 import { registerCommitHandlers } from './commits'
 import { registerDashboardActionHandlers } from './control-panel-actions'
 import { registerConversationLifecycleHandlers } from './conversation-lifecycle'
@@ -66,6 +68,8 @@ export function registerAllHandlers(): void {
   registerInterConversationHandlers()
   registerJsonStreamHandlers()
   registerPermissionHandlers()
+  registerAskQuestionHandlers()
+  registerClipboardHandlers()
   registerPlanApprovalHandlers()
   registerProjectHandlers()
   registerNightshiftHandlers()

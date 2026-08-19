@@ -6,32 +6,31 @@
 
 import type { MessageHandler } from '../handler-context'
 import { AGENT_HOST_ONLY, DASHBOARD_ROLES, registerHandlers } from '../message-router'
+import { mirrorPendingInteraction } from './relay-helpers'
 
 // Plan approval request: agent host -> broker -> dashboard
 const planApproval: MessageHandler = (ctx, data) => {
   const conversationId = (data.conversationId || data.conversationId || ctx.ws.data.conversationId) as string
   if (!conversationId) return
 
-  const conversation = ctx.conversations.getConversation(conversationId)
-  if (conversation) {
-    // Store for reconnect recovery (same pattern as pendingDialog)
-    conversation.pendingPlanApproval = {
-      requestId: data.requestId as string,
-      toolUseId: data.toolUseId as string | undefined,
-      plan: data.plan as string,
-      planFilePath: data.planFilePath as string | undefined,
-      allowedPrompts: data.allowedPrompts as unknown[] | undefined,
-      timestamp: Date.now(),
-    }
-    conversation.pendingAttention = {
-      type: 'plan_approval',
-      question: 'Plan approval required',
-      timestamp: Date.now(),
-    }
-    ctx.conversations.persistConversationById(conversationId)
-    ctx.conversations.broadcastConversationUpdate(conversationId)
-  }
+  // Store for reconnect recovery (same pattern as pendingDialog)
+  mirrorPendingInteraction(
+    ctx,
+    conversationId,
+    { type: 'plan_approval', question: 'Plan approval required', timestamp: Date.now() },
+    conv => {
+      conv.pendingPlanApproval = {
+        requestId: data.requestId as string,
+        toolUseId: data.toolUseId as string | undefined,
+        plan: data.plan as string,
+        planFilePath: data.planFilePath as string | undefined,
+        allowedPrompts: data.allowedPrompts as unknown[] | undefined,
+        timestamp: Date.now(),
+      }
+    },
+  )
 
+  const conversation = ctx.conversations.getConversation(conversationId)
   if (!conversation?.project) {
     ctx.log.debug(`[plan] dropping approval: no project on ${conversationId.slice(0, 8)}`)
     return

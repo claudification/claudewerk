@@ -33,6 +33,7 @@ import { createForkRouter } from './routes/fork'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
 import { createNightshiftRouter } from './routes/nightshift'
+import { createPermissionsRouter } from './routes/permissions'
 import { createQuestRouter } from './routes/quest'
 import { createRecapsRouter } from './routes/recaps'
 import { createSentinelRouter } from './routes/sentinels'
@@ -305,6 +306,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createRecapsRouter(conversationStore, helpers))
   app.route('/', createCanvasesRouter(conversationStore, helpers))
   app.route('/', createNightshiftRouter(conversationStore, helpers))
+  app.route('/', createPermissionsRouter(conversationStore, helpers))
   app.route('/', createQuestRouter(conversationStore, helpers))
   app.route('/', createEpicRouter(conversationStore, helpers))
   app.route('/', createSpawnRouter(conversationStore, helpers))
