@@ -819,6 +819,58 @@
 	color: var(--comment);
 }
 
+/* ---------- P4 fleet KPIs ---------- */
+.wall-kpis {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+}
+.wall-kpi {
+	background: var(--background);
+	border: 1px solid var(--border-subtle);
+	border-radius: 5px;
+	padding: 6px 8px;
+	min-width: 0;
+}
+.wall-kpi-lab {
+	color: var(--comment);
+	font-size: 9px;
+	letter-spacing: 0.1em;
+}
+.wall-kpi-val {
+	font-size: 17px;
+	font-weight: 700;
+	line-height: 1.15;
+	font-variant-numeric: tabular-nums;
+}
+/* A dash is not a number. It must not wear the weight of one, or a wall read
+   across a room says "we know this" about the one thing we do not know. */
+.wall-kpi[data-unknown] .wall-kpi-val {
+	color: var(--comment);
+	font-weight: 400;
+}
+.wall-kpi-unit {
+	font-size: 11px;
+	font-weight: 400;
+	color: var(--comment);
+	margin-left: 1px;
+}
+.wall-kpi-sub {
+	color: var(--comment);
+	font-size: 10px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.wall-kpi-spark {
+	margin-top: 2px;
+}
+.wall-kpi-none {
+	font-size: 10px;
+	color: var(--comment);
+	padding: 2px;
+}
+
 /* ---------- legend ---------- */
 .wall-footer {
 	flex: 0 0 auto;
