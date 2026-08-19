@@ -90,16 +90,22 @@ export type TitleVerdict =
  * exactly like a petname, and a human is perfectly entitled to name something
  * `floppy-panda` on purpose.
  *
- * Rows written before this flag existed have no recorded answer. They fall back
- * to what they did record, which is WRONG for the 1194 legacy petnames -- that
- * is a one-time data repair, tracked on the card, not something to guess at
- * here every time anyone reads a title.
+ * Rows written before this flag existed have no recorded answer, so they fall
+ * back to what they did record -- still wrong for ~1194 legacy petnames, which
+ * stay frozen under their generated name.
+ *
+ * DECIDED 2026-08-19: leave them. Repairing them would mean guessing at intent
+ * that was never captured, and every available guess can strip a title a human
+ * actually chose. The blast radius is bounded (only conversations older than
+ * this flag) and shrinks on its own as they age out, which is a better trade
+ * than a migration that silently renames someone's work. Do not "fix" this by
+ * sniffing the name here.
  */
 export function isEphemeralName(state: TitleState): boolean {
   if (!state.title) return true
   if (typeof state.titleEphemeral === 'boolean') return state.titleEphemeral
-  // Pre-flag row: fall back to what it recorded. Wrong for the 1194 legacy
-  // petnames, and deliberately NOT guessed at from the text -- see the card.
+  // Pre-flag row: fall back to what it recorded. Knowingly wrong for the legacy
+  // petnames, and left that way on purpose -- see the note above.
   if (state.titleOrigin) return !USER_AUTHORED.has(state.titleOrigin)
   return !state.titleUserSet
 }
