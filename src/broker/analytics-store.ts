@@ -164,7 +164,16 @@ function enqueueTurn(turn: TurnAnalytics): void {
 }
 
 function flushBatch(): void {
-  if (batchQueue.length === 0 || !db) return
+  // db and the three prepared statements are set together in initAnalyticsStore
+  // and cleared together in closeAnalyticsStore, so they are all present or all
+  // absent. Checking them once here states that invariant instead of spreading
+  // `?.` down the loop -- which read as defensive but was inconsistent: the
+  // last_insert_rowid() result was dereferenced unguarded on the same line it
+  // was optional-chained.
+  if (batchQueue.length === 0 || !db || !stmtInsertTurn || !stmtLastRowid || !stmtInsertToolUse) return
+  const insertTurn = stmtInsertTurn
+  const lastRowid = stmtLastRowid
+  const insertToolUse = stmtInsertToolUse
 
   const batch = batchQueue
   batchQueue = []
@@ -172,7 +181,7 @@ function flushBatch(): void {
   try {
     const tx = db.transaction(() => {
       for (const turn of batch) {
-        stmtInsertTurn?.run({
+        insertTurn.run({
           timestamp: turn.timestamp,
           conversationId: turn.conversationId,
           projectUri: turn.projectUri,
@@ -188,9 +197,9 @@ function flushBatch(): void {
           promptSnippet: turn.promptSnippet,
         })
 
-        const turnId = (stmtLastRowid?.get() as { id: number }).id
+        const turnId = (lastRowid.get() as { id: number }).id
         for (const toolName of turn.tools) {
-          stmtInsertToolUse?.run({ turnId, toolName })
+          insertToolUse.run({ turnId, toolName })
         }
       }
     })

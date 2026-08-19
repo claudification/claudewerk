@@ -184,7 +184,7 @@ describe('host-transport: connection + initial message', () => {
       onError,
     })
     expect(onError).toHaveBeenCalledTimes(1)
-    expect((onError.mock.calls[0]?.[0] as Error).message).toBe('bad config')
+    expect((onError.mock.calls[0]?.[0] as Error | undefined)?.message).toBe('bad config')
   })
 })
 
@@ -407,7 +407,7 @@ describe('host-transport: protocol_upgrade_required', () => {
     lastSocket().receive({ type: 'protocol_upgrade_required', reason: 'too old' })
     await flush()
     expect(onError).toHaveBeenCalled()
-    expect((onError.mock.calls[0]?.[0] as Error).message).toContain('too old')
+    expect((onError.mock.calls[0]?.[0] as Error | undefined)?.message).toContain('too old')
     // Closing should NOT trigger a reconnect.
     const before = sockets.length
     lastSocket().closeFromServer()

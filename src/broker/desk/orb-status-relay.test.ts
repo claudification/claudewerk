@@ -133,7 +133,7 @@ describe('relayStatusToWatchers', () => {
     const ws = panel()
     applyWatch(ws, 'add', ['*'])
     relayStatusToWatchers('conv-1', conv(), status({ done: 'x'.repeat(1000) }), 'working', deps(), NOW)
-    expect((ws.sent[0]?.body as string).length).toBe(240)
+    expect((ws.sent[0]?.body as string | undefined)?.length).toBe(240)
     expect(ws.sent[0]?.body).toEndWith('…')
   })
 

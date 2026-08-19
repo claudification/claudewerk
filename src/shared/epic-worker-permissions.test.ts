@@ -13,12 +13,12 @@ describe('isMutedTool', () => {
   })
 
   // The line is "does it park the worker", not "does it reach a person".
-  test.each([
-    'mcp__rclaude__notify',
-    'mcp__rclaude__send_message',
-  ])('%s is one-way and stays ALLOWED -- telling is not asking', tool => {
-    expect(isMutedTool(tool)).toBe(false)
-  })
+  test.each(['mcp__rclaude__notify', 'mcp__rclaude__send_message'])(
+    '%s is one-way and stays ALLOWED -- telling is not asking',
+    tool => {
+      expect(isMutedTool(tool)).toBe(false)
+    },
+  )
 
   test.each([
     'Bash',

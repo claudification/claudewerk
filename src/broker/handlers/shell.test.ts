@@ -276,7 +276,7 @@ describe('shell routing', () => {
     })
     expect(w.broadcasts.some(b => b.msg.type === 'shell_added' && b.uri === URI)).toBe(true)
     expect(w.transcripts).toHaveLength(1)
-    const entry = (w.transcripts[0]?.entries as Record<string, unknown>[])[0]
+    const entry = (w.transcripts[0]?.entries as Record<string, unknown>[] | undefined)?.[0]
     expect(entry).toMatchObject({ type: 'shell', event: 'open', shellId: 'sh1' })
     expect(w.channels.some(c => c.id === 'conv_x')).toBe(true)
   })
@@ -371,7 +371,7 @@ describe('shell lifecycle', () => {
     routeMessage(ctx, 'shell_exit', { type: 'shell_exit', shellId: 'sh1', code: 0 })
     expect(shellRegistry.has('sh1')).toBe(false)
     expect(w.broadcasts.some(b => b.msg.type === 'shell_removed' && b.msg.code === 0)).toBe(true)
-    const entry = (w.transcripts[0]?.entries as Record<string, unknown>[])[0]
+    const entry = (w.transcripts[0]?.entries as Record<string, unknown>[] | undefined)?.[0]
     expect(entry).toMatchObject({ type: 'shell', event: 'exit', shellId: 'sh1' })
   })
 
