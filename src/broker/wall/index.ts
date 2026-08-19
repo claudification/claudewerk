@@ -100,7 +100,6 @@ export function publishWallHostVitals(vitals: WallHostVitals): void {
 }
 
 /** Producer: `wall-plan-usage-series`. */
-// fallow-ignore-next-line unused-export
 export function publishWallPlanSample(sample: WallPlanSample): void {
   if (!wallActive()) return
   wallHub.state.notePlan(sample)

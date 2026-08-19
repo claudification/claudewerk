@@ -144,6 +144,6 @@ const CHART_TOKENS = 5
 
 /** The app's chart palette, indexed. Wraps past five: six profiles means two
  *  share a hue, which the host label beside the name disambiguates. */
-export function planLineColor(index: number): string {
+function planLineColor(index: number): string {
   return `var(--chart-${(index % CHART_TOKENS) + 1})`
 }

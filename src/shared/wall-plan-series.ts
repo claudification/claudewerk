@@ -38,16 +38,16 @@ export const WALL_PLAN_MIN_GAP_MS = 60_000
 
 /** A move of at least this many utilization points defeats the min gap. The
  *  numbers are integer percents, so this keeps every real step. */
-export const WALL_PLAN_MIN_DELTA_PCT = 1
+const WALL_PLAN_MIN_DELTA_PCT = 1
 
 /** Hard per-series bound. Window pruning normally gets there first; this is what
  *  holds if a producer ever ignores the min gap. */
-export const WALL_PLAN_SERIES_CAP = 320
+const WALL_PLAN_SERIES_CAP = 320
 
 /** How many distinct profile@node series are held at once. Beyond this the
  *  series that has not been written to for longest is dropped -- a bound that
  *  survives a fleet churning through sentinel aliases. */
-export const WALL_PLAN_KEY_CAP = 24
+const WALL_PLAN_KEY_CAP = 24
 
 /** The line the pane draws dashed across the chart. Anthropic does not throttle
  *  at exactly this number; it is the "start caring" mark the epic asked for. */
