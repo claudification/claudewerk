@@ -45,16 +45,27 @@ export const nodeStats: MessageHandler = (ctx, data) => {
     return
   }
 
-  // Stamp identity from the CREDENTIAL, then validate. A wire `nodeId` that
-  // disagrees is logged for a reporter (which knows its own id, so a mismatch is
-  // a misconfiguration or an attempt) and expected for a sentinel (which cannot
-  // know its broker-assigned `snt_` id, so it sends its machineId).
+  // Stamp identity from the CREDENTIAL, then validate.
+  //
+  // NEITHER sender can know its broker-assigned id -- the broker resolves it
+  // from the secret, and the reporter binary never sees the UUID the CLI
+  // printed. So a wire/credential mismatch is the NORMAL case, not an anomaly,
+  // and logging it per frame is 17k lines a day per node saying nothing. It is
+  // logged ONCE per connection: enough to spot a misconfigured sender in the
+  // logs, quiet enough to be worth reading.
   const wireNode = (data as { node?: Record<string, unknown> }).node
-  if (identity.sender === 'reporter' && wireNode && wireNode.nodeId !== identity.nodeId) {
-    ctx.log.info(
-      `[node-stats] nodeId mismatch: wire=${String(wireNode.nodeId)} credential=${identity.nodeId} sender=reporter -- using credential`,
-    )
+  if (!ctx.ws.data.nodeStatsIdentityLogged) {
+    ctx.ws.data.nodeStatsIdentityLogged = true
+    if (wireNode && wireNode.nodeId !== identity.nodeId) {
+      ctx.log.info(
+        `[node-stats] identity stamped from credential: wire=${String(wireNode.nodeId)} ` +
+          `credential=${identity.nodeId} sender=${identity.sender} (expected -- a node cannot know its own broker id)`,
+      )
+    }
   }
+  // A reporter claiming to BE a sentinel is a different matter, and is always
+  // logged: it is the shape of an attempt to smuggle sentinel-only extras past
+  // the contract's own extras rule.
   if (identity.sender === 'reporter' && wireNode?.sender === 'sentinel') {
     ctx.log.info(`[node-stats] reporter ${identity.nodeId} claimed sender=sentinel -- corrected from the credential`)
   }

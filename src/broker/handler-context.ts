@@ -24,6 +24,9 @@ export interface WsData {
    *  `sentinelId` and therefore never enters the spawn roster. */
   reporterId?: string
   reporterAlias?: string
+  /** One-shot latch: the node-stats handler logs its credential-stamping line
+   *  once per connection rather than on every 5s frame. */
+  nodeStatsIdentityLogged?: boolean
   /** Dedicated host-shell DATA socket (sentinel -> broker byte pipe). Tagged at
    *  upgrade from the `?shellData=1` query flag. detectRole treats it as the
    *  sentinel role so `shell_data`/`shell_replay` route correctly. */
@@ -202,6 +205,9 @@ export type MessageHandler = (ctx: HandlerContext, data: MessageData) => void | 
 /** Create a log prefix from WS connection data */
 export function logPrefix(ws: { data: WsData }): string {
   const id = ws.data.conversationId?.slice(0, 8)
+  // Reporters first: they carry no conversationId and no sentinel marker, so
+  // without this every reporter line read `[unknown]`.
+  if (ws.data.reporterId) return `[reporter:${ws.data.reporterAlias ?? ws.data.reporterId.slice(0, 8)}]`
   if (ws.data.isSentinel) return '[sentinel]'
   if (ws.data.isControlPanel) return `[dash${ws.data.userName ? `:${ws.data.userName}` : ''}]`
   return id ? `[${id}]` : '[unknown]'
