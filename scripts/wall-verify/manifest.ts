@@ -178,7 +178,38 @@ export const ASPECTS: Aspect[] = [
     code: 'W1',
     card: 'wall-time-cursor',
     promise: 'One scrubber rewinds EVERY pane together; past left, LIVE right',
-    artifacts: [{ path: WALL, needle: 'useWallCursor', as: 'the useWallCursor contract symbol' }],
+    /**
+     * THIS PROBE USED TO BE ONE GREP FOR `useWallCursor` UNDER `components/wall`,
+     * and the card that shipped W1 was told to say so: exporting a stub by that
+     * name turned the aspect green while not one pane moved. The same false-green
+     * W4 and W2 both carried. So it now asserts the three things that make the
+     * promise true, and the symbol lives where the rest of the wall's substrate
+     * does (`lib/wall/`, beside the filter store) rather than under `components/`.
+     *
+     *  1. the STORE the offset is held in, outside the component tree
+     *  2. the PROPAGATION -- `useWallFilter` is the single call every pane makes,
+     *     so the cursor riding it is what makes "every pane obeys" structural
+     *     rather than a rule thirteen files each remember
+     *  3. a PANE reading it, and deliberately one of the two that cannot be
+     *     rewound by dropping rows: S1 has to look its value up in the ring, so
+     *     if the cursor were inert this needle would have nothing to grep for
+     */
+    artifacts: [
+      { path: LIB, needle: 'useWallCursor', as: 'the useWallCursor contract symbol' },
+      { path: 'web/src/lib/wall/cursor-store.ts', needle: 'WALL_CURSOR_SPAN_MS', as: 'the 3h track' },
+      {
+        path: 'web/src/lib/wall/use-wall-filter.ts',
+        needle: 'existedAtCursor',
+        as: 'the cursor applied by the ONE call every pane already makes',
+      },
+      {
+        path: `${PANES}/s1-host-vitals.tsx`,
+        needle: 'hostVitalsAtCursor',
+        as: 'a pane reading the cursor -- the series pane that cannot fake it',
+      },
+      { path: `${WALL_DIR}/wall-scrubber.tsx`, needle: 'WALL_CURSOR_STEP_MS', as: 'the header scrubber itself' },
+    ],
+    test: { path: `${WALL_DIR}/wall-time-cursor.test.tsx`, as: 'the cross-pane rewind proof' },
   },
   {
     code: 'W2',

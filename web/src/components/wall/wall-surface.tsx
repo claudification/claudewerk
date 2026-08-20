@@ -8,6 +8,7 @@
  */
 
 import { Suspense, useRef } from 'react'
+import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 import { useWallAmbient } from './use-wall-ambient'
 import { WallFooter } from './wall-footer'
 import { WallGrid } from './wall-grid'
@@ -21,9 +22,14 @@ const NowBar = lazyPane(NOW_BAR)
 export function WallSurface({ visible, onDetach }: { visible: boolean; onDetach?: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const ambient = useWallAmbient(rootRef, visible)
+  // W1's desaturation is ONE attribute on ONE element rather than a class each
+  // pane remembers to wear: a wall that greys twelve panes and forgets the
+  // thirteenth is worse than one that greys none, because then the absence of
+  // the treatment reads as "this pane is live".
+  const { rewound } = useWallCursor()
 
   return (
-    <div ref={rootRef} className="wall-root" data-ambient={ambient || undefined}>
+    <div ref={rootRef} className="wall-root" data-ambient={ambient || undefined} data-rewound={rewound || undefined}>
       <WallHeader ambient={ambient} onDetach={onDetach} />
       <Suspense fallback={null}>
         <NowBar />
