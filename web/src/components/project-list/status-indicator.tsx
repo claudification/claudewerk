@@ -5,13 +5,18 @@ import { cn } from '@/lib/utils'
 const BUSY: ReadonlySet<string> = new Set(['active', 'booting', 'starting'])
 
 /**
- * Ad-hoc state glyph: the SAME spinning-ring motion the normal "working"
- * indicator uses, so a moving ring always means the same thing everywhere,
- * with the ad-hoc identity carried by colour (amber, not green) and a bolt
- * riding in the middle of the ring.
+ * Ad-hoc state glyph: a bolt with a dot ORBITING it, on a faint track ring.
  *
- * The old form was a static bolt with `animate-pulse` -- it read as decoration,
- * not as progress, so a busy ad-hoc conversation looked idle.
+ * WHY AN ORBITING DOT AND NOT A SPINNING RING. A ring rotating about its own
+ * centre is rotationally symmetric -- visually stationary. The green "working"
+ * spinner only escapes that because its transparent top border leaves a 90° gap,
+ * and even that is marginal: at this size, with a glyph parked in the middle to
+ * anchor the eye, a 270°-complete 1.5px ring reads as a static ring. A single
+ * off-centre dot has no symmetry at all, so its travel is unmissable at 16px.
+ * (Two prior attempts failed the same way: a pulsing bolt read as decoration,
+ * then a spinning ring read as stationary.)
+ *
+ * Ad-hoc identity stays on the bolt + amber; the motion says "working".
  */
 function AdHocIndicator({ status }: { status: Conversation['status'] }) {
   if (status === 'ended') {
@@ -28,9 +33,16 @@ function AdHocIndicator({ status }: { status: Conversation['status'] }) {
       title={busy ? `ad-hoc task -- working (${status})` : `ad-hoc task -- ${status}`}
     >
       {busy && (
-        <span className="absolute inset-0 rounded-full border-[1.5px] border-amber-400 border-t-transparent animate-spin" />
+        <>
+          <span className="absolute inset-0 rounded-full border border-amber-400/25" />
+          {/* Full-size spinner whose only content is one edge dot -- rotating an
+              asymmetric child is what makes the movement readable. */}
+          <span className="absolute inset-0 animate-spin" style={{ animationDuration: '1.1s' }}>
+            <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-px size-1.5 rounded-full bg-amber-400" />
+          </span>
+        </>
       )}
-      <span className="text-[10px] leading-none text-amber-400">&#x26A1;</span>
+      <span className="text-[9px] leading-none text-amber-400">&#x26A1;</span>
     </span>
   )
 }

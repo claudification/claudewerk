@@ -7,13 +7,22 @@ const render = (status: Conversation['status'], adHoc?: boolean) =>
   renderToStaticMarkup(<StatusIndicator status={status} adHoc={adHoc} />)
 
 describe('StatusIndicator ad-hoc', () => {
-  // The bug this guards: a busy ad-hoc conversation rendered a STATIC bolt with
-  // `animate-pulse`, which reads as decoration, so live work looked idle. Busy
-  // ad-hoc must carry the same spinning-ring motion as a normal working row.
-  it.each(['active', 'booting', 'starting'] as const)('spins while %s', status => {
+  // Two failed shapes this guards against, both of which read as IDLE while the
+  // conversation was working: (1) a static bolt with `animate-pulse` -- reads as
+  // decoration; (2) a spinning ring -- a ring is rotationally symmetric, so
+  // rotating it is visually stationary. The motion must come from an ASYMMETRIC
+  // element (the orbit dot), never from the ring alone.
+  it.each(['active', 'booting', 'starting'] as const)('orbits a dot while %s', status => {
     const html = render(status, true)
     expect(html).toContain('animate-spin')
+    expect(html).toContain('bg-amber-400') // the orbiting dot, not just a border ring
     expect(html).toContain('⚡')
+  })
+
+  it('never relies on a bare rotating ring for motion', () => {
+    const html = render('active', true)
+    const spinner = html.slice(html.indexOf('animate-spin'))
+    expect(spinner).toContain('bg-amber-400')
   })
 
   it('drops the spinner when idle and never pulses', () => {
