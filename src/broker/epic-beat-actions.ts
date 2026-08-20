@@ -22,7 +22,7 @@ import {
   planPlannerSpawn,
   planVerifierSpawn,
 } from './epic-spawn-plan'
-import type { EpicGroup } from './epic-sweep'
+import type { EpicGroup, FailedLeg } from './epic-sweep'
 import type { BeatDeps } from './epic-types'
 
 /**
@@ -42,6 +42,39 @@ export async function acknowledge(deps: BeatDeps, group: EpicGroup, pending: rea
       body: `Card \`${cardId}\` settled: every backing conversation has ended. Read the card for what it claims and its gate evidence for what it proved.`,
     })
     if (!res.ok) deps.log(`${tag(group.epicId, 0)} baton append FAILED for ${cardId}: ${res.error}`)
+  }
+}
+
+/**
+ * Write a `dispatch-failed` entry for every dead-and-silent seat the baton has
+ * not recorded.
+ *
+ * THE POINT OF THE ENTRY: a reader of `log.md` alone must be able to tell
+ * "verified" from "never started". Before this, a failed launch left the
+ * `dispatch` entry standing and nothing else, so the log read as though a
+ * verifier had run and simply declined to say anything -- which is how the
+ * 2026-08-20 run burned a generation per sweep on a card no verifier had ever
+ * looked at.
+ *
+ * Machine-authored and terse, same as `acknowledge`. The exit reason we can
+ * state honestly from standing state is "ended without producing output"; the
+ * exit code itself belongs to the spawn_failed message, which is why that log
+ * line now carries the sentinel's stderr (handlers/sentinel.ts).
+ */
+export async function noteFailedLaunches(deps: BeatDeps, group: EpicGroup, legs: readonly FailedLeg[]): Promise<void> {
+  for (const leg of legs) {
+    const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
+      kind: 'dispatch-failed',
+      convId: leg.convId,
+      cardId: leg.cardId,
+      body:
+        `The ${leg.role} dispatched for \`${leg.cardId}\` at generation ${leg.gen} ` +
+        `(conversation \`${leg.convId}\`) ENDED WITHOUT PRODUCING ANYTHING -- the launch failed, ` +
+        'no work was done and no verdict was written. Grep the broker log for ' +
+        `\`Spawn FAILED stderr: conv=${leg.convId.slice(0, 8)}\` for the cause. ` +
+        'The card is dispatchable again; this is not a completion.',
+    })
+    if (!res.ok) deps.log(`${tag(group.epicId, leg.gen)} dispatch-failed append FAILED for ${leg.cardId}: ${res.error}`)
   }
 }
 

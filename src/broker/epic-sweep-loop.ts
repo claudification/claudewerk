@@ -14,7 +14,7 @@ import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
-import { type EpicGroup, epicsToWatch, type IsLive } from './epic-sweep'
+import { type EpicGroup, epicsToWatch, type IsLive, type ProducedOutput } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -39,6 +39,13 @@ export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
   isLive: IsLive
+  /**
+   * Did a conversation ever produce a transcript entry? The second half of the
+   * settle question -- see `EpicGroup.settled`. Optional so the tests that build
+   * deps by hand keep their old meaning (everything produced output); the real
+   * store always supplies it.
+   */
+  producedOutput?: ProducedOutput
   /**
    * Publish the activity feed to the control panel. Optional because every test
    * in this file builds deps by hand and none of them cares; absent means the
@@ -75,6 +82,7 @@ const EPIC_CALLER: SpawnCallerContext = {
 interface SweepStore {
   getAllConversations: () => Conversation[]
   getActiveConversationCount: (id: string) => number
+  hasAnyTranscript: (id: string) => boolean
   getSentinel: SweepDeps['getSentinel']
   getSentinelByAlias: SweepDeps['getSentinelByAlias']
   addProjectListener: SweepDeps['addProjectListener']
@@ -92,6 +100,10 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   const base: SweepDeps = {
     getAllConversations: s.getAllConversations,
     isLive: werkLiveness(s.getActiveConversationCount),
+    // A dead seat that never wrote a transcript entry did not finish, it never
+    // started -- and folding the two together cost a generation per sweep on
+    // 2026-08-20. Durable-first so a broker restart cannot invent one.
+    producedOutput: conv => s.hasAnyTranscript(conv.id),
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
     addProjectListener: s.addProjectListener,
@@ -130,7 +142,7 @@ let sweeping = false
 /** Every epic worth a beat this tick. The SAME set the activity feed reports --
  *  see `epicsToWatch`, which is shared precisely so the two cannot drift. */
 function epicsToBeat(deps: SweepDeps): EpicGroup[] {
-  return epicsToWatch(deps.getAllConversations(), deps.isLive)
+  return epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput)
 }
 
 /** One tick: a beat for every epic with conversations or an armed run. */
@@ -208,6 +220,7 @@ export async function beatOneEpic(
       overseerAlive: false,
       liveOverseers: [],
       settled: [],
+      failedLegs: [],
       maxGenSeen: 0,
     }
     const outcome = await runEpicBeat(deps, group)

@@ -42,6 +42,7 @@ export type EpicWakeReason =
 export type EpicLogKind =
   | 'intent' // what a generation was about to do
   | 'dispatch' // cards handed to the orchestrator
+  | 'dispatch-failed' // a dispatched seat died without producing anything
   | 'completion' // an implementer's outcome, machine facts + narrative
   | 'verdict' // a verifier's APPROVED / BOUNCED
   | 'blocked' // an implementer parked a question instead of asking a human
