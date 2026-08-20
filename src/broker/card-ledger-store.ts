@@ -216,6 +216,35 @@ export function readPersistedCardMoves(limit: number): CardMove[] {
   }
 }
 
+/**
+ * The instants at which cards were CLOSED in [from, to], oldest first.
+ *
+ * `to_lane = 'done'` and nothing else. A `done -> archived` move is filing, not
+ * finishing, and counting it would let one card close twice; a move INTO
+ * `archived` from anywhere else is abandonment, which is the opposite of the
+ * thing being measured.
+ *
+ * Timestamps only, for the same reason the commit ledger's day read returns
+ * only timestamps: the grid counts these, it does not list them.
+ *
+ * This is the second read this store has ever had, and unlike the boot read it
+ * is served on request rather than once per process -- but it is bounded by the
+ * table's own 90-day window and the table holds tens of rows per busy day, so
+ * the whole window is a few thousand integers.
+ */
+export function readCardCloseTimestamps(from: number, to: number): number[] {
+  if (!db) return []
+  try {
+    const rows = db
+      .query("SELECT ts FROM card_moves WHERE to_lane = 'done' AND ts >= $from AND ts <= $to ORDER BY ts")
+      .all({ from, to } as never) as Array<{ ts: number }>
+    return rows.map(r => r.ts)
+  } catch (err) {
+    console.error('[card-ledger] close-timestamp read failed:', err)
+    return []
+  }
+}
+
 // ─── Retention ──────────────────────────────────────────────────────
 
 /** Drop everything past the window. Returns how many rows went. */

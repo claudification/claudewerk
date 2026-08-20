@@ -147,6 +147,46 @@ export function countCommits(query: CommitQuery): number {
   return row.n
 }
 
+/**
+ * Commit instants in [from, to], oldest first -- the day-bucketing read.
+ *
+ * Timestamps only: the activity grid counts commits, it does not show them, and
+ * shipping thirty columns per row to throw twenty-nine away would make a
+ * twelve-month window expensive for no reason. Index-only over
+ * `idx_commits_committed_at`.
+ *
+ * Superseded rows are excluded, matching every other default read here: an
+ * `--amend` replaced the commit, it did not add one, and counting both would
+ * make a day of tidying look like a day of output.
+ */
+export function commitTimestamps(from: number, to: number): number[] {
+  if (!isCommitLedgerReady()) return []
+  const rows = commitLedgerDb()
+    .prepare(
+      `SELECT committed_at AS ts FROM commits
+       WHERE committed_at >= $from AND committed_at <= $to AND superseded_by IS NULL
+       ORDER BY committed_at`,
+    )
+    .all({ from, to }) as Array<{ ts: number }>
+  return rows.map(r => r.ts)
+}
+
+/**
+ * The oldest commit the ledger holds, or null when it holds none.
+ *
+ * THIS IS THE COMMIT METRIC'S HORIZON, and it is a COVERAGE floor rather than a
+ * retention one: nothing sweeps this table, but the ledger only knows what the
+ * post-commit hook handed it since the hook was installed. Days before this
+ * instant are not "days with no commits", they are days the ledger was not
+ * watching -- and a grid that coloured them the same would report the entire
+ * history of the project before install as idleness.
+ */
+export function earliestCommitAt(): number | null {
+  if (!isCommitLedgerReady()) return null
+  const row = commitLedgerDb().prepare('SELECT MIN(committed_at) AS ts FROM commits').get() as { ts: number | null }
+  return row?.ts ?? null
+}
+
 export interface LedgerStats {
   total: number
   agent: number

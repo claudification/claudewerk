@@ -1288,6 +1288,56 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
       })
 
       // -----------------------------------------------------------------
+      // queryTurnActivity -- the narrow projection the day-bucketed activity
+      // matrix folds. Unpaged, so a month never truncates at 1000 rows.
+      // -----------------------------------------------------------------
+
+      it('queryTurnActivity returns every row in range, oldest first', () => {
+        const t = 1_700_100_000_000
+        store.costs.recordTurn(baseTurn({ timestamp: t + 2 }))
+        store.costs.recordTurn(baseTurn({ timestamp: t }))
+        store.costs.recordTurn(baseTurn({ timestamp: t + 1 }))
+
+        const rows = store.costs.queryTurnActivity(t, t + 10)
+        expect(rows.map(r => r.timestamp)).toEqual([t, t + 1, t + 2])
+      })
+
+      it('queryTurnActivity sums all four token columns into one number', () => {
+        const t = 1_700_101_000_000
+        store.costs.recordTurn(
+          baseTurn({ timestamp: t, inputTokens: 1, outputTokens: 2, cacheReadTokens: 4, cacheWriteTokens: 8 }),
+        )
+        expect(store.costs.queryTurnActivity(t, t)[0].tokens).toBe(15)
+      })
+
+      it('queryTurnActivity carries exactCost so an estimate is never served as a measurement', () => {
+        const t = 1_700_102_000_000
+        store.costs.recordTurn(baseTurn({ timestamp: t, exactCost: true, costUsd: 1 }))
+        store.costs.recordTurn(baseTurn({ timestamp: t + 1, exactCost: false, costUsd: 2 }))
+
+        const rows = store.costs.queryTurnActivity(t, t + 1)
+        expect(rows.map(r => r.exactCost)).toEqual([true, false])
+        expect(rows.map(r => r.costUsd)).toEqual([1, 2])
+      })
+
+      it('queryTurnActivity bounds are inclusive at both ends and exclude the rest', () => {
+        const t = 1_700_103_000_000
+        store.costs.recordTurn(baseTurn({ timestamp: t - 1 }))
+        store.costs.recordTurn(baseTurn({ timestamp: t }))
+        store.costs.recordTurn(baseTurn({ timestamp: t + 5 }))
+        store.costs.recordTurn(baseTurn({ timestamp: t + 6 }))
+
+        expect(store.costs.queryTurnActivity(t, t + 5).map(r => r.timestamp)).toEqual([t, t + 5])
+      })
+
+      it('queryTurnActivity is not capped at the 1000-row page queryTurns enforces', () => {
+        const t = 1_700_200_000_000
+        for (let i = 0; i < 1200; i++) store.costs.recordTurn(baseTurn({ timestamp: t + i }))
+        expect(store.costs.queryTurns({ from: t, to: t + 1200, limit: 5000 }).rows).toHaveLength(1000)
+        expect(store.costs.queryTurnActivity(t, t + 1200)).toHaveLength(1200)
+      })
+
+      // -----------------------------------------------------------------
       // Phase 5 -- per-(sentinelId, profile) usage rollup
       // -----------------------------------------------------------------
 

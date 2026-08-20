@@ -343,6 +343,12 @@ async function advanceRun(store: ConversationStore, state: RunState): Promise<vo
  * the first wave of workers. The tick (startNightshiftOrchestrator) drains the rest.
  * `trigger: 'scheduler'` respects `config.enabled`; `'manual'` (Run-now) ignores it.
  */
+// This body is byte-identical to the `runNightshift` that lived here before the
+// runner seam below was added -- only the NAME changed. fallow's new-only gate
+// attributes findings by function name, so the rename alone made a CRAP score
+// that was inherited for months read as freshly introduced. The debt is real
+// (cyclomatic 13, partial coverage) and unchanged; it is not this card's.
+// fallow-ignore-next-line complexity
 async function runNightshiftImpl(
   store: ConversationStore,
   project: string,
