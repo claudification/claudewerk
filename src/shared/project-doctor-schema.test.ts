@@ -55,6 +55,21 @@ describe('what it deliberately stays quiet about', () => {
     expect(checks({ title: 'T', status: 'open' })).toEqual([])
   })
 
+  /** The one card on the board carrying `renamed_from:` writes a bare id, which
+   *  is the canonical spelling. A finding here would be the doctor calling a
+   *  value it can read broken -- and project-doctor-shape.ts would then rewrite
+   *  somebody else's card over it. */
+  test('a bare `renamed_from:` -- the canonical spelling of a rename', () => {
+    expect(checks({ ...OK, renamed_from: 'the-old-id' })).toEqual([])
+  })
+
+  test('and a LIST of old ids is an info nudge, not a warning -- a twice-renamed card needs both', () => {
+    const found = checkCardSchema({ id: 'c', meta: { ...OK, renamed_from: ['first', 'second'] } })
+    expect(found.map(f => f.check)).toEqual(['card-key-type'])
+    expect(found[0].severity).toBe('info')
+    expect(found[0].remedy).toContain('renamed twice')
+  })
+
   test('a legacy-lane card missing `status:` -- its directory IS its status', () => {
     expect(checks({ title: 'T', created: OK.created }, 'open')).toEqual([])
     // ...but the lane never excuses a lane value the board cannot read.

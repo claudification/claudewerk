@@ -87,6 +87,35 @@ const STORE_SPECS: Record<string, CardKeySpec> = {
     // whose filesystem stats are all junk.
     required: { check: 'card-created-missing', severity: 'info' },
   },
+  renamed_from: {
+    key: 'renamed_from',
+    // SCALAR, because a card is renamed once in the overwhelming case and that
+    // is the spelling the board already carries. The READER takes a list too
+    // (project-card-file.ts) so a card renamed twice keeps both names -- which
+    // is why the finding below is an info line with an honest remedy instead of
+    // the default warning. `string[]` would have been the other way round: the
+    // doctor would call the bare id on the one card that has one "mute" and
+    // auto-rewrite it, which is a false statement plus an unasked-for edit.
+    type: 'string',
+    doc: 'the id this card used to have, so keys frozen under the old name still resolve',
+    // Not a vague "nothing reads it": the thing that stops working is specific,
+    // and naming it is the only way a reader learns that renaming a card is an
+    // operation with a second half.
+    consequence: 'an epic seat launched under the old id stops counting as work on this card',
+    // HUMAN, not store: nothing writes it, because nothing performs a rename --
+    // a rename is somebody moving the file. The board's job is to be told.
+    owner: 'human',
+    invalid: {
+      check: 'card-key-type',
+      severity: 'info',
+      remedy: 'a bare id is canonical; a list is read too, and is the right shape for a card renamed twice',
+    },
+    // NOT LINKAGE, though it holds card ids and looks exactly like it. Every
+    // value names a card that by definition no longer exists, so the resolver
+    // would report each one `missing` forever -- an error the card can never
+    // clear. Declaring it here instead is what keeps it out of that pass while
+    // still teaching the schema prompt, the validator and the doctor about it.
+  },
 }
 
 /**
@@ -111,6 +140,10 @@ function fromLinkageVerb(verb: LinkageVerb, ordered: boolean): CardKeySpec {
  * exactly what cards on disk already carry, so deriving `ORDERED_KEYS` from it
  * is a no-op for every existing file -- asserted in card-schema.test.ts against
  * the literal list it replaced.
+ *
+ * APPEND-ONLY, and card-schema.test.ts pins that rather than the exact list: a
+ * key added at the END never reshuffles a card that does not carry it, while one
+ * inserted in the middle rewrites the frontmatter of every card on the board.
  */
 const ORDER = [
   'title',
@@ -123,6 +156,9 @@ const ORDER = [
   'depends_on',
   'relates_to',
   'created',
+  // Last, and only present on a card that has actually been renamed -- which is
+  // where the one card carrying it today already puts it.
+  'renamed_from',
 ] as const
 
 /**

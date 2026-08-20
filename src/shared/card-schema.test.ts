@@ -35,8 +35,19 @@ const ORDERED_KEYS_BEFORE = [
 ]
 
 describe('the registry replaces the copies it was built from', () => {
-  test('the derived render order is byte-identical to the literal it replaced', () => {
-    expect([...ORDERED_CARD_KEYS]).toEqual(ORDERED_KEYS_BEFORE)
+  /**
+   * A PREFIX, not an equality, and the weakening is the point rather than a
+   * concession: what every card on disk depends on is that the keys it already
+   * carries keep their relative order. Appending a key nobody carries reshuffles
+   * nothing; INSERTING one rewrites the frontmatter of the whole board, and that
+   * is still caught here.
+   */
+  test('the derived render order still opens with the literal it replaced, in order', () => {
+    expect([...ORDERED_CARD_KEYS].slice(0, ORDERED_KEYS_BEFORE.length)).toEqual(ORDERED_KEYS_BEFORE)
+  })
+
+  test('and everything added since is APPENDED, never interleaved', () => {
+    expect([...ORDERED_CARD_KEYS].slice(ORDERED_KEYS_BEFORE.length)).toEqual(['renamed_from'])
   })
 
   test('every linkage verb appears exactly once, derived and not restated', () => {
