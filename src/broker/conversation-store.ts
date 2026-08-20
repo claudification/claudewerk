@@ -3422,8 +3422,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     scheduleConversationUpdate(conversationId)
   }
 
-  // Inter-project link registry: extracted to project-links.ts
-  const projectLinkReg = createProjectLinkRegistry(conversations, conversationSockets)
+  // Inter-project link registry: extracted to project-links.ts. `store.messages` backs
+  // the pending-approval queue so a first-contact message survives a broker restart.
+  const projectLinkReg = createProjectLinkRegistry(conversations, conversationSockets, store?.messages)
   const {
     checkProjectLink,
     queueProjectMessage,

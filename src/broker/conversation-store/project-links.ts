@@ -1,7 +1,9 @@
 import type { ServerWebSocket } from 'bun'
 import { cwdToProjectUri, extractProjectLabel, normalizeProjectUri } from '../../shared/project-uri'
 import type { Conversation } from '../../shared/protocol'
+import { createMessageQueue, type MessageQueue } from '../message-queue'
 import { getProjectSettings } from '../project-settings'
+import type { MessageStore } from '../store/types'
 
 function toProjectUri(cwdOrUri: string): string {
   if (cwdOrUri.startsWith('/')) return cwdToProjectUri(cwdOrUri)
@@ -10,6 +12,29 @@ function toProjectUri(cwdOrUri: string): string {
 
 function projectLinkKey(a: string, b: string): string {
   return [normalizeProjectUri(a), normalizeProjectUri(b)].sort().join('|')
+}
+
+/** Namespace prefix for pending-approval rows in the shared `message_queue` table.
+ *
+ *  A pending first-contact body is stored at rest BEFORE the human authorizes the
+ *  boundary crossing, so it must be addressable ONLY by the project pair -- never
+ *  by the target project alone. Every other writer puts a normalized project URI in
+ *  `to_scope`, and a normalized project URI is always `scheme://authority/path`
+ *  (see `normalizeProjectUri`). This prefix has no `//` after its colon, so it can
+ *  never equal one: the target's ordinary `dequeueFor(<project uri>)` cannot reach
+ *  these rows. `pending-link-scope.test.ts` pins that. */
+const PENDING_LINK_SCOPE_PREFIX = 'pending-link:'
+
+/** The `to_scope` under which a pending first-contact message is stored. */
+export function pendingLinkScope(projectA: string, projectB: string): string {
+  return `${PENDING_LINK_SCOPE_PREFIX}${projectLinkKey(projectA, projectB)}`
+}
+
+/** True for a `to_scope` that holds UNAPPROVED content. Operator-facing listings of
+ *  queue rows must exclude these -- the whole point is that the target cannot read a
+ *  message before approving it. */
+export function isPendingLinkScope(scope: string): boolean {
+  return scope.startsWith(PENDING_LINK_SCOPE_PREFIX)
 }
 
 function convLinkKey(a: string, b: string): string {
@@ -36,18 +61,22 @@ export interface ProjectLinkRegistry {
 export function createProjectLinkRegistry(
   conversations: Map<string, Conversation>,
   conversationSockets: Map<string, Map<string, ServerWebSocket<unknown>>>,
+  /** Backing store for the PENDING-APPROVAL queue. Supply it and a first-contact
+   *  message survives a broker restart; omit it and the queue falls back to memory
+   *  (test-only shape -- the broker always passes `store.messages`). */
+  messageStore?: MessageStore,
 ): ProjectLinkRegistry {
   const projectLinks = new Set<string>()
   const projectBlocks = new Map<string, number>()
-  // PENDING-APPROVAL queue -- NOT the persisted one. Holds a first-contact message
-  // while the human decides ALLOW/BLOCK, keyed by sorted project pair. Volatile: a
-  // broker restart empties it and the sender is never told (the approval itself IS
-  // durable -- see src/broker/project-links.ts). The SQLite-backed queue is the
-  // separate `ctx.messageQueue` (src/broker/message-queue.ts), keyed by TARGET
-  // project, used only for the target-offline path. Conflating the two is a known
-  // trap; docs/inter-session.md has the table. Making this durable is an open
-  // decision -- card werk-link-pending-queue-volatile.
-  const messageQueue = new Map<string, Array<Record<string, unknown>>>()
+  // PENDING-APPROVAL queue -- a DIFFERENT queue from the offline one. Holds a
+  // first-contact message while the human decides ALLOW/BLOCK, keyed by sorted
+  // project pair. Durable when `messageStore` is supplied: rows go into the shared
+  // `message_queue` table under a `pending-link:` scope, inheriting its 24h TTL and
+  // per-scope cap. The offline queue is `ctx.messageQueue` (same table, keyed by
+  // TARGET project, already-authorized traffic only). Conflating the two is a known
+  // trap; docs/inter-session.md has the table.
+  const pendingQueue: MessageQueue | null = messageStore ? createMessageQueue(messageStore) : null
+  const pendingFallback = new Map<string, Array<Record<string, unknown>>>()
   // Conversation-pair links, keyed by sorted conv-id pair. In-memory cache; the
   // persisted source of truth lives in conversation-links.ts (ctx.convLinks).
   const convLinks = new Set<string>()
@@ -105,6 +134,12 @@ export function createProjectLinkRegistry(
       if (projA && projB) projectLinks.delete(projectLinkKey(projA, projB))
     },
 
+    // A DENY is a 60-second COOL-OFF and that is BY DESIGN, not an oversight -- do not
+    // "fix" it into a persisted block list. `channelLinkResponse` already removes the
+    // persisted link row on block, so there is nothing left to resurrect and the pair
+    // correctly re-prompts after the window. A durable "operator A said no" carries
+    // owner/expiry/audit questions that belong to multi-operator policy, not here
+    // (card werk-multi-operator).
     blockProject(blocker, blocked) {
       const projA = conversationToProject(blocker)
       const projB = conversationToProject(blocked)
@@ -118,19 +153,27 @@ export function createProjectLinkRegistry(
       const projFrom = conversationToProject(from)
       const projTo = conversationToProject(to)
       if (!projFrom || !projTo) return
+      if (pendingQueue) {
+        // Scope is the PAIR, not the target -- see PENDING_LINK_SCOPE_PREFIX.
+        pendingQueue.enqueue(pendingLinkScope(projFrom, projTo), normalizeProjectUri(projFrom), '', message)
+        return
+      }
       const key = projectLinkKey(projFrom, projTo)
-      const queue = messageQueue.get(key) || []
+      const queue = pendingFallback.get(key) || []
       queue.push(message)
-      messageQueue.set(key, queue)
+      pendingFallback.set(key, queue)
     },
 
     drainProjectMessages(from, to) {
       const projFrom = conversationToProject(from)
       const projTo = conversationToProject(to)
       if (!projFrom || !projTo) return []
+      if (pendingQueue) {
+        return pendingQueue.drain(pendingLinkScope(projFrom, projTo)).map(d => d.message)
+      }
       const key = projectLinkKey(projFrom, projTo)
-      const msgs = messageQueue.get(key) || []
-      messageQueue.delete(key)
+      const msgs = pendingFallback.get(key) || []
+      pendingFallback.delete(key)
       return msgs
     },
 
