@@ -4662,6 +4662,7 @@ export type EpicOpKind =
   | 'release' // drop the lease, keeping the generation counter
   | 'pause'
   | 'abort'
+  | 'clear' // acknowledge a run that has ENDED, so it leaves the wall's tail
 
 /** start payload. */
 export interface EpicStartInput {
@@ -4939,6 +4940,14 @@ export interface EpicActivityEntry {
   /** Has the sweep gone quiet (older than two ticks)? Computed broker-side so
    *  every client agrees on when a run stops looking alive. */
   stale: boolean
+  /** ISO stamp of the `clear` op -- a human has seen this run end, so the wall's
+   *  dimmed tail stops carrying it. Absent on every live run and on every dead
+   *  one nobody has acknowledged yet. See `shared/epic-run-cleared.ts`. */
+  acknowledgedAt?: string
+  /** ISO of the run artifact's last write, which is when a dead run DIED. The
+   *  age-out half of the tail rule measures from here; `lastBeatAt` is not the
+   *  same fact, since a paused run stops beating and keeps being updated. */
+  updatedAt?: string
 }
 
 /** One row of `action=list` -- every run the broker can see in a project. */

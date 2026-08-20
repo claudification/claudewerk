@@ -114,6 +114,16 @@ export interface UnattendedFeed {
   /** The epic half was primed on an earlier connection. Night runs come off the
    *  conversation registry, which re-syncs on its own. */
   stale: boolean
+  /**
+   * Re-read the epic half NOW. `epic_activity` already pushes after every op
+   * that changes whether a run is live, so this is not how the pane normally
+   * stays current -- it is for the surface that just CAUSED such a change and
+   * should not have to wait for its own echo to come back around.
+   *
+   * Exposed here rather than reaching into the activity store from a pane, so
+   * the pane stays ignorant of which of the two feeds a row came from.
+   */
+  reprime: () => void
 }
 
 export function useUnattendedRuns(): UnattendedFeed {
@@ -155,5 +165,5 @@ export function useUnattendedRuns(): UnattendedFeed {
     return rows
   }, [epics, nights, look])
 
-  return useMemo(() => ({ rows, stale }), [rows, stale])
+  return useMemo(() => ({ rows, stale, reprime }), [rows, stale, reprime])
 }

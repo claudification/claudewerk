@@ -252,3 +252,88 @@ describe('pause and abort', () => {
     expect(op('get').run?.gen).toBe(1)
   })
 })
+
+/**
+ * CLEAR -- the burial O2 never gave a dead run.
+ *
+ * Two properties carry the whole design: it must never be usable as a quieter
+ * ABORT (or the wall's tidy-up button becomes its most destructive control), and
+ * it must never DESTROY anything (or tidying a pane costs the record the engine
+ * exists to keep).
+ */
+describe('clear -- acknowledging a run that has ended', () => {
+  test('an ENDED run takes the acknowledgement and keeps its status', () => {
+    op('start')
+    op('abort', { reason: 'scope changed' })
+
+    const res = op('clear', {}, T0 + 5_000)
+
+    expect(res.ok).toBe(true)
+    expect(res.run?.acknowledgedAt).toBe(new Date(T0 + 5_000).toISOString())
+    // The status is untouched -- `clear` records that a human SAW the ending,
+    // it does not invent a new one.
+    expect(op('get').run?.status).toBe('aborted')
+  })
+
+  test('a paused run can be cleared too -- aborted is not the only way to end', () => {
+    op('start')
+    op('pause')
+    expect(op('clear').ok).toBe(true)
+    expect(op('get').run?.acknowledgedAt).toBeTruthy()
+  })
+
+  test('IT REFUSES AN ARMED RUN, so it can never be a quieter abort', () => {
+    op('start')
+
+    const res = op('clear')
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('armed')
+    expect(op('get').run?.status).toBe('armed')
+    expect(op('get').run?.acknowledgedAt).toBeUndefined()
+  })
+
+  test('it refuses a RUNNING run for the same reason', () => {
+    op('start')
+    op('lease', { lease: { convId: 'conv_a', expectGen: 0, holderAlive: false } })
+
+    expect(op('get').run?.status).toBe('running')
+    expect(op('clear').ok).toBe(false)
+  })
+
+  test('a run that was never started cannot be cleared', () => {
+    const res = op('clear')
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('not found')
+  })
+
+  /** IT ACKNOWLEDGES, IT DOES NOT DELETE. The baton keeps every entry it had and
+   *  gains one saying what happened -- that is the whole difference from a
+   *  delete, and it is the reason Q1 was answered ACK. */
+  test('the baton is kept and gains a line, rather than being destroyed', () => {
+    op('start')
+    op('abort', { reason: 'scope changed' })
+    const before = (op('get').baton ?? []).length
+
+    op('clear')
+
+    const baton = op('get').baton ?? []
+    expect(baton.length).toBe(before + 1)
+    expect(baton.at(-1)?.body).toContain('CLEARED')
+    expect(baton.some(e => e.body.includes('scope changed'))).toBe(true)
+  })
+
+  /** A RUN THAT STARTED AGAIN IS NEWS AGAIN -- otherwise a re-armed run would
+   *  stay off the wall while it was genuinely running, which is the exact
+   *  invisibility O2 exists to prevent. */
+  test('re-arming a cleared run drops the acknowledgement', () => {
+    op('start')
+    op('pause')
+    op('clear')
+    expect(op('get').run?.acknowledgedAt).toBeTruthy()
+
+    op('start')
+
+    expect(op('get').run?.acknowledgedAt).toBeUndefined()
+  })
+})

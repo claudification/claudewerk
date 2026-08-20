@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation } from '../shared/protocol'
-import { isCountedLive, listActiveEpicRuns, STALE_BEAT_MS } from './epic-active'
+import { isCountedLive, listActiveEpicRuns, runStamps, STALE_BEAT_MS } from './epic-active'
 import { recordBeat, resetBeatLog } from './epic-beat-log'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
@@ -152,5 +152,33 @@ describe('isCountedLive', () => {
 
   test.each(['paused', 'complete', 'aborted', null])('%s does not', status => {
     expect(isCountedLive({ ...row, status } as never)).toBe(false)
+  })
+})
+
+/**
+ * The stamps the wall's tail rule reads. These are the ONLY route by which
+ * `acknowledgedAt` reaches a browser, so a row that silently lost them would
+ * make every cleared run reappear on the next tick -- and look like the clear
+ * button had failed.
+ */
+describe('runStamps', () => {
+  test('carries both stamps off the run artifact', () => {
+    expect(runStamps({ acknowledgedAt: '2026-08-21T09:00:00.000Z', updated: '2026-08-20T09:00:00.000Z' })).toEqual({
+      acknowledgedAt: '2026-08-21T09:00:00.000Z',
+      updatedAt: '2026-08-20T09:00:00.000Z',
+    })
+  })
+
+  /** A degraded row -- no artifact readable -- must carry NOTHING rather than
+   *  empty strings, or `Date.parse('')` arithmetic decides its fate. */
+  test.each([[null], [undefined], [{}], [{ acknowledgedAt: '', updated: '' }]])(
+    'omits what it does not have (%p)',
+    input => {
+      expect(runStamps(input as never)).toEqual({})
+    },
+  )
+
+  test('an unacknowledged run still carries the death stamp the age-out measures from', () => {
+    expect(runStamps({ updated: '2026-08-20T09:00:00.000Z' })).toEqual({ updatedAt: '2026-08-20T09:00:00.000Z' })
   })
 })

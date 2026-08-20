@@ -60,18 +60,18 @@ interface EpicHttpBody {
 }
 
 /** `get` is the only sentinel read. Everything else touches the run or the card. */
-const WRITE_OPS = new Set<string>(['start', 'patch', 'log_append', 'lease', 'release', 'pause', 'abort'])
+const WRITE_OPS = new Set<string>(['start', 'patch', 'log_append', 'lease', 'release', 'pause', 'abort', 'clear'])
 
 /** Sentinel ops a human or an agent may drive from outside. `lease`, `patch` and
  *  `log_append` are ENGINE-INTERNAL: exposing them would let a caller forge a
  *  generation or hand-edit the append-only baton, which is the one thing the
  *  baton exists to prevent. `release` is not here either -- `break_lease` is its
  *  audited public face, and it refuses a live holder. */
-const PUBLIC_OPS = new Set<string>(['start', 'get', 'pause', 'abort'])
+const PUBLIC_OPS = new Set<string>(['start', 'get', 'pause', 'abort', 'clear'])
 
 /** Ops that change whether a run is live, and so must reach the badge NOW
  *  rather than on the next sweep tick. `get` is a read and changes nothing. */
-const PUBLISHING_OPS = new Set<string>(['start', 'pause', 'abort'])
+const PUBLISHING_OPS = new Set<string>(['start', 'pause', 'abort', 'clear'])
 
 export interface EpicRouteHelpers {
   httpHasPermission: (req: Request, permission: Permission, project: string, conversationId?: string) => boolean

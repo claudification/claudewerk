@@ -120,6 +120,24 @@ export interface EpicRunMeta {
   updated: string
   /** Only when status is `aborted`. */
   abortReason?: string
+  /**
+   * A HUMAN HAS SEEN THIS RUN END. ISO stamp, set by the `clear` op.
+   *
+   * O2 (wall-runs-liveness-scope) put paused, aborted and expired runs in a
+   * dimmed tail rather than hiding them, because a run going quiet unnoticed is
+   * the failure this fleet actually suffers. That gave a dead run a headstone
+   * and no burial: nothing anywhere could take the row off an ambient surface,
+   * so the tail grew without bound.
+   *
+   * This is the burial, and it is an ACKNOWLEDGEMENT rather than a delete --
+   * `run.md`, the baton and every card stay exactly where they are. The record
+   * is the point of the engine; tidying a pane must never cost it. Re-arming a
+   * run clears the stamp, because a run that started again is news again.
+   *
+   * A LIVE RUN CANNOT BE ACKNOWLEDGED. See `clear` in `epic-handlers.ts`: the
+   * refusal is what stops this from becoming a silent second `abort`.
+   */
+  acknowledgedAt?: string
 }
 
 /**

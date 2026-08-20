@@ -15,14 +15,12 @@
  * Op dispatch is a strategy map (STRATEGY MAPS covenant), not a switch.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
 import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
 import { acknowledgedCardIds, appendEpicLog, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
-import { parseFrontmatter, serializeFrontmatter } from '../shared/frontmatter'
-import { cardPath } from '../shared/project-paths'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
+import { patchCardMeta, readCardMeta } from './epic-card-meta'
 
 type OpOutcome = Omit<EpicResult, 'type' | 'requestId' | 'op'>
 type EpicOpHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
@@ -38,32 +36,6 @@ const BATON_TAIL = 20
 function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
   const run = readEpicRun(root, epicId)
   return run ? { ...run } : null
-}
-
-/**
- * Read-modify-write of the epic CARD's frontmatter. The lease lives there rather
- * than in the run file so a human reading the board can see -- and break -- a
- * stuck overseer without knowing the engine's storage layout.
- */
-function patchCardMeta(root: string, epicId: string, patch: Record<string, unknown>): boolean {
-  const file = cardPath(root, epicId, false)
-  let raw: string
-  try {
-    raw = readFileSync(file, 'utf8')
-  } catch {
-    return false
-  }
-  const { meta, body } = parseFrontmatter(raw)
-  writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body), 'utf8')
-  return true
-}
-
-function readCardMeta(root: string, epicId: string): Record<string, unknown> | null {
-  try {
-    return parseFrontmatter(readFileSync(cardPath(root, epicId, false), 'utf8')).meta
-  } catch {
-    return null
-  }
 }
 
 const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
@@ -146,6 +118,41 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       nowMs,
     )
     return { ok: true, run: { ...run, abortReason: msg.reason || 'aborted', updated: nowIso(nowMs) } }
+  },
+
+  /**
+   * ACKNOWLEDGE A DEAD RUN -- the burial O2 never gave it.
+   *
+   * NOT A DELETE, and that is the whole design: `run.md` keeps every field, the
+   * baton keeps every entry, the cards keep their history. All this writes is
+   * "a human has seen this end", which is enough for the wall to stop showing
+   * it. Deleting artifacts to tidy an ambient pane would trade a permanent
+   * record for a transient one, and the record is what the engine is FOR.
+   *
+   * REFUSES A LIVE RUN, deliberately. `clear` is not a quieter `abort`: if it
+   * silently stopped an armed run, the pane's tidy-up button would become the
+   * most destructive control on the surface. Pause or abort first, then clear.
+   */
+  clear(root, msg, nowMs) {
+    const current = readEpicRun(root, msg.epicId)
+    if (!current) return fail(`epic run not found: ${msg.epicId}`)
+    // The ARTIFACT'S OWN INTENT, not `runVitality`. Vitality folds in the armed
+    // set, the beat ring and live seats -- broker-side facts the sentinel does
+    // not have and should not learn. The artifact says what the run was told to
+    // do, and refusing on that is the strictest of the two answers anyway: a run
+    // marked armed is refused even if every seat under it is dead.
+    if (current.status === 'armed' || current.status === 'running') {
+      return fail(`run is ${current.status} -- pause or abort it before clearing`)
+    }
+    const run = patchEpicRun(root, msg.epicId, { acknowledgedAt: nowIso(nowMs) }, nowMs)
+    if (!run) return fail(`epic run not found: ${msg.epicId}`)
+    appendEpicLog(
+      root,
+      msg.epicId,
+      { kind: 'checkpoint', convId: 'sentinel', body: `Run CLEARED from the wall (status ${current.status})` },
+      nowMs,
+    )
+    return { ok: true, run: { ...run } }
   },
 }
 

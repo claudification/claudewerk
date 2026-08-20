@@ -119,7 +119,68 @@ describe('runSections -- ranked, never dropped', () => {
     expect(whys[1]).toContain('aborted')
   })
 
-  it('is empty in both halves for an empty feed', () => {
-    expect(runSections([])).toEqual({ live: [], tail: [] })
+  it('is empty in every half for an empty feed', () => {
+    expect(runSections([])).toEqual({ live: [], tail: [], cleared: [] })
+  })
+})
+
+/**
+ * THE BURIAL, and the two ways it must not misfire: it must never take a LIVE
+ * row (the invisibility O2 exists to prevent) and it must never drop a row in
+ * silence (which reads as "nothing ended recently", the same lie).
+ */
+describe('runSections -- the cleared third', () => {
+  it('takes an acknowledged dead run off the tail', () => {
+    const rows = [
+      epic('acked', { status: 'aborted', acknowledgedAt: iso(1000) }),
+      epic('still-there', { status: 'aborted' }),
+    ]
+    const { tail, cleared } = runSections(rows, NOW)
+
+    expect(tail.map(t => rowTitle(t.row))).toEqual(['still-there'])
+    expect(cleared.map(t => rowTitle(t.row))).toEqual(['acked'])
+  })
+
+  it('ages a long-dead run off on its own, measured from the run file, not the beat', () => {
+    const EIGHT_DAYS = 8 * 24 * 60 * 60 * 1000
+    // `lastBeatAt` is RECENT and `updatedAt` is old: a paused run stops beating
+    // and keeps being updated, so ageing off the beat would bury it the day it
+    // paused. The run file is the fact that matters.
+    const rows = [epic('old', { status: 'paused', updatedAt: iso(EIGHT_DAYS), lastBeatAt: iso(1000) })]
+    const { tail, cleared } = runSections(rows, NOW)
+
+    expect(tail).toEqual([])
+    expect(cleared.map(t => rowTitle(t.row))).toEqual(['old'])
+  })
+
+  /** THE ONE THAT MATTERS. An acknowledgement left on a run that started again
+   *  would hide it while it was genuinely running. Liveness is asked FIRST. */
+  it('never clears a LIVE run, whatever stamps it carries', () => {
+    const rows = [epic('running-again', { acknowledgedAt: iso(1000), updatedAt: iso(90 * 24 * 60 * 60 * 1000) })]
+    const { live, tail, cleared } = runSections(rows, NOW)
+
+    expect(live.map(rowTitle)).toEqual(['running-again'])
+    expect(tail).toEqual([])
+    expect(cleared).toEqual([])
+  })
+
+  it('still adds back up to the input, so nothing is dropped in silence', () => {
+    const rows = [
+      epic('a'),
+      epic('b', { status: 'paused' }),
+      epic('c', { status: 'aborted', acknowledgedAt: iso(1) }),
+      night('n', 0),
+    ]
+    const { live, tail, cleared } = runSections(rows, NOW)
+
+    expect(live.length + tail.length + cleared.length).toBe(rows.length)
+  })
+
+  /** A night run has no artifact to acknowledge, so it can only ever age out --
+   *  and the feed gives it no stamp at all, so it never leaves on its own. */
+  it('keeps an expired night run on the tail, since there is nothing to acknowledge', () => {
+    const { tail, cleared } = runSections([night('expired', 0)], NOW)
+    expect(tail.map(t => rowTitle(t.row))).toEqual(['expired'])
+    expect(cleared).toEqual([])
   })
 })
