@@ -4,7 +4,7 @@
  * file adds -- the look, the rail, the window label, and the two SOTU shapes.
  */
 
-import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
+import type { SheafProject, SheafResponse, SheafSotuBlock } from '@shared/sheaf-types'
 import { describe, expect, it } from 'vitest'
 import type { ProjectLook } from '@/components/wall/use-project-look'
 import { fleetPills, formatTokens, sheafView, sheafWindowLabel, sotuBlocks } from './sheaf-rows'
@@ -83,43 +83,61 @@ describe('sheafView', () => {
   })
 })
 
-const sotu = (over: Record<string, unknown> = {}) => ({
-  enabled: true,
+const union = (over: Partial<NonNullable<SheafResponse['sotu']>> = {}): SheafResponse['sotu'] => ({
+  projectsEnabled: 0,
+  projectsWithNarrative: 0,
   alerts: [],
   contended: 0,
-  branches: [],
+  atRiskProjects: 0,
+  unpushedProjects: 0,
+  stalledProjects: 0,
+  unmergedProjects: 0,
+  filteredProjects: 0,
+  blocks: [],
+  ...over,
+})
+
+/** A roster row, typed against the wire contract -- these tests exist to pin
+ *  `SheafSotuBlock`'s shape, so opting out of checking it would defeat them. */
+const row = (label: string, over: Partial<SheafSotuBlock> = {}): SheafSotuBlock => ({
+  projectUri: `claude:///${label}`,
+  alerts: [],
+  contended: 0,
+  unmerged: 0,
   ...over,
 })
 
 describe('sotuBlocks', () => {
-  it('skips a project the viewer cannot see (no sotu block at all)', () => {
-    const blocks = sotuBlocks(response([project('hidden', 1)]), look)
+  it('reads the SERVER roster, not the project list', () => {
+    // The project is on the response (A6 renders it) but not on the roster -- so
+    // the scope gate is the broker's, and this function does not second-guess it.
+    const blocks = sotuBlocks(response([project('off', 1)], { sotu: union() }), look)
     expect(blocks).toEqual([])
   })
 
+  it('renders nothing when the response carried no fleet union at all', () => {
+    expect(sotuBlocks(response([project('p', 1)]), look)).toEqual([])
+  })
+
   it('puts the projects that HAVE a chronicle first', () => {
-    const quiet = project('quiet', 5, { sotu: sotu() as never })
-    const loud = project('loud', 1, { sotu: sotu({ narrative: 'main is RED' }) as never })
-    expect(sotuBlocks(response([quiet, loud]), look).map(b => b.projectName)).toEqual(['loud', 'quiet'])
+    const sotu = union({ blocks: [row('quiet'), row('loud', { narrative: 'main is RED' })] })
+    expect(sotuBlocks(response([], { sotu }), look).map(b => b.projectName)).toEqual(['loud', 'quiet'])
   })
 
-  it('says WHY a project is quiet rather than rendering silence', () => {
-    const off = project('off', 1, { sotu: sotu({ enabled: false }) as never })
-    const never = project('never', 1, { sotu: sotu({ enabled: true }) as never })
-    const blocks = sotuBlocks(response([off, never]), look)
-    expect(blocks.map(b => b.quiet)).toEqual(['not-enabled', 'not-distilled'])
-  })
-
-  it('sums ahead-of-origin commits across the branches', () => {
-    const p = project('p', 1, {
-      sotu: sotu({
-        narrative: 'x',
-        alerts: ['at-risk'],
-        contended: 2,
-        branches: [{ aheadOrigin: 3 }, { aheadOrigin: 4 }],
-      }) as never,
+  it('carries the alerts, the contention and the unmerged count through', () => {
+    const sotu = union({
+      blocks: [row('p', { narrative: 'x', alerts: ['at-risk'], contended: 2, unmerged: 7 })],
     })
-    expect(sotuBlocks(response([p]), look)[0]).toMatchObject({ unmerged: 7, contended: 2, alerts: ['at-risk'] })
+    expect(sotuBlocks(response([], { sotu }), look)[0]).toMatchObject({
+      unmerged: 7,
+      contended: 2,
+      alerts: ['at-risk'],
+    })
+  })
+
+  it('leaves the narrative absent for a chronicle-on project that never distilled', () => {
+    const sotu = union({ blocks: [row('never')] })
+    expect(sotuBlocks(response([], { sotu }), look)[0].narrative).toBeUndefined()
   })
 })
 
@@ -135,6 +153,7 @@ describe('fleetPills', () => {
       stalledProjects: 3,
       unmergedProjects: 0,
       filteredProjects: 2,
+      blocks: [],
     })
     expect(pills.map(p => [p.key, p.label, p.tone])).toEqual([
       ['at-risk', '1 at-risk', 'bad'],
@@ -154,6 +173,7 @@ describe('fleetPills', () => {
       stalledProjects: 0,
       unmergedProjects: 0,
       filteredProjects: 0,
+      blocks: [],
     }
     const lying = fleetPills({ ...base, grounding: { precision: 0.5, coverage: 1, citedConvs: 4, unknownCited: 2 } })
     expect(lying[0]).toMatchObject({ key: 'grounding', label: 'grounded 50%', tone: 'bad' })

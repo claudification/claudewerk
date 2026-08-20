@@ -14,6 +14,10 @@
  * is wired + enforced so opening the grid to non-admins later cannot leak a
  * chronicle (OPEN ITEM #2, the permission covenant).
  *
+ * The enrichment also scopes the state-of-the-union roster (`sotu.blocks`) to the
+ * chronicle-ENABLED projects, so the wall's A4 pane is handed the rows it should
+ * render rather than the whole fleet plus an instruction to hide some of it.
+ *
  * See `.claude/docs/plan-sheaf.md` for the design.
  */
 
