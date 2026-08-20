@@ -13,7 +13,7 @@
 
 import { statSync } from 'node:fs'
 import { makeBodyPreview } from './body-preview'
-import { normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
+import { asCardValueList, normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
 import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
@@ -27,6 +27,12 @@ import { isWallPinned } from './wall-pin'
 const ORDERED_KEYS = ORDERED_CARD_KEYS
 
 type Priority = (typeof CARD_PRIORITIES)[number]
+
+/** An empty list is the same fact as an absent key, and projecting `[]` would
+ *  make every card on the board claim a rename history it does not have. */
+function undefinedIfEmpty(list: string[]): string[] | undefined {
+  return list.length > 0 ? list : undefined
+}
 
 function asPriority(v: unknown): Priority | undefined {
   return (CARD_PRIORITIES as readonly string[]).includes(String(v)) ? (String(v) as Priority) : undefined
@@ -84,6 +90,11 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     wallPinned: isWallPinned(raw.meta) || undefined,
     dependsOn: linkage.depends_on,
     relatesTo: linkage.relates_to,
+    // NOT off `linkage` -- `renamed_from` deliberately is not a linkage verb (see
+    // card-schema-keys.ts), so it is read here with the same coercion the verbs
+    // get. Scalar or list, both work: the one card carrying it today writes a
+    // bare id, and a card renamed twice needs to keep both.
+    renamedFrom: undefinedIfEmpty(asCardValueList(raw.meta.renamed_from)),
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,

@@ -22,8 +22,16 @@ import { LINKAGE_VERBS, storageKey } from './card-linkage'
  *  so a reader never has to know which spelling the file used. */
 export type CardLinkage = Record<string, string[]>
 
-/** A frontmatter value as a list of non-empty strings, whatever shape it had. */
-function asList(value: unknown): string[] {
+/**
+ * A frontmatter value as a list of non-empty strings, whatever shape it had.
+ *
+ * Exported because linkage is not the only many-valued key: `renamed_from:` has
+ * the same scalar-or-list problem and the same answer (project-card-file.ts). It
+ * is NOT a linkage verb -- every value names a card that by definition no longer
+ * exists -- so it cannot ride the registry, and a second copy of this three-line
+ * coercion is exactly the drift the registry was built to end.
+ */
+export function asCardValueList(value: unknown): string[] {
   const raw = Array.isArray(value) ? value : [value]
   return raw.filter(v => v !== null && v !== undefined && v !== '').map(String)
 }
@@ -38,7 +46,7 @@ export function readLinkage(meta: Record<string, unknown>): CardLinkage {
     const value = meta[verb.key]
     if (value === undefined || value === null || value === '') continue
     const key = storageKey(verb)
-    out[key] = [...new Set([...(out[key] ?? []), ...asList(value)])]
+    out[key] = [...new Set([...(out[key] ?? []), ...asCardValueList(value)])]
   }
   return out
 }
@@ -63,7 +71,7 @@ export function normalizeLinkageMeta(meta: Record<string, unknown>): Record<stri
   const out = { ...meta }
   for (const alias of aliases) {
     const target = alias.storedAs as string
-    const merged = [...new Set([...asList(out[target]), ...asList(out[alias.key])])]
+    const merged = [...new Set([...asCardValueList(out[target]), ...asCardValueList(out[alias.key])])]
     delete out[alias.key]
     if (merged.length > 0) out[target] = merged
   }
