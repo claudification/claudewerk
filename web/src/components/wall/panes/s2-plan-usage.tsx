@@ -67,13 +67,18 @@ export default function PlanUsagePane() {
       // measured against the same moment the chart is drawn at.
       report={() => planUsageReport(rows, now, view)}
     >
-      {/* The one case `WallPaneEmpty` genuinely cannot cover: rewound past every
-          sample the series holds, this pane HAS a history and simply does not
-          reach that far, which is a different sentence from "no feed yet". */}
-      {rows.length === 0 && rewound ? (
-        <p className="text-meta text-fg-faint px-0.5 py-1">no history at this offset</p>
+      {/* Three silences, three sentences. `total` is the line count AFTER the
+          cursor cut and BEFORE the filter, which is what separates them:
+          `total === 0` while rewound means the pane HAS a history and simply
+          does not reach that far back, `total === 0` live means the feed never
+          came, and `total > 0` with nothing shown means the query took them.
+          Only the middle one is the stub's -- printing "no feed yet" for the
+          third would contradict the `0/2` in this pane's own header. */}
+      {total === 0 && rewound ? <p className="text-meta text-fg-faint px-0.5 py-1">no history at this offset</p> : null}
+      {total === 0 && !rewound ? <WallPaneEmpty /> : null}
+      {total > 0 && rows.length === 0 ? (
+        <p className="text-meta text-fg-faint px-0.5 py-1">no profile matches the filter</p>
       ) : null}
-      {rows.length === 0 && !rewound ? <WallPaneEmpty /> : null}
       {rows.length > 0 && (
         <div className="wall-plan">
           <PlanChart lines={rows} now={now} />
