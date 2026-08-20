@@ -257,13 +257,16 @@ function entry(over: Partial<EpicActivityEntry> = {}): EpicActivityEntry {
 }
 
 function epicRun(over: Partial<EpicActivityEntry> = {}): UnattendedRow {
+  // The row's id FOLLOWS the entry's. They are the same epic, and a fixture
+  // where they disagree makes a report look right while naming the wrong run.
+  const e = entry(over)
   return {
     kind: 'epic',
-    key: 'epic-the-wall-ii',
+    key: `epic ${e.epicId}`,
     project: 'claude://default/repo',
     projectName: 'remote-claude',
-    epicId: 'epic-the-wall-ii',
-    entry: entry(over),
+    epicId: e.epicId,
+    entry: e,
   }
 }
 
@@ -299,5 +302,29 @@ describe('A7 -- says what the PANE knows and refuses to invent the rest', () => 
 
   test('an idle fleet reports the sentence, not an empty body', () => {
     expect(runsReport([], 6, LIVE)).toContain('nothing is running unattended')
+  })
+
+  test('a stopped run is reported under NOT RUNNING, with the reason that stopped it', () => {
+    const text = runsReport([epicRun(), epicRun({ epicId: 'b', status: 'paused' })], 6, LIVE)
+    expect(text).toContain('NOT RUNNING (1)')
+    expect(text).toContain('EPIC  remote-claude  b  PAUSED')
+    expect(text).toContain('Paused. Nothing dispatches until RESUME re-arms it.')
+  })
+
+  test('the live rows come FIRST, whatever order they arrived in', () => {
+    const text = runsReport([epicRun({ epicId: 'b', status: 'paused' }), epicRun()], 6, LIVE)
+    expect(text.indexOf('epic-the-wall-ii')).toBeLessThan(text.indexOf('NOT RUNNING'))
+  })
+
+  test('"+ N more running" counts LIVE rows only -- it used to count the stopped ones as running', () => {
+    const rows = [epicRun(), epicRun({ epicId: 'b' }), epicRun({ epicId: 'c', status: 'paused' })]
+    const text = runsReport(rows, 1, LIVE)
+    expect(text).toContain('+ 1 more running, not inspected')
+    expect(text).not.toContain('+ 2 more running')
+  })
+
+  test('the not-running tail is capped too, and says so rather than truncating in silence', () => {
+    const rows = [epicRun({ epicId: 'a', status: 'paused' }), epicRun({ epicId: 'b', status: 'aborted' })]
+    expect(runsReport(rows, 1, LIVE)).toContain('+ 1 more not running')
   })
 })

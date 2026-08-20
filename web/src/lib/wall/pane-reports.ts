@@ -15,6 +15,7 @@
 
 import type { PulseFleet, PulseRow } from '@/components/pulse/use-pulse-fleet'
 import type { AttentionEntry } from '@/components/wall/attention-entries'
+import { rowTitle, runSections, type TailRow } from '@/components/wall/runs/run-liveness'
 import { runView } from '@/components/wall/runs/run-model'
 import type { UnattendedRow } from '@/components/wall/runs/use-unattended-runs'
 import type { WallPinRow } from '@/components/wall/use-wall-pins'
@@ -199,25 +200,43 @@ export function pinnedReport(rows: readonly WallPinRow[], view: WallReportView):
  * same `runVitality` the tag, the header badge and the overseer window all read,
  * so no two of them can disagree), the generation, and the live worker count for
  * nightshift. Anything deeper is a click away and says so.
+ *
+ * IT SPLITS THE SAME TWO WAYS THE PANE DOES, through the same `runSections`.
+ * That is not cosmetic: `+ N more running, not inspected` counted every row it
+ * had truncated, so once paused runs shared the list it was reporting stopped
+ * runs as running -- in a string built to be pasted into WhatsApp and believed.
  */
+function liveRunLine(row: UnattendedRow): string {
+  if (row.kind === 'nightshift') {
+    return reportRow('NIGHTSHIFT', row.projectName, row.runId, `${row.liveWorkers} workers up`)
+  }
+  const vitality = runView(row.entry)
+  const maxGens = row.entry.maxGens > 0 ? `/${row.entry.maxGens}` : ''
+  return [
+    reportRow('EPIC', row.projectName, row.epicId, vitality.label, `gen ${row.entry.gen}${maxGens}`),
+    reportChild(vitality.why),
+  ].join('\n')
+}
+
+/** A stopped run: what it is, what stopped it, and why -- the reason is the only
+ *  field that turns a dead row into an action. */
+function tailRunLine({ row, liveness }: TailRow): string {
+  const kind = row.kind === 'epic' ? 'EPIC' : 'NIGHTSHIFT'
+  return [reportRow(kind, row.projectName, rowTitle(row), liveness.label), reportChild(liveness.why)].join('\n')
+}
+
 export function runsReport(rows: readonly UnattendedRow[], shown: number, view: WallReportView): string {
+  const { live, tail } = runSections(rows)
   return wallReport({
     title: 'UNATTENDED RUNS',
     code: 'A7',
     ...view,
     lines: [
-      ...rows.slice(0, shown).map(row => {
-        if (row.kind === 'nightshift') {
-          return reportRow('NIGHTSHIFT', row.projectName, row.runId, `${row.liveWorkers} workers up`)
-        }
-        const vitality = runView(row.entry)
-        const maxGens = row.entry.maxGens > 0 ? `/${row.entry.maxGens}` : ''
-        return [
-          reportRow('EPIC', row.projectName, row.epicId, vitality.label, `gen ${row.entry.gen}${maxGens}`),
-          reportChild(vitality.why),
-        ].join('\n')
-      }),
-      reportMore(rows.length - shown, 'more running, not inspected'),
+      ...live.slice(0, shown).map(liveRunLine),
+      reportMore(live.length - shown, 'more running, not inspected'),
+      tail.length > 0 ? `NOT RUNNING (${tail.length})` : null,
+      ...tail.slice(0, shown).map(tailRunLine),
+      reportMore(tail.length - shown, 'more not running'),
     ],
     empty: 'nothing is running unattended',
   })

@@ -14,25 +14,25 @@
  * `Date.now()` for itself cannot be asked what it thought at any other moment.
  */
 
-import type { EpicLease } from '@shared/epic-lease'
 import type { EpicLogEntry } from '@shared/epic-run-types'
-import { isVitallyLive, type RunVitalityView, runVitality } from '@shared/epic-vitality'
+import { type RunVitalityView, runVitality } from '@shared/epic-vitality'
 import type { NightshiftTaskMeta, NightshiftTaskStatus } from '@shared/nightshift-types'
 import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
 
 /**
  * A run the sweep is supposed to be beating, and WHAT it is actually doing.
  *
- * Both answers come from `runVitality` (src/shared/epic-vitality.ts) rather than
+ * The answer comes from `runVitality` (src/shared/epic-vitality.ts) rather than
  * from `entry.status`. The status field is an intent nothing writes back down,
  * so `status === 'running'` rendered this pane's tag as ARMED on a run that had
  * spawned nothing for hours -- the same lie the header badge and the overseer
  * window were telling at the same moment, which is why the derivation is shared.
+ *
+ * THERE WAS ALSO AN `isRunLive(entry)` HERE and it is gone on purpose. It said
+ * nothing `runView(entry).live` does not, and a pane with two names for one
+ * question is how the pane ended up with two answers to it. Row-level liveness
+ * -- the one both feeds go through -- lives in `run-liveness.ts`.
  */
-export function isRunLive(entry: EpicActivityEntry): boolean {
-  return isVitallyLive(entry)
-}
-
 export function runView(entry: EpicActivityEntry): RunVitalityView {
   return runVitality(entry)
 }
@@ -77,7 +77,7 @@ export function runBuckets(data: EpicInspectResult | null): RunBuckets {
  * it rendered. So: armed or running, and nothing ready to go.
  */
 export function idleSentence(entry: EpicActivityEntry, data: EpicInspectResult | null): string | null {
-  if (!data?.plan?.idleReason || !isRunLive(entry)) return null
+  if (!data?.plan?.idleReason || !runView(entry).live) return null
   return data.plan.dispatch.length > 0 ? null : data.plan.idleReason
 }
 

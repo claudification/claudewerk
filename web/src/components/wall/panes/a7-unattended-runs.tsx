@@ -17,6 +17,12 @@
  * machine-dispatched rows. Declaring the axis would blank the pane whenever the
  * filter box was empty -- the exact failure `axes.ts` exists to prevent, arriving
  * through the one door it cannot close for you.
+ *
+ * TWO SECTIONS, ONE LIVENESS TEST. Live runs first, at full weight; paused,
+ * aborted, finished and expired ones under them, dimmed, each carrying its
+ * reason. `run-liveness.ts` makes that call once for both feeds -- the pane does
+ * not get a second opinion, which is precisely what it used to have. The tail is
+ * NOT a filter and NOT a toggle: nothing is hidden, it is ranked.
  */
 
 import { runsReport } from '@/lib/wall/pane-reports'
@@ -24,14 +30,15 @@ import { useWallFilter } from '@/lib/wall/use-wall-filter'
 import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { EpicRunRow } from '../runs/epic-run-row'
 import { NightshiftRunRow } from '../runs/nightshift-run-row'
-import { isRunLive } from '../runs/run-model'
+import { rowTitle, runSections, type TailRow } from '../runs/run-liveness'
+import { RunTailRow } from '../runs/run-tail-row'
 import { type UnattendedRow, useRunClock, useUnattendedRuns } from '../runs/use-unattended-runs'
 import { WallPane } from '../wall-pane'
 
 const AXES = ['project', 'text'] as const
 
 /**
- * How many runs render at once.
+ * How many LIVE runs render at once.
  *
  * Not a cosmetic cap: every epic row here pays for its own `inspect`, which
  * costs a sentinel round trip, a board read and a DAG plan. Twenty simultaneous
@@ -41,8 +48,36 @@ const AXES = ['project', 'text'] as const
  */
 const RUN_CAP = 6
 
+/**
+ * How many dimmed rows the tail shows.
+ *
+ * A separate number because it is bounded for a different reason: a tail row
+ * fetches nothing, so this is about the pane's height and not its cost. It is
+ * still said out loud when it bites -- an unnoticed run is the exact failure
+ * this section exists to prevent, and truncating it in silence would rebuild it
+ * one row further down.
+ */
+const TAIL_CAP = 6
+
 function Row({ row, nowMs }: { row: UnattendedRow; nowMs: number }) {
   return row.kind === 'epic' ? <EpicRunRow row={row} nowMs={nowMs} /> : <NightshiftRunRow row={row} nowMs={nowMs} />
+}
+
+/** The dimmed half: a heading that counts, the rows, and the truncation notice. */
+function NotRunning({ tail }: { tail: readonly TailRow[] }) {
+  if (tail.length === 0) return null
+  const shown = tail.slice(0, TAIL_CAP)
+  return (
+    <div className="wall-run-tail-section">
+      <div className="wall-run-tail-head">{`not running · ${tail.length}`}</div>
+      {shown.map(({ row, liveness }) => (
+        <RunTailRow key={row.key} row={row} liveness={liveness} />
+      ))}
+      {tail.length > shown.length && (
+        <div className="wall-run-more">{`+ ${tail.length - shown.length} more not running`}</div>
+      )}
+    </div>
+  )
 }
 
 export default function UnattendedRunsPane() {
@@ -50,12 +85,12 @@ export default function UnattendedRunsPane() {
   const { rows: runs, stale } = useUnattendedRuns()
   const { rows, matched, total } = useWallFilter(runs, AXES, row => ({
     project: row.projectName,
-    title: row.kind === 'epic' ? row.epicId : row.runId,
+    title: rowTitle(row),
     action: row.kind === 'epic' ? 'epic run overseer' : 'nightshift night run',
   }))
 
-  const armed = rows.filter(row => row.kind === 'epic' && isRunLive(row.entry)).length
-  const shown = rows.slice(0, RUN_CAP)
+  const { live, tail } = runSections(rows)
+  const shown = live.slice(0, RUN_CAP)
   const view = useWallReportView()
 
   return (
@@ -63,7 +98,7 @@ export default function UnattendedRunsPane() {
       title="UNATTENDED RUNS"
       code="A7"
       maxHeight="38%"
-      count={`${matched}/${total} · ${armed} armed`}
+      count={`${matched}/${total} · ${live.length} live`}
       stale={stale}
       // The cap goes into the builder rather than the sliced rows, so the report
       // can count what it left out instead of dropping it in silence.
@@ -76,9 +111,10 @@ export default function UnattendedRunsPane() {
       ) : (
         shown.map(row => <Row key={row.key} row={row} nowMs={nowMs} />)
       )}
-      {rows.length > shown.length && (
-        <div className="wall-run-more">{`+ ${rows.length - shown.length} more running, not inspected`}</div>
+      {live.length > shown.length && (
+        <div className="wall-run-more">{`+ ${live.length - shown.length} more running, not inspected`}</div>
       )}
+      <NotRunning tail={tail} />
     </WallPane>
   )
 }

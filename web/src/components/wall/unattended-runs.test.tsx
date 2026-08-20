@@ -23,20 +23,31 @@ vi.mock('./runs/use-unattended-runs', () => ({
   useRunClock: () => Date.parse('2026-08-19T12:00:00.000Z'),
 }))
 
-const inspect = vi.hoisted(() => ({ data: null as unknown }))
+// `asked` is what makes "a dimmed row costs nothing" testable: an inspect is a
+// sentinel round trip, a board read and a DAG plan, so a run in the not-running
+// tail must never appear in this list.
+const inspect = vi.hoisted(() => ({ data: null as unknown, asked: [] as string[] }))
 vi.mock('@/components/overseer/use-overseer-inspect', () => ({
-  useOverseerInspect: () => ({
-    data: inspect.data,
-    error: null,
-    loading: false,
-    fetchedAt: null,
-    stale: false,
-    refresh: () => {},
-  }),
+  useOverseerInspect: (_project: string, epicId: string) => {
+    if (!inspect.asked.includes(epicId)) inspect.asked.push(epicId)
+    return {
+      data: inspect.data,
+      error: null,
+      loading: false,
+      fetchedAt: null,
+      stale: false,
+      refresh: () => {},
+    }
+  },
 }))
 
-const night = vi.hoisted(() => ({ snapshot: undefined as unknown, decisions: [] as unknown[] }))
-vi.mock('@/hooks/use-nightshift', () => ({ useNightshift: () => ({ snapshot: night.snapshot }) }))
+const night = vi.hoisted(() => ({ snapshot: undefined as unknown, decisions: [] as unknown[], asked: [] as string[] }))
+vi.mock('@/hooks/use-nightshift', () => ({
+  useNightshift: (project: string) => {
+    if (!night.asked.includes(project)) night.asked.push(project)
+    return { snapshot: night.snapshot }
+  },
+}))
 vi.mock('@/hooks/use-nightshift-watchdog', () => ({ useNightshiftWatchdog: () => ({ decisions: night.decisions }) }))
 
 import UnattendedRunsPane from './panes/a7-unattended-runs'
@@ -103,11 +114,24 @@ function inspectResult(over: Partial<EpicInspectResult> = {}): EpicInspectResult
   }
 }
 
+function nightRow(runId: string, liveWorkers: number, project = PROJECT): UnattendedRow {
+  return {
+    kind: 'nightshift',
+    key: `night ${project} ${runId}`,
+    project,
+    projectName: 'remote-claude',
+    runId,
+    liveWorkers,
+  }
+}
+
 beforeEach(() => {
   feed.rows = []
   inspect.data = inspectResult()
+  inspect.asked = []
   night.snapshot = undefined
   night.decisions = []
+  night.asked = []
   useWallFilterStore.getState().clear()
 })
 afterEach(() => {
@@ -161,16 +185,7 @@ describe('the unattended-runs pane', () => {
   })
 
   it('renders a night run as a queue and a watchdog verdict, not as a fake DAG', () => {
-    feed.rows = [
-      {
-        kind: 'nightshift',
-        key: 'n',
-        project: PROJECT,
-        projectName: 'remote-claude',
-        runId: '2026-08-19',
-        liveWorkers: 2,
-      },
-    ]
+    feed.rows = [nightRow('2026-08-19', 2)]
     night.snapshot = {
       run: { runId: '2026-08-19', window: '01:00-07:00' },
       tasks: [{ status: 'queued' }, { status: 'queued' }, { status: 'running' }, { status: 'done' }],
@@ -187,15 +202,15 @@ describe('the unattended-runs pane', () => {
   it('renders {matched}/{total} and stays FULL for an axis it does not declare', () => {
     feed.rows = [epicRow(), epicRow({ epicId: 'epic-ting-voice', project: 'claude:///g' }, 'gate-meet')]
     render(<UnattendedRunsPane />)
-    expect(screen.getByText('2/2 · 2 armed')).toBeTruthy()
+    expect(screen.getByText('2/2 · 2 live')).toBeTruthy()
 
     // `%80` is context pressure -- an epic run has none, so the pane must not blank.
     act(() => useWallFilterStore.getState().setRaw('%80'))
-    expect(screen.getByText('2/2 · 2 armed')).toBeTruthy()
+    expect(screen.getByText('2/2 · 2 live')).toBeTruthy()
 
     // A project scope IS an axis it declares.
     act(() => useWallFilterStore.getState().setRaw('@gate-meet'))
-    expect(screen.getByText('1/2 · 1 armed')).toBeTruthy()
+    expect(screen.getByText('1/2 · 1 live')).toBeTruthy()
   })
 
   it('stays FULL under the default hide-managed rule -- every row here IS managed', () => {
@@ -203,6 +218,102 @@ describe('the unattended-runs pane', () => {
     // declare that axis: if it did, an empty filter box would empty the pane.
     feed.rows = [epicRow()]
     render(<UnattendedRunsPane />)
-    expect(screen.getByText('1/1 · 1 armed')).toBeTruthy()
+    expect(screen.getByText('1/1 · 1 live')).toBeTruthy()
+  })
+})
+
+/**
+ * THE CARD'S CLAIM: one liveness test, live rows first, the rest DEMOTED rather
+ * than dropped, each carrying the reason it stopped.
+ *
+ * `epic-the-wall` sat `paused` for nine generations while an epic waited behind
+ * it and nothing on any surface said so. Hiding it (O1) institutionalises that;
+ * a bare count (O3) hides the reason, which is the only field that turns a stale
+ * row into an action. So the assertions here are about ORDER and REASON, and the
+ * one that matters most is that a paused run is still on the pane at all.
+ */
+describe('A7 liveness: what renders, and in what order', () => {
+  /** The rows the pane actually put on screen, top to bottom, as
+   *  `LABEL name` -- one string per row so ORDER is a single assertion. */
+  function rendered(): string[] {
+    return [...document.querySelectorAll('.wall-run')].map(el => {
+      const tag = el.querySelector('.wall-run-tag')?.textContent ?? ''
+      const name = el.querySelector('.wall-run-name, .wall-run-name-static')?.textContent ?? ''
+      return `${tag} ${name}`.trim()
+    })
+  }
+
+  it('ranks paused and aborted runs BELOW the live one, and never drops them', () => {
+    feed.rows = [
+      epicRow({ epicId: 'epic-the-wall', status: 'paused' }),
+      epicRow({ epicId: 'epic-the-wall-ii' }),
+      epicRow({ epicId: 'epic-ting-voice', status: 'aborted' }),
+    ]
+    render(<UnattendedRunsPane />)
+
+    // The live one first even though it arrived second: the partition ranks, it
+    // does not re-sort, so the two dead ones keep their incoming order below it.
+    expect(rendered()).toEqual(['RUNNING epic-the-wall-ii', 'PAUSED epic-the-wall', 'ABORTED epic-ting-voice'])
+    expect(screen.getByText('3/3 · 1 live')).toBeTruthy()
+  })
+
+  it('puts exactly the not-live rows in the dimmed tail, under a heading that counts', () => {
+    feed.rows = [
+      epicRow({ epicId: 'epic-the-wall-ii' }),
+      epicRow({ epicId: 'epic-the-wall', status: 'paused' }),
+      epicRow({ epicId: 'epic-ting-voice', status: 'aborted' }),
+    ]
+    render(<UnattendedRunsPane />)
+
+    const tail = document.querySelector('.wall-run-tail-section')
+    expect(tail).toBeTruthy()
+    expect(screen.getByText('not running · 2')).toBeTruthy()
+    expect([...(tail?.querySelectorAll('.wall-run-tail') ?? [])].length).toBe(2)
+    // ...and the live row is NOT in it.
+    expect(tail?.textContent).not.toContain('epic-the-wall-ii')
+  })
+
+  it('gives every dimmed row its REASON -- paused, aborted and expired are three different situations', () => {
+    feed.rows = [
+      epicRow({ epicId: 'epic-the-wall', status: 'paused' }),
+      epicRow({ epicId: 'epic-ting-voice', status: 'aborted' }),
+      nightRow('2026-08-14', 0),
+    ]
+    render(<UnattendedRunsPane />)
+
+    expect(screen.getByText('Paused. Nothing dispatches until RESUME re-arms it.')).toBeTruthy()
+    expect(screen.getByText('This run was aborted. It will not beat again unless it is re-armed.')).toBeTruthy()
+    expect(screen.getByText(/Every worker has exited/)).toBeTruthy()
+  })
+
+  it('costs nothing for a run that is not running -- no inspect, no night snapshot', () => {
+    feed.rows = [
+      epicRow({ epicId: 'epic-the-wall-ii' }),
+      epicRow({ epicId: 'epic-the-wall', status: 'paused' }),
+      nightRow('2026-08-14', 0),
+    ]
+    render(<UnattendedRunsPane />)
+
+    expect(inspect.asked).toEqual(['epic-the-wall-ii'])
+    expect(night.asked).toEqual([])
+  })
+
+  it('calls a night run whose workers have all exited EXPIRED instead of vanishing it', () => {
+    // The old feed dropped these in the hook, where the only possible answer was
+    // "no row" -- a second liveness test, disagreeing with the epic half.
+    feed.rows = [nightRow('2026-08-14', 0)]
+    render(<UnattendedRunsPane />)
+
+    expect(rendered()).toEqual(['EXPIRED 2026-08-14'])
+    expect(screen.getByText('1/1 · 0 live')).toBeTruthy()
+  })
+
+  it('keeps a STALLED run in the LIVE section -- it is the alarm, not the archive', () => {
+    feed.rows = [epicRow({ stale: true, lastBeatAt: iso(4 * 60_000) })]
+    render(<UnattendedRunsPane />)
+
+    expect(document.querySelector('.wall-run-tail-section')).toBeNull()
+    expect(screen.getByText('STALLED -- no beat for 4m')).toBeTruthy()
+    expect(screen.getByText('1/1 · 1 live')).toBeTruthy()
   })
 })
