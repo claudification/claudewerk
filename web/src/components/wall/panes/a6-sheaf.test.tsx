@@ -46,6 +46,19 @@ function response(windowH: number, projects: SheafProject[]): SheafResponse {
   }
 }
 
+/** A project with nothing to say: no spend, no tokens, no forest, no alerts. */
+function quiet(label: string): SheafProject {
+  return project(label, 0, {
+    forest: [],
+    totals: {
+      tokens: { input: 0, output: 0, cache: 0 },
+      cost: { amount: 0, estimated: false },
+      convCount: 0,
+      treeCount: 0,
+    },
+  })
+}
+
 /** Answer every `/api/sheaf?windowH=N` with the window it was asked for. */
 function serve(projectsFor: (windowH: number) => SheafProject[]): void {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
@@ -144,6 +157,51 @@ describe('A6 sheaf', () => {
     // Clicking the same chip again clears it -- the store's toggle, not a local one.
     fireEvent.click(screen.getByTitle('gate-meet'))
     expect(useWallFilterStore.getState().raw).toBe('')
+  })
+
+  it('drops the projects with nothing to say and says how many it dropped', async () => {
+    serve(() => [project('remote-claude', 121.8), quiet('dormant'), quiet('never-touched')])
+    await mount()
+    expect(rowNames()).toEqual(['remote-claude'])
+    expect(screen.getByText('+ 2 quiet')).toBeTruthy()
+  })
+
+  it('says nothing about quiet projects when every project earned its row', async () => {
+    await mount()
+    expect(screen.queryByText(/quiet/)).toBeNull()
+  })
+
+  it('recomputes membership on a window switch WITHOUT ever blanking the pane', async () => {
+    // 6h sees one busy project; 7d is wide enough that `slow` has spend too.
+    let release: () => void = () => {}
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const windowH = Number(new URL(String(input), 'http://x').searchParams.get('windowH'))
+      const projects = windowH === 168 ? [project('busy', 9), project('slow', 2)] : [project('busy', 4), quiet('slow')]
+      if (windowH === 168) await gate
+      return new Response(JSON.stringify(response(windowH, projects)), { status: 200 })
+    }) as unknown as typeof fetch
+
+    await mount()
+    expect(rowNames()).toEqual(['busy'])
+    expect(screen.getByText('+ 1 quiet')).toBeTruthy()
+
+    act(() => {
+      fireEvent.click(screen.getByText('7d'))
+    })
+    // MID-SWITCH: the 7d response has not landed. The previous one is still up,
+    // so the pane shows the 24h membership rather than flashing empty.
+    expect(rowNames()).toEqual(['busy'])
+    expect(screen.getByText(/24h window/)).toBeTruthy()
+
+    await act(async () => {
+      release()
+      await gate
+    })
+    await waitFor(() => expect(rowNames()).toEqual(['busy', 'slow']))
+    expect(screen.queryByText(/quiet/)).toBeNull()
   })
 
   it('reports a refused route instead of an empty ledger', async () => {
