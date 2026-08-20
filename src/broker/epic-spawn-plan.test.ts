@@ -106,10 +106,42 @@ describe('the three seats differ in what they CAN do, not just what they are tol
 })
 
 describe('worktrees', () => {
-  test('an implementer gets its own branch, named for the card', () => {
+  test('an implementer gets its own worktree, named for the card', () => {
+    expect(planImplementerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
+  })
+
+  /**
+   * The WORK RULES line used to quote the WORKTREE NAME as if it were the branch,
+   * so an implementer was told `epic/<epic>/<card>` while `git branch
+   * --show-current` in its own tree said `worktree-epic/<epic>/<card>`. Measured
+   * on the worktree that fixed this, not inferred.
+   *
+   * `toContain` is not enough on its own here -- the un-prefixed name is a
+   * SUBSTRING of the prefixed one, so the wrong string passes a containment
+   * assertion. The negative half is what actually pins the bug: rule 1 must not
+   * quote the bare name.
+   */
+  test('the prompt names the REAL branch, `worktree-` prefixed -- not the worktree name', () => {
     const plan = planImplementerSpawn(CTX, 't1')
+    expect(plan.prompt).toContain(`Work on branch \`${worktreeBranch('epic/werk-epic/t1')}\``)
+    expect(plan.prompt).not.toContain('Work on branch `epic/werk-epic/t1`')
     expect(plan.worktree).toBe('epic/werk-epic/t1')
-    expect(plan.prompt).toContain('epic/werk-epic/t1')
+  })
+
+  /**
+   * The hazard the card was raised for: from `epic-implementer-base-lacks-deps`
+   * onwards one prompt quotes TWO branch refs. If they disagree on the prefix, an
+   * implementer that reasons "rule 1 drops it, so the merge ref probably does
+   * too" runs `git merge` against a ref that does not resolve.
+   */
+  test('both branch refs in one prompt use the same spelling', () => {
+    const prompt = planImplementerSpawn(CTX, 't1', 'main', ['t0']).prompt
+    expect(prompt).toContain(`\`${worktreeBranch('epic/werk-epic/t1')}\``)
+    expect(prompt).toContain(`\`${worktreeBranch('epic/werk-epic/t0')}\``)
+    for (const line of prompt.split('\n')) {
+      const bare = line.match(/`epic\/werk-epic\/[^`]+`/)
+      expect(bare, `un-prefixed branch ref leaked into: ${line}`).toBeNull()
+    }
   })
 
   test('a verifier gets a SEPARATE scratch worktree from the implementer', () => {
@@ -145,11 +177,14 @@ describe('worktree names fit inside CC’s 64-character limit', () => {
     expect((plan.worktree as string).length).toBeLessThanOrEqual(64)
   })
 
-  test('an implementer branch is capped too -- and the PROMPT names the same branch', () => {
+  test('an implementer worktree is capped too -- and the PROMPT names the branch cut from it', () => {
     const plan = planImplementerSpawn({ ...ctx, epicId: 'a-fairly-long-epic-identifier-here' }, `${LONG}-and-more`)
-    const branch = plan.worktree as string
-    expect(branch.length).toBeLessThanOrEqual(64)
-    expect(plan.prompt).toContain(branch)
+    const worktree = plan.worktree as string
+    expect(worktree.length).toBeLessThanOrEqual(64)
+    // The SHORTENING must survive the prefixing: the prompt names the shortened
+    // worktree's branch, so a hash the cap introduced appears in the merge ref
+    // too. The cap itself is on the worktree name -- CC's limit, not git's.
+    expect(plan.prompt).toContain(`Work on branch \`${worktreeBranch(worktree)}\``)
   })
 
   test('two long siblings that share a prefix do NOT truncate onto the same branch', () => {
