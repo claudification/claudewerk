@@ -120,6 +120,16 @@ export default function SheafPane() {
           + {view.clipped} lower-cost project{view.clipped === 1 ? '' : 's'} clipped
         </p>
       )}
+      {/* Counted, never silent -- same rule the clipped line follows. Jonas asked
+          for less noise, not for projects to vanish without trace. */}
+      {view && view.quiet > 0 && (
+        <p
+          className="wall-sheaf-clipped"
+          title="Projects with nothing to report in this window: no live conversation, no spend, no git alert, no unmerged commit"
+        >
+          + {view.quiet} quiet
+        </p>
+      )}
       {rows.length === 0 && (
         <p className="text-meta text-fg-faint px-0.5 py-1">{emptyLine(error, view !== null, total)}</p>
       )}

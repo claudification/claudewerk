@@ -4,10 +4,18 @@
  * file adds -- the look, the rail, the window label, and the two SOTU shapes.
  */
 
-import type { SheafProject, SheafResponse, SheafSotuBlock } from '@shared/sheaf-types'
+import type { SheafProject, SheafProjectSotu, SheafResponse, SheafSotuBlock } from '@shared/sheaf-types'
 import { describe, expect, it } from 'vitest'
 import type { ProjectLook } from '@/components/wall/use-project-look'
-import { fleetPills, formatTokens, sheafView, sheafWindowLabel, sotuBlocks } from './sheaf-rows'
+import {
+  fleetPills,
+  formatTokens,
+  projectHasSomethingToSay,
+  type SheafRowClaim,
+  sheafView,
+  sheafWindowLabel,
+  sotuBlocks,
+} from './sheaf-rows'
 
 const look = (uri: string): ProjectLook => ({ projectName: uri.split('/').pop() ?? uri, projectColor: '#f0f' })
 
@@ -80,6 +88,116 @@ describe('sheafView', () => {
     const many = Array.from({ length: 22 }, (_, i) => project(`p${i}`, 22 - i))
     expect(sheafView(response(many), look).clipped).toBe(2)
     expect(sheafView(response([project('one', 1)]), look).clipped).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// "only active, or projects with information in them" (Jonas, 2026-08-20)
+// ---------------------------------------------------------------------------
+
+const claim = (over: Partial<SheafRowClaim> = {}): SheafRowClaim => ({
+  live: false,
+  costUsd: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  alerts: [],
+  unmergedCommits: 0,
+  ...over,
+})
+
+describe('projectHasSomethingToSay', () => {
+  it('sends home a project with nothing on any of the four clauses', () => {
+    expect(projectHasSomethingToSay(claim())).toBe(false)
+  })
+
+  it.each([
+    ['a live conversation', { live: true }],
+    ['money spent in the window', { costUsd: 0.02 }],
+    ['tokens in', { inputTokens: 1 }],
+    ['tokens out', { outputTokens: 1 }],
+    ['a git alert', { alerts: ['at-risk'] }],
+    ['an unmerged commit', { unmergedCommits: 1 }],
+  ])('keeps a project on %s alone', (_why, over) => {
+    expect(projectHasSomethingToSay(claim(over))).toBe(true)
+  })
+
+  it('keeps a DORMANT project that is sitting on unpushed work', () => {
+    // The reason this is not `costUsd > 0`: quiet AND the most important row.
+    expect(projectHasSomethingToSay(claim({ unmergedCommits: 11 }))).toBe(true)
+  })
+})
+
+/** A project the window has nothing to say about: no spend, no tokens, no forest. */
+const empty = (label: string, over: Partial<SheafProject> = {}): SheafProject =>
+  project(label, 0, {
+    forest: [],
+    totals: {
+      tokens: { input: 0, output: 0, cache: 0 },
+      cost: { amount: 0, estimated: false },
+      convCount: 0,
+      treeCount: 0,
+    },
+    ...over,
+  })
+
+/** The free SOTU floor -- what a chronicle-off project still carries. */
+const floor = (over: Partial<SheafProjectSotu> = {}): SheafProjectSotu => ({
+  enabled: false,
+  alerts: [],
+  contended: 0,
+  branches: [],
+  ...over,
+})
+
+const live = (label: string): SheafProject =>
+  empty(label, {
+    forest: [{ status: 'running', children: [] }],
+  } as unknown as Partial<SheafProject>)
+
+describe('sheafView scope', () => {
+  it('renders the three projects with something to say and counts the one without', () => {
+    const view = sheafView(
+      response([
+        live('running-now'),
+        empty('alert-only', { sotu: floor({ alerts: ['at-risk'] }) }),
+        empty('unmerged-only', {
+          sotu: floor({ branches: [{ aheadOrigin: 11 }] as unknown as SheafProjectSotu['branches'] }),
+        }),
+        empty('nothing-at-all'),
+      ]),
+      look,
+    )
+    expect(view.rows.map(r => r.projectName)).toEqual(['running-now', 'alert-only', 'unmerged-only'])
+    expect(view.quiet).toBe(1)
+  })
+
+  it('says nothing about quiet projects when every project earned its row', () => {
+    expect(sheafView(response([project('busy', 3)]), look).quiet).toBe(0)
+  })
+
+  it('keeps `clipped` and `quiet` apart -- too expensive to fit is not the same as dull', () => {
+    const many = Array.from({ length: 22 }, (_, i) => project(`p${i}`, 22 - i))
+    const view = sheafView(response([...many, empty('dull')]), look)
+    // `dull` sorts last on the server, so it is INSIDE the clip already; what
+    // reaches the predicate is the top 20, all of which have spend.
+    expect(view.clipped).toBe(3)
+    expect(view.quiet).toBe(0)
+  })
+
+  it('scales the rail against the biggest SURVIVING row', () => {
+    const view = sheafView(response([project('big', 100), empty('gone'), project('small', 25)]), look)
+    expect(view.rows.map(r => r.costShare)).toEqual([1, 0.25])
+  })
+
+  it('recomputes membership per window -- a project quiet at 6h can be loud at 7d', () => {
+    const at6h = sheafView(response([project('busy', 4), empty('slow')], { windowH: 6 }), look)
+    expect(at6h.rows.map(r => r.projectName)).toEqual(['busy'])
+    expect(at6h.quiet).toBe(1)
+
+    // Same fleet, wider window: the slow project's spend is now inside it.
+    const at7d = sheafView(response([project('busy', 9), project('slow', 2)], { windowH: 168 }), look)
+    expect(at7d.rows.map(r => r.projectName)).toEqual(['busy', 'slow'])
+    expect(at7d.quiet).toBe(0)
   })
 })
 

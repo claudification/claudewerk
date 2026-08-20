@@ -60,10 +60,15 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
     // The pair moved up as a pair, keeping the comp's S1-before-P4 order, so the
     // only line that disagrees with the approved comp is the one he overrode.
     // Still a fixed arrangement -- `wall-pane-order.test.ts` pins it.
+    //
+    // SECOND OVERRIDE, same day: "SOTU need to be above SHEAF". The comp stacks
+    // A6 before A4 too, so A4 now sits above A6. Both panes read ONE `/api/sheaf`
+    // response through `useWallSheafFeed`, so the swap is a render-order change
+    // only -- `a4-sotu.test.tsx`'s one-request assertion still holds.
     { code: 'S1', feeds: [], load: () => import('./panes/s1-host-vitals') },
     { code: 'P4', feeds: ['fleet-tokens'], load: () => import('./panes/p4-fleet') },
-    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
     { code: 'A4', feeds: ['sheaf'], load: () => import('./panes/a4-sotu') },
+    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
   ],
 }
 

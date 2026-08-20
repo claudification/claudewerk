@@ -10,9 +10,10 @@
  * forbids.
  */
 
-import { type SheafSummary, summarizeSheaf } from '@shared/sheaf-summary'
-import type { GitAlert, SheafResponse } from '@shared/sheaf-types'
+import { type SheafProjectSummary, type SheafSummary, summarizeSheaf } from '@shared/sheaf-summary'
+import type { GitAlert, SheafResponse, SheafStatus } from '@shared/sheaf-types'
 import type { ProjectLook } from '@/components/wall/use-project-look'
+import { projectMatchesStatus } from '@/sheaf/sheaf-derive'
 
 export interface SheafRow extends ProjectLook {
   projectUri: string
@@ -34,7 +35,70 @@ export interface SheafView {
   /** Projects the summariser dropped. Rendered whenever non-zero -- silent
    *  truncation reads as "that is everything" when it is not. */
   clipped: number
+  /** Projects `projectHasSomethingToSay` sent home. Same honesty rule as
+   *  `clipped`, different reason: those were too expensive to fit, these had
+   *  nothing to report. Kept apart so the footer can say which. */
+  quiet: number
 }
+
+/**
+ * WHAT A ROW HAS TO SAY -- the four things the predicate below weighs, pulled
+ * off `SheafProjectSummary` plus the one fact the rollup does not carry.
+ *
+ * It is a struct rather than four positional arguments so the test can state a
+ * case ("alert only") in the shape the predicate reads it.
+ */
+export interface SheafRowClaim {
+  /** A conversation RUNNING right now, anywhere in this project's forest. The
+   *  rollup counts conversations but not their status, so this comes off the raw
+   *  response -- see `sheafView`. */
+  live: boolean
+  costUsd: number
+  inputTokens: number
+  outputTokens: number
+  /** SOTU escalations: at-risk / unpushed / stalled. */
+  alerts: readonly string[]
+  unmergedCommits: number
+}
+
+/**
+ * DOES THIS PROJECT EARN ITS ROW? Jonas, 2026-08-20: *"sheaf panel: need to show
+ * only active, or projects with information in them!"*.
+ *
+ * ANY of four clauses keeps a project: it is live, it burned something in the
+ * window, it carries a git alert, or it has commits nobody has merged. The last
+ * two are the reason this is not `costUsd > 0` -- a dormant project sitting on
+ * eleven unpushed commits is quiet AND the most important row on the pane.
+ *
+ * DELIBERATELY NOT INSIDE `summarizeSheaf`. That function is shared with the
+ * dispatcher's `fleet_sheaf` context (which is why it was moved to `src/shared`
+ * in `f09dc3a2`), and a filter in there would silently narrow what the
+ * dispatcher knows about the fleet. The wall filters at ITS read; every other
+ * consumer sees the list it always saw.
+ */
+export function projectHasSomethingToSay(claim: SheafRowClaim): boolean {
+  return (
+    claim.live ||
+    claim.costUsd > 0 ||
+    claim.inputTokens > 0 ||
+    claim.outputTokens > 0 ||
+    claim.alerts.length > 0 ||
+    claim.unmergedCommits > 0
+  )
+}
+
+/** Clause 1's status set. `projectMatchesStatus` treats an EMPTY set as "match
+ *  everything", so this staying non-empty is what keeps the clause meaningful. */
+const LIVE_STATUSES: Set<SheafStatus> = new Set(['running'])
+
+const claimOf = (p: SheafProjectSummary, live: boolean): SheafRowClaim => ({
+  live,
+  costUsd: p.costUsd,
+  inputTokens: p.inputTokens,
+  outputTokens: p.outputTokens,
+  alerts: p.alerts ?? [],
+  unmergedCommits: p.unmergedCommits ?? 0,
+})
 
 /** `6h`, `24h`, `7d`. Hours below two days stay hours; a week is a week. */
 export function sheafWindowLabel(windowH: number): string {
@@ -51,12 +115,17 @@ export function formatTokens(n: number): string {
 
 export function sheafView(response: SheafResponse, look: (uri: string) => ProjectLook): SheafView {
   const summary = summarizeSheaf(response)
-  const max = Math.max(1, ...summary.projects.map(p => p.costUsd))
+  // Liveness is the one clause the rollup cannot answer, so it is read off the
+  // raw forests here and joined by URI -- the rollup keeps its own shape.
+  const live = new Set(response.projects.filter(p => projectMatchesStatus(p, LIVE_STATUSES)).map(p => p.projectUri))
+  const kept = summary.projects.filter(p => projectHasSomethingToSay(claimOf(p, live.has(p.projectUri))))
+  const max = Math.max(1, ...kept.map(p => p.costUsd))
   return {
     windowH: summary.windowH,
     totals: summary.totals,
     clipped: summary.clipped ?? 0,
-    rows: summary.projects.map(p => ({
+    quiet: summary.projects.length - kept.length,
+    rows: kept.map(p => ({
       ...look(p.projectUri),
       projectUri: p.projectUri,
       costUsd: p.costUsd,
