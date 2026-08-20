@@ -40,7 +40,7 @@ export interface DeliverDeps {
     opts: { userId: string | null; recordUserTurn?: boolean },
   ) => Promise<DispatchDecision>
   broadcast?: (store: ConversationStore, message: Record<string, unknown>) => void
-  speak?: (store: ConversationStore, body: string, orbId: string | null) => void
+  speak?: (store: ConversationStore, body: string, orbId: string | null, userId: string | null) => void
 }
 
 /** How much of a relayed reply the orb is handed. A quest can report a wall of
@@ -73,7 +73,12 @@ export async function deliverDispatcherReport(
 ): Promise<DeliverResult> {
   const runImpulse = deps.runImpulse ?? runDispatchAgent
   const broadcast = deps.broadcast ?? broadcastToSubscribers
-  const speak = deps.speak ?? ((s, body, orbId) => void relayToOrbAs(s, DISPATCHER_ORB_SOURCE, body, orbId))
+  // The findings are ADDRESSED: the dispatcher is one per user, so the spoken
+  // copy goes to that user's panels and no one else's (orb-channel's audience
+  // rule 1). Before this the answer to one operator's quest was fanned out to
+  // every connected panel and sorted out in the browser.
+  const speak =
+    deps.speak ?? ((s, body, orbId, userId) => void relayToOrbAs(s, DISPATCHER_ORB_SOURCE, body, orbId, userId))
   // Atomically claim the quest: get + delete with no await between, so a second
   // call from the same worker (Haiku double-calling send_message) gets undefined
   // and bails instead of racing through a second impulse + broadcast.
@@ -107,7 +112,7 @@ export async function deliverDispatcherReport(
     // an answer he never gets (the 2026-08-06 pillow report).
     if (link.speakToOrb && decision.reply) {
       const { body, note } = forSpeech(decision.reply)
-      speak(store, body, link.speakToOrb.orbId)
+      speak(store, body, link.speakToOrb.orbId, link.userId)
       detail += `, spoken to orb ${link.speakToOrb.orbId ?? 'all'}${note}`
     }
   } finally {
