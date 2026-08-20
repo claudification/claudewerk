@@ -20,7 +20,7 @@
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
-import { type SheafRow, sheafView, sheafWindowLabel } from '@/lib/wall/sheaf-rows'
+import { type SheafRow, type SheafView, sheafView, sheafWindowLabel } from '@/lib/wall/sheaf-rows'
 import { sheafReport } from '@/lib/wall/stat-reports'
 import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { useProjectLook } from '../use-project-look'
@@ -60,6 +60,67 @@ function WindowTab({ windowH, current, onPick }: { windowH: SheafWindow; current
   )
 }
 
+/** The money strip above the rows. Renders nothing until a view exists. */
+function SheafTotals({ view, loading }: { view: SheafView | null; loading: boolean }) {
+  if (!view) return null
+  return (
+    <div className="wall-sheaf-totals">
+      <span>
+        <b>${view.totals.costUsd.toFixed(2)}</b> spent
+      </span>
+      <span>
+        <b>{view.totals.conversations}</b> conversations
+      </span>
+      <span>
+        <b>{view.totals.trees}</b> spawn trees
+      </span>
+      <span className="wall-sheaf-window">
+        {sheafWindowLabel(view.windowH)} window{loading && ' · refreshing'}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * COUNTED, NEVER SILENT -- the three lines under the rows are one rule, so they
+ * live in one component: a project that is not drawn still gets said out loud.
+ * `clipped` was too cheap to fit, `quiet` had nothing to report, and the empty
+ * line names which of the four nothings this is.
+ */
+function SheafFooters({
+  view,
+  rowCount,
+  error,
+  total,
+}: {
+  view: SheafView | null
+  rowCount: number
+  error: string | null
+  total: number
+}) {
+  return (
+    <>
+      {view && view.clipped > 0 && (
+        <p className="wall-sheaf-clipped" title="The summariser keeps the top projects by cost">
+          + {view.clipped} lower-cost project{view.clipped === 1 ? '' : 's'} clipped
+        </p>
+      )}
+      {/* Jonas asked for less noise, not for projects to vanish without trace. */}
+      {view && view.quiet > 0 && (
+        <p
+          className="wall-sheaf-clipped"
+          title="Projects with nothing to report in this window: no live conversation, no spend, no git alert, no unmerged commit"
+        >
+          + {view.quiet} quiet
+        </p>
+      )}
+      {rowCount === 0 && (
+        <p className="text-meta text-fg-faint px-0.5 py-1">{emptyLine(error, view !== null, total)}</p>
+      )}
+    </>
+  )
+}
+
 export default function SheafPane() {
   const { stale } = useWallSheafFeed()
   const data = useWallSheafStore(s => s.data)
@@ -92,22 +153,7 @@ export default function SheafPane() {
         </div>
       }
     >
-      {view && (
-        <div className="wall-sheaf-totals">
-          <span>
-            <b>${view.totals.costUsd.toFixed(2)}</b> spent
-          </span>
-          <span>
-            <b>{view.totals.conversations}</b> conversations
-          </span>
-          <span>
-            <b>{view.totals.trees}</b> spawn trees
-          </span>
-          <span className="wall-sheaf-window">
-            {sheafWindowLabel(view.windowH)} window{loading && ' · refreshing'}
-          </span>
-        </div>
-      )}
+      <SheafTotals view={view} loading={loading} />
       {/* Capture-phase, like every other pane: the chip scopes the wall through
           the filter store's own action and never through a handler in here. */}
       <div onClickCapture={handleChipCapture}>
@@ -115,24 +161,7 @@ export default function SheafPane() {
           <SheafRowView key={row.projectUri} row={row} />
         ))}
       </div>
-      {view && view.clipped > 0 && (
-        <p className="wall-sheaf-clipped" title="The summariser keeps the top projects by cost">
-          + {view.clipped} lower-cost project{view.clipped === 1 ? '' : 's'} clipped
-        </p>
-      )}
-      {/* Counted, never silent -- same rule the clipped line follows. Jonas asked
-          for less noise, not for projects to vanish without trace. */}
-      {view && view.quiet > 0 && (
-        <p
-          className="wall-sheaf-clipped"
-          title="Projects with nothing to report in this window: no live conversation, no spend, no git alert, no unmerged commit"
-        >
-          + {view.quiet} quiet
-        </p>
-      )}
-      {rows.length === 0 && (
-        <p className="text-meta text-fg-faint px-0.5 py-1">{emptyLine(error, view !== null, total)}</p>
-      )}
+      <SheafFooters view={view} rowCount={rows.length} error={error} total={total} />
     </WallPane>
   )
 }
