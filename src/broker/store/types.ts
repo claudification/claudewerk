@@ -169,6 +169,11 @@ export interface ConversationStore {
    *  The canonical "all projects" enumeration -- e.g. a cross-project ('*')
    *  recap resolves to this list (a literal scope='*' filter matches nothing). */
   listScopes(): string[]
+  /** Distinct project scopes with at least one conversation active since
+   *  `sinceMs`. The standing project-watch interest set: a board worth watching
+   *  is one somebody has actually worked in lately, which is a far smaller list
+   *  than every scope ever seen (48 vs 125 on this box at 30 days). */
+  listScopesActiveSince(sinceMs: number): string[]
   updateStats(id: string, stats: Partial<ConversationStats>): void
 }
 

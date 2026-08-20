@@ -157,6 +157,14 @@ export function watchProject(projectRoot: string, project: string, leaseMs: numb
   )
 }
 
+/** Every live watch, as root -> project URI. The set handler diffs against this
+ *  to decide what to start and what to tear down. */
+export function watchedRoots(): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const [root, entry] of watches) out.set(root, entry.project)
+  return out
+}
+
 /** Stop watching immediately (last viewer closed, or lease expired). */
 export function unwatchProject(projectRoot: string, log: LogFn): void {
   const entry = watches.get(projectRoot)

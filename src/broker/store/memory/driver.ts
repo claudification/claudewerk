@@ -195,6 +195,14 @@ function createConversationStore(): ConversationStore {
       return [...scopes].sort()
     },
 
+    listScopesActiveSince(sinceMs: number) {
+      const scopes = new Set<string>()
+      for (const s of conversations.values()) {
+        if ((s.lastActivity ?? 0) > sinceMs || s.createdAt > sinceMs) scopes.add(s.scope)
+      }
+      return [...scopes].sort()
+    },
+
     updateStats(id, stats: Partial<ConversationStats>) {
       const s = conversations.get(id)
       if (!s) throw new ConversationNotFound(id)

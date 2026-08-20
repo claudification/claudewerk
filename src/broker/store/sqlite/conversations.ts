@@ -315,6 +315,18 @@ export function createSqliteConversationStore(db: Database): ConversationStore {
       return rows.map(r => r.scope as string)
     },
 
+    listScopesActiveSince(sinceMs: number) {
+      // created_at as well as last_activity: a conversation spawned seconds ago
+      // has no activity yet, and that is exactly when its board most wants
+      // watching.
+      const rows = db
+        .prepare(
+          'SELECT DISTINCT scope FROM conversations WHERE last_activity > $since OR created_at > $since ORDER BY scope',
+        )
+        .all({ since: sinceMs }) as Params[]
+      return rows.map(r => r.scope as string)
+    },
+
     updateStats(id, stats: Partial<ConversationStats>) {
       const row = stmtGet.get({ id }) as Params | null
       if (!row) throw new ConversationNotFound(id)
