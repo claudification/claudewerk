@@ -235,12 +235,43 @@ describe('recordSettledPromises -- who writes `closes:`, and when', () => {
     expect(records()).toHaveLength(1)
   })
 
-  test('a recorded card is not read again on the next beat', async () => {
+  test('a recorded TERMINAL card is not read again on the next beat', async () => {
     commit()
     await recordSettledPromises(deps(), group(), [card('t1', 'done')])
     const before = reads
     await recordSettledPromises(deps(), group(), [card('t1', 'done')])
     expect(reads).toBe(before)
+  })
+
+  /**
+   * THE BOUNCE. A verifier can send a card back to `open`, a second implementer
+   * picks it up and commits more, and the card settles a second time. Retiring
+   * it on the first settle would freeze `closes:` at round one's shas -- which
+   * is the regression that dropping the lane gate would otherwise have
+   * introduced, since a non-terminal card now gets recorded at all.
+   */
+  test('a card that is settled but NOT terminal stays askable, and picks up round two', async () => {
+    commit()
+    await recordSettledPromises(deps(), group(), [card('t1', 'in-review')])
+    expect(closesOf(cardFile())).toEqual(['a'.repeat(40)])
+
+    // Bounced to `open`, a second implementer commits, it settles again.
+    commit({ hash: 'b'.repeat(40), subject: 'fix(t1): the bounce, paid', committedAt: NOW - 1_000 })
+    const out = await recordSettledPromises(deps(), group(), [card('t1', 'open')])
+
+    expect(out[0].added).toEqual(['b'.repeat(40)])
+    expect(closesOf(cardFile())).toEqual(['a'.repeat(40), 'b'.repeat(40)])
+  })
+
+  /** Re-asking has to be SILENT or a long run buries its own baton: one line
+   *  every 45 seconds saying "nothing to add" is worse than no line. */
+  test('a re-ask that adds nothing says nothing', async () => {
+    commit()
+    await recordSettledPromises(deps(), group(), [card('t1', 'in-review')])
+    expect(records()).toHaveLength(1)
+
+    await recordSettledPromises(deps(), group(), [card('t1', 'in-review')])
+    expect(records()).toHaveLength(1)
   })
 
   /** The memory is a CACHE over an idempotent write, so losing it costs a read

@@ -390,13 +390,35 @@ async function recordOne(
     if (announced.has(key)) return result
     announced.add(key)
   } else {
-    settledPromises.add(key)
+    if (retires(card, lastCall)) settledPromises.add(key)
     announced.delete(key)
   }
 
-  await say(deps, group, card.slug, report(result, lastCall))
+  // AN IDEMPOTENT NO-OP IS A NON-EVENT. Dropping the lane gate means a card can
+  // legitimately be asked again beat after beat (see `retires`), and a baton
+  // line every 45 seconds saying "nothing to add" would bury the entries the
+  // overseer actually reads.
+  if (result.added.length > 0 || result.refused) await say(deps, group, card.slug, report(result, lastCall))
   if (result.refused) deps.log(`${tag(group.epicId, 0)} promise NOT recorded for ${card.slug}: ${result.refused}`)
   return result
+}
+
+/**
+ * Is this card DONE WITH for the rest of the run, or can it still gain commits?
+ *
+ * THE BOUNCE IS WHY THIS IS NOT JUST "we got an answer". A verifier can send a
+ * card back to `open`, a second implementer picks it up and commits more, and
+ * that card settles a second time. Retiring it on the first settle would freeze
+ * its `closes:` at round one's shas and quietly under-report what delivered it.
+ * So a card is only retired once its LANE says nobody is going back to it -- or
+ * at last call, when there is no next beat to ask on anyway.
+ *
+ * Re-asking is cheap and safe by construction: the ledger query is a local
+ * indexed read, `appendCloses` adds only what is missing, and a pass that adds
+ * nothing now says nothing.
+ */
+function retires(card: ProjectTaskMeta, lastCall: boolean): boolean {
+  return lastCall || TERMINAL_LANES.has(card.status)
 }
 
 /** The conversation a promise is RECOVERABLE through -- whoever committed the
