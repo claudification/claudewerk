@@ -20,14 +20,22 @@
  * card is allowed to leave the queue.
  */
 
+import type { ConversationRole } from './conversation-role'
+
 /** When a ready card is allowed to dispatch. */
 export type EpicCadence = 'now' | 'window'
 
 /** Lifecycle of the RUN (distinct from the epic card's board lane). */
 export type EpicRunStatus = 'armed' | 'running' | 'paused' | 'complete' | 'aborted'
 
-/** Which seat a conversation occupies in an epic run. */
-export type EpicRole = 'overseer' | 'implementer' | 'verifier'
+/**
+ * Which seat a conversation occupies in an epic run.
+ *
+ * Derived from `ConversationRole` rather than re-listed, because the panel needs
+ * the same three names PLUS `normal` for every conversation that holds no seat.
+ * Two hand-maintained lists of the same three strings would drift; this cannot.
+ */
+export type EpicRole = Extract<ConversationRole, 'overseer' | 'implementer' | 'verifier'>
 
 /** Why the overseer was woken. Recorded on the generation so a stalled epic can
  *  be explained from the baton alone, without reading any transcript. */

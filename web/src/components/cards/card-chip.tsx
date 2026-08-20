@@ -25,12 +25,31 @@ import { closeCardHover, closeCardHoverFor, openCardHover } from '../card-hover/
 import { openProjectCard } from '../conversation-detail/project-card-verbs'
 import { openCardMenu } from './card-menu-bus'
 
-export function CardChip({ path, scope, fallback }: { path: string; scope?: string; fallback?: string }) {
+/**
+ * `path` is for callers holding a card PATH (a tool line, a markdown link).
+ * `cardRef` is for callers that already KNOW the card and its project -- the
+ * sidebar's epic-seat rows and THE WALL both do, and making them fabricate a
+ * `.rclaude/project/cards/x.md` string just so `matchCardHref` could parse it
+ * back apart would be a round trip through a format neither of them uses.
+ * Exactly one of the two is required.
+ */
+export function CardChip({
+  path,
+  cardRef,
+  scope,
+  fallback,
+}: {
+  path?: string
+  cardRef?: CardRef
+  scope?: string
+  fallback?: string
+}) {
   const ref = useMemo<CardRef | null>(() => {
-    const hit = matchCardHref(path)
+    if (cardRef) return cardRef
+    const hit = path ? matchCardHref(path) : null
     if (!hit) return null
     return scope ? { ...hit, scope } : hit
-  }, [path, scope])
+  }, [path, cardRef, scope])
 
   // Shallow: an epic rollup is a whole-board hydration, and a transcript can
   // hold dozens of these. The hover panel pays for depth, a row does not.
@@ -40,6 +59,7 @@ export function CardChip({ path, scope, fallback }: { path: string; scope?: stri
 
   if (!ref) return <>{fallback ?? path}</>
 
+  const hoverTitle = path ?? ref.id
   const view = cardGlyph(lookup)
   const title = lookup.status === 'ready' ? lookup.summary.title : undefined
 
@@ -47,7 +67,7 @@ export function CardChip({ path, scope, fallback }: { path: string; scope?: stri
     <button
       ref={anchor}
       type="button"
-      title={path}
+      title={hoverTitle}
       data-card-state={view.dataState}
       data-card-kind={view.kind}
       className="inline-flex items-baseline gap-1 min-w-0 max-w-full text-left text-violet-300 hover:text-violet-200 decoration-dotted underline-offset-2 hover:underline"
@@ -64,7 +84,7 @@ export function CardChip({ path, scope, fallback }: { path: string; scope?: stri
         e.preventDefault()
         e.stopPropagation()
         closeCardHover()
-        openCardMenu({ ref, path, x: e.clientX, y: e.clientY })
+        openCardMenu({ ref, path: hoverTitle, x: e.clientX, y: e.clientY })
       }}
       onMouseEnter={e => openCardHover(ref, e.currentTarget)}
       onMouseLeave={closeCardHover}

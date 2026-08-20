@@ -1,5 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { isAdHocConversation } from '@/lib/conversation-axes'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import { useKeyLayer } from '@/lib/key-layers'
 import { selectConversations } from '@/lib/slim-conversation'
@@ -65,7 +66,7 @@ function ConversationLineageSection({
                 onClick={() => onNavigate(child.id)}
                 className="flex items-center gap-1.5 w-full text-left px-1 py-0.5 rounded hover:bg-accent/10 transition-colors"
               >
-                <StatusIndicator status={child.status} adHoc={child.capabilities?.includes('ad-hoc')} />
+                <StatusIndicator status={child.status} adHoc={isAdHocConversation(child)} />
                 <span className="truncate text-foreground/80">
                   {child.title || child.agentName || child.id.slice(0, 8)}
                 </span>
@@ -124,7 +125,7 @@ export function ConversationInfoDialog({
   const effort = formatEffort(conversation.effortLevel)
   const cost = conversation.stats ? getConversationCost(conversation.stats, resolvedModel) : null
   const duration = conversation.lastActivity - conversation.startedAt
-  const isAdHoc = conversation.capabilities?.includes('ad-hoc')
+  const isAdHoc = isAdHocConversation(conversation)
   const selectConversation = useConversationsStore(s => s.selectConversation)
 
   useKeyLayer({ Escape: () => onOpenChange(false) }, { id: 'conversation-info-dialog', enabled: open })

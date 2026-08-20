@@ -30,22 +30,72 @@ function makeConversation(overrides: Partial<Conversation>): Conversation {
 describe('partitionConversations', () => {
   it('returns empty arrays for empty input', () => {
     const result = partitionConversations([])
-    expect(result).toEqual({ worktrees: [], adhoc: [], normal: [] })
+    expect(result).toEqual({ epicGroups: [], worktrees: [], adhoc: [], normal: [] })
   })
 
   it('routes conversations with ad-hoc capability into adhoc bucket', () => {
     const s = makeConversation({ id: 'a', capabilities: ['ad-hoc'] })
-    expect(partitionConversations([s])).toEqual({ worktrees: [], adhoc: [s], normal: [] })
+    expect(partitionConversations([s])).toEqual({ epicGroups: [], worktrees: [], adhoc: [s], normal: [] })
   })
 
   it('routes conversations without ad-hoc capability into normal bucket', () => {
     const s = makeConversation({ id: 'n', capabilities: ['headless'] })
-    expect(partitionConversations([s])).toEqual({ worktrees: [], adhoc: [], normal: [s] })
+    expect(partitionConversations([s])).toEqual({ epicGroups: [], worktrees: [], adhoc: [], normal: [s] })
   })
 
   it('treats missing capabilities as normal (not adhoc)', () => {
     const s = makeConversation({ id: 'm' })
-    expect(partitionConversations([s])).toEqual({ worktrees: [], adhoc: [], normal: [s] })
+    expect(partitionConversations([s])).toEqual({ epicGroups: [], worktrees: [], adhoc: [], normal: [s] })
+  })
+
+  // THE REQUIREMENT, in one test: "verifiers and implementers always group under
+  // the overseer, WHETHER THEY ARE AD HOC OR NOT". Every seat below is ad-hoc,
+  // and one is in a worktree -- neither may pull it out of its subtree.
+  it('nests seats under their overseer even when ad-hoc and in a worktree', () => {
+    const tag = (role: 'overseer' | 'implementer' | 'verifier', epicId = 'epic-the-wall') => ({
+      epic: { epicId, role, gen: 11 },
+      capabilities: ['ad-hoc'],
+    })
+    const overseer = makeConversation({ id: 'ov', startedAt: 1, ...tag('overseer') })
+    const impl = makeConversation({
+      id: 'im',
+      startedAt: 2,
+      project: 'claude:///p/.claude/worktrees/wall-now-bar',
+      ...tag('implementer'),
+    })
+    const verify = makeConversation({ id: 've', startedAt: 3, ...tag('verifier') })
+    const plain = makeConversation({ id: 'pl', startedAt: 4 })
+
+    const result = partitionConversations([overseer, impl, verify, plain])
+
+    expect(result.epicGroups).toHaveLength(1)
+    expect(result.epicGroups[0].overseer?.id).toBe('ov')
+    expect(result.epicGroups[0].seats.map(s => s.id)).toEqual(['im', 've'])
+    // and none of them leaked into the buckets that would have claimed them
+    expect(result.adhoc).toEqual([])
+    expect(result.worktrees).toEqual([])
+    expect(result.normal).toEqual([plain])
+  })
+
+  // Two epic cards in one project each hold their own overseer lease today, so
+  // one project genuinely can show two subtrees. Merging them would invent a
+  // run that does not exist.
+  it('keeps two epics in one project as two subtrees', () => {
+    const seat = (id: string, epicId: string) =>
+      makeConversation({ id, startedAt: 1, epic: { epicId, role: 'implementer', gen: 1 } })
+    const result = partitionConversations([seat('a', 'epic-the-wall'), seat('b', 'epic-the-wall-ii')])
+    expect(result.epicGroups).toHaveLength(2)
+  })
+
+  // An overseer whose generation ended leaves its seats headless. They must
+  // still group, and still render (flat) rather than vanish or indent under
+  // nothing -- the same degradation lineage.ts already does for a dead root.
+  it('groups headless seats with no overseer present', () => {
+    const orphan = makeConversation({ id: 'o1', startedAt: 1, epic: { epicId: 'e', role: 'implementer', gen: 9 } })
+    const result = partitionConversations([orphan])
+    expect(result.epicGroups).toHaveLength(1)
+    expect(result.epicGroups[0].overseer).toBeUndefined()
+    expect(result.epicGroups[0].seats.map(s => s.id)).toEqual(['o1'])
   })
 
   // Status is not this function's business -- callers hand it rows that are
