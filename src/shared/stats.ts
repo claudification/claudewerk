@@ -23,16 +23,20 @@
 /**
  * A named thing that lives ON a node and can be measured.
  *
- * `node`, `profile` and `volume` are the three THE WALL produces today.
- * `conversation` and `process` are the obvious next two and are deliberately NOT
- * pre-declared -- see the note above.
+ * `node`, `profile`, `volume` and `conversation` are the four THE WALL produces
+ * today. `process` is the obvious next one and is deliberately NOT pre-declared
+ * -- see the note above.
  *
  * A `volume` is named by its MOUNT PATH, and that is the rare case where the
  * human-readable string genuinely is identity: a mount path is what a volume is
  * called, in the way a hostname is never what a box is called. `label` carries
  * the prettier version (`Fint` for `/Volumes/Fint`) and remains a label.
+ *
+ * A `conversation` lives on exactly one sentinel, so it hangs off a node like
+ * the other three: `name` is the conversation id (stable identity) and `label`
+ * is its title (mutable).
  */
-export type StatObjectKind = 'node' | 'profile' | 'volume'
+export type StatObjectKind = 'node' | 'profile' | 'volume' | 'conversation'
 
 /** Every metric the broker records. Units are part of the name, always. */
 export type StatMetric =
@@ -61,6 +65,24 @@ export type StatMetric =
    *  (`state === 'ok'`) -- an unauthed or errored profile has no number, and
    *  filing its placeholder 0 would draw a line that says "idle". */
   | 'plan_utilization_percent'
+  /* THE FOUR BELOW ARE FLOW, NOT GAUGE. Each is a per-EVENT delta -- what ONE
+   * assistant message billed -- where every `_percent` above is a level read at
+   * an instant. The distinction is not cosmetic: `retention.ts` collapses rows
+   * older than 48h with AVG(), which is right for a gauge and lossy for a flow
+   * (the mean message, not the window's volume). Known and filed as
+   * `wall-stats-retention-flow-vs-gauge`; nothing reads these yet. */
+  /** Uncached input tokens billed by ONE assistant message. Producer:
+   *  `conversation-store/transcript-handlers/token-stats`. Disjoint from
+   *  `cache_read_count` and `cache_write_count` -- the three sum to the
+   *  message's total input, which is why none of them double-counts. */
+  | 'tokens_in_count'
+  /** Output tokens billed by ONE assistant message. Same producer. */
+  | 'tokens_out_count'
+  /** Prompt-cache READ tokens on ONE assistant message. Same producer. */
+  | 'cache_read_count'
+  /** Prompt-cache WRITE tokens on ONE assistant message, 5m and 1h summed.
+   *  The TTL split stays in `token_samples`; this is the coarser view. */
+  | 'cache_write_count'
 
 /**
  * The thing being measured.

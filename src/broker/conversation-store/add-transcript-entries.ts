@@ -9,6 +9,7 @@ import type {
   TranscriptSystemEntry,
   TranscriptUserEntry,
 } from '../../shared/protocol'
+import type { PerMessageTokenSample } from '../../shared/token-usage'
 import type { TranscriptAppendResult } from '../store/types'
 import { agentScopeOf } from './agent-scope'
 import { assignTranscriptSeqs, type ConversationStoreContext } from './event-context'
@@ -25,6 +26,7 @@ import {
 } from './transcript-handlers/metadata-entry'
 import { extractLiveSubagentEntries } from './transcript-handlers/subagent-extraction'
 import { handleSystemEntry } from './transcript-handlers/system-entry'
+import { recordConversationTokenStats } from './transcript-handlers/token-stats'
 import { handleUserEntry } from './transcript-handlers/user-entry'
 
 /**
@@ -260,28 +262,43 @@ function recordTokenSample(
       cacheWrite5mTokens: sample.cacheWrite5mTokens,
       cacheWrite1hTokens: sample.cacheWrite1hTokens,
     })
-    if (inserted && !isInitial) {
-      ctx.broadcastConversationScoped(
-        {
-          type: 'token_sample',
-          conversationId,
-          timestamp,
-          sentinelId: conv.hostSentinelId,
-          profile: conv.resolvedProfile || 'default',
-          model: sample.model,
-          inputTokens: sample.inputTokens,
-          outputTokens: sample.outputTokens,
-          cacheReadTokens: sample.cacheReadTokens,
-          cacheWriteTokens: sample.cacheWriteTokens,
-          cacheWrite5mTokens: sample.cacheWrite5mTokens,
-          cacheWrite1hTokens: sample.cacheWrite1hTokens,
-        },
-        '*',
-      )
-    }
+    if (!inserted) return
+    recordConversationTokenStats(conversationId, conv, timestamp, sample)
+    if (!isInitial) broadcastTokenSample(ctx, conversationId, conv, timestamp, sample)
   } catch (err) {
     console.error('[token-samples] recordSample failed:', err instanceof Error ? err.message : err)
   }
+}
+
+/** The live half, split out from the persist half purely to keep either one
+ *  readable -- a twelve-field wire literal inside a function that also owns the
+ *  de-dup decision put `recordTokenSample` over the complexity gate the moment a
+ *  second consumer was wired to it. Same guarantees as before: newly-inserted
+ *  samples only, never on a re-read. */
+function broadcastTokenSample(
+  ctx: ConversationStoreContext,
+  conversationId: string,
+  conv: Conversation,
+  timestamp: number,
+  sample: PerMessageTokenSample,
+): void {
+  ctx.broadcastConversationScoped(
+    {
+      type: 'token_sample',
+      conversationId,
+      timestamp,
+      sentinelId: conv.hostSentinelId,
+      profile: conv.resolvedProfile || 'default',
+      model: sample.model,
+      inputTokens: sample.inputTokens,
+      outputTokens: sample.outputTokens,
+      cacheReadTokens: sample.cacheReadTokens,
+      cacheWriteTokens: sample.cacheWriteTokens,
+      cacheWrite5mTokens: sample.cacheWrite5mTokens,
+      cacheWrite1hTokens: sample.cacheWrite1hTokens,
+    },
+    '*',
+  )
 }
 
 function dispatchSystemEntry(
