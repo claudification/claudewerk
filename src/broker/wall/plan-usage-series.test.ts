@@ -15,6 +15,13 @@ import { planSampleFrom, readPlanSeries, resetPlanSeries, samplePlanUsage } from
 const T0 = 1_760_000_000_000
 const RESET_ISO = '2026-08-19T18:00:00.000Z'
 
+/** The sentinel a batch of snapshots came from. Both halves travel now: the
+ *  alias keys the wire series, the id keys the durable stats object. These two
+ *  carry no alias, so the id doubles as the label -- what an un-aliased sentinel
+ *  already did. */
+const STUDIO = { id: 'studio' }
+const NAS = { id: 'nas' }
+
 function snapshot(over: Partial<ProfileUsageSnapshot> = {}): ProfileUsageSnapshot {
   return {
     profile: 'default',
@@ -97,7 +104,7 @@ describe('plan sample projection', () => {
 
 describe('plan series accumulation', () => {
   it('appends one sample per profile per report', () => {
-    samplePlanUsage([snapshot({ profile: 'a' }), snapshot({ profile: 'b' })], 'studio', T0)
+    samplePlanUsage([snapshot({ profile: 'a' }), snapshot({ profile: 'b' })], STUDIO, T0)
 
     expect(
       readPlanSeries(T0)
@@ -107,8 +114,8 @@ describe('plan series accumulation', () => {
   })
 
   it('keeps profile@node separate -- one name on two sentinels is two accounts', () => {
-    samplePlanUsage([snapshot()], 'studio', T0)
-    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 5, resetAt: RESET_ISO } })], 'nas', T0)
+    samplePlanUsage([snapshot()], STUDIO, T0)
+    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 5, resetAt: RESET_ISO } })], NAS, T0)
 
     const held = readPlanSeries(T0)
     expect(held).toHaveLength(2)
@@ -116,33 +123,29 @@ describe('plan series accumulation', () => {
   })
 
   it('thins an unchanged reading, so an idle fleet does not fill the chart', () => {
-    expect(samplePlanUsage([snapshot()], 'studio', T0)).toHaveLength(1)
-    expect(samplePlanUsage([snapshot()], 'studio', T0 + 5_000)).toHaveLength(0)
+    expect(samplePlanUsage([snapshot()], STUDIO, T0)).toHaveLength(1)
+    expect(samplePlanUsage([snapshot()], STUDIO, T0 + 5_000)).toHaveLength(0)
     expect(readPlanSeries(T0 + 5_000)).toHaveLength(1)
   })
 
   it('never thins away a jump towards the throttle line', () => {
-    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 40, resetAt: RESET_ISO } })], 'studio', T0)
-    const kept = samplePlanUsage(
-      [snapshot({ fiveHour: { usedPercent: 95, resetAt: RESET_ISO } })],
-      'studio',
-      T0 + 3_000,
-    )
+    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 40, resetAt: RESET_ISO } })], STUDIO, T0)
+    const kept = samplePlanUsage([snapshot({ fiveHour: { usedPercent: 95, resetAt: RESET_ISO } })], STUDIO, T0 + 3_000)
 
     expect(kept).toHaveLength(1)
     expect(readPlanSeries(T0 + 3_000).map(s => s.utilization)).toEqual([40, 95])
   })
 
   it('holds five hours and no more', () => {
-    samplePlanUsage([snapshot()], 'studio', T0)
+    samplePlanUsage([snapshot()], STUDIO, T0)
     const later = T0 + 5 * 60 * 60 * 1000 + 60_000
-    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 11, resetAt: RESET_ISO } })], 'studio', later)
+    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 11, resetAt: RESET_ISO } })], STUDIO, later)
 
     expect(readPlanSeries(later).map(s => s.utilization)).toEqual([11])
   })
 
   it('forgets a series once its last sample ages out, without a write to trigger it', () => {
-    samplePlanUsage([snapshot()], 'studio', T0)
+    samplePlanUsage([snapshot()], STUDIO, T0)
 
     expect(readPlanSeries(T0 + 6 * 60 * 60 * 1000)).toEqual([])
   })
@@ -150,8 +153,8 @@ describe('plan series accumulation', () => {
   it('accumulates with no wall subscriber -- the point of keeping it', () => {
     // `publishWallPlanSample` is a no-op while nobody is watching, and no wall
     // is open in this suite. The series is still here.
-    samplePlanUsage([snapshot()], 'studio', T0)
-    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 70, resetAt: RESET_ISO } })], 'studio', T0 + 120_000)
+    samplePlanUsage([snapshot()], STUDIO, T0)
+    samplePlanUsage([snapshot({ fiveHour: { usedPercent: 70, resetAt: RESET_ISO } })], STUDIO, T0 + 120_000)
 
     expect(readPlanSeries(T0 + 120_000)).toHaveLength(2)
   })

@@ -6,16 +6,24 @@
  * later sees an empty pane until someone touches the board. The ring is the
  * broker holding the last few hundred moves so "cold" still shows something.
  *
- * NOT PERSISTED, deliberately. This is process-lifetime memory: a broker
- * restart empties it and that is the whole contract. If the ledger ever needs
- * to survive a restart or reach past the bound, that is a store table and a
- * different card -- do not quietly grow this module into one.
+ * PERSISTED SINCE `wall-card-ledger-durable-history`, but still a RING. The
+ * durable half is a table of its own in `card-ledger-store.ts`; this module did
+ * not grow into one. The split is deliberate and the contract is:
+ *
+ *   - the ring is the HOT READ. Every wall frame, cold seed included, is built
+ *     from this array. Nothing on the serving path touches SQLite.
+ *   - the store is the BOOT READ. `wall/rehydrate.ts` refills the ring from it
+ *     once, before any sentinel has reported.
+ *   - `recordCardMoves()` is the ONE ingest chokepoint, so the two can never
+ *     hold different histories. `seedCardLedger()` is the one way in that does
+ *     NOT write back, because its rows came out of the table already.
  *
  * Global module state, like `commit-ledger/counts.ts`: there is one broker
  * process and one ring in it.
  */
 
 import type { CardMove } from '../shared/protocol'
+import { persistCardMoves } from './card-ledger-store'
 
 /** "A few hundred moves" -- enough that a wall opened after lunch still has the
  *  morning in it, small enough that the whole ring is a cheap JSON frame. */
@@ -24,11 +32,40 @@ export const CARD_LEDGER_CAP = 300
 /** Append order: oldest at index 0. Readers get it reversed. */
 const ring: CardMove[] = []
 
-/** Record moves in arrival order, dropping the oldest past the cap. */
-export function recordCardMoves(moves: CardMove[]): void {
-  if (moves.length === 0) return
+/** Append to the ring, dropping the oldest past the cap. The memory half only --
+ *  `recordCardMoves()` owns the durable half, `seedCardLedger()` must not. */
+function push(moves: CardMove[]): void {
   ring.push(...moves)
   if (ring.length > CARD_LEDGER_CAP) ring.splice(0, ring.length - CARD_LEDGER_CAP)
+}
+
+/**
+ * Record moves in arrival order: ring first, then the durable tail.
+ *
+ * The table write is synchronous and swallows its own failures, so the ring is
+ * never left behind by a store that is missing, full, or locked. Ring before
+ * store rather than after for the same reason -- the wall's read must not wait
+ * on SQLite, and must not be skipped if SQLite is unhappy.
+ */
+export function recordCardMoves(moves: CardMove[]): void {
+  if (moves.length === 0) return
+  push(moves)
+  persistCardMoves(moves)
+}
+
+/**
+ * Boot only: put rows the store already holds back into the ring, WITHOUT
+ * re-filing them. Give them oldest-first; the ring is an oldest-first append
+ * ring and its cap drops from the front.
+ *
+ * Re-filing them would be harmless (`INSERT OR IGNORE` on a unique tuple) but
+ * it would also be a lie about which path owns the write, and the first time
+ * someone changes the uniqueness rule it stops being harmless.
+ */
+export function seedCardLedger(moves: CardMove[]): number {
+  if (moves.length === 0) return 0
+  push(moves)
+  return moves.length
 }
 
 export interface ReadLedgerOptions {

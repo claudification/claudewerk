@@ -115,6 +115,12 @@ function lastAt(series: WallPlanSample[]): number {
  * A sample that arrives out of order (older than the newest one held) is
  * dropped. The series is a line drawn left to right; splicing a late reading
  * into its middle would redraw history under the reader.
+ *
+ * A sample carrying `gapBefore` is NEVER thinned, whatever the min gap says. It
+ * is the only thing that knows the hole is there, and a reading that says the
+ * same number as the last one is exactly the case the thinner drops -- which is
+ * also exactly the case where the line would then be drawn straight across an
+ * outage.
  */
 export function appendPlanSample(
   all: WallPlanSeries,
@@ -135,7 +141,7 @@ export function appendPlanSample(
 
   if (last) {
     if (sample.at < last.at) return false
-    if (sample.at - last.at < minGapMs && saysTheSame(last, sample)) return false
+    if (!sample.gapBefore && sample.at - last.at < minGapMs && saysTheSame(last, sample)) return false
   }
 
   series.push(sample)

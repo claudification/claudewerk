@@ -106,5 +106,11 @@ export function toConversation(summary: ConversationSummary): Conversation {
     rootConversationId: summary.rootConversationId,
     // Night-task origin tag (drives the live Status screen's per-task rows).
     nightshift: summary.nightshift,
+    // EPIC MODE seat tag. Declared on Conversation since the seat landed but
+    // never mapped here, so `conversation.epic` read undefined for every row --
+    // the THIRD field this whitelist has silently dropped. Covered by
+    // to-conversation.test.ts now; the tag is what the sidebar groups seats on
+    // and what a row renders as its card chip.
+    epic: summary.epic,
   }
 }

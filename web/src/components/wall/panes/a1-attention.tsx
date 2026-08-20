@@ -84,7 +84,9 @@ export default function AttentionPane() {
   const soft = rows.filter(r => r.tier === 'soft')
 
   return (
-    <WallPane title="BLOCKED ON YOU" code="A1" maxHeight="34%" count={`${matched}/${total} waiting`}>
+    // `rewind="rows"`: an entry's `ageMs` runs from `since`, so rewinding leaves
+    // exactly the seats that were ALREADY waiting at the cursor.
+    <WallPane title="BLOCKED ON YOU" code="A1" maxHeight="34%" count={`${matched}/${total} waiting`} rewind="rows">
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0 ? 'nobody is waiting on you' : 'nothing waiting matches'}

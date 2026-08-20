@@ -21,28 +21,82 @@ function isBlocked(s: ConversationSummary): boolean {
   return !!s.pendingAttention || !!s.pendingSpawnApproval || s.turnSummary?.category === 'blocked'
 }
 
-// Consumer is the P1 pulse pane (`wall-pane-pulse`), still open in
-// `epic-the-wall`. Delete both suppressions when that pane lands.
-// fallow-ignore-next-line complexity, unused-export
-export function pulseRowFromSummary(s: ConversationSummary): WallPulseRow {
-  return {
+/** Machine-dispatched provenance, and it comes ONLY from the launch tag the
+ *  agent cannot set for itself -- never from anything it self-reports. Named
+ *  alongside `isBlocked` because they are the same kind of question. */
+function isManaged(s: ConversationSummary): boolean {
+  return !!s.epic || !!s.nightshift
+}
+
+/** A conversation with no title still has to be identifiable in a one-line row,
+ *  so the fallback walks the three other names it might have before giving up on
+ *  a short id. */
+function pulseTitle(s: ConversationSummary): string {
+  return s.title || s.agentName || s.summary || s.id.slice(0, 8)
+}
+
+/**
+ * Alias if the sentinel has one, else its raw id, else absent.
+ *
+ * The `||` chain (not `??`) is deliberate and is the ONE behaviour change in
+ * this projection's rewrite: an EMPTY alias now falls through to the node id
+ * instead of being sent as `''`. No producer emits `''` today
+ * (`getDefaultSentinelAlias()` returns `string | undefined`), so nothing on the
+ * wire moves -- but a blank host label was never the answer anyone wanted.
+ */
+function pulseHost(s: ConversationSummary): string | undefined {
+  return s.hostSentinelAlias || s.hostSentinelId || undefined
+}
+
+/**
+ * Drop the keys whose value came out undefined, in ONE pass.
+ *
+ * Every optional field on the wire row used to carry its own
+ * `...(x !== undefined ? { k: x } : {})` spread, which made a flat projection
+ * read as fourteen branches (cyclomatic 19) when it has none: omitting an absent
+ * field is one policy applied uniformly, not a decision per field. Stated once
+ * here, the projection below is what it actually is -- a field map.
+ *
+ * Deliberately NOT `web/src/components/spawn-dialog/daemon-launch.ts`'s
+ * `compactMeta`: that one is an untyped `Record<string, string>` bag on the far
+ * side of the web/broker boundary. This one preserves the row's type.
+ */
+function withoutUndefined<T extends object>(row: T): T {
+  for (const key of Object.keys(row) as (keyof T)[]) {
+    if (row[key] === undefined) delete row[key]
+  }
+  return row
+}
+
+/** An empty string is not a model name, a status or a classification. The row
+ *  omits what it does not know rather than sending a blank column. */
+function said(text: string | undefined): string | undefined {
+  return text || undefined
+}
+
+/** A boolean the row carries only when it is TRUE: `false` and absent mean the
+ *  same thing to every consumer, and neither is worth a key on the wire. */
+function flag(on: boolean): true | undefined {
+  return on || undefined
+}
+
+function pulseRowFromSummary(s: ConversationSummary): WallPulseRow {
+  return withoutUndefined({
     id: s.id,
     project: s.project,
-    title: s.title || s.agentName || s.summary || s.id.slice(0, 8),
+    title: pulseTitle(s),
     status: s.status,
     lastActivity: s.lastActivity,
-    ...(s.lastInputAt !== undefined ? { lastInputAt: s.lastInputAt } : {}),
-    ...(s.stats?.totalCostUsd !== undefined ? { costUsd: s.stats.totalCostUsd } : {}),
-    ...(s.autocompactPct !== undefined ? { contextPct: s.autocompactPct } : {}),
-    ...(s.hostSentinelAlias || s.hostSentinelId ? { host: s.hostSentinelAlias ?? s.hostSentinelId } : {}),
-    ...(s.model ? { model: s.model } : {}),
-    ...(s.liveStatus?.state ? { liveStatus: s.liveStatus.state } : {}),
-    ...(s.turnSummary?.detail ? { classified: s.turnSummary.detail } : {}),
-    // Machine-dispatched provenance comes from the launch tag the agent cannot
-    // set for itself -- never from anything it self-reports.
-    ...(s.epic || s.nightshift ? { managed: true } : {}),
-    ...(isBlocked(s) ? { blocked: true } : {}),
-  }
+    lastInputAt: s.lastInputAt,
+    costUsd: s.stats?.totalCostUsd,
+    contextPct: s.autocompactPct,
+    host: pulseHost(s),
+    model: said(s.model),
+    liveStatus: said(s.liveStatus?.state),
+    classified: said(s.turnSummary?.detail),
+    managed: flag(isManaged(s)),
+    blocked: flag(isBlocked(s)),
+  })
 }
 
 export function wallCommitFromRow(c: CommitRow): WallCommitRow {

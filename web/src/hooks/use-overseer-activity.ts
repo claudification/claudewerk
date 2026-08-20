@@ -11,6 +11,7 @@
  * blank until the next 45s tick.
  */
 
+import { isVitallyLive, runVitality } from '@shared/epic-vitality'
 import type { EpicActivityEntry } from '@shared/protocol'
 import { create } from 'zustand'
 import { fetchActiveRuns } from '@/lib/epic-inspect-api'
@@ -86,10 +87,34 @@ export function selectAllRuns(state: OverseerActivityState): EpicActivityEntry[]
   return flatCacheValue
 }
 
-/** A run the header should count: armed or running. A paused or finished run
- *  stays in the window's rail but must not make the badge breathe. */
+/**
+ * A run the header should count.
+ *
+ * DERIVED, NOT READ. `status` is an intent the sentinel writes once and never
+ * writes back down, so `status === 'running'` counted a run whose overseer had
+ * died and whose seats had all ended -- the 2026-08-20 lie. `runVitality` is the
+ * single derivation every surface shares (`src/shared/epic-vitality.ts`).
+ */
 export function isLiveRun(run: EpicActivityEntry): boolean {
-  return run.status === 'armed' || run.status === 'running'
+  return isVitallyLive(run)
+}
+
+/** Runs with a seat actually working. What the pip is allowed to breathe for. */
+export function selectWorkingCount(state: OverseerActivityState): number {
+  return selectAllRuns(state).filter(r => runVitality(r).breathing).length
+}
+
+/** The worst thing true of any live run, for the badge's one word. A stalled run
+ *  among healthy ones is the one you need to be told about. */
+export function selectWorstLabel(state: OverseerActivityState): string {
+  const live = selectAllRuns(state).filter(isLiveRun)
+  if (live.length === 0) return ''
+  const views = live.map(runVitality)
+  return (
+    views.find(v => v.vitality === 'stalled')?.label ??
+    views.find(v => v.vitality === 'working')?.label ??
+    views[0].label
+  )
 }
 
 /** What the badge needs, as PRIMITIVES. Returning an object literal from a

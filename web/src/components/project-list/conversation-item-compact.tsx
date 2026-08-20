@@ -3,6 +3,7 @@ import { Clock } from 'lucide-react'
 import { memo, type ReactNode } from 'react'
 import { ModelClassPill } from '@/components/ui/model-class-pill'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { isAdHocConversation } from '@/lib/conversation-axes'
 import { rowSubtitle, rowTitle } from '@/lib/conversation-row'
 import { formatCost } from '@/lib/cost-utils'
 import type { Conversation } from '@/lib/types'
@@ -12,6 +13,7 @@ import { RunScopeAffordance } from '../scope-cards/run-scope-affordance'
 import { ShareIndicator } from '../share-panel'
 import { BackendIcon } from './backend-icon'
 import { BranchPill, resolveBranch } from './branch-pill'
+import { ConversationCardLine } from './conversation-card-line'
 import {
   ConversationAttentionBadges,
   ConversationItemShell,
@@ -23,7 +25,9 @@ import {
   SpawnedFromSubtext,
 } from './conversation-item-helpers'
 import { isDaemonTransport } from './conversation-item-internals'
+import { ConversationRoleTag } from './conversation-role-tag'
 import { GhostAttachButton, GhostBadge, GhostStatusDot } from './ghost-attach'
+import { OverseerRunLine } from './overseer-run-line'
 import { useConversationRowData } from './row-hooks'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
 import { StatusIndicator } from './status-indicator'
@@ -93,9 +97,12 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         {isGhost ? (
           <GhostStatusDot />
         ) : (
-          <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
+          <StatusIndicator status={conversation.status} adHoc={isAdHocConversation(conversation)} />
         )}
         <BackendIcon backend={conversation.backend} transport={conversation.transport} size={11} />
+        {/* Role glyph -- absent for an ordinary conversation, so it costs nothing
+            on the rows that make up most of the list. */}
+        <ConversationRoleTag conversation={conversation} />
         {isRenaming ? (
           <div className="flex-1 min-w-0">
             <InlineRename conversation={conversation} />
@@ -143,7 +150,7 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
           <span className={cn('text-[9px] font-mono tabular-nums shrink-0', ctx.color)}>{ctx.pct}%</span>
         )}
         <RunScopeAffordance conversation={conversation} visible={isSelected} />
-        {conversation.resultText && conversation.capabilities?.includes('ad-hoc') && (
+        {conversation.resultText && isAdHocConversation(conversation) && (
           <ResultTextModal conversation={conversation} />
         )}
         {conversation.status === 'ended' && <DismissButton conversationId={conversation.id} />}
@@ -154,6 +161,11 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
         </div>
       )}
       <SpawnedFromSubtext conversation={conversation} padClass="pl-4" />
+      {/* The board card this row is working on. */}
+      <ConversationCardLine conversation={conversation} />
+      {/* Overseer only: the RUN behind the row -- generation, load, beat age,
+          epic progress. Renders nothing for every other role. */}
+      <OverseerRunLine conversation={conversation} />
       {/* ── SUBTITLE: description / summary / recap (mobile prepends state prefix) ── */}
       {isEditingDescription ? (
         <div className="mt-0.5 pl-4">

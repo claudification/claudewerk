@@ -10,12 +10,19 @@
  * The project chip is a SIBLING of the row's content, and its click goes through
  * the filter store's own `toggleProject` -- the wall has exactly one
  * implementation of that action and it is not in this file.
+ *
+ * ONLY THE TITLE NAVIGATES. Every other target on this row ENDS the wait where
+ * it stands: the answer buttons carry the conversation's own store action and
+ * the chip filters the wall. A row that shipped you to the dashboard on any
+ * click would make answering ten questions ten round trips, which is the exact
+ * workflow this pane exists to remove.
  */
 
 import { ProjectTag } from '@/components/project-tag'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import type { AttentionEntry } from './attention-entries'
+import { navigateFromWall } from './wall-navigate'
 
 export function AttentionRow({ entry, index, now }: { entry: AttentionEntry; index?: number; now: number }) {
   const toggleProject = useWallFilterStore(s => s.toggleProject)
@@ -33,7 +40,14 @@ export function AttentionRow({ entry, index, now }: { entry: AttentionEntry; ind
         >
           <ProjectTag name={entry.project} icon={entry.projectIcon} color={entry.projectColor} />
         </button>
-        <span className="wall-att-title">{entry.title}</span>
+        <button
+          type="button"
+          className="wall-att-title"
+          title={`Open ${entry.title} in the main window -- the buttons below answer without leaving`}
+          onClick={() => navigateFromWall({ kind: 'conversation', id: entry.conversationId, via: 'wall-attention' })}
+        >
+          {entry.title}
+        </button>
         <span className="wall-att-wait" title={`waiting since ${new Date(entry.since).toLocaleTimeString()}`}>
           {waited}
         </span>

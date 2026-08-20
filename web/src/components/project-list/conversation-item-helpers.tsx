@@ -1,6 +1,7 @@
 import { memo, type ReactNode, useEffect, useRef, useState } from 'react'
 import { reservedRowHeight } from '@/components/sidebar/row-height-cache'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { isAdHocConversation } from '@/lib/conversation-axes'
 import { selectConversations } from '@/lib/slim-conversation'
 import { isStatusSuperseded } from '@/lib/status-style'
 import type { Conversation } from '@/lib/types'
@@ -159,7 +160,7 @@ export const SpawnRootStub = memo(function SpawnRootStub({ conversationId }: { c
       title={`Spawn root -- ${projectPath(conversation.project)}`}
     >
       <div className="flex items-center gap-1.5">
-        <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
+        <StatusIndicator status={conversation.status} adHoc={isAdHocConversation(conversation)} />
         <span className="font-mono text-[11px] truncate flex-1 text-muted-foreground">{title}</span>
         <SpawnedChildrenBadge conversation={conversation} />
       </div>

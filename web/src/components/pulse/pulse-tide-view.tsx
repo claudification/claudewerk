@@ -25,7 +25,7 @@ interface PulseTideViewProps {
   fleet: PulseFleet
   activeId: string | null
   onSelect: (row: PulseRow) => void
-  onHover?: (row: PulseRow) => void
+  onHover?: (row: PulseRow, event: React.MouseEvent<HTMLElement>) => void
 }
 
 /** An age boundary in the stream ("1h", "today"), drawn between rows. */
@@ -48,7 +48,7 @@ function TideRow({
   row: PulseRow
   active: boolean
   onSelect: () => void
-  onHover?: () => void
+  onHover?: (event: React.MouseEvent<HTMLElement>) => void
 }) {
   const style = PULSE_BAND_STYLE[row.band]
   // Both attention bands widen the gutter and carry the glyph — the tide is a
@@ -139,7 +139,7 @@ export function PulseTideView({ fleet, activeId, onSelect, onHover }: PulseTideV
               row={row}
               active={row.id === activeId}
               onSelect={() => onSelect(row)}
-              onHover={onHover ? () => onHover(row) : undefined}
+              onHover={onHover ? event => onHover(row, event) : undefined}
             />
           </Fragment>
         )

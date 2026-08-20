@@ -28,9 +28,11 @@ import { WALL_AXES } from '@/lib/wall/axes'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
 import { handleChipCapture } from '../wall-chip-capture'
+import { navigateFromWall } from '../wall-navigate'
 import { WallPane } from '../wall-pane'
 import { wallPulseFleet } from '../wall-pulse-fleet'
 import { useWallPulseStore } from '../wall-pulse-state'
+import { hoverPulseRow, leaveWallRow } from '../wall-row-hover'
 import { WallTab } from '../wall-tab'
 
 /** Ask the feed for the WHOLE fleet -- see the file header. */
@@ -60,7 +62,19 @@ export default function PulsePane() {
     setRaw(raw.trim() ? `${raw.trim()} +over` : '+over')
   }
 
-  const onSelect = (row: PulseRow) => select(row.id)
+  /**
+   * MARK IT AND OPEN IT. Selection is P1's own state (`wall-pulse-state` says so
+   * in writing: selection is not navigation) and it stays -- the row you clicked
+   * must still read as the row you clicked once the main window has come
+   * forward. The open is the second verb, and it goes through the ONE transport,
+   * so a detached wall focuses the conversation in the DASHBOARD rather than
+   * behind the popup.
+   */
+  const onSelect = (row: PulseRow) => {
+    select(row.id)
+    navigateFromWall({ kind: 'conversation', id: row.id, via: 'wall-pulse' })
+  }
+  const onHover = (row: PulseRow, event: React.MouseEvent<HTMLElement>) => hoverPulseRow(row, event.currentTarget)
   const blocked = fleet.totals.blocked
 
   return (
@@ -68,6 +82,10 @@ export default function PulsePane() {
       title="PULSE"
       code="P1"
       grow
+      // Every row carries `ageMs` (time since its last turn), so `useWallFilter`
+      // has already dropped the conversations whose last turn is NEWER than the
+      // cursor -- what is left is the fleet as it stood then.
+      rewind="rows"
       count={
         // Rose the moment anything is BLOCKED ON YOU: across a room the count is
         // the only part of this pane you can still read. Same table as the rows,
@@ -86,11 +104,20 @@ export default function PulsePane() {
     >
       {/* Capture-phase only, over rows that are already <button>s -- the chip
           itself is never focusable and never steals the keyboard path. */}
-      <div onClickCapture={handleChipCapture}>
+      {/* The preview closes when the pointer leaves the PANE, not just a row:
+          moving between two rows is a leave and an enter, and the layer's own
+          pointerover rule already handles that without a flicker. */}
+      <div onClickCapture={handleChipCapture} onMouseLeave={leaveWallRow}>
         {view === 'tide' ? (
-          <PulseTideView fleet={fleet} activeId={selectedId} onSelect={onSelect} />
+          <PulseTideView fleet={fleet} activeId={selectedId} onSelect={onSelect} onHover={onHover} />
         ) : (
-          <PulseBandsView fleet={fleet} activeId={selectedId} onSelect={onSelect} onRevealManaged={revealManaged} />
+          <PulseBandsView
+            fleet={fleet}
+            activeId={selectedId}
+            onSelect={onSelect}
+            onHover={onHover}
+            onRevealManaged={revealManaged}
+          />
         )}
       </div>
     </WallPane>

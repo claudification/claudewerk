@@ -163,6 +163,29 @@ export function feedPulls(feed: WallFeedId): number {
   return feeds.get(feed)?.pulls ?? 0
 }
 
+/**
+ * Freshness of every feed a pane is currently HOLDING.
+ *
+ * Held, not every feed ever seen: a pane that is not on screen is not something
+ * the header can be waiting for, and counting it would leave the wall reading
+ * LOADING forever over a pane nobody opened.
+ */
+export function heldFreshness(seq: number): WallFreshness[] {
+  return [...registeredFeeds()].map(feed => feedFreshness(feed, seq))
+}
+
+/**
+ * RE-READ EVERYTHING, NOW -- the header's refresh button.
+ *
+ * `force` on every held feed rather than a `connectSeq` bump: the socket has not
+ * dropped, so pretending it did would make every pane briefly call itself stale
+ * on data that is fine. This is a deliberate re-read of the pull half, which is
+ * the half that has no way of knowing it is behind.
+ */
+export function refreshHeldFeeds(seq: number): Promise<void[]> {
+  return Promise.all([...registeredFeeds()].map(feed => pullFeed(feed, seq, true)))
+}
+
 /** Feeds with at least one pane holding them right now. This is the RUNTIME half
  *  of the census -- what actually registered, against what the registry declared. */
 export function registeredFeeds(): Set<WallFeedId> {

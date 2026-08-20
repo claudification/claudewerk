@@ -63,7 +63,29 @@ describe('rowFacts', () => {
 })
 
 describe('headFacts -- the heading survives a run with no artifact', () => {
-  const bare = { epicId: 'e1', project: 'p', run: null, lease: null, plan: null, beats: [], baton: [] }
+  /** Fixed clock: `headFacts` now derives the run's vitality, and a derivation
+   *  that reads the wall clock cannot be asked what it thought at any other
+   *  moment. */
+  const NOW = Date.parse('2026-08-18T06:00:20.000Z')
+  const NO_SEATS = {
+    armed: false,
+    inFlight: [],
+    settled: [],
+    unacknowledged: [],
+    overseerAlive: false,
+    maxGenSeen: 0,
+    conversations: [],
+  }
+  const bare = {
+    epicId: 'e1',
+    project: 'p',
+    run: null,
+    lease: null,
+    plan: null,
+    live: NO_SEATS,
+    beats: [],
+    baton: [],
+  }
   const live = {
     ...bare,
     run: { gen: 4, maxGens: 16, target: 'merged', concurrency: 3 },
@@ -71,17 +93,17 @@ describe('headFacts -- the heading survives a run with no artifact', () => {
   }
 
   it('falls back to zeroes and dashes rather than rendering undefined', () => {
-    const f = headFacts(bare as never)
+    const f = headFacts(bare as never, NOW)
 
     expect(f).toMatchObject({ gen: 0, maxGens: 0, pct: 0, lastBeat: null, target: '-', concurrency: '-' })
   })
 
   it('reads the run when there is one', () => {
-    expect(headFacts(live as never)).toMatchObject({ gen: 4, maxGens: 16, pct: 25, target: 'merged' })
+    expect(headFacts(live as never, NOW)).toMatchObject({ gen: 4, maxGens: 16, pct: 25, target: 'merged' })
   })
 
   it('takes the LAST beat, not the first -- the ring keeps newest last', () => {
-    expect(headFacts(live as never).lastBeat).toBe('2026-08-18T06:00:00.000Z')
+    expect(headFacts(live as never, NOW).lastBeat).toBe('2026-08-18T06:00:00.000Z')
   })
 })
 

@@ -2,6 +2,7 @@ import type { ProjectSettings } from '@shared/protocol'
 import { CacheTimer } from '@/components/cache-timer'
 import { ProjectIcon } from '@/components/project-icons'
 import { BranchPill } from '@/components/project-list/branch-pill'
+import { isAdHocConversation } from '@/lib/conversation-axes'
 import { formatCost, getConversationCost, getCostColor } from '@/lib/cost-utils'
 import { isShareView } from '@/lib/share-mode'
 import type { Conversation } from '@/lib/types'
@@ -89,7 +90,7 @@ function PermissionBadge({ permissionMode, inPlanMode }: { permissionMode: strin
 }
 
 function AdHocBadge({ conversation }: { conversation: Conversation }) {
-  if (!conversation.capabilities?.includes('ad-hoc')) return null
+  if (!isAdHocConversation(conversation)) return null
 
   function openTask() {
     if (conversation.adHocTaskId) {

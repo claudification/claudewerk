@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ModelClassPill } from '@/components/ui/model-class-pill'
+import { isAdHocConversation } from '@/lib/conversation-axes'
 import { errorTitle, formatCostInfo, rowTitle } from '@/lib/conversation-row'
 import type { Conversation } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -7,6 +8,7 @@ import { RunScopeAffordance } from '../scope-cards/run-scope-affordance'
 import { BackendIcon } from './backend-icon'
 import { BranchPill } from './branch-pill'
 import { ConversationAttentionBadges, DismissButton, InterpunctRow } from './conversation-item-helpers'
+import { ConversationRoleTag } from './conversation-role-tag'
 import { GhostAttachButton, GhostBadge, GhostStatusDot } from './ghost-attach'
 import type { useConversationRowData } from './row-hooks'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
@@ -21,9 +23,10 @@ function RailLead({ conversation, isGhost }: { conversation: Conversation; isGho
       {isGhost ? (
         <GhostStatusDot />
       ) : (
-        <StatusIndicator status={conversation.status} adHoc={conversation.capabilities?.includes('ad-hoc')} />
+        <StatusIndicator status={conversation.status} adHoc={isAdHocConversation(conversation)} />
       )}
       <BackendIcon backend={conversation.backend} transport={conversation.transport} size={11} />
+      <ConversationRoleTag conversation={conversation} />
     </>
   )
 }

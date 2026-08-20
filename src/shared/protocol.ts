@@ -6616,11 +6616,14 @@ export type SubscriptionChannel =
   // see the `wall` branch in handlers/channel.ts. Types: shared/wall.ts.
   | 'wall'
 
-/** The `wall` channel's one wire message. Defined in `shared/wall.ts` -- the
- *  wall has six sections and a coalescing contract worth its own module -- and
- *  re-exported here so the protocol index still names every frame that crosses
- *  the socket. */
-export type { WallFrame } from './wall'
+// The `wall` channel's one wire message is `WallFrame`, in `shared/wall.ts` --
+// the wall has six sections and a coalescing contract worth its own module.
+// It is NOT re-exported here. `wall.ts` imports `CardMove` from this file, so a
+// re-export back the other way is a barrel cycle, and fallow's reachability
+// analysis gives up on a cycle ("chain propagation may be incomplete") -- which
+// silently weakens dead-code detection for EVERY symbol on the loop, not just
+// the wall's. Import `WallFrame` from `@shared/wall`, the way all nine of its
+// consumers already do.
 
 // Control Panel -> Broker: channel subscription management
 export interface ChannelSubscribe {

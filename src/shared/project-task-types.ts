@@ -45,6 +45,12 @@ export interface ProjectTaskMeta {
    *  from `dependsOn` rather than a weaker flavour of it. Stored as
    *  `relates_to:`, also spelled `see_also:`. */
   relatesTo?: string[]
+  /** Ids this card used to have. NOT linkage -- every value names a card that by
+   *  definition no longer exists, so the resolver would report each one missing
+   *  forever. It exists so a key frozen at spawn time (an epic seat's `cardId`,
+   *  a baton acknowledgement) still resolves to the card after a rename. See
+   *  `epic-card-rename.ts`. Stored as `renamed_from:`. */
+  renamedFrom?: string[]
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number

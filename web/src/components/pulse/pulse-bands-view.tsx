@@ -22,7 +22,7 @@ interface PulseBandsViewProps {
   fleet: PulseFleet
   activeId: string | null
   onSelect: (row: PulseRow) => void
-  onHover?: (row: PulseRow) => void
+  onHover?: (row: PulseRow, event: React.MouseEvent<HTMLElement>) => void
   /** Board mode drops the fold and lays bands out as columns. */
   board?: boolean
   /** Types `+over` into the query box. Absent on surfaces with no input. */
@@ -45,7 +45,7 @@ export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, onRe
             query={fleet.query}
             active={row.id === activeId}
             onSelect={() => onSelect(row)}
-            onHover={onHover ? () => onHover(row) : undefined}
+            onHover={onHover ? event => onHover(row, event) : undefined}
           />
         ))}
         {rows.length > limit && (

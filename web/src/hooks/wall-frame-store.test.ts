@@ -1,6 +1,11 @@
-import type { WallCommitRow, WallFrame, WallPlanSample, WallPulseRow } from '@shared/wall'
+import type { CardMove, WallCommitRow, WallFrame, WallPlanSample, WallPulseRow } from '@shared/wall'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { applyWallFrame, getWallView, resetWallFrames, subscribe } from './wall-frame-store'
+import { getCardLedger } from './card-ledger-feed'
+import { applyWallFrame, getWallView, resetWallFrames, setWallFrameHold, subscribe } from './wall-frame-store'
+
+function move(id: string): CardMove {
+  return { id, project: 'claude://default/p', title: id, from: 'open', to: 'done', ts: 1 }
+}
 
 function row(id: string, over: Partial<WallPulseRow> = {}): WallPulseRow {
   return { id, project: 'claude://default/p', title: id, status: 'active', lastActivity: 1, ...over }
@@ -30,6 +35,9 @@ function frame(over: Partial<WallFrame> = {}): WallFrame {
 
 beforeEach(() => {
   seq = 0
+  // Order matters: release the hold FIRST so a suite that left one on cannot
+  // drain its buffered frames into the next test's picture.
+  setWallFrameHold(false)
   resetWallFrames()
 })
 
@@ -101,6 +109,133 @@ describe('wall frame store', () => {
     expect(view.pulse).toHaveLength(0)
     expect(view.commits).toHaveLength(0)
     expect(view.gaps).toBe(0)
+  })
+})
+
+/**
+ * THE HOLD -- W1's "while rewound, live frames stop mutating what is displayed.
+ * They keep arriving and buffering; releasing to 0 snaps forward."
+ *
+ * Everything here is about the two ways a naive implementation goes wrong: it
+ * drops the frames instead of queueing them (so the release leaves a hole the
+ * next snapshot has to repair), or it replays them more than once (so the commit
+ * river grows a second copy of every row that arrived during the rewind).
+ */
+describe('wall frame store: the time cursor holds the fold', () => {
+  it('a held frame does not move the picture, and does not notify', () => {
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('a')] } }))
+    let notifies = 0
+    const off = subscribe(() => notifies++)
+
+    setWallFrameHold(true)
+    applyWallFrame(frame({ pulse: { changed: [row('b')] } }))
+    applyWallFrame(frame({ commits: [commit('c1')] }))
+
+    expect(getWallView().pulse.map(r => r.id)).toEqual(['a'])
+    expect(getWallView().commits).toHaveLength(0)
+    expect(notifies).toBe(0)
+    off()
+  })
+
+  it('SNAPS FORWARD on release: nothing lost, nothing doubled, one notify', () => {
+    applyWallFrame(frame({ full: true, commits: [commit('c0')] }))
+    setWallFrameHold(true)
+    for (let i = 1; i <= 5; i++) applyWallFrame(frame({ commits: [commit(`c${i}`)] }))
+
+    let notifies = 0
+    const off = subscribe(() => notifies++)
+    setWallFrameHold(false)
+
+    // Every commit that arrived while rewound is here, in order, ONCE.
+    expect(getWallView().commits.map(c => c.hash)).toEqual(['c0', 'c1', 'c2', 'c3', 'c4', 'c5'])
+    // Six buffered frames, ONE repaint. Folding thirteen panes per frame would
+    // redraw the wall six times to show the state they add up to.
+    expect(notifies).toBe(1)
+    // ...and no gap was invented by holding: the seqs were consecutive.
+    expect(getWallView().gaps).toBe(0)
+    off()
+  })
+
+  it('releasing with nothing buffered leaves the picture exactly as it was', () => {
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('a')] } }))
+    const before = getWallView()
+
+    setWallFrameHold(true)
+    setWallFrameHold(false)
+
+    // Identity, not equality: a needless rebuild here would re-render every pane
+    // on the wall for a rewind the user immediately let go of.
+    expect(getWallView()).toBe(before)
+  })
+
+  it('a held FULL frame discards what was queued behind it', () => {
+    setWallFrameHold(true)
+    applyWallFrame(frame({ pulse: { changed: [row('a')] } }))
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('z')] } }))
+    setWallFrameHold(false)
+
+    // The snapshot replaced the picture, so replaying the delta that preceded it
+    // would resurrect a row the broker just said is gone.
+    expect(getWallView().pulse.map(r => r.id)).toEqual(['z'])
+  })
+
+  it('REPORTS an overflowed buffer as a seq gap rather than hiding the loss', () => {
+    applyWallFrame(frame({ full: true }))
+    setWallFrameHold(true)
+    // Past the cap the oldest frames are dropped. That IS a loss, and it surfaces
+    // through the same `gaps` counter a broker-side drop uses -- the one number
+    // the wall already prints -- instead of through a quietly wrong picture.
+    for (let i = 0; i < 700; i++) applyWallFrame(frame({ commits: [commit(`c${i}`)] }))
+    setWallFrameHold(false)
+
+    const view = getWallView()
+    expect(view.commits).toHaveLength(300)
+    expect(view.commits.at(-1)?.hash).toBe('c699')
+    expect(view.gaps).toBe(100)
+  })
+
+  it('a disconnect while rewound still clears the picture, and empties the buffer', () => {
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('a')] } }))
+    setWallFrameHold(true)
+    applyWallFrame(frame({ pulse: { changed: [row('b')] } }))
+
+    // A disconnect is NOT a live frame. What the hold suspends is the picture
+    // moving under a reader; this is the picture ceasing to be vouched for, and
+    // a rewound wall must not go on drawing it.
+    resetWallFrames()
+    expect(getWallView().pulse).toHaveLength(0)
+    expect(getWallView().historyLostAt).not.toBeNull()
+
+    // The buffered frame went with it -- it described a stream that no longer
+    // exists, and replaying it on release would put `b` back under a fresh
+    // snapshot that never mentioned it.
+    setWallFrameHold(false)
+    expect(getWallView().pulse).toHaveLength(0)
+  })
+})
+
+/**
+ * The section map's two edges -- the ones a straight `if (frame.x)` per section
+ * would get wrong, and which the `Record<WallSection, merge>` fold exists to
+ * keep right.
+ */
+describe('wall frame store: the section map', () => {
+  it('a FULL frame with no cards EMPTIES the ledger rather than leaving it', () => {
+    applyWallFrame(frame({ cards: [move('a'), move('b')] }))
+    expect(getCardLedger()).toHaveLength(2)
+
+    // The section is absent, not empty. A per-section presence check would skip
+    // the merge here and leave yesterday's moves under today's snapshot.
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('z')] } }))
+    expect(getCardLedger()).toHaveLength(0)
+  })
+
+  it('IGNORES a section this build has no merge for instead of throwing', () => {
+    // An older tab against a newer broker. It should draw less of the wall, not
+    // die on every frame at 2 Hz.
+    const fromTheFuture = { ...frame({ pulse: { changed: [row('a')] } }), quests: [{ id: 'q1' }] }
+    expect(() => applyWallFrame(fromTheFuture as WallFrame)).not.toThrow()
+    expect(getWallView().pulse.map(r => r.id)).toEqual(['a'])
   })
 })
 

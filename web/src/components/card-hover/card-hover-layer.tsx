@@ -1,26 +1,53 @@
 /**
- * The floating layer for card-link hovers.
+ * The floating layer for hover previews -- card links, commits, and rows that
+ * hand over their own facts.
  *
  * Card links are raw anchors inside `dangerouslySetInnerHTML` markdown, so the
  * generic `<HoverCard>` (which wraps a React trigger) cannot be used -- but the
  * geometry is the same rule, so `computeHoverCoords` is shared rather than
  * re-derived. Closing is pointer-based: anything that is neither the anchor nor
  * the panel takes it down, as does a scroll, a resize or Escape.
+ *
+ * IT FOLLOWS THE ANCHOR INTO ANOTHER WINDOW. THE WALL detaches into a popup and
+ * its DOM lives in that popup's document, so a layer hardcoded to `document.body`
+ * and `window.innerWidth` would portal a wall row's preview into the DASHBOARD,
+ * behind the popup you are looking at, positioned against the wrong viewport.
+ * Every reference here is taken from `anchor.ownerDocument` instead, which is
+ * the same window in the ordinary case and the right one in the detached case.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { CommitHoverPanel } from '@/components/commits/commit-hover-panel'
 import { computeHoverCoords, type HoverCoords } from '@/components/ui/hover-card-position'
-import { closeCardHover, useCardHover } from './card-hover-bus'
+import { closeCardHover, type HoverContent, useCardHover } from './card-hover-bus'
 import { CardHoverPanel } from './card-hover-panel'
+import { HoverFactsPanel } from './hover-facts-panel'
 
-const PANEL_WIDTH = 320
+/**
+ * 440, up from 320.
+ *
+ * The panel's whole job is the fields the row could not afford -- a commit's
+ * full message and its file list, a card's body. At 320 the file paths that
+ * matter most (`web/src/components/wall/panes/...`) truncated to their least
+ * informative half, so the preview reproduced the row's problem at a larger
+ * size. Asked for directly on 2026-08-20: "can we make the popover a bit wider?
+ * more info!"
+ *
+ * `computeHoverCoords` already flips the panel to the other side of the anchor
+ * when it will not fit, so a wider panel costs nothing at the viewport edge.
+ */
+const PANEL_WIDTH = 440
 
-// fallow-ignore-next-line unused-export -- mounted through lazyModule(named(...)) in app.tsx
+function HoverBody({ content }: { content: HoverContent }) {
+  if (content.kind === 'card') return <CardHoverPanel cardRef={content.ref} />
+  if (content.kind === 'commit') return <CommitHoverPanel hash={content.hash} />
+  return <HoverFactsPanel facts={content.facts} />
+}
+
 export function CardHoverLayer() {
-  const cardRef = useCardHover(s => s.ref)
+  const content = useCardHover(s => s.content)
   const anchor = useCardHover(s => s.anchor)
-  const panelRef = useRef<HTMLDivElement>(null)
   const [coords, setCoords] = useState<HoverCoords | null>(null)
 
   useEffect(() => {
@@ -28,39 +55,44 @@ export function CardHoverLayer() {
       setCoords(null)
       return
     }
+    const view = anchor.ownerDocument.defaultView ?? window
     const rect = anchor.getBoundingClientRect()
-    setCoords(computeHoverCoords(rect, { width: window.innerWidth, height: window.innerHeight }, PANEL_WIDTH))
+    setCoords(computeHoverCoords(rect, { width: view.innerWidth, height: view.innerHeight }, PANEL_WIDTH))
   }, [anchor])
 
   useEffect(() => {
     if (!anchor) return
+    const doc = anchor.ownerDocument
+    const view = doc.defaultView ?? window
+    // The panel is portaled as a SIBLING of the anchor's subtree, so it cannot
+    // be reached from the anchor -- `pointerover` on it must not close it.
     const onPointerOver = (e: Event) => {
-      const target = e.target as Node | null
+      const target = e.target as Element | null
       if (!target) return
-      if (anchor.contains(target) || panelRef.current?.contains(target)) return
+      if (anchor.contains(target) || target.closest('[data-hover-panel]')) return
       closeCardHover()
     }
     const onDismiss = () => closeCardHover()
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeCardHover()
     }
-    document.addEventListener('pointerover', onPointerOver, true)
-    window.addEventListener('scroll', onDismiss, true)
-    window.addEventListener('resize', onDismiss)
-    document.addEventListener('keydown', onKey)
+    doc.addEventListener('pointerover', onPointerOver, true)
+    view.addEventListener('scroll', onDismiss, true)
+    view.addEventListener('resize', onDismiss)
+    doc.addEventListener('keydown', onKey)
     return () => {
-      document.removeEventListener('pointerover', onPointerOver, true)
-      window.removeEventListener('scroll', onDismiss, true)
-      window.removeEventListener('resize', onDismiss)
-      document.removeEventListener('keydown', onKey)
+      doc.removeEventListener('pointerover', onPointerOver, true)
+      view.removeEventListener('scroll', onDismiss, true)
+      view.removeEventListener('resize', onDismiss)
+      doc.removeEventListener('keydown', onKey)
     }
   }, [anchor])
 
-  if (!cardRef || !coords) return null
+  if (!content || !anchor || !coords) return null
 
   return createPortal(
     <div
-      ref={panelRef}
+      data-hover-panel=""
       role="tooltip"
       style={{ position: 'fixed', left: coords.left, top: coords.top, bottom: coords.bottom, width: PANEL_WIDTH }}
       className="z-[120]"
@@ -69,9 +101,9 @@ export function CardHoverLayer() {
         style={{ maxHeight: coords.maxHeight }}
         className="overflow-y-auto rounded-md bg-background/95 shadow-xl backdrop-blur border border-border"
       >
-        <CardHoverPanel cardRef={cardRef} />
+        <HoverBody content={content} />
       </div>
     </div>,
-    document.body,
+    anchor.ownerDocument.body,
   )
 }

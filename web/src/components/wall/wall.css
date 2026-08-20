@@ -72,13 +72,42 @@
 	letter-spacing: 0.08em;
 	font-variant-numeric: tabular-nums;
 }
+/* THE LINK INDICATOR. The dot carries the colour, the label carries the meaning:
+   a 7px circle is unreadable at four feet, which is the distance this wall is
+   designed to be read from, and unreadable at any distance to a third of people
+   if colour is the only channel. */
+.wall-link {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	flex: 0 0 auto;
+}
+.wall-link-label {
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	color: var(--comment);
+}
 .wall-livedot {
 	width: 7px;
 	height: 7px;
 	border-radius: 50%;
-	background: var(--success);
+	background: var(--comment);
 	align-self: center;
+}
+/* Only a wall that is genuinely current breathes. The animation used to be
+   unconditional, which is the whole complaint. */
+.wall-livedot[data-pulse] {
 	animation: wall-pulse 2s infinite;
+}
+.wall-livedot[data-link='live'] {
+	background: var(--success);
+}
+.wall-livedot[data-link='loading'],
+.wall-livedot[data-link='syncing'] {
+	background: var(--warning);
+}
+.wall-livedot[data-link='offline'] {
+	background: var(--destructive);
 }
 @keyframes wall-pulse {
 	0%,
@@ -131,7 +160,9 @@
 	visibility: hidden;
 }
 
-/* W1 time cursor -- inert until wall-time-cursor lands. */
+/* W1 time cursor. The track IS a timeline: past on the LEFT, LIVE at the RIGHT
+   end. Every colour here is the same two-state vocabulary -- green means the
+   wall is showing now, amber means it is showing the past. */
 .wall-scrub {
 	display: flex;
 	align-items: center;
@@ -150,12 +181,72 @@
 	min-width: 0;
 	accent-color: var(--foreground);
 }
+.wall-scrub[data-rewound] input {
+	accent-color: var(--warning);
+}
 .wall-scrub-value {
 	flex: 0 0 48px;
 	text-align: right;
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	color: var(--success);
+	font-variant-numeric: tabular-nums;
+}
+.wall-scrub-value[data-rewound] {
+	color: var(--warning);
+	flex-basis: 60px;
+}
+/* The way back. Only rendered while rewound, so it never sits there as a button
+   that does nothing. */
+.wall-scrub-live {
+	flex: 0 0 auto;
+	border: 1px solid var(--warning);
+	border-radius: 3px;
+	padding: 0 5px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	color: var(--warning);
+	line-height: 15px;
+}
+.wall-scrub-live:hover {
+	background: var(--warning);
+	color: var(--background);
+}
+
+/* REWOUND IS UNMISTAKABLE, and it is one attribute on the root rather than a
+   class thirteen panes each remember to wear. The dot stops pulsing because a
+   pulsing dot is the thing a room reads as "live" from four metres away, and the
+   grid desaturates so no meter's colour can be read as a current threshold. */
+.wall-livedot[data-rewound] {
+	background: var(--warning);
+	animation: none;
+}
+.wall-rewound-mark {
+	color: var(--warning);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	font-variant-numeric: tabular-nums;
+}
+.wall-root[data-rewound] .wall-grid,
+.wall-root[data-rewound] .wall-nowbar {
+	filter: saturate(0.35);
+}
+/* A pane with no history at all. Its body is replaced rather than dimmed: there
+   is nothing behind the veil to squint at. */
+.wall-pane[data-blind] {
+	opacity: 0.6;
+}
+.wall-blind-mark {
+	color: var(--warning);
+	font-variant-numeric: tabular-nums;
+}
+.wall-blind-line {
+	color: var(--fg-faint);
+	font-size: 10px;
+	letter-spacing: 0.04em;
+	padding: 4px 2px;
 }
 
 .wall-btns {
@@ -688,6 +779,9 @@
 	max-width: 42%;
 	text-align: left;
 }
+/* The ONE navigating target on an attention row -- it is a <button>, so the
+   browser's own button chrome has to be undone or it renders as a grey pill in
+   the middle of a text line. */
 .wall-att-title {
 	flex: 1 1 auto;
 	min-width: 0;
@@ -695,7 +789,17 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	color: var(--fg-muted);
+	appearance: none;
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
 	font-size: 11px;
+	text-align: left;
+	cursor: pointer;
+}
+.wall-att-title:hover {
+	color: var(--foreground);
 }
 /* The waiting clock never truncates and never wraps: it is the one number on
    this pane that decides whether you get up. */
@@ -802,9 +906,23 @@
 	padding: 0 4px;
 	color: var(--comment);
 }
-.wall-run-tag-on {
+/* Tone per DERIVED vitality, never per status field. The default above is the
+   quiet one (paused / unknown), so only the states that earn a colour take one:
+   work in the active hue, a stall in the destructive one, and DONE in the same
+   green as work because a finished run is good news, not an alarm. */
+.wall-run-tag[data-vitality='working'],
+.wall-run-tag[data-vitality='done'] {
 	color: var(--active);
 	border-color: color-mix(in oklch, var(--active) 45%, transparent);
+}
+.wall-run-tag[data-vitality='idle'] {
+	color: var(--idle);
+	border-color: color-mix(in oklch, var(--idle) 45%, transparent);
+}
+.wall-run-tag[data-vitality='stalled'],
+.wall-run-tag[data-vitality='aborted'] {
+	color: var(--destructive);
+	border-color: color-mix(in oklch, var(--destructive) 45%, transparent);
 }
 .wall-run-tag-night {
 	color: var(--event-prompt);

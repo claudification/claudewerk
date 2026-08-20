@@ -23,9 +23,10 @@
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
-import { type EpicBeat, planBeat } from './epic-beat'
+import { type EpicBeat, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
+import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
 import { epicIo, tag } from './epic-io'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
@@ -52,12 +53,12 @@ function finish(deps: BeatDeps, group: EpicGroup, gen: number, outcome: BeatOutc
  * Run ONE beat for one epic. Returns what it did, so the sweep can log a single
  * line per epic per tick rather than a scatter of unrelated messages.
  */
-export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<BeatOutcome> {
+export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<BeatOutcome> {
   const io = epicIo()
-  const view = await io.fetchEpicRun(deps, group.project, group.epicId)
+  const view = await io.fetchEpicRun(deps, seats.project, seats.epicId)
   if (!view.run) {
-    return finish(deps, group, 0, {
-      epicId: group.epicId,
+    return finish(deps, seats, 0, {
+      epicId: seats.epicId,
       note: 'no run artifact -- the epic is armed but nothing is on disk for it',
       actions: 0,
       spawned: [],
@@ -66,13 +67,54 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
   }
   const run = view.run
 
-  const mismatch = generationMismatch(group, run.gen)
-  if (mismatch) deps.log(`${tag(group.epicId, run.gen)} ${mismatch}`)
+  /**
+   * A TERMINAL RUN IS TOUCHED BY NOTHING -- checked HERE, before the first write.
+   *
+   * `guardBeat` has always refused to ACT on a paused run, but it is consulted
+   * after the acknowledgement pass below, and acknowledgement is a write. So a
+   * paused epic that still had conversations in the registry kept appending
+   * `completion` entries to its baton every 45 seconds, forever: on 2026-08-20
+   * `epic-the-wall` had been paused for hours and its three newest log entries
+   * were twenty seconds old. The pane was accused of lying about the age. The age
+   * was true; the writes should never have happened.
+   *
+   * The board read below is skipped with it -- a run nobody may act on does not
+   * need a sentinel round trip per tick either.
+   */
+  if (isInertRun(run.status)) {
+    return finish(deps, seats, run.gen, {
+      epicId: seats.epicId,
+      note: `run is ${run.status}; not touched`,
+      actions: 0,
+      spawned: [],
+    })
+  }
+
+  const mismatch = generationMismatch(seats, run.gen)
+  if (mismatch) deps.log(`${tag(seats.epicId, run.gen)} ${mismatch}`)
+
+  // THE BOARD IS READ FIRST, ahead of the acknowledgement it used to follow.
+  // Nothing about the write order changes -- this is a read -- but every card id
+  // below now has to be the id the BOARD uses, and only the board knows which
+  // ids have been renamed. A seat's `cardId` is frozen at spawn (epic-spawn-plan)
+  // and a rename leaves it answering to a name nobody asks about: on 2026-08-20
+  // that put a second implementer onto a card whose first was still typing.
+  const cards = await io.fetchBoardCards(deps, seats.project)
+  const renames = cardRenames(cards)
+  const group = applyCardRenames(seats, renames)
+
+  // A live seat whose card is on no board is what a rename with no
+  // `renamed_from:` looks like from here. Saying nothing is what cost that run a
+  // seat, so it is a WARN -- the beat still proceeds, because the alternative is
+  // freezing an epic over a card someone deleted.
+  const orphans = orphanedCardIds(group, cards)
+  if (orphans.length > 0) deps.log(`${tag(group.epicId, run.gen)} ${orphanedAckLine(orphans)}`)
 
   // Against the WHOLE log's acknowledgement set, never against `view.baton` --
   // that is a 20-entry prompt tail, and asking it this question is what made the
-  // failure in this file's docstring real (gens 23-28, 2026-08-19).
-  const pending = unacknowledgedCards(group.settled, view.acknowledgedCardIds)
+  // failure in this file's docstring real (gens 23-28, 2026-08-19). Rename-aware,
+  // or a card acknowledged under its old id would settle again under its new one.
+  const pending = unacknowledgedCards(group.settled, renameAwareAcks(view.acknowledgedCardIds, renames))
   if (pending.length > 0) await acknowledge(deps, group, pending)
 
   // BEFORE the plan is computed, for `acknowledge`'s reason: a fact the baton
@@ -89,7 +131,6 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     await noteFailedLaunches(deps, group, failed)
   }
 
-  const cards = await io.fetchBoardCards(deps, group.project)
   const plan = planEpic({
     cards,
     epicId: group.epicId,

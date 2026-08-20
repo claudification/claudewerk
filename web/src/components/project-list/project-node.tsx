@@ -13,6 +13,7 @@ import { PlaceScopeAffordance } from '../scope-cards/place-scope-affordance'
 import { ConversationContextMenu } from './conversation-context-menu'
 import { ConversationItemCompact, SpawnRootStub } from './conversation-item'
 import { ConversationItemRail } from './conversation-item-rail'
+import { EpicSeatSection } from './epic-seat-section'
 import { groupByLineage, neededOrphanRootIds } from './lineage'
 import { partitionConversations } from './partition'
 import { ProjectBadges } from './project-badges'
@@ -98,7 +99,10 @@ const ProjectConversationGroup = memo(
     // Hydrate conversations from the per-id index (shared hook -- shallow-equal
     // short-circuits when no referenced conversation's identity changed).
     const conversations = useHydratedConversations(conversationIds)
-    const { worktrees, adhoc, normal } = useMemo(() => partitionConversations(conversations), [conversations])
+    const { epicGroups, worktrees, adhoc, normal } = useMemo(
+      () => partitionConversations(conversations),
+      [conversations],
+    )
     // Project-level rollups: any conversation in this project needing attention?
     const hasPendingPermission = useConversationsStore(s => {
       const ids = new Set(conversationIds)
@@ -211,6 +215,14 @@ const ProjectConversationGroup = memo(
                 ))}
               </>
             )}
+            {/* Overseer subtrees head the project -- seats nest under the row
+                that dispatched them, ad-hoc or not. */}
+            <EpicSeatSection
+              groups={epicGroups}
+              RowComp={RowComp}
+              onOpenSettings={() => setShowSettings(true)}
+              hasFollowingRows={normal.length > 0 || adhoc.length > 0 || worktrees.length > 0}
+            />
             {normalGroups.map(group => (
               <div key={group.key} className={group.members.length > 1 ? 'space-y-0.5' : undefined}>
                 {group.members.map(member =>

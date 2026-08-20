@@ -47,7 +47,10 @@ export const ASPECTS: Aspect[] = [
       { path: 'src/shared/*.ts', needle: 'WALL_CHANNEL', as: 'the WALL_CHANNEL contract symbol' },
       { path: 'src/shared/protocol.ts', needle: 'WallFrame', as: 'the WallFrame wire type' },
     ],
-    feeds: [{ path: 'web/src/hooks/use-websocket.ts', needle: 'channel_subscribe' }],
+    // The subscribe/unsubscribe watchers moved out of the 733-line `use-websocket.ts`
+    // when `wall-use-websocket-hook-split` cut the hook eleven ways. The feed is the
+    // same wire message from the same mount effect -- only its module moved.
+    feeds: [{ path: 'web/src/hooks/ws-subscription-watchers.ts', needle: 'channel_subscribe' }],
   },
   {
     code: 'P1',
@@ -175,7 +178,38 @@ export const ASPECTS: Aspect[] = [
     code: 'W1',
     card: 'wall-time-cursor',
     promise: 'One scrubber rewinds EVERY pane together; past left, LIVE right',
-    artifacts: [{ path: WALL, needle: 'useWallCursor', as: 'the useWallCursor contract symbol' }],
+    /**
+     * THIS PROBE USED TO BE ONE GREP FOR `useWallCursor` UNDER `components/wall`,
+     * and the card that shipped W1 was told to say so: exporting a stub by that
+     * name turned the aspect green while not one pane moved. The same false-green
+     * W4 and W2 both carried. So it now asserts the three things that make the
+     * promise true, and the symbol lives where the rest of the wall's substrate
+     * does (`lib/wall/`, beside the filter store) rather than under `components/`.
+     *
+     *  1. the STORE the offset is held in, outside the component tree
+     *  2. the PROPAGATION -- `useWallFilter` is the single call every pane makes,
+     *     so the cursor riding it is what makes "every pane obeys" structural
+     *     rather than a rule thirteen files each remember
+     *  3. a PANE reading it, and deliberately one of the two that cannot be
+     *     rewound by dropping rows: S1 has to look its value up in the ring, so
+     *     if the cursor were inert this needle would have nothing to grep for
+     */
+    artifacts: [
+      { path: LIB, needle: 'useWallCursor', as: 'the useWallCursor contract symbol' },
+      { path: 'web/src/lib/wall/cursor-store.ts', needle: 'WALL_CURSOR_SPAN_MS', as: 'the 3h track' },
+      {
+        path: 'web/src/lib/wall/use-wall-filter.ts',
+        needle: 'existedAtCursor',
+        as: 'the cursor applied by the ONE call every pane already makes',
+      },
+      {
+        path: `${PANES}/s1-host-vitals.tsx`,
+        needle: 'hostVitalsAtCursor',
+        as: 'a pane reading the cursor -- the series pane that cannot fake it',
+      },
+      { path: `${WALL_DIR}/wall-scrubber.tsx`, needle: 'WALL_CURSOR_STEP_MS', as: 'the header scrubber itself' },
+    ],
+    test: { path: `${WALL_DIR}/wall-time-cursor.test.tsx`, as: 'the cross-pane rewind proof' },
   },
   {
     code: 'W2',
@@ -199,8 +233,41 @@ export const ASPECTS: Aspect[] = [
     code: 'W4',
     card: 'wall-navigation-and-hover',
     promise: 'A row click navigates the MAIN window even when the wall is detached',
-    artifacts: [{ path: WALL, needle: 'navigateFromWall', as: 'the navigateFromWall contract symbol' }],
+    /**
+     * THE PROBE THAT COULD NOT FAIL, AND WHY IT NOW CAN.
+     *
+     * Until 2026-08-20 this aspect was one grep for `navigateFromWall`, which A8
+     * had already satisfied when it landed the sending half as its minimum seam.
+     * So W4 read 1/1 while every `postMessage` the wall sent landed in a window
+     * that was listening for nothing -- a live false green over a card that had
+     * shipped exactly zero of its four promises.
+     *
+     * A contract probe has to name the half that was MISSING, not the half that
+     * happened to exist. The three added here are the ones a stub cannot fake:
+     * the receiver must exist, it must be MOUNTED (a listener nobody mounts is
+     * the dead click this card exists to prevent), and the wall's hover must go
+     * through the shared hover bus rather than a third popover system.
+     */
+    artifacts: [
+      { path: WALL, needle: 'navigateFromWall', as: 'the navigateFromWall contract symbol' },
+      {
+        path: `${WALL_DIR}/wall-nav-receiver.ts`,
+        needle: 'useWallNavReceiver',
+        as: 'the RECEIVING half -- postMessage AND the BroadcastChannel reload fallback',
+      },
+      {
+        path: 'web/src/app.tsx',
+        needle: 'useWallNavReceiver',
+        as: 'the receiver MOUNTED in the main window (an unmounted listener is a dead click)',
+      },
+      {
+        path: WALL,
+        needle: 'card-hover-bus',
+        as: 'row hover riding the ONE hover layer, not a third popover system',
+      },
+    ],
     feeds: [{ path: 'web/src/hooks/use-hover-popover.ts' }],
+    test: { path: `${WALL_DIR}/wall-nav-receiver.test.ts`, as: 'a receiving-half test' },
   },
   {
     code: 'COPY',

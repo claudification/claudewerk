@@ -69,17 +69,29 @@ function useKnownProjectKey(): string {
   }, [conversationsById])
 }
 
-/** One project's rows, or null when the ask failed -- a timeout leaves the last
- *  known watchlist standing rather than blanking it. */
-async function fetchPins(projectUri: string): Promise<PinnedEpicRow[] | null> {
+/**
+ * One project's rows, or null when the ask FAILED.
+ *
+ * `resp.ok` is checked, and that is the whole bug this shape used to have. A
+ * sentinel that does not know the `pinned` op does not throw -- it REPLIES, with
+ * `ok: false` and an error -- so `resp.pinned ?? []` read a refusal as an empty
+ * watchlist. On 2026-08-20 that presented as "I just pinned an epic, it does not
+ * show up": the running sentinel bundle predated the whole feature (no
+ * `wall_pinned`, no `pinned` op), and the pane confidently reported nothing
+ * pinned across every project on the box.
+ *
+ * Null means WE DO NOT KNOW, which keeps the last good watchlist on screen and
+ * lets the pane say why -- see `WallPinFeed.error`.
+ */
+async function fetchPins(projectUri: string): Promise<{ rows: PinnedEpicRow[] } | { error: string } | null> {
   if (inflight.has(projectUri)) return null
   inflight.add(projectUri)
   try {
     const resp = await sendBoardOp(projectUri, 'pinned')
-    return (resp.pinned as PinnedEpicRow[] | undefined) ?? []
+    if (resp.ok === false) return { error: String(resp.error ?? 'the sentinel refused the `pinned` op') }
+    return { rows: (resp.pinned as PinnedEpicRow[] | undefined) ?? [] }
   } catch {
-    // Disconnected, or a sentinel that predates the op. Either way: keep what we
-    // have and ask again on the next tick.
+    // Disconnected, or the request timed out. Keep what we have and ask again.
     return null
   } finally {
     inflight.delete(projectUri)
@@ -90,12 +102,17 @@ export interface WallPinFeed {
   rows: WallPinRow[]
   /** The watchlist on screen was last answered on an earlier connection. */
   stale: boolean
+  /** A project whose sentinel REFUSED the ask, and what it said. Empty when
+   *  every project answered. An empty pane with an entry here means "we cannot
+   *  tell", which is a different sentence from "nothing is pinned". */
+  refused: string | null
 }
 
 export function useWallPins(): WallPinFeed {
   const projectKey = useKnownProjectKey()
   const projectSettings = useConversationsStore(s => s.projectSettings)
   const [rowsByProject, setRowsByProject] = useState<Record<string, PinnedEpicRow[]>>({})
+  const [refused, setRefused] = useState<string | null>(null)
 
   // The one shared project handler routes every `project_board_result` back to
   // its promise. The board installs it too; whoever gets there first wins.
@@ -127,13 +144,23 @@ export function useWallPins(): WallPinFeed {
   const load = useCallback(async () => {
     const projects = projectKey ? projectKey.split('\n') : []
     if (projects.length === 0) return false
+    let refusal: string | null = null
     const answers = await Promise.all(
       projects.map(async projectUri => {
-        const rows = await fetchPins(projectUri)
-        if (rows && mounted.current) setRowsByProject(prev => ({ ...prev, [projectUri]: rows }))
-        return rows !== null
+        const answer = await fetchPins(projectUri)
+        if (!answer) return false
+        if ('error' in answer) {
+          refusal ??= answer.error
+          // NOT written into the map: a refusal is not an empty watchlist, and
+          // overwriting the last good rows with [] is exactly how this pane came
+          // to report "nothing pinned" across a whole fleet.
+          return false
+        }
+        if (mounted.current) setRowsByProject(prev => ({ ...prev, [projectUri]: answer.rows }))
+        return true
       }),
     )
+    if (mounted.current) setRefused(refusal)
     return answers.some(Boolean)
   }, [projectKey])
 
@@ -166,5 +193,5 @@ export function useWallPins(): WallPinFeed {
     return rows.toSorted((a, b) => b.movedAt - a.movedAt)
   }, [projectKey, projectSettings, rowsByProject])
 
-  return useMemo(() => ({ rows, stale }), [rows, stale])
+  return useMemo(() => ({ rows, stale, refused }), [rows, stale, refused])
 }

@@ -1,10 +1,3 @@
-// `protocol.ts` re-exports this module and this module imports back from it.
-// DEFERRED, not accepted (overseer ruling, gen 15, re-affirmed gen 17): breaking
-// the cycle rewrites imports in files no pane branch has in its diff, which is
-// exactly the merge hazard that bit `wall-navigate.ts` at the gen-14 integration.
-// It goes LAST, after every pane merges, in a commit that touches nothing else.
-// Owner: `wall-integration-fallow-debt` -- delete this line there.
-// fallow-ignore-file re-export-cycle
 /**
  * THE WALL live channel -- the ONE typed frame the wall surface subscribes to.
  *
@@ -34,6 +27,7 @@
  * pipe does not care which of them are live.
  */
 
+import { NODE_STATS_INTERVAL_MS } from './node-stats'
 import type { CardMove } from './protocol'
 
 /** Board lane moves ride the wall as `CardMove`, the shape
@@ -123,6 +117,17 @@ export interface WallCommitRow {
  */
 export const WALL_HOST_CPU_SAMPLES = 60
 
+/** The node-stats cadence the ring is filled at. DERIVED, never restated: the
+ *  ring carries no timestamps -- its samples are positions, and the only thing
+ *  that turns a position back into a time is the cadence the producer actually
+ *  sends at. Change `NODE_STATS_INTERVAL_MS` and the window below follows. */
+export const WALL_HOST_CPU_INTERVAL_MS = NODE_STATS_INTERVAL_MS
+
+/** How much wall-clock the full ring spans: five minutes. What a boot-time
+ *  rehydration is allowed to read back, since anything older than this could
+ *  never have been in the ring in the first place. */
+export const WALL_HOST_CPU_WINDOW_MS = WALL_HOST_CPU_SAMPLES * WALL_HOST_CPU_INTERVAL_MS
+
 /** One node's vitals sample. Producer: `wall-host-vitals`. */
 export interface WallHostVitals {
   nodeId: string
@@ -190,6 +195,18 @@ export interface WallPlanSample {
   polledAt?: number
   /** `ProfileUsageSnapshot.error.kind`, when `state === 'error'`. */
   errorKind?: 'http' | 'parse' | 'network' | 'no_token'
+  /**
+   * THERE IS NO MEASUREMENT BETWEEN THE PREVIOUS SAMPLE OF THIS SERIES AND THIS
+   * ONE -- do not connect them.
+   *
+   * Set on the first live sample after the broker rehydrated this series from
+   * the durable stats store, when the outage was longer than the series' own
+   * minimum spacing. A restart IS a discontinuity: whatever accumulated since
+   * the last flush is gone, and a line drawn straight across the hole reads as a
+   * measurement that says "nothing changed while the broker was down", which is
+   * the one thing nobody knows.
+   */
+  gapBefore?: true
 }
 
 /** Fleet-wide counters, summed over the projects this subscriber may read. */
@@ -236,9 +253,10 @@ export interface WallFrame {
   fleet?: WallFleetCounters
 }
 
-/** Sections that carry per-project data and therefore need permission filtering
- *  before a frame reaches a given subscriber. */
-// Read by the per-pane filtering the pane cards bring; no consumer until the
-// first scoped pane lands.
-// fallow-ignore-next-line unused-export
-export const WALL_SCOPED_SECTIONS = ['pulse', 'commits', 'cards'] as const
+// WHICH SECTIONS ARE PROJECT-SCOPED is not a constant here, on purpose. It was
+// one (`WALL_SCOPED_SECTIONS`) and never gained a reader, because the fact it
+// named was already spelled out where it is ENFORCED: `wall-frame.ts` filters
+// pulse, commits and cards through the subscriber's `allowed(project)` and
+// leaves hosts and plan alone (they are node/profile facts, gated at subscribe
+// time). A second copy that nothing consults cannot go out of date loudly -- it
+// goes out of date silently, which is worse than not having it.

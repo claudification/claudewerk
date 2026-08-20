@@ -83,6 +83,45 @@ describe('the pin-to-wall toggle', () => {
     })
   })
 
+  /**
+   * THE 2026-08-20 SILENCE. The installed sentinel bundle predated A8 entirely
+   * -- no `wall_pinned`, no `pinned` op -- so it accepted the `update`, dropped
+   * the key, and answered ok. The button showed PINNED over a card with nothing
+   * written on it, and the wall showed nothing, forever.
+   */
+  it('rolls back an OK reply whose card did not actually take the pin', async () => {
+    sendBoardOp.mockResolvedValueOnce({ ok: true, task: { slug: 'epic-the-wall' } } as never)
+    render(<EpicPinButton rollup={rollup()} />)
+    const button = screen.getByRole('button')
+
+    fireEvent.click(button)
+
+    await waitFor(() => expect(button.textContent).toBe('PIN'))
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('accepts an OK reply whose card DID take the pin', async () => {
+    sendBoardOp.mockResolvedValueOnce({ ok: true, task: { slug: 'epic-the-wall', wallPinned: true } } as never)
+    render(<EpicPinButton rollup={rollup()} />)
+    const button = screen.getByRole('button')
+
+    fireEvent.click(button)
+
+    await waitFor(() => expect(button.textContent).toBe('PINNED'))
+  })
+
+  /** Unpinning DELETES the key, so an unpinned card comes back with no
+   *  `wallPinned` at all -- that is success, not a dropped write. */
+  it('reads a missing key as a successful UNPIN', async () => {
+    sendBoardOp.mockResolvedValueOnce({ ok: true, task: { slug: 'epic-the-wall' } } as never)
+    render(<EpicPinButton rollup={rollup(true)} />)
+    const button = screen.getByRole('button')
+
+    fireEvent.click(button)
+
+    await waitFor(() => expect(button.textContent).toBe('PIN'))
+  })
+
   it('rolls the label back when the write FAILS, instead of lying about the card', async () => {
     sendBoardOp.mockResolvedValueOnce({ ok: false } as never)
     render(<EpicPinButton rollup={rollup()} />)
