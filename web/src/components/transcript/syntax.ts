@@ -13,9 +13,9 @@
  * `syntax-subpath.test.ts`.
  */
 
+import tokyoNight from '@shikijs/themes/tokyo-night'
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import tokyoNight from '@shikijs/themes/tokyo-night'
 
 // LAZY-LOAD COVENANT: the default ("eager") grammar packs (js/ts/tsx/jsx/sh)
 // are ~775KB of grammar JSON. Statically importing them parked that data in
