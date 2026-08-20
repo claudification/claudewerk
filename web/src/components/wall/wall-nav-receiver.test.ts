@@ -15,7 +15,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { KANBAN_MODAL } from '@/hooks/use-kanban-modal'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { isWallNavIntent, receiveWallNav, useWallNavReceiver } from './wall-nav-receiver'
-import { WALL_NAV_MESSAGE } from './wall-navigate'
+import { navigateFromWall, WALL_NAV_MESSAGE } from './wall-navigate'
 import { WALL_MODAL } from './wall-state'
 
 const PROJECT = 'claude:///Users/j/remote-claude'
@@ -127,6 +127,34 @@ describe('useWallNavReceiver', () => {
     deliver(envelope({ kind: 'card', project: PROJECT, id: 'loop' }))
 
     expect(useConversationsStore.getState().pendingTaskEdit).toBeNull()
+  })
+
+  /**
+   * THE PROMISE, END TO END. Both halves have passed their own tests before and
+   * the click was still dead, because nothing ever put them on the same wire.
+   * The popup here is a real `navigateFromWall` call in a detached context whose
+   * opener delivers into this window -- if the envelope, the origin check or the
+   * intent shape ever drift apart, this is what fails. One window plays both
+   * parts: the receiver arms first (as the dashboard), then `window.name` flips
+   * so the SENDER takes the popup branch and hands the envelope back.
+   */
+  it('closes the loop: a click in the DETACHED wall focuses the conversation HERE', () => {
+    renderHook(() => useWallNavReceiver())
+
+    window.name = WALL_MODAL.id
+    Object.defineProperty(window, 'opener', {
+      value: {
+        closed: false,
+        focus: () => {},
+        postMessage: (data: unknown, origin: string) => deliver(data, origin),
+      },
+      configurable: true,
+      writable: true,
+    })
+
+    expect(navigateFromWall({ kind: 'conversation', id: 'conv_across', via: 'wall-pulse' })).toBe('opener')
+
+    expect(useConversationsStore.getState().selectedConversationId).toBe('conv_across')
   })
 
   it('stops listening once the dashboard unmounts', () => {
