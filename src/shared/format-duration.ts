@@ -10,3 +10,24 @@ export function formatDuration(ms: number): string {
   const hours = Math.floor(minutes / 60)
   return `${hours}h ${minutes % 60}m`
 }
+
+/**
+ * Precise turn-timing duration: `842ms`, `1.5s`, `2m30s`. For the turn/step
+ * summaries an agent host emits and the transcript renders, where sub-second
+ * resolution is the point. A DIFFERENT contract from `formatDuration` above --
+ * that one is an at-a-glance age readout, this one is a measurement.
+ *
+ * Behaviour is preserved verbatim from the three copies it replaces
+ * (acp translator, opencode ndjson-parser, web group-view-types), warts and
+ * all: 59_999 renders `60.0s`, 119_500 renders `1m60s`, and negatives fall
+ * through the `<1000` branch as raw `-5000ms`. Callers only ever pass real
+ * elapsed spans, so those edges are unreachable in practice -- but they are
+ * pinned by tests so a future "cleanup" is a red test, not a silent re-render.
+ */
+export function formatDurationPrecise(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)}s`
+  const m = Math.floor(s / 60)
+  return `${m}m${Math.round(s % 60)}s`
+}

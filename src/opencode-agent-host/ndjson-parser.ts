@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { formatDurationPrecise } from '../shared/format-duration'
 import type {
   TranscriptAssistantEntry,
   TranscriptContentBlock,
@@ -329,7 +330,7 @@ export function flushTurn(state: ParserState): TranscriptEntry[] {
 function formatTurnSummary(state: ParserState, durationMs: number): string {
   const parts: string[] = []
   parts.push(`${state.stepCount} step${state.stepCount === 1 ? '' : 's'}`)
-  parts.push(`${formatDuration(durationMs)}`)
+  parts.push(`${formatDurationPrecise(durationMs)}`)
   if (state.inputTokens || state.outputTokens) {
     parts.push(`${state.inputTokens}/${state.outputTokens} tok`)
   }
@@ -337,15 +338,6 @@ function formatTurnSummary(state: ParserState, durationMs: number): string {
     parts.push(`$${state.cost.toFixed(4)}`)
   }
   return parts.join(' · ')
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const s = ms / 1000
-  if (s < 60) return `${s.toFixed(1)}s`
-  const m = Math.floor(s / 60)
-  const remS = Math.round(s - m * 60)
-  return `${m}m${remS}s`
 }
 
 /**

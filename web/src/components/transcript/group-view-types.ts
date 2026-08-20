@@ -88,12 +88,3 @@ export type RenderItem =
   // informational, turn_duration, etc.). Carries the raw entry so the
   // renderer can dispatch on subtype just like the standalone SystemLine.
   | { kind: 'system'; entry: Record<string, unknown>; subtype: string; timestamp?: string }
-
-// fallow-ignore-next-line dupes
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const s = ms / 1000
-  if (s < 60) return `${s.toFixed(1)}s`
-  const m = Math.floor(s / 60)
-  return `${m}m${Math.round(s % 60)}s`
-}
