@@ -55,9 +55,14 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
   c: [
     { code: 'A2', feeds: ['burn'], load: () => import('./panes/a2-burn') },
     { code: 'S2', feeds: [], load: () => import('./panes/s2-plan-usage') },
-    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
+    // DEVIATION FROM THE MOCKUP, on Jonas's word (2026-08-20): "Fleet + host
+    // vitals should be above SHEAF". The comp stacks A6 first, then S1, then P4.
+    // The pair moved up as a pair, keeping the comp's S1-before-P4 order, so the
+    // only line that disagrees with the approved comp is the one he overrode.
+    // Still a fixed arrangement -- `wall-pane-order.test.ts` pins it.
     { code: 'S1', feeds: [], load: () => import('./panes/s1-host-vitals') },
     { code: 'P4', feeds: ['fleet-tokens'], load: () => import('./panes/p4-fleet') },
+    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
     { code: 'A4', feeds: ['sheaf'], load: () => import('./panes/a4-sotu') },
   ],
 }

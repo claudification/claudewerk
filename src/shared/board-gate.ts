@@ -15,7 +15,7 @@
  * git, the broker never touches the filesystem (boundary covenant).
  */
 
-import { type GateCheck, type GateInput, runTier1, runTier2, str } from './board-gate-checks'
+import { approvalEvidence, type GateCheck, type GateInput, runTier1, runTier2, str } from './board-gate-checks'
 import type { TaskStatus } from './task-statuses'
 
 export type { CmdResult, CmdRunner, GateCheck, GateInput, GitResult, GitRunner } from './board-gate-checks'
@@ -41,6 +41,11 @@ export function isGateMode(v: unknown): v is GateMode {
   return typeof v === 'string' && (GATE_MODES as readonly string[]).includes(v)
 }
 
+/** Lanes the gate has an opinion about. Everything else transitions ungated. */
+export function isGatedTarget(status: TaskStatus): boolean {
+  return GATED_TARGETS.includes(status)
+}
+
 /**
  * Resolve the effective gate mode for a card. Precedence:
  *   1. per-card `gate:` frontmatter override (explicit)
@@ -56,15 +61,17 @@ export function resolveGateMode(meta: Record<string, unknown>, projectConfigMode
 /**
  * Evaluate the gate for one transition. `skip` when the mode is off or the target
  * is not gated; otherwise Tier-2 always, plus Tier-1 for `full` + target `done`.
+ * Async because Tier-2 runs the card's `test_cmd` through an async `CmdRunner` --
+ * a sync runner froze the calling conversation's MCP host for the whole suite.
  * On `in-review` the acting conversation is stamped as the card's worker so a
  * later `done` can prove the approver is a different conversation.
  */
-export function evaluateGate(input: GateInput, mode: GateMode): GateOutcome {
-  if (mode === 'off' || !GATED_TARGETS.includes(input.targetStatus)) {
+export async function evaluateGate(input: GateInput, mode: GateMode): Promise<GateOutcome> {
+  if (mode === 'off' || !isGatedTarget(input.targetStatus)) {
     return { decision: 'skip', mode, checks: [], evidence: {} }
   }
 
-  const t2 = runTier2(input)
+  const t2 = await runTier2(input)
   const checks = [...t2.checks]
   const evidence = { ...t2.evidence }
   if (!t2.ok) {
@@ -75,13 +82,16 @@ export function evaluateGate(input: GateInput, mode: GateMode): GateOutcome {
     const t1 = runTier1(input)
     checks.push(t1.check)
     if (!t1.ok) return { decision: 'refuse', mode, reason: t1.check.detail, checks, evidence }
-    Object.assign(evidence, t1.evidence)
   }
 
   if (input.targetStatus === 'in-review') {
     // First review capture owns the "worker" slot; preserve it across re-reviews.
     evidence.evidence_worker = str(input.meta.evidence_worker) || input.actingConversationId
   }
+  // Every allowed approval leaves a trace, in every mode. Under `full` Tier-1
+  // has just PROVEN the approver is not the worker; under `tier2` this only
+  // records who moved it -- compare against evidence_worker to tell which.
+  if (input.targetStatus === 'done') Object.assign(evidence, approvalEvidence(input))
 
   return { decision: 'allow', mode, checks, evidence }
 }

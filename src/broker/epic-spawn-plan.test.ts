@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { EpicPlan } from '../shared/epic-ready'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
+import { worktreeBranch } from '../shared/worktree-path'
 import { type EpicSpawnCtx, planImplementerSpawn, planOverseerSpawn, planVerifierSpawn } from './epic-spawn-plan'
 
 const CTX: EpicSpawnCtx = {
@@ -164,6 +165,48 @@ describe('worktree names fit inside CC’s 64-character limit', () => {
   test('a short card id is left exactly as it was -- no gratuitous hashing', () => {
     expect(planImplementerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
     expect(planVerifierSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/verify-t1')
+  })
+})
+
+describe("a dependency's branch, as the implementer is told to merge it", () => {
+  const LONG_DEP = 'epic-engine-baton-window-relitigates-settles-dependency'
+
+  test('it is the `worktree-` prefixed branch, not the worktree name', () => {
+    const prompt = planImplementerSpawn(CTX, 't1', 'main', ['t0']).prompt
+    // `worktreeBranch(seatBranch(...))` -- the prefix scripts/worktree-create.sh
+    // adds. Quoting the plan's own `worktree` field here would be a ref that
+    // `git merge` cannot resolve.
+    expect(prompt).toContain(`\`${worktreeBranch('epic/werk-epic/t0')}\``)
+  })
+
+  test('a dependency branch that had to be SHORTENED is named as shortened', () => {
+    const dep = LONG_DEP
+    const ctx = { ...CTX, epicId: 'a-fairly-long-epic-identifier-here' }
+    // The dependency's own seat would get this worktree; the merge ref is that,
+    // prefixed. Derived from the same function rather than hand-typed, so a
+    // change to the shortening cannot silently desync the two.
+    const depWorktree = planImplementerSpawn(ctx, dep).worktree as string
+    expect(depWorktree.length).toBeLessThanOrEqual(64)
+    expect(planImplementerSpawn(ctx, 't1', 'main', [dep]).prompt).toContain(worktreeBranch(depWorktree))
+  })
+
+  test('no dependency, no section -- a leaf card is dispatched with the prompt it always had', () => {
+    expect(planImplementerSpawn(CTX, 't1').prompt).toBe(planImplementerSpawn(CTX, 't1', 'main', []).prompt)
+    expect(planImplementerSpawn(CTX, 't1').prompt).not.toContain('DEPENDS ON WORK')
+  })
+
+  test('every dependency of a card reaches the prompt', () => {
+    const prompt = planImplementerSpawn(CTX, 't3', 'main', ['t1', 't2']).prompt
+    expect(prompt).toContain(worktreeBranch('epic/werk-epic/t1'))
+    expect(prompt).toContain(worktreeBranch('epic/werk-epic/t2'))
+  })
+
+  test('passing dependencies changes NOTHING about readiness or the base ref', () => {
+    const plain = planImplementerSpawn(CTX, 't1')
+    const withDeps = planImplementerSpawn(CTX, 't1', 'main', ['t0'])
+    expect(withDeps.worktree).toBe(plain.worktree as string)
+    expect(withDeps.name).toBe(plain.name)
+    expect(withDeps.prompt).toContain('cut from `main`')
   })
 })
 

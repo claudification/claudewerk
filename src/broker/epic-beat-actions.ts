@@ -248,10 +248,14 @@ async function spawnForCard(
   gen: number,
   cardId: string,
   role: 'dispatch' | 'verify',
+  /** The card's `depends_on`, for the implementer's base check. Ignored for a
+   *  verifier, which reviews a diff and has no worktree to merge into. */
+  dependsOn: readonly string[] = [],
 ): Promise<string | null> {
   const io = epicIo()
   const ctx = spawnCtx(group, gen)
-  const spawn = role === 'dispatch' ? planImplementerSpawn(ctx, cardId) : planVerifierSpawn(ctx, cardId)
+  const spawn =
+    role === 'dispatch' ? planImplementerSpawn(ctx, cardId, 'main', dependsOn) : planVerifierSpawn(ctx, cardId)
   const out = await io.dispatchSpawn(spawn, deps.spawnContext)
   if (!out.ok) {
     deps.log(`${tag(group.epicId, gen)} ${role} FAILED for ${cardId}: ${out.error}`)
@@ -432,7 +436,7 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
   'plan-checkpoint': (p, a: Extract<EpicAction, { kind: 'plan-checkpoint' }>) =>
     resolvePlanning(p.deps, p.group, p.run, a).then(() => null),
   dispatch: (p, a: Extract<EpicAction, { kind: 'dispatch' }>) =>
-    spawnForCard(p.deps, p.group, p.run.gen, a.cardId, 'dispatch'),
+    spawnForCard(p.deps, p.group, p.run.gen, a.cardId, 'dispatch', a.dependsOn ?? []),
   verify: (p, a: Extract<EpicAction, { kind: 'verify' }>) =>
     spawnForCard(p.deps, p.group, p.run.gen, a.cardId, 'verify'),
   park: (p, a: Extract<EpicAction, { kind: 'park' }>) => settleRun(p.deps, p.group, p.run.gen, a).then(() => null),

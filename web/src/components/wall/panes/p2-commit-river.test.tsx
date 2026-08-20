@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCommitModalStore } from '@/hooks/use-commit-modals'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
+import { useWallDetail } from '../wall-detail-store'
 import CommitRiverPane from './p2-commit-river'
 
 const NOW = new Date(2026, 7, 20, 14, 0, 0).getTime()
@@ -91,6 +92,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   useWallFilterStore.getState().clear()
   useCommitModalStore.setState({ hash: null })
+  useWallDetail.setState({ hash: null })
   useModalManagerStore.setState({ records: {} })
 })
 
@@ -150,15 +152,22 @@ describe('P2 commit river', () => {
     fireEvent.click(screen.getByLabelText('Copy the sha aaaaaaa'))
     expect(writeText).toHaveBeenCalledWith('a'.repeat(40))
     // ...and copying must not also open the detail underneath it.
-    expect(useCommitModalStore.getState().hash).toBeNull()
+    expect(useWallDetail.getState().hash).toBeNull()
   })
 
-  it('opens the commit detail for the clicked row', async () => {
+  /**
+   * `wall-commit-detail-in-wall` moved the destination: the row asks the ONE
+   * transport for the IN-WALL target, so the commit opens on the wall's own
+   * surface and the main window's commit modal stays shut. The panel itself is
+   * `wall-detail.test.tsx`; what P2 owns is which target the row asks for.
+   */
+  it('opens the commit detail IN THE WALL for the clicked row, not in the main window', async () => {
     await mount([commit()])
     fireEvent.click(rows()[0] as Element)
 
-    expect(useCommitModalStore.getState().hash).toBe('a'.repeat(40))
-    expect(useModalManagerStore.getState().records['commit-detail']).toBeTruthy()
+    expect(useWallDetail.getState().hash).toBe('a'.repeat(40))
+    expect(useCommitModalStore.getState().hash).toBeNull()
+    expect(useModalManagerStore.getState().records['commit-detail']).toBeUndefined()
   })
 
   it('renders {matched}/{total} in the pane count slot and filters on a declared axis', async () => {
@@ -198,7 +207,7 @@ describe('P2 commit river', () => {
     fireEvent.click(document.querySelector('[data-project]') as Element)
     expect(useWallFilterStore.getState().raw).toBe('')
     // And the chip click never opened the commit detail on the way past.
-    expect(useCommitModalStore.getState().hash).toBeNull()
+    expect(useWallDetail.getState().hash).toBeNull()
   })
 
   it('distinguishes an empty ledger from an empty filter', async () => {

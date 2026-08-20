@@ -5,11 +5,17 @@
  *
  * The root element is what ambient mode makes fullscreen, which is why the ref
  * lives here and not down in the grid.
+ *
+ * `<WallDetail>` is the one thing here that is not chrome. It renders nothing
+ * until a commit row asks for it, and it is mounted at the ROOT rather than
+ * inside the grid so an open detail overlays the panes instead of resizing a
+ * column -- the v1 layout is hard.
  */
 
 import { Suspense, useRef } from 'react'
 import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 import { useWallAmbient } from './use-wall-ambient'
+import { WallDetail } from './wall-detail'
 import { WallFooter } from './wall-footer'
 import { WallGrid } from './wall-grid'
 import { WallHeader } from './wall-header'
@@ -36,6 +42,7 @@ export function WallSurface({ visible, onDetach }: { visible: boolean; onDetach?
       </Suspense>
       <WallGrid />
       <WallFooter />
+      <WallDetail />
     </div>
   )
 }

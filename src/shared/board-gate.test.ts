@@ -33,9 +33,9 @@ function makeGit(o: FakeGitOpts): GitRunner {
   }
 }
 
-const passTest: CmdRunner = () => ({ exitCode: 0, output: 'ok', timedOut: false })
-const failTest: CmdRunner = () => ({ exitCode: 1, output: 'AssertionError: boom', timedOut: false })
-const timeoutTest: CmdRunner = () => ({ exitCode: -1, output: 'hung', timedOut: true })
+const passTest: CmdRunner = async () => ({ exitCode: 0, output: 'ok', timedOut: false })
+const failTest: CmdRunner = async () => ({ exitCode: 1, output: 'AssertionError: boom', timedOut: false })
+const timeoutTest: CmdRunner = async () => ({ exitCode: -1, output: 'hung', timedOut: true })
 
 function input(over: Partial<GateInput> = {}): GateInput {
   return {
@@ -69,80 +69,120 @@ describe('resolveGateMode', () => {
 })
 
 describe('evaluateGate — mode/target gating', () => {
-  it('off mode -> skip, no checks run', () => {
-    const out = evaluateGate(input(), 'off')
+  it('off mode -> skip, no checks run', async () => {
+    const out = await evaluateGate(input(), 'off')
     expect(out.decision).toBe('skip')
     expect(out.checks).toHaveLength(0)
   })
-  it('non-gated target (open) -> skip even under full', () => {
-    const out = evaluateGate(input({ targetStatus: 'open' }), 'full')
+  it('non-gated target (open) -> skip even under full', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'open' }), 'full')
     expect(out.decision).toBe('skip')
   })
 })
 
 describe('evaluateGate — Tier-2 truth table', () => {
-  it('clean + committed + diff + no test_cmd -> allow, evidence captured', () => {
-    const out = evaluateGate(input({ git: makeGit({ branch: 'feat/x' }) }), 'tier2')
+  it('clean + committed + diff + no test_cmd -> allow, evidence captured', async () => {
+    const out = await evaluateGate(input({ git: makeGit({ branch: 'feat/x' }) }), 'tier2')
     expect(out.decision).toBe('allow')
     expect(out.evidence.evidence_branch).toBe('feat/x')
     expect(out.evidence.evidence_commits).toBe(3)
     expect(out.evidence.evidence_tests).toBe('none')
-    expect(out.evidence.verdict).toBeUndefined() // tier2 never demands a verdict
   })
 
-  it('dirty tree -> refuse with precise reason', () => {
-    const out = evaluateGate(input({ git: makeGit({ dirty: [' M a.ts', '?? b.ts'] }) }), 'tier2')
+  it('an in-review capture is not an approval -- no verdict', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'in-review' }), 'tier2')
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.verdict).toBeUndefined()
+  })
+
+  it('dirty tree -> refuse with precise reason', async () => {
+    const out = await evaluateGate(input({ git: makeGit({ dirty: [' M a.ts', '?? b.ts'] }) }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('tree dirty: 2 changed files')
   })
 
-  it('no commits since base -> refuse', () => {
-    const out = evaluateGate(input({ git: makeGit({ commits: 0 }) }), 'tier2')
+  it('no commits since base -> refuse', async () => {
+    const out = await evaluateGate(input({ git: makeGit({ commits: 0 }) }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('no commits since main')
   })
 
-  it('zero diff vs base -> refuse', () => {
-    const out = evaluateGate(input({ git: makeGit({ diffstat: '' }) }), 'tier2')
+  it('zero diff vs base -> refuse', async () => {
+    const out = await evaluateGate(input({ git: makeGit({ diffstat: '' }) }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('zero diff vs main')
   })
 
-  it('missing base ref -> refuse loudly', () => {
-    const out = evaluateGate(input({ git: makeGit({ baseExists: false }) }), 'tier2')
+  it('missing base ref -> refuse loudly', async () => {
+    const out = await evaluateGate(input({ git: makeGit({ baseExists: false }) }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain("base ref 'main' not found")
   })
 
-  it('failing test_cmd -> refuse, tests=fail captured', () => {
-    const out = evaluateGate(input({ meta: { test_cmd: 'bun test' }, runCmd: failTest }), 'tier2')
+  it('failing test_cmd -> refuse, tests=fail captured', async () => {
+    const out = await evaluateGate(input({ meta: { test_cmd: 'bun test' }, runCmd: failTest }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('test_cmd exit 1')
     expect(out.evidence.evidence_tests).toBe('fail')
   })
 
-  it('timed-out test_cmd -> refuse', () => {
-    const out = evaluateGate(input({ meta: { test_cmd: 'sleep 999' }, runCmd: timeoutTest }), 'tier2')
+  it('timed-out test_cmd -> refuse', async () => {
+    const out = await evaluateGate(input({ meta: { test_cmd: 'sleep 999' }, runCmd: timeoutTest }), 'tier2')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('timed out')
   })
 
-  it('passing test_cmd -> allow, tests=pass', () => {
-    const out = evaluateGate(input({ meta: { test_cmd: 'bun test' }, runCmd: passTest }), 'tier2')
+  it('passing test_cmd -> allow, tests=pass', async () => {
+    const out = await evaluateGate(input({ meta: { test_cmd: 'bun test' }, runCmd: passTest }), 'tier2')
     expect(out.decision).toBe('allow')
     expect(out.evidence.evidence_tests).toBe('pass')
   })
 
-  it('respects a custom base field', () => {
-    const out = evaluateGate(input({ meta: { base: 'develop' } }), 'tier2')
+  it('respects a custom base field', async () => {
+    const out = await evaluateGate(input({ meta: { base: 'develop' } }), 'tier2')
     expect(out.decision).toBe('allow')
     expect(out.evidence.evidence_base).toBe('develop')
   })
 })
 
+describe('evaluateGate — an approval always leaves a trace', () => {
+  it('tier2 RECORDS the verdict on done even though it cannot prove independence', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'done', actingConversationId: 'conv_x' }), 'tier2')
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.verdict).toBe('APPROVED by conv_x')
+    expect(out.evidence.evidence_verified_at).toBe('1970-01-01T00:00:00.000Z')
+  })
+
+  it('tier2 does NOT enforce independence -- the worker may approve itself, and it shows', async () => {
+    const out = await evaluateGate(
+      input({
+        fromStatus: 'in-review',
+        targetStatus: 'done',
+        actingConversationId: 'conv_worker',
+        meta: { evidence_worker: 'conv_worker' },
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('allow')
+    // Same id on both keys is exactly how a reader spots an unproven approval.
+    expect(out.evidence.verdict).toBe('APPROVED by conv_worker')
+  })
+
+  it('a refused done stamps no verdict at all', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'done', git: makeGit({ dirty: [' M a.ts'] }) }), 'tier2')
+    expect(out.decision).toBe('refuse')
+    expect(out.evidence.verdict).toBeUndefined()
+  })
+
+  it('gate off stamps nothing, verdict included', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'done' }), 'off')
+    expect(out.evidence).toEqual({})
+  })
+})
+
 describe('evaluateGate — Tier-1 independent verdict (full)', () => {
-  it('in-review capture stamps the acting conversation as the worker', () => {
-    const out = evaluateGate(
+  it('in-review capture stamps the acting conversation as the worker', async () => {
+    const out = await evaluateGate(
       input({ fromStatus: 'in-progress', targetStatus: 'in-review', actingConversationId: 'conv_worker' }),
       'full',
     )
@@ -150,8 +190,8 @@ describe('evaluateGate — Tier-1 independent verdict (full)', () => {
     expect(out.evidence.evidence_worker).toBe('conv_worker')
   })
 
-  it('preserves the original worker across re-review', () => {
-    const out = evaluateGate(
+  it('preserves the original worker across re-review', async () => {
+    const out = await evaluateGate(
       input({
         targetStatus: 'in-review',
         actingConversationId: 'conv_other',
@@ -162,20 +202,20 @@ describe('evaluateGate — Tier-1 independent verdict (full)', () => {
     expect(out.evidence.evidence_worker).toBe('conv_worker')
   })
 
-  it('done straight from in-progress under full -> refuse (must pass through in-review)', () => {
-    const out = evaluateGate(input({ fromStatus: 'in-progress', targetStatus: 'done' }), 'full')
+  it('done straight from in-progress under full -> refuse (must pass through in-review)', async () => {
+    const out = await evaluateGate(input({ fromStatus: 'in-progress', targetStatus: 'done' }), 'full')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('in-review before done')
   })
 
-  it('done from in-review with no recorded worker -> refuse', () => {
-    const out = evaluateGate(input({ fromStatus: 'in-review', targetStatus: 'done', meta: {} }), 'full')
+  it('done from in-review with no recorded worker -> refuse', async () => {
+    const out = await evaluateGate(input({ fromStatus: 'in-review', targetStatus: 'done', meta: {} }), 'full')
     expect(out.decision).toBe('refuse')
     expect(out.reason).toContain('no worker recorded')
   })
 
-  it('self-approval (worker == acting) -> refuse', () => {
-    const out = evaluateGate(
+  it('self-approval (worker == acting) -> refuse', async () => {
+    const out = await evaluateGate(
       input({
         fromStatus: 'in-review',
         targetStatus: 'done',
@@ -188,8 +228,8 @@ describe('evaluateGate — Tier-1 independent verdict (full)', () => {
     expect(out.reason).toContain('self-approval refused')
   })
 
-  it('independent approver + clean + green -> allow, verdict stamped', () => {
-    const out = evaluateGate(
+  it('independent approver + clean + green -> allow, verdict stamped', async () => {
+    const out = await evaluateGate(
       input({
         fromStatus: 'in-review',
         targetStatus: 'done',
@@ -204,8 +244,8 @@ describe('evaluateGate — Tier-1 independent verdict (full)', () => {
     expect(out.evidence.evidence_verified_at).toBe('1970-01-01T00:00:00.000Z')
   })
 
-  it('full gate still enforces Tier-2 before the verdict (dirty tree beats a valid approver)', () => {
-    const out = evaluateGate(
+  it('full gate still enforces Tier-2 before the verdict (dirty tree beats a valid approver)', async () => {
+    const out = await evaluateGate(
       input({
         fromStatus: 'in-review',
         targetStatus: 'done',

@@ -8,8 +8,9 @@
  * The Guard reads the card + its machine-captured evidence, RE-RUNS the acceptance
  * command and `test_cmd` itself (never trusting the worker's narrative), inspects
  * the diff, then either:
- *   - APPROVES by moving the card in-review -> done (that move, coming from a
- *     non-worker conversation, is what stamps the `verdict: APPROVED by <id>`), or
+ *   - APPROVES by moving the card in-review -> done (under an enabled gate that
+ *     move stamps `verdict: APPROVED by <id>`; under `off` it stamps nothing and
+ *     the prompt tells the Guard to write the verdict by hand), or
  *   - BOUNCES the card back to in-progress with concrete findings.
  *
  * Sibling of nightshift-act-prompts.ts (an act agent Jonas triggered). The Guard
@@ -44,8 +45,11 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     '',
     'THE CARD (source of truth is its YAML frontmatter):',
     `  ${ctx.projectRoot}/${cardRelPath(ctx.cardId)}`,
-    'Read it FIRST. The gate machine-captured this evidence when the worker moved it to in-review:',
-    '  evidence_branch, evidence_base, evidence_commits, evidence_diffstat, evidence_tests, evidence_worker.',
+    "Read it FIRST. IF this board's gate was enabled when the worker moved the card to in-review, it",
+    'machine-captured: evidence_branch, evidence_base, evidence_commits, evidence_diffstat, evidence_tests,',
+    'evidence_worker. IF THOSE KEYS ARE ABSENT the gate was OFF -- nothing on this card is machine-backed,',
+    "the worker's branch and base are claims you must derive from git yourself, and no check stopped the",
+    'worker from approving itself. Say so in your verdict rather than treating the absence as normal.',
     'Card-authored fields you must independently check: `test_cmd`, `base`, `acceptance_verified`,',
     'and the acceptance criteria / "How to verify" section in the body.',
     '',
@@ -62,8 +66,9 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     'DECIDE:',
     '- APPROVE (only if EVERY check above passed with your own eyes):',
     `    project_set_status(id="${ctx.cardId}", status="done")`,
-    '  You are a different conversation than the worker, so this move stamps the APPROVED verdict and',
-    '  passes the gate. If the gate still refuses, its reason is ground truth -- do NOT try to route around it.',
+    '  Under an enabled gate that move stamps `verdict: APPROVED by <you>`, and under `full` it also PROVES',
+    '  you are not the worker. If the gate refuses, its reason is ground truth -- do NOT route around it.',
+    '  If the gate is off the move stamps nothing, so write your verdict into the card body by hand.',
     '- BOUNCE (any check failed, is unverifiable, or you have real doubt):',
     `    project_set_status(id="${ctx.cardId}", status="in-progress")`,
     '  Then append a `## Guard Findings` section to the card body listing EXACTLY what failed and the command',

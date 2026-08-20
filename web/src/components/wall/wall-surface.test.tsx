@@ -13,6 +13,7 @@
 import { screen } from '@testing-library/react'
 import { act } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { closeWallDetail, openWallCommitDetail } from './wall-detail-store'
 import { WALL_PANE_CODES } from './wall-pane-registry'
 import { WALL_MODAL } from './wall-state'
 import { installWallTestHooks, openTheWall, pane, store, wallRoot } from './wall-test-utils'
@@ -90,5 +91,38 @@ describe('the wall shell', () => {
     })
     expect(wallRoot()).toBe(before)
     expect(screen.getByText('DETACH')).toBeTruthy()
+  })
+
+  /**
+   * `wall-commit-detail-in-wall`: the shell's half of it. The panel's own
+   * behaviour is `wall-detail.test.tsx`; what the SHELL owns is that it is
+   * mounted at the wall ROOT, so it overlays the grid and -- the point of the
+   * whole card -- travels into the popup with the rest of the wall instead of
+   * opening on the dashboard behind it.
+   */
+  it('opens a commit detail inside the wall, and takes it into the detached window', async () => {
+    const doc = document.implementation.createHTMLDocument('wall popout')
+    const fakeWin = { document: doc, focus: vi.fn(), close: vi.fn(), closed: false }
+    vi.spyOn(window, 'open').mockReturnValue(fakeWin as unknown as Window)
+    await openTheWall()
+
+    act(() => {
+      openWallCommitDetail('a'.repeat(40))
+    })
+    expect(wallRoot().querySelector('.wall-detail-panel')).toBeTruthy()
+    // An OVERLAY, not a column: the hard v1 grid still has its three.
+    expect(wallRoot().querySelectorAll('.wall-col')).toHaveLength(3)
+
+    act(() => {
+      store().detach(WALL_MODAL.id)
+    })
+
+    expect(doc.querySelector('.wall-detail-panel')).toBeTruthy()
+    expect(document.querySelector('.wall-detail-panel')).toBeNull()
+
+    act(() => {
+      closeWallDetail()
+    })
+    expect(doc.querySelector('.wall-detail-panel')).toBeNull()
   })
 })

@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseFrontmatter } from '../../../shared/frontmatter'
-import { writeGateEvidence } from './board-gate-host'
+import { cmdRunner, writeGateEvidence } from './board-gate-host'
 
 let dir: string
 
@@ -84,5 +84,52 @@ describe('the gate writes through serializeCard, not raw frontmatter', () => {
   test('an unwritable card never throws -- the stamp is best-effort, the move proceeds', () => {
     const missing = join(dir, 'no', 'such', 'card.md')
     expect(() => writeGateEvidence(missing, { title: 'T' }, 'body', { evidence_tests: 'pass' })).not.toThrow()
+  })
+})
+
+describe('cmdRunner does not freeze the MCP host', () => {
+  /** Count event-loop turns while `run` is in flight. `Bun.spawnSync` scores 0 --
+   *  that zero IS the bug: no other tool call is serviced for the whole suite. */
+  async function ticksDuring<T>(work: () => Promise<T>): Promise<{ ticks: number; result: T }> {
+    let ticks = 0
+    const timer = setInterval(() => {
+      ticks++
+    }, 10)
+    try {
+      return { result: await work(), ticks }
+    } finally {
+      clearInterval(timer)
+    }
+  }
+
+  test('a slow test_cmd yields the event loop instead of blocking it', async () => {
+    const run = cmdRunner(dir)
+    const { ticks, result } = await ticksDuring(() => run('sleep 0.4', 30_000))
+    expect(result.exitCode).toBe(0)
+    expect(result.timedOut).toBe(false)
+    // ~40 turns available in 400ms; anything above a handful proves we yielded.
+    expect(ticks).toBeGreaterThan(5)
+  })
+
+  test('captures stdout AND stderr, in that order, with the real exit code', async () => {
+    const r = await cmdRunner(dir)('echo out; echo err >&2; exit 3', 30_000)
+    expect(r.exitCode).toBe(3)
+    expect(r.output).toBe('out\nerr\n')
+    expect(r.timedOut).toBe(false)
+  })
+
+  test('runs in the given cwd', async () => {
+    const r = await cmdRunner(dir)('pwd', 30_000)
+    expect(r.exitCode).toBe(0)
+    // macOS hands back /private/var/... for a /var/... tmpdir; suffix is enough.
+    expect(r.output.trim().endsWith(dir.replace(/^\/private/, ''))).toBe(true)
+  })
+
+  test('a hung command is killed at the deadline and reported as timedOut', async () => {
+    const started = performance.now()
+    const r = await cmdRunner(dir)('sleep 30', 300)
+    expect(r.timedOut).toBe(true)
+    expect(r.exitCode).toBe(-1)
+    expect(performance.now() - started).toBeLessThan(10_000)
   })
 })

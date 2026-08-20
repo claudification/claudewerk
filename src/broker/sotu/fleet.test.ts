@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import type { BranchFabric, GitAlert, GitFabric } from '../../shared/protocol'
 import type { SheafNode, SheafProject, SheafResponse } from '../../shared/sheaf-types'
 import { writeChronicle } from './chronicle'
+import type { ResolveSotuConfig } from './config'
 import { recordContribution } from './contribute'
 import { enrichSheafWithSotu } from './fleet'
 import { initSotuStore } from './index'
@@ -133,7 +134,7 @@ function seedClaim(uri: string, convId: string, path: string): void {
 function run(
   projects: SheafProject[],
   canViewProject: (uri: string) => boolean = allVisible,
-  resolveConfig = enabled,
+  resolveConfig: ResolveSotuConfig = enabled,
 ): SheafResponse {
   const s = sheaf(projects)
   enrichSheafWithSotu(s, { canViewProject, resolveConfig, now: NOW })
@@ -210,6 +211,57 @@ test('disabled project gets the floor but NO narrative even if a chronicle exist
   const sotu = s.projects[0].sotu!
   expect(sotu.enabled).toBe(false)
   expect(sotu.narrative).toBeUndefined()
+})
+
+test('SCOPE: a chronicle-off project keeps its floor but is ABSENT from the A4 roster', () => {
+  seedNarrative(URI_A, 'alpha is mid-refactor')
+  seedNarrative(URI_B, 'bravo leftover')
+  seedScan(URI_B, ['stalled'])
+  const s = run([project(URI_A, [node()]), project(URI_B, [node({ scope: URI_B })])], allVisible, uri => ({
+    enabled: uri === URI_A,
+    budget: {},
+    params: SOTU_TUNING_DEFAULTS,
+  }))
+
+  // B keeps the FREE floor on its own project section -- A6 and the Sheaf modal
+  // still render its git alerts, and the fleet risk counts still see it.
+  expect(s.projects[1].sotu!.enabled).toBe(false)
+  expect(s.projects[1].sotu!.alerts).toContain('stalled')
+  expect(s.sotu!.stalledProjects).toBe(1)
+
+  // Only its ROSTER row is gone: nothing identifying B crosses the wire on the
+  // list A4 renders. Absent, not a greyed-out "no data" row.
+  expect(s.sotu!.blocks.map(b => b.projectUri)).toEqual([URI_A])
+  expect(JSON.stringify(s.sotu!.blocks)).not.toContain('bravo')
+})
+
+test('the A4 roster carries the prose, its age and the summed unmerged count', () => {
+  seedNarrative(URI_A, 'alpha is mid-refactor')
+  recordContribution(
+    projectSlug(URI_A),
+    gitScanContrib({ branches: [branch({ aheadOrigin: 3 }), branch({ aheadOrigin: 4 })], scannedAt: NOW - 1000 }),
+  )
+  const s = run([project(URI_A, [node()])])
+
+  expect(s.sotu!.blocks).toHaveLength(1)
+  expect(s.sotu!.blocks[0]).toMatchObject({
+    projectUri: URI_A,
+    narrative: 'alpha is mid-refactor',
+    generatedAt: NOW - 3000,
+    unmerged: 7,
+  })
+})
+
+test('an ENABLED project that never distilled still gets a roster row, without prose', () => {
+  const s = run([project(URI_A, [node()])])
+  expect(s.sotu!.blocks.map(b => b.projectUri)).toEqual([URI_A])
+  expect(s.sotu!.blocks[0].narrative).toBeUndefined()
+})
+
+test('a project the viewer cannot see is off the roster too', () => {
+  seedNarrative(URI_B, 'bravo secret')
+  const s = run([project(URI_A, [node()]), project(URI_B, [node({ scope: URI_B })])], uri => uri === URI_A)
+  expect(s.sotu!.blocks.map(b => b.projectUri)).toEqual([URI_A])
 })
 
 test('CONTENDED count reflects 2+ convs on one target', () => {
