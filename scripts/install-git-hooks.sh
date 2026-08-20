@@ -5,10 +5,11 @@
 #   scripts/install-git-hooks.sh --uninstall [repo-path]
 #   scripts/install-git-hooks.sh --status [repo-path]
 #
-# Two hooks, one installer:
-#   post-commit -- the commit ledger (every commit -> broker, attributed).
-#                  Also runs the fallow merge audit when HEAD is a MERGE commit.
-#   post-merge  -- the fallow merge audit (clean and fast-forward merges).
+# Two hooks, one installer, and BOTH blocks live in BOTH hooks:
+#   post-commit -- the commit ledger (every commit -> broker, attributed),
+#                  plus the fallow merge audit when HEAD is a MERGE commit.
+#   post-merge  -- the fallow merge audit (clean and fast-forward merges),
+#                  plus the commit ledger when HEAD is a MERGE commit.
 #
 # Idempotent. Hooks live in the git COMMON dir, so installing once covers the
 # main checkout AND every worktree under .claude/worktrees/ -- verified:
@@ -26,14 +27,20 @@
 # dispatcher that runs it as a SUBPROCESS -- its own shebang, its own exits, its
 # own failures, none of which can reach our blocks.
 #
-# ── WHY THE MERGE AUDIT NEEDS BOTH HOOKS ────────────────────────────────────
+# ── WHY BOTH BLOCKS NEED BOTH HOOKS ─────────────────────────────────────────
 # Verified empirically (see scripts/install-git-hooks.test.ts):
 #   clean `git merge --no-ff`            -> post-merge fires, post-commit does NOT
 #   fast-forward `git merge` / `git pull`-> post-merge fires, post-commit does NOT
 #   conflict + `git merge --continue`    -> post-commit fires, post-merge does NOT
 #   conflict + `git commit`              -> post-commit fires, post-merge does NOT
 # Wiring only post-merge would miss exactly the conflict-resolution path, which
-# is the path a fleet integrator hits most.
+# is the path a fleet integrator hits most. Wiring only post-commit -- which is
+# what the ledger did until gen 25 -- misses every merge that applied CLEANLY,
+# i.e. the commit that actually changes `main`. Same blind spot, same cause.
+#
+# The ledger block in post-merge records ONLY a HEAD with 2+ parents: post-merge
+# fires for a fast-forward too, and a fast-forward writes no commit here at all.
+# The guard is in the ledger source, keyed off CLAUDEWERK_LEDGER_EVENT.
 
 set -euo pipefail
 
@@ -141,6 +148,11 @@ case "$mode" in
     fi
     if installed post-merge "$MERGE_MARKER"; then
       echo "installed: $hooks_dir/post-merge (fallow merge audit)"
+      if grep -qF "$LEDGER_MARKER" "$hooks_dir/post-merge"; then
+        echo "           + commit ledger on merge commits"
+      else
+        echo "           MISSING the commit ledger -- a clean merge goes unrecorded; re-run the installer"
+      fi
       if [ -f "$hooks_dir/post-merge.pre-claudewerk" ]; then
         echo "  chained (runs first): $hooks_dir/post-merge.pre-claudewerk"
       fi
@@ -216,6 +228,19 @@ chmod +x "$hooks_dir/post-commit"
 preserve_foreign post-merge "$MERGE_MARKER"
 {
   dispatcher_preamble post-merge
+  # The ledger goes FIRST: it backgrounds a time-capped curl and returns
+  # immediately, while the audit below runs fallow synchronously for seconds.
+  printf '%s\n' "$LEDGER_MARKER"
+  printf '# `git post-commit` does NOT fire for a merge git completes on its own,\n'
+  printf '# so a ledger wired only to post-commit records the merges that happened\n'
+  printf '# to CONFLICT and no others. This is the other half.\n'
+  printf '#\n'
+  printf '# =merge makes the block below record only a HEAD with 2+ parents:\n'
+  printf '# post-merge also fires for a fast-forward, which creates no commit here\n'
+  printf '# -- those commits were authored elsewhere and are not ours to claim.\n'
+  printf 'CLAUDEWERK_LEDGER_EVENT=merge\n'
+  tail -n +2 "$LEDGER_SOURCE"
+  printf '\n%s\n\n' "$LEDGER_END"
   printf '%s\n' "$MERGE_MARKER"
   tail -n +2 "$MERGE_SOURCE"
   printf '%s\n' "$MERGE_END"
@@ -242,7 +267,7 @@ if [ "$(cd "$hooks_dir" && pwd -P)" != "$(cd "$common_dir" && pwd -P)/hooks" ]; 
   fi
 fi
 
-echo "installed commit-ledger hook:  $hooks_dir/post-commit"
+echo "installed commit-ledger hooks: $hooks_dir/post-commit (+ merge commits via post-merge)"
 echo "installed merge-audit hooks:   $hooks_dir/post-merge (+ merge commits via post-commit)"
 echo "covers: $(git rev-parse --path-format=absolute --git-common-dir) (main checkout + every linked worktree)"
 echo "disable without uninstalling: export RCLAUDE_COMMIT_LEDGER=0 / RCLAUDE_FALLOW_MERGE_WARN=0"
