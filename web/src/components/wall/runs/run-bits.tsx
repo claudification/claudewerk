@@ -14,6 +14,7 @@
  */
 
 import type { EpicLogEntry, EpicLogKind } from '@shared/epic-run-types'
+import type { RunVitalityView } from '@shared/epic-vitality'
 import { formatDurationShort } from '@/lib/status-style'
 import type { BeatTick, RunBuckets } from './run-model'
 
@@ -43,8 +44,20 @@ const BUCKETS: { key: keyof RunBuckets; label: string; tone?: string }[] = [
   { key: 'parked', label: 'parked', tone: 'var(--warning)' },
 ]
 
-export function RunTag({ armed }: { armed: boolean }) {
-  return <span className={armed ? 'wall-run-tag wall-run-tag-on' : 'wall-run-tag'}>{armed ? 'ARMED' : 'PAUSED'}</span>
+/**
+ * The run's state, in one word, from the SHARED derivation.
+ *
+ * It used to be a boolean -- ARMED or PAUSED -- fed from `status`, which meant a
+ * deadlocked run wearing `status: running` rendered ARMED, a finished run
+ * rendered PAUSED, and neither was true. Six words now, and DONE is one of them:
+ * a completed run stays on this pane and says so.
+ */
+export function RunTag({ view }: { view: RunVitalityView }) {
+  return (
+    <span className="wall-run-tag" data-vitality={view.vitality} title={view.why}>
+      {view.label}
+    </span>
+  )
 }
 
 export function NightTag() {

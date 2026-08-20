@@ -16,12 +16,25 @@
 
 import type { EpicLease } from '@shared/epic-lease'
 import type { EpicLogEntry } from '@shared/epic-run-types'
+import { isVitallyLive, type RunVitalityView, runVitality } from '@shared/epic-vitality'
 import type { NightshiftTaskMeta, NightshiftTaskStatus } from '@shared/nightshift-types'
 import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
 
-/** A run in one of these is one the sweep is supposed to be beating. */
+/**
+ * A run the sweep is supposed to be beating, and WHAT it is actually doing.
+ *
+ * Both answers come from `runVitality` (src/shared/epic-vitality.ts) rather than
+ * from `entry.status`. The status field is an intent nothing writes back down,
+ * so `status === 'running'` rendered this pane's tag as ARMED on a run that had
+ * spawned nothing for hours -- the same lie the header badge and the overseer
+ * window were telling at the same moment, which is why the derivation is shared.
+ */
 export function isRunLive(entry: EpicActivityEntry): boolean {
-  return entry.status === 'armed' || entry.status === 'running'
+  return isVitallyLive(entry)
+}
+
+export function runView(entry: EpicActivityEntry): RunVitalityView {
+  return runVitality(entry)
 }
 
 // ---------------------------------------------------------------------------
@@ -80,19 +93,23 @@ export interface RunStall {
 }
 
 /**
- * `stale` is the BROKER's call (`epic-active.ts`, two sweep ticks) and is taken
- * verbatim so every surface agrees on when a run stops looking alive.
+ * STALLED is now `runVitality`'s call, so this pane, the header badge and the
+ * overseer window cannot disagree about when a run stopped moving.
  *
- * The one case it cannot cover is a live run that has NEVER beaten: the broker's
- * test is `lastBeatAt !== null && ...`, so an armed epic the sweep never picked
- * up reports `stale: false` forever. That is the 2026-08-18 shape exactly -- a
- * run that looks fine and is not running -- so it is stalled here.
+ * ONE RULE CHANGED IN THE MOVE, deliberately. This used to call any live run
+ * with no beat at all STALLED, to catch the 2026-08-18 shape -- an armed epic
+ * the sweep never picked up. But the sweep runs every 45s, so that also shouted
+ * STALLED at every healthy run for its first three quarters of a minute. The
+ * shared rule splits the two: never beaten AND not in the armed set is stalled
+ * (nothing will ever pick it up), never beaten while armed is ARMED (it is
+ * waiting for a beat that is genuinely coming).
+ *
+ * `sinceMs` is still computed here because the banner prints the age.
  */
 export function runStall(entry: EpicActivityEntry, nowMs: number): RunStall {
   const at = entry.lastBeatAt ? Date.parse(entry.lastBeatAt) : Number.NaN
   const sinceMs = Number.isFinite(at) ? Math.max(0, nowMs - at) : null
-  if (!isRunLive(entry)) return { stalled: false, sinceMs }
-  return { stalled: sinceMs === null || entry.stale, sinceMs }
+  return { stalled: runVitality(entry).vitality === 'stalled', sinceMs }
 }
 
 // ---------------------------------------------------------------------------

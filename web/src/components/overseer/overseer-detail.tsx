@@ -6,9 +6,11 @@
  * working, what does the DAG think, and only then the logs.
  */
 
+import { beatStale, runVitality } from '@shared/epic-vitality'
 import type { EpicInspectResult } from '@shared/protocol'
 import { useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { cn } from '@/lib/utils'
 import { ago, Empty, Stat, StatusPill } from './overseer-bits'
 import { OverseerControls } from './overseer-controls'
 import { OverseerDag } from './overseer-dag'
@@ -18,18 +20,30 @@ import { OverseerBaton, OverseerBeats, OverseerDigest, type OverseerTab, Oversee
 /** Everything the heading DERIVES, in one place. Pulled out of the component
  *  because a header that is 90% `?.` and `??` reads as complicated when the only
  *  complicated thing about it is that a run may not exist yet. */
-export function headFacts(data: EpicInspectResult) {
+export function headFacts(data: EpicInspectResult, nowMs: number) {
   const run = data.run
   const maxGens = run?.maxGens ?? 0
   const gen = run?.gen ?? 0
+  const lastBeat = data.beats.at(-1)?.at ?? null
   return {
     run,
     gen,
     maxGens,
     pct: maxGens > 0 ? Math.min(100, Math.round((gen / maxGens) * 100)) : 0,
-    lastBeat: data.beats.at(-1)?.at ?? null,
+    lastBeat,
     target: run?.target ?? '-',
     concurrency: run?.concurrency ?? '-',
+    // THE SAME derivation the header badge and the wall use, fed from the inspect
+    // read instead of the activity feed. One function, three surfaces -- see
+    // src/shared/epic-vitality.ts for the lie it was written to stop.
+    vitality: runVitality({
+      status: run?.status ?? null,
+      inFlight: data.live.inFlight.length,
+      overseerAlive: data.live.overseerAlive,
+      armed: data.live.armed,
+      lastBeatAt: lastBeat,
+      stale: beatStale(lastBeat, nowMs),
+    }),
   }
 }
 
@@ -44,19 +58,27 @@ function RunHead({
   fetchedAt: number | null
   stale: boolean
 }) {
-  const { run, gen, maxGens, pct, lastBeat, target, concurrency } = headFacts(data)
+  const { gen, maxGens, pct, lastBeat, target, concurrency, vitality } = headFacts(data, nowMs)
 
   return (
     <div className="px-3.5 py-2.5 border-b border-border border-l-[3px] border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)] shrink-0">
       <div className="flex items-center gap-2.5">
         <h3 className="text-[15px] font-bold text-foreground truncate">{data.epicId}</h3>
-        <StatusPill status={run?.status ?? null} />
+        <StatusPill view={vitality} />
         <span className="flex-1" />
         <span className="text-meta text-fg-dim shrink-0">
           target <b className="text-foreground">{target}</b> . concurrency {concurrency}
         </span>
       </div>
       <div className="text-meta text-fg-dim truncate mt-0.5">{data.project}</div>
+      {/* THE PILL'S OWN JUSTIFICATION, always printed. "So I can see what the
+          fuck is going on" -- a one-word state with no reason is what let RUNNING
+          stand over a run that had spawned nothing for hours. */}
+      <div
+        className={cn('text-meta mt-1', vitality.vitality === 'stalled' ? 'text-destructive' : 'text-muted-foreground')}
+      >
+        {vitality.why}
+      </div>
       <div className="flex items-center gap-2.5 mt-2">
         <span className="text-meta text-muted-foreground shrink-0">GEN {gen}</span>
         <span className="flex-1 h-[3px] bg-border/70">

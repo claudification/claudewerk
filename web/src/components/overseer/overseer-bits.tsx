@@ -6,30 +6,35 @@
  * that otherwise grows a 400-line window component nobody can find anything in.
  */
 
+import type { RunVitality, RunVitalityView } from '@shared/epic-vitality'
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-/** Status -> how it should read at a glance. A strategy map rather than a chain:
- *  five branches on one key is the covenant's threshold. */
-const STATUS_TONE: Record<string, string> = {
-  armed: 'text-idle border-[color:var(--idle)]/45 bg-[color:var(--idle)]/10',
-  running: 'text-active border-[color:var(--active)]/45 bg-[color:var(--active)]/10',
+/**
+ * VITALITY -> how it should read at a glance.
+ *
+ * Keyed on the DERIVED vitality, never on `run.status`. The status field is an
+ * intent that nothing writes back down, so a pill keyed on it printed a green
+ * RUNNING over a run whose overseer was dead and whose seats had all ended.
+ * `runVitality` is the one derivation (src/shared/epic-vitality.ts); this map is
+ * only its colours.
+ */
+const VITALITY_TONE: Record<RunVitality, string> = {
+  working: 'text-active border-[color:var(--active)]/45 bg-[color:var(--active)]/10',
+  idle: 'text-idle border-[color:var(--idle)]/45 bg-[color:var(--idle)]/10',
+  stalled: 'text-destructive border-destructive/45 bg-destructive/10',
   paused: 'text-muted-foreground border-border bg-muted/10',
-  complete: 'text-active border-[color:var(--active)]/45 bg-[color:var(--active)]/10',
+  done: 'text-active border-[color:var(--active)]/45 bg-[color:var(--active)]/10',
   aborted: 'text-destructive border-destructive/45 bg-destructive/10',
+  unknown: 'text-fg-dim border-border',
 }
 
-const UNKNOWN_TONE = 'text-fg-dim border-border'
-
-export function StatusPill({ status }: { status: string | null }) {
+/** The pill carries its own explanation: the word alone is what let three
+ *  surfaces disagree about what "running" meant. */
+export function StatusPill({ view }: { view: RunVitalityView }) {
   return (
-    <span
-      className={cn(
-        'text-chrome uppercase px-1.5 py-0.5 border shrink-0',
-        status ? (STATUS_TONE[status] ?? UNKNOWN_TONE) : UNKNOWN_TONE,
-      )}
-    >
-      {status ?? 'no run'}
+    <span className={cn('text-chrome uppercase px-1.5 py-0.5 border shrink-0', VITALITY_TONE[view.vitality])}>
+      {view.label}
     </span>
   )
 }

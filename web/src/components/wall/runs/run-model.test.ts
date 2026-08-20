@@ -137,11 +137,20 @@ describe('stall detection', () => {
     expect(runStall(entry(), NOW)).toEqual({ stalled: false, sinceMs: 20_000 })
   })
 
-  it('STALLS a live run that has never beaten -- the case the broker flag cannot see', () => {
-    // `epic-active.ts` computes stale as `lastBeatAt !== null && ...`, so an
-    // armed epic the sweep never picked up reports stale:false forever. That is
-    // the 2026-08-18 shape: looks fine, is not running.
-    expect(runStall(entry({ lastBeatAt: null }), NOW)).toEqual({ stalled: true, sinceMs: null })
+  /**
+   * `epic-active.ts` computes stale as `lastBeatAt !== null && ...`, so an epic
+   * the sweep never picked up reports stale:false forever -- the 2026-08-18
+   * shape, looks fine and is not running. The shared rule still catches it, but
+   * only when nothing is armed to pick it up: a run that IS armed and has not
+   * beaten yet is simply waiting for a sweep that comes every 45s, and shouting
+   * STALLED at it was a lie of its own.
+   */
+  it('STALLS a never-beaten run that nothing is armed to pick up', () => {
+    expect(runStall(entry({ lastBeatAt: null, armed: false }), NOW)).toEqual({ stalled: true, sinceMs: null })
+  })
+
+  it('leaves a never-beaten ARMED run alone -- its first beat is genuinely coming', () => {
+    expect(runStall(entry({ lastBeatAt: null, armed: true }), NOW)).toEqual({ stalled: false, sinceMs: null })
   })
 
   it('never calls a paused run stalled -- a paused run is SUPPOSED to be quiet', () => {
@@ -149,7 +158,10 @@ describe('stall detection', () => {
   })
 
   it('treats an unparseable beat stamp as never beaten rather than as now', () => {
-    expect(runStall(entry({ lastBeatAt: 'not a date' }), NOW)).toEqual({ stalled: true, sinceMs: null })
+    expect(runStall(entry({ lastBeatAt: 'not a date', armed: false }), NOW)).toEqual({
+      stalled: true,
+      sinceMs: null,
+    })
   })
 })
 

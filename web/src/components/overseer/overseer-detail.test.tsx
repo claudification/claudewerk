@@ -67,18 +67,36 @@ function show(data: EpicInspectResult | null, extra: Partial<Parameters<typeof O
 afterEach(cleanup)
 
 describe('the run heading', () => {
-  it('names the epic, its status and the delivery target', () => {
+  /**
+   * The pill prints the DERIVED vitality, never `run.status`. This fixture is
+   * `status: 'armed'` with two live implementers, which is a run that is
+   * genuinely working -- and the point of the change is that the reverse case
+   * (`status: 'running'` with nothing alive) can no longer print RUNNING.
+   */
+  it('names the epic, what it is actually doing, and the delivery target', () => {
     show(inspect())
 
     expect(screen.getByText('duplo-help-connect')).toBeTruthy()
-    expect(screen.getByText('armed')).toBeTruthy()
+    expect(screen.getByText('RUNNING')).toBeTruthy()
+    expect(screen.getByText(/2 seat\(s\) working/)).toBeTruthy()
     expect(screen.getByText('merged')).toBeTruthy()
+  })
+
+  it('a live status with no seat and no armed entry is NOT reported as running', () => {
+    const data = inspect()
+    data.live.inFlight = []
+    data.live.armed = false
+    data.live.conversations = []
+    show(data)
+
+    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.getByText('STALLED')).toBeTruthy()
   })
 
   it('survives a run that has no artifact on disk', () => {
     show(inspect({ run: null }))
 
-    expect(screen.getByText('no run')).toBeTruthy()
+    expect(screen.getByText('NO RUN')).toBeTruthy()
     expect(screen.getByText(/of 0 max/)).toBeTruthy()
   })
 })

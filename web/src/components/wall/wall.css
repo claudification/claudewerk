@@ -815,9 +815,23 @@
 	padding: 0 4px;
 	color: var(--comment);
 }
-.wall-run-tag-on {
+/* Tone per DERIVED vitality, never per status field. The default above is the
+   quiet one (paused / unknown), so only the states that earn a colour take one:
+   work in the active hue, a stall in the destructive one, and DONE in the same
+   green as work because a finished run is good news, not an alarm. */
+.wall-run-tag[data-vitality='working'],
+.wall-run-tag[data-vitality='done'] {
 	color: var(--active);
 	border-color: color-mix(in oklch, var(--active) 45%, transparent);
+}
+.wall-run-tag[data-vitality='idle'] {
+	color: var(--idle);
+	border-color: color-mix(in oklch, var(--idle) 45%, transparent);
+}
+.wall-run-tag[data-vitality='stalled'],
+.wall-run-tag[data-vitality='aborted'] {
+	color: var(--destructive);
+	border-color: color-mix(in oklch, var(--destructive) 45%, transparent);
 }
 .wall-run-tag-night {
 	color: var(--event-prompt);

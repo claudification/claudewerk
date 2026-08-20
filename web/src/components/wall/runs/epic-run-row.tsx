@@ -15,6 +15,7 @@
  * else on the row is allowed to be louder.
  */
 
+import type { RunVitalityView } from '@shared/epic-vitality'
 import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
 import { formatDurationShort } from '@/lib/status-style'
@@ -27,12 +28,12 @@ import {
   batonTail,
   beatTicks,
   idleSentence,
-  isRunLive,
   type LeaseState,
   leaseState,
   type RunStall,
   runBuckets,
   runStall,
+  runView,
 } from './run-model'
 import type { EpicRunRowData } from './use-unattended-runs'
 
@@ -49,12 +50,12 @@ import type { EpicRunRowData } from './use-unattended-runs'
  */
 function RunHead({
   row,
-  live,
+  view,
   run,
   beats,
 }: {
   row: EpicRunRowData
-  live: boolean
+  view: RunVitalityView
   run: EpicRunSnapshot | null
   beats: readonly EpicBeatRecord[]
 }) {
@@ -65,7 +66,7 @@ function RunHead({
 
   return (
     <div className="wall-run-head">
-      <RunTag armed={live} />
+      <RunTag view={view} />
       <button
         type="button"
         title={`Filter the whole wall to ${row.projectName}`}
@@ -148,20 +149,23 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
   const { entry, project, epicId } = row
   const { data, fetchedAt, stale: readStale, refresh } = useOverseerInspect(project, epicId)
 
-  const live = isRunLive(entry)
+  const view = runView(entry)
   const stall = runStall(entry, nowMs)
   const inspect = data ?? null
   const run = inspect?.run ?? null
 
   return (
     <div className="wall-run" data-epic={epicId} data-stalled={stall.stalled || undefined}>
-      <RunHead row={row} live={live} run={run} beats={inspect?.beats ?? []} />
+      <RunHead row={row} view={view} run={run} beats={inspect?.beats ?? []} />
       <StallBanner stall={stall} />
+      {/* WHY the tag says what it says. The tag alone is what let three surfaces
+          each print a different confident word for the same run. */}
+      <div className="wall-run-why">{view.why}</div>
       <BucketStrip buckets={runBuckets(inspect)} />
       <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />
       <IdleWhy sentence={idleSentence(entry, inspect)} />
       <BatonTail entries={batonTail(inspect?.baton ?? [])} nowMs={nowMs} />
-      <RunActions project={project} epicId={epicId} run={run} live={live} onDone={refresh} />
+      <RunActions project={project} epicId={epicId} run={run} live={view.live} onDone={refresh} />
       <ReadAge stale={readStale} fetchedAt={fetchedAt} nowMs={nowMs} />
     </div>
   )
