@@ -3,7 +3,7 @@
  * an API guarantee instead of eleven separate good intentions.
  *
  * The wall has ONE query box and eleven panes that understand different things.
- * A commit river knows nothing about context pressure; typing `%>70` must leave
+ * A commit river knows nothing about context pressure; typing `%70` must leave
  * it showing every commit, not zero. The naive wiring (every pane runs the whole
  * query and hopes its rows happen to carry the field) fails exactly backwards:
  * a missing facet reads as "does not satisfy the constraint", so the pane goes

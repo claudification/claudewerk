@@ -133,7 +133,7 @@ describe('S2 plan usage', () => {
     rerender(<PlanUsagePane />)
     expect(document.querySelector('.wall-pane-count')?.textContent).toBe('1/2 · 5h')
 
-    // `%>70` is context pressure -- a per-conversation fact this pane never
+    // `%70` is context pressure -- a per-conversation fact this pane never
     // declared. It must leave the pane FULL, not empty it.
     useWallFilterStore.getState().setRaw('%70')
     rerender(<PlanUsagePane />)
