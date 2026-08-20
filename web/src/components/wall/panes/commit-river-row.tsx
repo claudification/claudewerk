@@ -17,7 +17,7 @@
 import { haptic } from '@/lib/utils'
 import type { RiverRow } from '@/lib/wall/commit-river'
 import { ProjectTag } from '../../project-tag'
-import { CopyIconButton } from '../../ui/copy-icon-button'
+import { WallCopyButton } from '../wall-copy-button'
 import { navigateFromWall } from '../wall-navigate'
 import { hoverCommitRow, leaveWallRow } from '../wall-row-hover'
 
@@ -84,8 +84,9 @@ export function CommitRiverRow({ row }: { row: RiverRow }) {
       </span>
       {/* THE FULL SHA, not the rendered line and not the seven characters on
           screen -- a copied hash you have to re-expand is a copy button that
-          wasted your time. */}
-      <CopyIconButton text={row.hash} title={`Copy the sha ${row.shortHash}`} className="wall-river-copy" />
+          wasted your time. The wall's own button, not the generic one: this is
+          the surface where a copy that silently failed is worst. */}
+      <WallCopyButton text={row.hash} label={`the sha ${row.shortHash}`} className="wall-river-copy" />
     </div>
   )
 }

@@ -436,6 +436,52 @@
 	color: var(--comment);
 	font-size: 10px;
 }
+/* ---------- the universal copy affordance ----------
+   ONE class for the pane header and every row that holds a value.
+
+   FADED, NEVER UNMOUNTED. It is in the DOM at all times and only its opacity
+   moves, so keyboard focus reaches it on a row nobody is hovering -- this card
+   is explicit that copy is not a hover-only affordance. `:focus-visible` pins it
+   open for exactly that path.
+
+   The hover trigger is the nearest thing with `.group`-like intent: the pane
+   head, or the row wrapper each pane already gives its rows. A failed copy stays
+   at full opacity in the alert colour until it settles -- a refusal you have to
+   hover to see is a refusal that was swallowed. */
+.wall-cbtn {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 3px;
+	border-radius: 3px;
+	color: var(--comment);
+	opacity: 0;
+	transition: opacity 0.12s ease, color 0.12s ease;
+}
+.wall-pane-head:hover .wall-cbtn,
+.wall-river-row:hover .wall-cbtn,
+.wall-att:hover .wall-cbtn,
+.group\/host:hover .wall-cbtn,
+.group\/pulserow:hover .wall-cbtn,
+.wall-cbtn:focus-visible {
+	opacity: 1;
+}
+.wall-cbtn:hover {
+	color: var(--foreground);
+	background: var(--surface-inset);
+}
+.wall-cbtn[data-copy-state='copied'] {
+	opacity: 1;
+	color: var(--success);
+}
+.wall-cbtn[data-copy-state='failed'] {
+	opacity: 1;
+	color: var(--destructive);
+}
+.wall-vitals-copy,
+.wall-att-copy {
+	align-self: center;
+}
 /* ---------- the staleness contract ----------
    Read from three metres away with no cursor and no chrome, so it is a WORD in
    the alert colour, not a dot and not a tooltip. It sits directly after the

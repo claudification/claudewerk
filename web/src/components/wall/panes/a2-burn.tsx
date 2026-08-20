@@ -41,10 +41,13 @@ import {
   startOfLocalDay,
 } from '@/lib/wall/burn-splits'
 import { useWallFilter, useWallFilterStore, type WallAxis } from '@/lib/wall/filter'
+import { burnReport } from '@/lib/wall/stat-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { BurnBars } from '../burn/burn-bars'
-import { BurnLive } from '../burn/burn-live'
+import { BURN_RATE_READING, BurnLive } from '../burn/burn-live'
 import { BurnTiles } from '../burn/burn-tiles'
 import { WallPane } from '../wall-pane'
+import { wallReading } from '../wall-reading-bus'
 
 const PROJECT_AXES: readonly WallAxis[] = ['text', 'project', 'cost']
 const FEATURE_AXES: readonly WallAxis[] = ['text']
@@ -89,11 +92,35 @@ export default function BurnPane() {
    *  this tree and it is not in this file. */
   const pickProject = (bar: BurnBar) => useWallFilterStore.getState().toggleProject(bar.label)
 
+  const view = useWallReportView()
+  const cap = capState(capUsd, feed.monthUsd ?? 0)
+  /** Read at CLICK time, not at render: `BurnLive` republishes the rate every
+   *  second and the pane must not re-render with it. */
+  const report = () =>
+    burnReport(
+      {
+        rate: wallReading(BURN_RATE_READING)?.value ?? '--',
+        todayUsd: model.todayUsd,
+        monthUsd: feed.monthUsd,
+        cap,
+        projects: restrictSplit(projects.rows),
+        features: restrictSplit(features.rows),
+        window: WINDOW,
+      },
+      view,
+    )
+
   return (
-    <WallPane title="BURN" code="A2" count={`${projects.matched}/${projects.total} · ${WINDOW}`} stale={feed.stale}>
+    <WallPane
+      title="BURN"
+      code="A2"
+      count={`${projects.matched}/${projects.total} · ${WINDOW}`}
+      stale={feed.stale}
+      report={report}
+    >
       <div className="wall-burn">
         <BurnLive />
-        <BurnTiles todayUsd={model.todayUsd} monthUsd={feed.monthUsd} cap={capState(capUsd, feed.monthUsd ?? 0)} />
+        <BurnTiles todayUsd={model.todayUsd} monthUsd={feed.monthUsd} cap={cap} />
         <BurnBars
           title="PROJECTS"
           window={WINDOW}

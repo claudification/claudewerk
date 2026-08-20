@@ -26,8 +26,10 @@
 
 import { useMemo } from 'react'
 import { useWallChannel } from '@/hooks/use-wall-channel'
+import { planUsageReport } from '@/lib/wall/stat-reports'
 import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { PlanChart } from '../plan/plan-chart'
 import { buildPlanLines } from '../plan/plan-model'
 import { PlanRows } from '../plan/plan-rows'
@@ -52,9 +54,19 @@ export default function PlanUsagePane() {
     title: line.profile,
     ...(line.node ? { host: line.node } : {}),
   }))
+  const view = useWallReportView()
 
   return (
-    <WallPane title="PLAN USAGE" code="S2" count={`${matched}/${total} · 5h`} maxHeight="30%" rewind="series">
+    <WallPane
+      title="PLAN USAGE"
+      code="S2"
+      count={`${matched}/${total} · 5h`}
+      maxHeight="30%"
+      rewind="series"
+      // `now` is the CHART's right edge, so the pasted reset countdown is
+      // measured against the same moment the chart is drawn at.
+      report={() => planUsageReport(rows, now, view)}
+    >
       {/* The one case `WallPaneEmpty` genuinely cannot cover: rewound past every
           sample the series holds, this pane HAS a history and simply does not
           reach that far, which is a different sentence from "no feed yet". */}

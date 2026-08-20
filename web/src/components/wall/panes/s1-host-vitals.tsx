@@ -29,7 +29,9 @@ import { useWallChannel } from '@/hooks/use-wall-channel'
 // substrate can move a file without eleven panes noticing.
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
 import { hostVitalsAtCursor, hostVitalsRows } from '@/lib/wall/host-vitals'
+import { hostVitalsReport } from '@/lib/wall/stat-reports'
 import { useWallCursor } from '@/lib/wall/use-wall-cursor'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { WallHistoryGap } from '../wall-history-gap'
 import { WallPane } from '../wall-pane'
 import { HostVitalsRowView } from './host-vitals-row'
@@ -47,9 +49,16 @@ export default function HostVitalsPane() {
   const rows = useMemo(() => hostVitalsAtCursor(hostVitalsRows(hosts, now), offsetMs, now), [hosts, now, offsetMs])
 
   const { rows: shown, matched, total } = useWallFilter(rows, AXES, r => ({ title: r.alias, host: r.alias }))
+  const view = useWallReportView()
 
   return (
-    <WallPane title="HOST VITALS" code="S1" count={`${matched}/${total}`} rewind="series">
+    <WallPane
+      title="HOST VITALS"
+      code="S1"
+      count={`${matched}/${total}`}
+      rewind="series"
+      report={() => hostVitalsReport(shown, view)}
+    >
       {shown.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {/* Three different silences, three different sentences. Rewound past

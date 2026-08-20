@@ -25,6 +25,8 @@
 import { useMemo } from 'react'
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
 import { fleetPills, type SotuBlock, sotuBlocks } from '@/lib/wall/sheaf-rows'
+import { sotuReport } from '@/lib/wall/stat-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { ProjectTag } from '../../project-tag'
 import { useProjectLook } from '../use-project-look'
 import { useWallSheafFeed, useWallSheafStore } from '../use-wall-sheaf'
@@ -97,9 +99,17 @@ export default function SotuPane() {
   // The response's own stamp, so an age is measured against the data rather than
   // against a clock this pane would have to tick for no other reason.
   const now = data?.generatedAt ?? 0
+  const view = useWallReportView()
 
   return (
-    <WallPane title="STATE OF THE UNION" code="A4" hideInAmbient count={`${matched}/${total}`} stale={stale}>
+    <WallPane
+      title="STATE OF THE UNION"
+      code="A4"
+      hideInAmbient
+      count={`${matched}/${total}`}
+      stale={stale}
+      report={() => sotuReport(pills, rows, view)}
+    >
       {pills.length > 0 && (
         <div className="wall-sotu-pills">
           {pills.map(p => (

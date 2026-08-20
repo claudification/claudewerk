@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { pulseAge } from '@/lib/pulse/action-text'
 import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
 import { isAttentionBand } from '@/lib/pulse/bands'
@@ -26,6 +26,9 @@ interface PulseTideViewProps {
   activeId: string | null
   onSelect: (row: PulseRow) => void
   onHover?: (row: PulseRow, event: React.MouseEvent<HTMLElement>) => void
+  /** A per-row control rendered BESIDE the row button -- the wall's copy
+   *  affordance. Absent on the palette, which stays as it was. */
+  rowAction?: (row: PulseRow) => ReactNode
 }
 
 /** An age boundary in the stream ("1h", "today"), drawn between rows. */
@@ -44,18 +47,21 @@ function TideRow({
   active,
   onSelect,
   onHover,
+  action,
 }: {
   row: PulseRow
   active: boolean
   onSelect: () => void
   onHover?: (event: React.MouseEvent<HTMLElement>) => void
+  /** SIBLING of the button, never a child -- the row IS a button. */
+  action?: ReactNode
 }) {
   const style = PULSE_BAND_STYLE[row.band]
   // Both attention bands widen the gutter and carry the glyph — the tide is a
   // time axis, and the point of the gutter is that you can find what wants you
   // without reading a single row.
   const needs = isAttentionBand(row.band)
-  return (
+  const button = (
     <button
       type="button"
       data-active={active}
@@ -63,6 +69,7 @@ function TideRow({
       onMouseEnter={onHover}
       className={cn(
         'w-full grid grid-cols-[52px_14px_minmax(0,1fr)] items-baseline text-left transition-colors',
+        action && 'pr-7',
         active ? 'bg-primary/15' : 'hover:bg-primary/10',
       )}
     >
@@ -112,9 +119,17 @@ function TideRow({
       </span>
     </button>
   )
+
+  if (!action) return button
+  return (
+    <div className="relative group/pulserow">
+      {button}
+      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center">{action}</span>
+    </div>
+  )
 }
 
-export function PulseTideView({ fleet, activeId, onSelect, onHover }: PulseTideViewProps) {
+export function PulseTideView({ fleet, activeId, onSelect, onHover, rowAction }: PulseTideViewProps) {
   // One stream, freshest first — band order is irrelevant here by design.
   const rows = [...fleet.flat].sort((a, b) => a.ageMs - b.ageMs)
   if (!rows.length) {
@@ -140,6 +155,7 @@ export function PulseTideView({ fleet, activeId, onSelect, onHover }: PulseTideV
               active={row.id === activeId}
               onSelect={() => onSelect(row)}
               onHover={onHover ? event => onHover(row, event) : undefined}
+              action={rowAction?.(row)}
             />
           </Fragment>
         )

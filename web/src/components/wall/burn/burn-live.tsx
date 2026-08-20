@@ -27,9 +27,14 @@ import {
 } from '@/lib/wall/burn'
 import { formatRate } from '@/lib/wall/burn-splits'
 import { useWallClock } from '../use-wall-clock'
+import { usePublishReading } from '../wall-reading-bus'
 import { BurnSparkline } from './burn-sparkline'
 
 const WINDOW_MIN = Math.round(BURN_WINDOW_MS / 60_000)
+
+/** Reading key for the live rate. Exported so A2 reads the same slot this
+ *  writes, rather than two files agreeing on a string literal. */
+export const BURN_RATE_READING = 'a2-rate'
 
 export function BurnLive() {
   const { pulse, at } = useWallChannel()
@@ -50,6 +55,12 @@ export function BurnLive() {
   const reading = burnReading(acc.current, now)
   const buckets = burnSparkline(acc.current, now)
   const measuring = reading.usdPerHour === null
+
+  // A2's copy button needs the headline, and the headline is folded HERE -- the
+  // accrual is a ref inside this component precisely so the rest of the pane is
+  // not re-rendered at frame cadence. Publishing the rendered string keeps the
+  // paste and the screen from rounding differently. See `wall-reading-bus.ts`.
+  usePublishReading(BURN_RATE_READING, { label: 'RATE', value: formatRate(reading.usdPerHour) })
 
   return (
     <div className="wall-burn-live">

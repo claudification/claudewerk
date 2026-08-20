@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { pulseAge } from '@/lib/pulse/action-text'
 import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
 import type { PulseQuery } from '@/lib/pulse/filter'
@@ -79,6 +80,16 @@ interface PulseRowProps {
   /** The event carries the row's own element -- a hover PREVIEW has to anchor
    *  to it, and a parent that only hears "row 3" cannot find it in the DOM. */
   onHover?: (event: React.MouseEvent<HTMLElement>) => void
+  /**
+   * A control that rides this row without being part of the click target -- the
+   * wall's copy affordance is the only caller.
+   *
+   * It is a SIBLING of the button, never a child, because the row IS a
+   * `<button>` and a button inside a button is invalid HTML with an
+   * unpredictable click target. The wrapper only exists when this is passed, so
+   * the palette and the strip render exactly the DOM they did before.
+   */
+  action?: ReactNode
 }
 
 /**
@@ -91,14 +102,14 @@ interface PulseRowProps {
  * viewport concern belongs in a media query, where it cannot be handed the
  * wrong value.
  */
-export function PulseRowItem({ row, query, active = false, onSelect, onHover }: PulseRowProps) {
+export function PulseRowItem({ row, query, active = false, onSelect, onHover, action }: PulseRowProps) {
   const style = PULSE_BAND_STYLE[row.band]
   const age = pulseAge(row.ageMs)
   // Both attention bands get the mobile card treatment: they are the two the
   // surface exists to make unmissable.
   const asCard = row.band === 'needs' || row.band === 'blocked'
 
-  return (
+  const button = (
     <button
       type="button"
       data-active={active}
@@ -106,6 +117,8 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover }: 
       onMouseEnter={onHover}
       className={cn(
         'w-full text-left transition-colors flex items-baseline gap-2.5 px-3 py-1.5 border-l-2 border-transparent',
+        // Room for the action, so it lands beside the age instead of on top of it.
+        action && 'pr-8',
         active ? cn('bg-primary/15', style.border) : 'hover:bg-primary/10',
         asCard && cn('max-sm:block max-sm:rounded-lg max-sm:border max-sm:border-l-[3px]', style.bg, style.border),
         asCard && 'max-sm:relative max-sm:mx-2 max-sm:mb-1.5 max-sm:px-3 max-sm:py-2.5 max-sm:w-auto',
@@ -143,5 +156,13 @@ export function PulseRowItem({ row, query, active = false, onSelect, onHover }: 
         {age}
       </span>
     </button>
+  )
+
+  if (!action) return button
+  return (
+    <div className="relative group/pulserow">
+      {button}
+      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center">{action}</span>
+    </div>
   )
 }

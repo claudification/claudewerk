@@ -21,7 +21,9 @@
 import { ProjectTag } from '@/components/project-tag'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
+import { attentionRowValue } from '@/lib/wall/pane-reports'
 import type { AttentionEntry } from './attention-entries'
+import { WallCopyButton } from './wall-copy-button'
 import { navigateFromWall } from './wall-navigate'
 
 export function AttentionRow({ entry, index, now }: { entry: AttentionEntry; index?: number; now: number }) {
@@ -51,6 +53,14 @@ export function AttentionRow({ entry, index, now }: { entry: AttentionEntry; ind
         <span className="wall-att-wait" title={`waiting since ${new Date(entry.since).toLocaleTimeString()}`}>
           {waited}
         </span>
+        {/* THE ASK, whole. The question is what you paste when you go and find
+            out what the answer should be, and the row already clips its detail
+            block -- so the value comes from the entry, never from the <pre>. */}
+        <WallCopyButton
+          text={() => attentionRowValue(entry, Math.max(0, now - entry.since))}
+          label="the ask"
+          className="wall-att-copy"
+        />
       </div>
 
       <p className="wall-att-q">{entry.question}</p>

@@ -147,9 +147,10 @@ describe('S1 host vitals', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     mount([host()])
 
-    fireEvent.click(screen.getByLabelText('Copy studio vitals'))
+    const button = screen.getByLabelText('Copy studio vitals')
+    fireEvent.click(button)
     expect(writeText).toHaveBeenCalledWith('studio  cpu 42%  ram 61%  disk 99%  load 3.20/12  convs 7  sampled 0s ago')
-    await waitFor(() => expect(screen.getByText('copied')).toBeTruthy())
+    await waitFor(() => expect(button.getAttribute('data-copy-state')).toBe('copied'))
   })
 
   it('says the series is still filling rather than drawing a fake flatline', () => {

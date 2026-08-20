@@ -26,8 +26,11 @@ import { PULSE_BAND_STYLE } from '@/lib/pulse/band-style'
 import { cn } from '@/lib/utils'
 import { WALL_AXES } from '@/lib/wall/axes'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
+import { pulseReport, pulseRowValue } from '@/lib/wall/pane-reports'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { handleChipCapture } from '../wall-chip-capture'
+import { WallCopyButton } from '../wall-copy-button'
 import { navigateFromWall } from '../wall-navigate'
 import { WallPane } from '../wall-pane'
 import { wallPulseFleet } from '../wall-pulse-fleet'
@@ -50,7 +53,7 @@ export default function PulsePane() {
   // must not also run for every unrelated store write on the surface.
   const fleet = useMemo(() => wallPulseFleet(base, rows, expired.rows, query), [base, rows, expired.rows, query])
 
-  const view = useWallPulseStore(s => s.view)
+  const pulseView = useWallPulseStore(s => s.view)
   const setView = useWallPulseStore(s => s.setView)
   const selectedId = useWallPulseStore(s => s.selectedId)
   const select = useWallPulseStore(s => s.select)
@@ -76,12 +79,18 @@ export default function PulsePane() {
   }
   const onHover = (row: PulseRow, event: React.MouseEvent<HTMLElement>) => hoverPulseRow(row, event.currentTarget)
   const blocked = fleet.totals.blocked
+  const view = useWallReportView()
+
+  /** THE ROW'S OWN VALUE: everything the 407px line had to drop -- model, host,
+   *  cost, context pressure -- not the truncated action text on screen. */
+  const rowCopy = (row: PulseRow) => <WallCopyButton text={() => pulseRowValue(row)} label={row.title} />
 
   return (
     <WallPane
       title="PULSE"
       code="P1"
       grow
+      report={() => pulseReport(fleet, view)}
       // Every row carries `ageMs` (time since its last turn), so `useWallFilter`
       // has already dropped the conversations whose last turn is NEWER than the
       // cursor -- what is left is the fleet as it stood then.
@@ -97,8 +106,8 @@ export default function PulsePane() {
       }
       tabs={
         <div className="flex gap-[2px]">
-          <WallTab label="bands" active={view === 'bands'} onPick={() => setView('bands')} />
-          <WallTab label="tide" active={view === 'tide'} onPick={() => setView('tide')} />
+          <WallTab label="bands" active={pulseView === 'bands'} onPick={() => setView('bands')} />
+          <WallTab label="tide" active={pulseView === 'tide'} onPick={() => setView('tide')} />
         </div>
       }
     >
@@ -108,8 +117,14 @@ export default function PulsePane() {
           moving between two rows is a leave and an enter, and the layer's own
           pointerover rule already handles that without a flicker. */}
       <div onClickCapture={handleChipCapture} onMouseLeave={leaveWallRow}>
-        {view === 'tide' ? (
-          <PulseTideView fleet={fleet} activeId={selectedId} onSelect={onSelect} onHover={onHover} />
+        {pulseView === 'tide' ? (
+          <PulseTideView
+            fleet={fleet}
+            activeId={selectedId}
+            onSelect={onSelect}
+            onHover={onHover}
+            rowAction={rowCopy}
+          />
         ) : (
           <PulseBandsView
             fleet={fleet}
@@ -117,6 +132,7 @@ export default function PulsePane() {
             onSelect={onSelect}
             onHover={onHover}
             onRevealManaged={revealManaged}
+            rowAction={rowCopy}
           />
         )}
       </div>

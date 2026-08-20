@@ -9,6 +9,11 @@
  */
 
 import type { ReactNode } from 'react'
+import { usePublishReading } from '../wall-reading-bus'
+
+/** Reading-key namespace for P4's tiles. Exported so the pane folds exactly the
+ *  slots this shell writes and never another publisher's. */
+export const FLEET_READING_PREFIX = 'p4-'
 
 interface FleetKpiProps {
   label: string
@@ -26,6 +31,24 @@ interface FleetKpiProps {
 export function FleetKpi({ label, value, unit, sub, stale, children }: FleetKpiProps) {
   const known = value != null
   const marked = known && stale === true
+
+  /**
+   * P4's copy button reads what the tiles are showing, and each tile owns its
+   * own feed -- the pane holds none of the four numbers. Publishing from the
+   * shared shell rather than from four tiles is what makes it impossible for the
+   * fifth tile to forget, and the unmount clean-up is what keeps a filtered-away
+   * tile out of the report. See `wall-reading-bus.ts`.
+   *
+   * A non-string `sub` is dropped rather than stringified: `[object Object]` in
+   * a paste is worse than the caption being absent.
+   */
+  usePublishReading(`${FLEET_READING_PREFIX}${label}`, {
+    label,
+    value: known && unit ? `${value}${unit}` : value,
+    ...(typeof sub === 'string' ? { sub } : {}),
+    ...(marked ? { stale: true } : {}),
+  })
+
   return (
     <div
       className="wall-kpi"

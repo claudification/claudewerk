@@ -9,8 +9,8 @@
 
 import { cn } from '@/lib/utils'
 import { formatAge, type HostVitalsRow, VITALS_COLOR, vitalsLine, vitalsTone } from '@/lib/wall/host-vitals'
+import { WallCopyButton } from '../wall-copy-button'
 import { HostSparkline } from './host-sparkline'
-import { VitalsCopyButton } from './vitals-copy-button'
 
 interface MeterProps {
   label: string
@@ -88,7 +88,10 @@ export function HostVitalsRowView({ row }: { row: HostVitalsRow }) {
             </span>
           )
         )}
-        <VitalsCopyButton text={line} label={`Copy ${row.alias} vitals`} />
+        {/* The WHOLE line, including the stale marker -- pasting `cpu 4%` from a
+            box that stopped reporting an hour ago is the lie the grey-out
+            prevents on screen and `vitalsLine` prevents on the clipboard. */}
+        <WallCopyButton text={line} label={`${row.alias} vitals`} className="wall-vitals-copy" />
       </div>
       <div className="flex items-center gap-2 mt-0.5">
         <HostSparkline history={row.cpuHistory} stale={row.stale} label={row.alias} />

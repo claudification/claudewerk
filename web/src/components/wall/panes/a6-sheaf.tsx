@@ -21,6 +21,8 @@ import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
 import { type SheafRow, sheafView, sheafWindowLabel } from '@/lib/wall/sheaf-rows'
+import { sheafReport } from '@/lib/wall/stat-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { useProjectLook } from '../use-project-look'
 import { SHEAF_WINDOWS, type SheafWindow, useWallSheafFeed, useWallSheafStore } from '../use-wall-sheaf'
 import { handleChipCapture } from '../wall-chip-capture'
@@ -73,6 +75,7 @@ export default function SheafPane() {
     project: r.projectName,
     costUsd: r.costUsd,
   }))
+  const reportView = useWallReportView()
 
   return (
     <WallPane
@@ -80,6 +83,7 @@ export default function SheafPane() {
       code="A6"
       count={`${matched}/${total}`}
       stale={stale}
+      report={() => sheafReport(view, rows, reportView)}
       tabs={
         <div className="flex gap-[2px]">
           {SHEAF_WINDOWS.map(w => (

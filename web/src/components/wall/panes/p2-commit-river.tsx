@@ -21,6 +21,8 @@ import { useMemo } from 'react'
 import { openCommitBrowser } from '@/hooks/use-commit-modals'
 import { type RiverRow, riverBands } from '@/lib/wall/commit-river'
 import { useWallFilter, type WallAxis, type WallRowFacets } from '@/lib/wall/filter'
+import { commitRiverReport } from '@/lib/wall/pane-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 import { CommitRiverRow } from './commit-river-row'
@@ -43,12 +45,21 @@ export default function CommitRiverPane() {
   const { rows: all, loading, hasMore, stale } = useRiverRows()
   const { rows, matched, total } = useWallFilter(all, AXES, facets)
   const bands = useMemo(() => riverBands(rows), [rows])
+  const view = useWallReportView()
 
   return (
     // `rewind="rows"`: a commit has a commit time, so rewinding is exactly "the
     // river as it read then" -- the commits that had not landed yet are dropped
     // by `useWallFilter`, never hidden by this pane.
-    <WallPane title="COMMIT RIVER" code="P2" grow count={`${matched}/${total}`} stale={stale} rewind="rows">
+    <WallPane
+      title="COMMIT RIVER"
+      code="P2"
+      grow
+      count={`${matched}/${total}`}
+      stale={stale}
+      rewind="rows"
+      report={() => commitRiverReport(rows, view)}
+    >
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {loading ? 'reading the ledger' : total === 0 ? 'no commit in the ledger' : 'no commit matches the filter'}

@@ -14,7 +14,9 @@
  * frontmatter). See `use-wall-pins.ts`.
  */
 
+import { pinnedReport } from '@/lib/wall/pane-reports'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { PinnedEpicRow } from '../pinned-epic-row'
 import { useWallPins } from '../use-wall-pins'
 import { WallPane } from '../wall-pane'
@@ -49,9 +51,17 @@ export default function PinnedEpicsPane() {
     // you remember, not always by the epic's own title.
     action: row.children.map(c => c.title).join(' '),
   }))
+  const view = useWallReportView()
 
   return (
-    <WallPane title="PINNED" code="A8" maxHeight="34%" count={`${matched}/${total} pinned`} stale={stale}>
+    <WallPane
+      title="PINNED"
+      code="A8"
+      maxHeight="34%"
+      count={`${matched}/${total} pinned`}
+      stale={stale}
+      report={() => pinnedReport(rows, view)}
+    >
       {refused && rows.length === 0 ? (
         <PinRefusal error={refused} />
       ) : rows.length === 0 ? (

@@ -11,6 +11,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { useWallCursor } from '@/lib/wall/use-wall-cursor'
+import { WallCopyButton } from './wall-copy-button'
 
 /**
  * WHAT THIS PANE CAN HONESTLY SHOW AT A PAST OFFSET.
@@ -37,8 +38,21 @@ interface WallPaneProps {
   count?: ReactNode
   /** Segmented control (BANDS/TIDE, 6h/24h/7d). */
   tabs?: ReactNode
-  /** The universal copy affordance, supplied by the copy card. */
-  copy?: ReactNode
+  /**
+   * THIS PANE, AS PASTEABLE TEXT. Called on click, never on render.
+   *
+   * REQUIRED, and that is the point -- the same trick `WallPaneEntry.feeds`
+   * plays on the registry. "Every pane copies a report" was a rule thirteen
+   * files each had to remember; as a required prop the next pane does not
+   * COMPILE until it says what it hands over, so the promise cannot rot by
+   * omission the way the copy SLOT that used to be here quietly did (it shipped
+   * with the shell and no pane ever filled it).
+   *
+   * Build it with `wallReport` and the builders in `lib/wall/pane-reports.ts` /
+   * `stat-reports.ts`, which stamp the cursor offset and the active filter, so a
+   * pasted report says what it was a view of.
+   */
+  report: () => string
   /** Take the leftover column height instead of sizing to content. */
   grow?: boolean
   /** Cap as a share of the column (the mockup's per-pane max-height). */
@@ -83,10 +97,10 @@ function WallPaneHead({
   code,
   count,
   tabs,
-  copy,
+  report,
   stale,
   blindLabel,
-}: Pick<WallPaneProps, 'title' | 'code' | 'count' | 'tabs' | 'copy' | 'stale'> & { blindLabel: string | null }) {
+}: Pick<WallPaneProps, 'title' | 'code' | 'count' | 'tabs' | 'report' | 'stale'> & { blindLabel: string | null }) {
   return (
     <div className="wall-pane-head">
       <h2 className="wall-pane-title">{title}</h2>
@@ -107,7 +121,11 @@ function WallPaneHead({
         <span className="wall-pane-count wall-blind-mark">{blindLabel}</span>
       )}
       {tabs}
-      {copy}
+      {/* BLIND MEANS NOTHING TO COPY. At an offset this pane has no history for
+          the body is replaced by a line saying so, and a copy button beside it
+          would hand over a report of rows that are not on screen -- the exact
+          lie `WallPaneBlind` exists to refuse, laundered through the clipboard. */}
+      {blindLabel === null && <WallCopyButton text={report} label={`${title} (${code})`} />}
     </div>
   )
 }
@@ -117,7 +135,7 @@ export function WallPane({
   code,
   count,
   tabs,
-  copy,
+  report,
   grow,
   maxHeight,
   hideInAmbient,
@@ -141,7 +159,7 @@ export function WallPane({
         code={code}
         count={count}
         tabs={tabs}
-        copy={copy}
+        report={report}
         stale={stale}
         blindLabel={blindLabel}
       />

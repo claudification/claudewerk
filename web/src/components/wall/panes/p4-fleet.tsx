@@ -21,7 +21,11 @@
  */
 
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
+import { fleetReport } from '@/lib/wall/stat-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { WallPane } from '../wall-pane'
+import { wallReadings } from '../wall-reading-bus'
+import { FLEET_READING_PREFIX } from './fleet-kpi'
 import { FleetHosts, FleetSocket } from './fleet-status-tiles'
 import { FleetTokenRate, FleetTokensDay } from './fleet-token-tiles'
 
@@ -37,9 +41,17 @@ const TILES = [
 
 export default function FleetPane() {
   const { rows, matched, total } = useWallFilter(TILES, AXES, t => ({ title: t.label }))
+  const view = useWallReportView()
 
   return (
-    <WallPane title="FLEET" code="P4" count={`${matched}/${total}`}>
+    // The report reads what the TILES published, at click time -- the pane holds
+    // none of the four numbers and must not start re-deriving them.
+    <WallPane
+      title="FLEET"
+      code="P4"
+      count={`${matched}/${total}`}
+      report={() => fleetReport(wallReadings(FLEET_READING_PREFIX), view)}
+    >
       {rows.length === 0 ? (
         <p className="wall-kpi-none">no tile matches the filter</p>
       ) : (

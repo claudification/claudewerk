@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import type { PulseBand } from '@/lib/pulse/bands'
 import { cn } from '@/lib/utils'
 import { PulseBandHead, PulseExpiredBar } from './pulse-band-head'
@@ -27,9 +27,20 @@ interface PulseBandsViewProps {
   board?: boolean
   /** Types `+over` into the query box. Absent on surfaces with no input. */
   onRevealManaged?: () => void
+  /** A per-row control rendered BESIDE the row button -- the wall's copy
+   *  affordance. Absent on the palette and the strip, which stay as they were. */
+  rowAction?: (row: PulseRow) => ReactNode
 }
 
-export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, onRevealManaged }: PulseBandsViewProps) {
+export function PulseBandsView({
+  fleet,
+  activeId,
+  onSelect,
+  onHover,
+  board,
+  onRevealManaged,
+  rowAction,
+}: PulseBandsViewProps) {
   const [unfolded, setUnfolded] = useState<ReadonlySet<PulseBand>>(() => new Set())
   const [showExpired, setShowExpired] = useState(false)
 
@@ -46,6 +57,7 @@ export function PulseBandsView({ fleet, activeId, onSelect, onHover, board, onRe
             active={row.id === activeId}
             onSelect={() => onSelect(row)}
             onHover={onHover ? event => onHover(row, event) : undefined}
+            action={rowAction?.(row)}
           />
         ))}
         {rows.length > limit && (

@@ -26,6 +26,8 @@
 import { useMemo } from 'react'
 import type { LedgerRow } from '@/lib/wall/card-ledger'
 import { useWallFilter, type WallAxis, type WallRowFacets } from '@/lib/wall/filter'
+import { cardLedgerReport } from '@/lib/wall/pane-reports'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 import { WallTab } from '../wall-tab'
@@ -53,12 +55,14 @@ export default function CardLedgerPane() {
 
   const inView = useMemo(() => (view === 'done' ? all.filter(row => row.isDone) : all), [all, view])
   const { rows, matched, total } = useWallFilter(inView, AXES, facets)
+  const reportView = useWallReportView()
 
   return (
     <WallPane
       title="CARD LEDGER"
       code="P3"
       maxHeight="32%"
+      report={() => cardLedgerReport(rows, reportView)}
       // A card move IS a timestamped event, so the cursor reads exactly: the
       // board as it stood. `useWallFilter` drops the moves that came later.
       rewind="rows"

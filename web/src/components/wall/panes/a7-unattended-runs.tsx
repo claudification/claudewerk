@@ -19,7 +19,9 @@
  * through the one door it cannot close for you.
  */
 
+import { runsReport } from '@/lib/wall/pane-reports'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { EpicRunRow } from '../runs/epic-run-row'
 import { NightshiftRunRow } from '../runs/nightshift-run-row'
 import { isRunLive } from '../runs/run-model'
@@ -54,6 +56,7 @@ export default function UnattendedRunsPane() {
 
   const armed = rows.filter(row => row.kind === 'epic' && isRunLive(row.entry)).length
   const shown = rows.slice(0, RUN_CAP)
+  const view = useWallReportView()
 
   return (
     <WallPane
@@ -62,6 +65,9 @@ export default function UnattendedRunsPane() {
       maxHeight="38%"
       count={`${matched}/${total} · ${armed} armed`}
       stale={stale}
+      // The cap goes into the builder rather than the sliced rows, so the report
+      // can count what it left out instead of dropping it in silence.
+      report={() => runsReport(rows, RUN_CAP, view)}
     >
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">

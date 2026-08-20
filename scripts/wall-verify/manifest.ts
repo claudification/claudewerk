@@ -273,7 +273,62 @@ export const ASPECTS: Aspect[] = [
     code: 'COPY',
     card: 'wall-copy-affordance',
     promise: 'Every pane copies a report, every row copies its own value',
-    artifacts: [{ path: WALL, needle: 'useWallCopy', as: 'the useWallCopy contract symbol' }],
+    /**
+     * THE PROBE THAT A STUB EXPORT TURNED GREEN.
+     *
+     * Until this card shipped, COPY was ONE grep for `useWallCopy` under
+     * `components/wall`. A file exporting that name and nothing else satisfied
+     * it -- the same false green W1 and W4 both carried, and both of their cards
+     * were told to fix their own probe for exactly this reason.
+     *
+     * So it asserts the CONTRACT instead of the symbol, in the four places a
+     * stub cannot fake:
+     *
+     *  1. the hook itself, and specifically the REPORTED failure path -- the two
+     *     implementations this card replaced each swallowed the rejection, which
+     *     is the one behaviour the card calls worse than an error
+     *  2. the STAMP, because a report that does not say which view it was taken
+     *     of is a claim about the fleet rather than about a pane
+     *  3. the two builder modules, named per pane -- `pulseReport` and
+     *     `hostVitalsReport` are one from each, and neither exists unless the
+     *     panes behind them hand over real rows
+     *  4. the SLOT being REQUIRED on the shared chrome. This is the structural
+     *     half: `report: () => string` is not optional, so the next pane does
+     *     not compile until it says what it copies. The old optional `copy`
+     *     ReactNode slot shipped with the shell and no pane ever filled it,
+     *     which is precisely how this promise rotted by omission for a whole
+     *     epic.
+     */
+    artifacts: [
+      { path: `${WALL_DIR}/use-wall-copy.ts`, needle: 'useWallCopy', as: 'the useWallCopy contract symbol' },
+      {
+        path: `${WALL_DIR}/use-wall-copy.ts`,
+        needle: 'showToast',
+        as: 'the REPORTED failure path -- a swallowed refusal is what this card exists to kill',
+      },
+      { path: 'web/src/lib/wall/report.ts', needle: 'wallReportStamp', as: 'the cursor + filter stamp' },
+      {
+        path: 'web/src/lib/wall/pane-reports.ts',
+        needle: 'pulseReport',
+        as: 'the per-pane report builders (event panes)',
+      },
+      {
+        path: 'web/src/lib/wall/stat-reports.ts',
+        needle: 'hostVitalsReport',
+        as: 'the per-pane report builders (reading panes)',
+      },
+      {
+        path: `${WALL_DIR}/wall-pane.tsx`,
+        needle: 'report: () => string',
+        as: 'the report slot REQUIRED on the shared chrome -- a pane cannot compile without one',
+      },
+      {
+        path: `${WALL_DIR}/wall-copy-button.tsx`,
+        needle: 'WallCopyButton',
+        as: 'the ONE row-copy implementation in the wall tree',
+      },
+    ],
+    test: { path: `${WALL_DIR}/wall-copy.test.tsx`, as: 'the failure-path + stamped-report proof' },
   },
   {
     code: 'RESILIENCE',

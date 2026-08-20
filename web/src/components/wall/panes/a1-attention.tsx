@@ -16,7 +16,9 @@
  */
 
 import { useNowTick } from '@/components/pulse/use-pulse-fleet'
+import { attentionReport } from '@/lib/wall/pane-reports'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
+import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { ATTENTION_KEYS, type AttentionEntry } from '../attention-entries'
 import { useAttentionKeys } from '../attention-keys'
 import { AttentionRow } from '../attention-row'
@@ -82,11 +84,19 @@ export default function AttentionPane() {
 
   const hard = rows.filter(r => r.tier === 'hard')
   const soft = rows.filter(r => r.tier === 'soft')
+  const view = useWallReportView()
 
   return (
     // `rewind="rows"`: an entry's `ageMs` runs from `since`, so rewinding leaves
     // exactly the seats that were ALREADY waiting at the cursor.
-    <WallPane title="BLOCKED ON YOU" code="A1" maxHeight="34%" count={`${matched}/${total} waiting`} rewind="rows">
+    <WallPane
+      title="BLOCKED ON YOU"
+      code="A1"
+      maxHeight="34%"
+      count={`${matched}/${total} waiting`}
+      rewind="rows"
+      report={() => attentionReport(rows, now, view)}
+    >
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0 ? 'nobody is waiting on you' : 'nothing waiting matches'}
