@@ -63,7 +63,7 @@ describe('useWallPins', () => {
     serve({ [ALPHA]: [row()] })
     const { result } = renderHook(() => useWallPins())
 
-    await waitFor(() => expect(result.current).toHaveLength(1))
+    await waitFor(() => expect(result.current.rows).toHaveLength(1))
 
     const ops = wire.sendBoardOp.mock.calls.map(([project, op]) => `${op}:${project}`)
     expect(ops.toSorted()).toEqual([`pinned:${ALPHA}`, `pinned:${BETA}`])
@@ -77,9 +77,9 @@ describe('useWallPins', () => {
     })
 
     const { result } = renderHook(() => useWallPins())
-    await waitFor(() => expect(result.current).toHaveLength(1))
+    await waitFor(() => expect(result.current.rows).toHaveLength(1))
 
-    expect(result.current[0]).toMatchObject({
+    expect(result.current.rows[0]).toMatchObject({
       project: ALPHA,
       projectName: 'ALPHA',
       projectIcon: '#',
@@ -94,14 +94,14 @@ describe('useWallPins', () => {
     })
 
     const { result } = renderHook(() => useWallPins())
-    await waitFor(() => expect(result.current).toHaveLength(2))
-    expect(result.current.map(r => r.epicId)).toEqual(['new', 'old'])
+    await waitFor(() => expect(result.current.rows).toHaveLength(2))
+    expect(result.current.rows.map(r => r.epicId)).toEqual(['new', 'old'])
   })
 
   it('keeps the last known watchlist when an ask FAILS, rather than blanking it', async () => {
     serve({ [ALPHA]: [row()] })
     const { result } = renderHook(() => useWallPins())
-    await waitFor(() => expect(result.current).toHaveLength(1))
+    await waitFor(() => expect(result.current.rows).toHaveLength(1))
 
     // The socket is gone, so every op rejects. A watchlist that emptied itself
     // on one bad round trip would read as "you are watching nothing".
@@ -117,18 +117,18 @@ describe('useWallPins', () => {
     })
 
     await waitFor(() => expect(wire.sendBoardOp.mock.calls.length).toBe(5))
-    expect(result.current).toHaveLength(1)
+    expect(result.current.rows).toHaveLength(1)
   })
 
   it('drops a project that left the registry without waiting for a reply', async () => {
     serve({ [ALPHA]: [row()], [BETA]: [row({ epicId: 'beta-epic' })] })
     const { result } = renderHook(() => useWallPins())
-    await waitFor(() => expect(result.current).toHaveLength(2))
+    await waitFor(() => expect(result.current.rows).toHaveLength(2))
 
     act(() => {
       useConversationsStore.setState({ conversationsById: { a: { id: 'a', project: ALPHA } as Conversation } })
     })
 
-    await waitFor(() => expect(result.current.map(r => r.epicId)).toEqual(['epic-the-wall']))
+    await waitFor(() => expect(result.current.rows.map(r => r.epicId)).toEqual(['epic-the-wall']))
   })
 })

@@ -17,7 +17,7 @@ import PinnedEpicsPane from './panes/a8-pinned'
 import type { WallPinRow } from './use-wall-pins'
 
 const pins = vi.hoisted(() => ({ rows: [] as WallPinRow[] }))
-vi.mock('./use-wall-pins', () => ({ useWallPins: () => pins.rows }))
+vi.mock('./use-wall-pins', () => ({ useWallPins: () => ({ rows: pins.rows, stale: false }) }))
 
 const PROJECT = 'claude:///Users/j/remote-claude'
 
