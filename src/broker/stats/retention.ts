@@ -10,23 +10,44 @@
  * THE POLICY, stated once:
  *
  *   age < 48h   raw, exactly as filed (~0.2 Hz per node metric)
- *   48h .. 90d  one row per (object, metric) per 5 MINUTES, the arithmetic mean
+ *   48h .. 90d  one row per (object, metric) per 5 MINUTES -- the arithmetic
+ *               MEAN for a gauge, the SUM for a flow
  *   age > 90d   deleted
+ *
+ * MEAN OR SUM IS NOT A PER-ROW CHOICE, it is a property of the METRIC, and it
+ * is declared exactly once as `STAT_FLOW_SUFFIX` in `shared/stats.ts` -- next
+ * to the metric names, because the unit suffix already answers it. A level
+ * (`_percent`) averages; a per-event delta (`_count`) sums, because the mean of
+ * the events in a window is "the typical event" rather than what the window
+ * cost, and the raws are deleted in the same transaction that writes the
+ * bucket. Nothing here re-decides that per call site; the SQL below asks the
+ * same question the constant defines.
  *
  * A 12-node fleet at 3 metrics per 5s is ~620k raw rows in 48h, and the 90-day
  * coarse tail is ~930k -- about 60 MB of a table that would otherwise be 28
  * million rows. That is the whole trade.
  *
- * IDEMPOTENT ON PURPOSE. Re-running the collapse over an already-collapsed range
- * averages each bucket's single surviving row with itself and rewrites it at the
- * same timestamp, so a sweep that runs twice (boot plus timer) changes nothing.
- * The one caveat: raw rows arriving LATE into an already-collapsed bucket are
- * averaged against a mean rather than against the raws it stood for, which
- * weights them wrongly. Nothing produces samples 48 hours late, and the
- * alternative -- a `count` column to weight by -- is a wide table for a case
- * that does not happen.
+ * IDEMPOTENT ON PURPOSE, AND FOR BOTH AGGREGATES. What carries this is the
+ * SINGLETON, not the choice of function: the collapse deletes every misaligned
+ * raw in the same transaction that writes the bucket row, so an already-swept
+ * bucket holds exactly ONE row and it sits on the aligned timestamp. Regrouping
+ * a single row gives AVG(x) = SUM(x) = x, rewritten where it already was, so a
+ * sweep that runs twice (boot plus timer) changes nothing. Aligned-ts is the
+ * signal that a bucket is already collapsed and it is sufficient -- SUM needed
+ * no new marker.
+ *
+ * LATE ARRIVALS, the one asymmetry. A raw landing 48 hours late into an
+ * already-collapsed bucket is folded against the surviving row rather than
+ * against the raws it stood for. For a FLOW that is CORRECT: sum(total-so-far,
+ * late) is the total. For a GAUGE it weights the newcomer as heavily as
+ * everything before it -- the known caveat, kept because nothing produces
+ * samples 48 hours late and the alternative, a `count` column to weight by, is
+ * a wide table for a case that does not happen. (A late raw landing exactly ON
+ * the bucket edge never gets folded at all: `INSERT OR IGNORE` upstream drops
+ * it against the bucket row's own timestamp.)
  */
 
+import { STAT_FLOW_SUFFIX } from '../../shared/stats'
 import { statsDb } from './db'
 
 /** Rows younger than this are kept exactly as filed. */
@@ -44,19 +65,19 @@ export const STAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 export const STAT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 export interface StatSweepResult {
-  /** Raw rows folded into 5-minute means. */
+  /** Raw rows folded into 5-minute buckets. */
   collapsed: number
   /** Rows past the 90-day bound, removed. */
   deleted: number
 }
 
 /**
- * Collapse everything older than `STAT_RAW_MS` into 5-minute means, then drop
+ * Collapse everything older than `STAT_RAW_MS` into 5-minute buckets, then drop
  * everything past `STAT_RETENTION_MS`. Returns what each half did.
  *
  * Both halves run inside one transaction: a crash between the INSERT of the
- * means and the DELETE of the raws would leave the bucket rows sitting on top of
- * the rows they summarise, and the next read would count that window twice.
+ * buckets and the DELETE of the raws would leave the bucket rows sitting on top
+ * of the rows they summarise, and the next read would count that window twice.
  */
 export function sweepStats(now: number = Date.now()): StatSweepResult {
   const db = statsDb()
@@ -69,21 +90,34 @@ export function sweepStats(now: number = Date.now()): StatSweepResult {
     let collapsed = 0
     let deleted = 0
     db.transaction(() => {
-      // Aligned rows are already means (or raws that happen to sit on a bucket
-      // edge); counting only the misaligned ones makes the report the number of
-      // rows this sweep actually removes from the raw tier.
+      // Aligned rows are already collapsed buckets (or raws that happen to sit
+      // on a bucket edge); counting only the misaligned ones makes the report
+      // the number of rows this sweep actually removes from the raw tier.
       collapsed = count(db, 'SELECT COUNT(*) AS n FROM stat_samples WHERE ts < $rawCutoff AND ts % $bucket != 0', {
         rawCutoff,
         bucket: STAT_BUCKET_MS,
       })
       if (collapsed > 0) {
+        // ONE statement, not one per aggregate: `metric` is a GROUP BY key, so
+        // the CASE is decided once per bucket and a row can never fall into
+        // both halves or neither -- which two WHERE-partitioned statements
+        // would have to be trusted not to do. The predicate is `endsWith`
+        // spelled in SQL, reading the SAME constant the rule is declared as.
         db.prepare(`
           INSERT OR REPLACE INTO stat_samples (object_id, metric, ts, value)
-          SELECT object_id, metric, ts - (ts % $bucket) AS bucket, AVG(value)
+          SELECT object_id, metric, ts - (ts % $bucket) AS bucket,
+                 CASE WHEN substr(metric, -$flowLen) = $flowSuffix
+                      THEN SUM(value)
+                      ELSE AVG(value) END
           FROM stat_samples
           WHERE ts < $rawCutoff
           GROUP BY object_id, metric, bucket
-        `).run({ bucket: STAT_BUCKET_MS, rawCutoff })
+        `).run({
+          bucket: STAT_BUCKET_MS,
+          rawCutoff,
+          flowLen: STAT_FLOW_SUFFIX.length,
+          flowSuffix: STAT_FLOW_SUFFIX,
+        })
         db.prepare('DELETE FROM stat_samples WHERE ts < $rawCutoff AND ts % $bucket != 0').run({
           rawCutoff,
           bucket: STAT_BUCKET_MS,
@@ -95,7 +129,7 @@ export function sweepStats(now: number = Date.now()): StatSweepResult {
     })()
 
     if (collapsed > 0 || deleted > 0) {
-      console.log(`[stats] sweep: collapsed ${collapsed} raw row(s) into 5m means, deleted ${deleted} past 90d`)
+      console.log(`[stats] sweep: collapsed ${collapsed} raw row(s) into 5m buckets, deleted ${deleted} past 90d`)
     }
     return { collapsed, deleted }
   } catch (err) {

@@ -23,16 +23,20 @@
 /**
  * A named thing that lives ON a node and can be measured.
  *
- * `node`, `profile` and `volume` are the three THE WALL produces today.
- * `conversation` and `process` are the obvious next two and are deliberately NOT
- * pre-declared -- see the note above.
+ * `node`, `profile`, `volume` and `conversation` are the four THE WALL produces
+ * today. `process` is the obvious next one and is deliberately NOT pre-declared
+ * -- see the note above.
  *
  * A `volume` is named by its MOUNT PATH, and that is the rare case where the
  * human-readable string genuinely is identity: a mount path is what a volume is
  * called, in the way a hostname is never what a box is called. `label` carries
  * the prettier version (`Fint` for `/Volumes/Fint`) and remains a label.
+ *
+ * A `conversation` lives on exactly one sentinel, so it hangs off a node like
+ * the other three: `name` is the conversation id (stable identity) and `label`
+ * is its title (mutable).
  */
-export type StatObjectKind = 'node' | 'profile' | 'volume'
+export type StatObjectKind = 'node' | 'profile' | 'volume' | 'conversation'
 
 /** Every metric the broker records. Units are part of the name, always. */
 export type StatMetric =
@@ -61,6 +65,52 @@ export type StatMetric =
    *  (`state === 'ok'`) -- an unauthed or errored profile has no number, and
    *  filing its placeholder 0 would draw a line that says "idle". */
   | 'plan_utilization_percent'
+  /* THE FOUR BELOW ARE FLOW, NOT GAUGE. Each is a per-EVENT delta -- what ONE
+   * assistant message billed -- where every `_percent` above is a level read at
+   * an instant. That distinction is what `STAT_FLOW_SUFFIX` below encodes, and
+   * `retention.ts` reads it: these collapse with SUM, the gauges with AVG.
+   * Nothing reads the four yet. */
+  /** Uncached input tokens billed by ONE assistant message. Producer:
+   *  `conversation-store/transcript-handlers/token-stats`. Disjoint from
+   *  `cache_read_count` and `cache_write_count` -- the three sum to the
+   *  message's total input, which is why none of them double-counts. */
+  | 'tokens_in_count'
+  /** Output tokens billed by ONE assistant message. Same producer. */
+  | 'tokens_out_count'
+  /** Prompt-cache READ tokens on ONE assistant message. Same producer. */
+  | 'cache_read_count'
+  /** Prompt-cache WRITE tokens on ONE assistant message, 5m and 1h summed.
+   *  The TTL split stays in `token_samples`; this is the coarser view. */
+  | 'cache_write_count'
+
+/**
+ * THE SUFFIX THAT MAKES A METRIC A FLOW RATHER THAN A GAUGE, and therefore how
+ * `retention.ts` is allowed to collapse it into a 5-minute bucket.
+ *
+ * Two different kinds of number live in one narrow table and they do not
+ * summarise the same way:
+ *
+ *   GAUGE -> the arithmetic MEAN. A level read at an instant. `cpu_percent` at
+ *   3pm is 40%; the mean of the levels inside a window is a coarser, honest
+ *   version of the same quantity, in the same unit.
+ *
+ *   FLOW -> the SUM. A per-EVENT delta. `tokens_in_count` is what ONE assistant
+ *   message billed. The mean of the messages in a window is "the typical
+ *   message", which is a DIFFERENT statistic from "what the window cost":
+ *   averaging divides the volume by however many events the bucket held (~28 on
+ *   this fleet, up to 108 in a busy one), and the raws it was computed from are
+ *   deleted in the same transaction, so nothing can reconstruct it afterwards.
+ *   Worse, the error tracks how busy the fleet was, so the coarse tail would
+ *   claim the quietest hours were the most expensive.
+ *
+ * THE UNIT SUFFIX ALREADY CARRIES THE ANSWER, so this is a RULE, not a second
+ * list to keep in sync with the union above. `_count` counts things that
+ * HAPPENED and is a flow; every other declared unit (`_percent`, `_bytes`,
+ * `_ms`) names a level and is a gauge. That keeps "adding a stat is one string"
+ * true -- a new `_count` metric is summed the day it is declared, with nothing
+ * else to remember and nothing to forget.
+ */
+export const STAT_FLOW_SUFFIX = '_count'
 
 /**
  * The thing being measured.
