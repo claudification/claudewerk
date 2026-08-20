@@ -61,6 +61,20 @@ interface WallPaneProps {
   children: ReactNode
 }
 
+/**
+ * WHAT THE HEAD PRINTS WHERE THE COUNT GOES, when this pane cannot be rewound.
+ * `null` means it can -- either it is LIVE, or it declared how.
+ *
+ * A hook rather than a branch inside `WallPane`, so the chrome reads as "here is
+ * the state, here is the markup" instead of deriving one from the other halfway
+ * down a JSX tree that already has four optional slots in it.
+ */
+function useBlindLabel(rewind: WallRewind | undefined): string | null {
+  const { rewound, label } = useWallCursor()
+  if (rewind !== undefined) return null
+  return rewound ? label : null
+}
+
 /** The head, split out because it is where every optional slot lives -- five of
  *  them, each with its own condition, which is enough branching to be worth
  *  reading on its own rather than inside the section's attributes. */
@@ -112,15 +126,14 @@ export function WallPane({
   children,
 }: WallPaneProps) {
   const style: CSSProperties | undefined = maxHeight ? { maxHeight } : undefined
-  const { rewound, label } = useWallCursor()
-  const blindLabel = rewound && rewind === undefined ? label : null
+  const blindLabel = useBlindLabel(rewind)
   return (
     <section
       className={cn('wall-pane', grow && 'wall-pane-grow', hideInAmbient && 'wall-hide-ambient')}
       style={style}
       data-pane={code}
       data-stale={stale ? 'true' : undefined}
-      data-blind={blindLabel === null ? undefined : 'true'}
+      data-blind={blindLabel ? 'true' : undefined}
       aria-label={title}
     >
       <WallPaneHead
@@ -132,9 +145,14 @@ export function WallPane({
         stale={stale}
         blindLabel={blindLabel}
       />
-      <div className="wall-pane-body">
-        {blindLabel === null ? children : <p className="wall-blind-line">no history at this offset</p>}
-      </div>
+      <div className="wall-pane-body">{blindLabel ? <WallPaneBlind /> : children}</div>
     </section>
   )
+}
+
+/** There is nothing behind this veil to squint at, so the body is REPLACED
+ *  rather than dimmed. The words matter: "no history at this offset" is a
+ *  statement about this pane, not about the fleet being quiet. */
+function WallPaneBlind() {
+  return <p className="wall-blind-line">no history at this offset</p>
 }
