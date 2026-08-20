@@ -27,6 +27,7 @@ import {
 import { isDaemonTransport } from './conversation-item-internals'
 import { ConversationRoleTag } from './conversation-role-tag'
 import { GhostAttachButton, GhostBadge, GhostStatusDot } from './ghost-attach'
+import { OverseerRunLine } from './overseer-run-line'
 import { useConversationRowData } from './row-hooks'
 import { SentinelProfileBadge } from './sentinel-profile-badge'
 import { StatusIndicator } from './status-indicator'
@@ -162,6 +163,9 @@ export const ConversationItemCompact = memo(function ConversationItemCompact({
       <SpawnedFromSubtext conversation={conversation} padClass="pl-4" />
       {/* The board card this row is working on. */}
       <ConversationCardLine conversation={conversation} />
+      {/* Overseer only: the RUN behind the row -- generation, load, beat age,
+          epic progress. Renders nothing for every other role. */}
+      <OverseerRunLine conversation={conversation} />
       {/* ── SUBTITLE: description / summary / recap (mobile prepends state prefix) ── */}
       {isEditingDescription ? (
         <div className="mt-0.5 pl-4">
