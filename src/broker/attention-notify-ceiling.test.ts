@@ -1,4 +1,11 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import {
+  cancelDialogNotify,
+  rearmAttentionNotify,
+  resetDialogNotifyTimer,
+  scheduleDialogNotify,
+} from './attention-notify'
+import { configurePushIo, resetPushIo } from './push'
 
 /**
  * THE KEEPALIVE CEILING.
@@ -11,21 +18,29 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
  *
  * These tests pin that the clock can be restarted but never beyond
  * MAX_NOTIFY_DEFERRAL_MS from the moment the dialog was shown.
+ *
+ * The push is captured through `configurePushIo`, NOT `mock.module('./push')`:
+ * a module mock is process-global and permanent in Bun, and a factory returning
+ * 2 of push.ts's 7 exports deletes the other 5 for every file linked after this
+ * one. See the seam's comment in `push.ts` and the class-wide guard in
+ * `module-mock-completeness.test.ts`.
  */
 
 const sent: Array<{ title: string; conversationId?: string }> = []
 
-mock.module('./push', () => ({
-  isPushConfigured: () => true,
-  sendPushToAll: async (p: { title: string; conversationId?: string }) => {
-    sent.push(p)
-    return { sent: 1, failed: 0 }
-  },
-}))
+// Scoped to this file's run, unlike a module mock: installed before these tests
+// and torn down after, so nothing downstream inherits the double.
+beforeAll(() => {
+  configurePushIo({
+    isPushConfigured: () => true,
+    sendPushToAll: async p => {
+      sent.push(p)
+      return { sent: 1, failed: 0 }
+    },
+  })
+})
 
-const { cancelDialogNotify, rearmAttentionNotify, resetDialogNotifyTimer, scheduleDialogNotify } = await import(
-  './attention-notify'
-)
+afterAll(resetPushIo)
 
 const CONV = 'conv-ceiling-test'
 const PARAMS = { conversationId: CONV, project: 'claude://default/tmp', dialogTitle: 'A/B test' }
