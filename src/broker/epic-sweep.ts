@@ -16,6 +16,7 @@
  * branch of it is exercised without a broker, a sentinel or a CC process.
  */
 
+import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { listArmedEpics } from './epic-registry'
 

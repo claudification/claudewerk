@@ -11,10 +11,12 @@
     // component imports it.
     "@shared/canvas-selection",
     "@shared/card-path",
+    "@shared/commit-ledger",
     "@shared/draw-dsl",
     "@shared/epic-cards",
     "@shared/epic-color",
     "@shared/epic-linked",
+    "@shared/pinned-epic-rows",
     "@shared/project-order-types",
     "@shared/project-task-types",
     "@shared/project-uri",
