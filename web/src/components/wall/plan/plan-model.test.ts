@@ -93,6 +93,24 @@ describe('segments: the line never spans what was not measured', () => {
     expect(lines[0]?.segments).toHaveLength(2)
   })
 
+  it('cuts the path where the broker SAID there was no measurement', () => {
+    // Two readings a normal sampling interval apart, so the time heuristic sees
+    // nothing wrong. The broker restarted between them and said so; the flag is
+    // the only thing that knows, and it outranks the clock.
+    const lines = buildPlanLines([
+      sample({ at: T0, utilization: 30 }),
+      sample({ at: T0 + 90_000, utilization: 80, gapBefore: true }),
+    ])
+
+    expect(lines[0]?.segments).toEqual([[{ at: T0, utilization: 30 }], [{ at: T0 + 90_000, utilization: 80 }]])
+  })
+
+  it('does not open an empty leading segment when the first sample declares a gap', () => {
+    const lines = buildPlanLines([sample({ at: T0, utilization: 30, gapBefore: true })])
+
+    expect(lines[0]?.segments).toEqual([[{ at: T0, utilization: 30 }]])
+  })
+
   it('joins readings that are merely a sampling interval apart', () => {
     const lines = buildPlanLines([
       sample({ at: T0, utilization: 30 }),
