@@ -1,6 +1,11 @@
-import type { WallCommitRow, WallFrame, WallPlanSample, WallPulseRow } from '@shared/wall'
+import type { CardMove, WallCommitRow, WallFrame, WallPlanSample, WallPulseRow } from '@shared/wall'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { getCardLedger } from './card-ledger-feed'
 import { applyWallFrame, getWallView, resetWallFrames, subscribe } from './wall-frame-store'
+
+function move(id: string): CardMove {
+  return { id, project: 'claude://default/p', title: id, from: 'open', to: 'done', ts: 1 }
+}
 
 function row(id: string, over: Partial<WallPulseRow> = {}): WallPulseRow {
   return { id, project: 'claude://default/p', title: id, status: 'active', lastActivity: 1, ...over }
@@ -101,6 +106,31 @@ describe('wall frame store', () => {
     expect(view.pulse).toHaveLength(0)
     expect(view.commits).toHaveLength(0)
     expect(view.gaps).toBe(0)
+  })
+})
+
+/**
+ * The section map's two edges -- the ones a straight `if (frame.x)` per section
+ * would get wrong, and which the `Record<WallSection, merge>` fold exists to
+ * keep right.
+ */
+describe('wall frame store: the section map', () => {
+  it('a FULL frame with no cards EMPTIES the ledger rather than leaving it', () => {
+    applyWallFrame(frame({ cards: [move('a'), move('b')] }))
+    expect(getCardLedger()).toHaveLength(2)
+
+    // The section is absent, not empty. A per-section presence check would skip
+    // the merge here and leave yesterday's moves under today's snapshot.
+    applyWallFrame(frame({ full: true, pulse: { changed: [row('z')] } }))
+    expect(getCardLedger()).toHaveLength(0)
+  })
+
+  it('IGNORES a section this build has no merge for instead of throwing', () => {
+    // An older tab against a newer broker. It should draw less of the wall, not
+    // die on every frame at 2 Hz.
+    const fromTheFuture = { ...frame({ pulse: { changed: [row('a')] } }), quests: [{ id: 'q1' }] }
+    expect(() => applyWallFrame(fromTheFuture as WallFrame)).not.toThrow()
+    expect(getWallView().pulse.map(r => r.id)).toEqual(['a'])
   })
 })
 

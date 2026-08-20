@@ -15,6 +15,7 @@
  * else on the row is allowed to be louder.
  */
 
+import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
@@ -29,10 +30,81 @@ import {
   isRunLive,
   type LeaseState,
   leaseState,
+  type RunStall,
   runBuckets,
   runStall,
 } from './run-model'
 import type { EpicRunRowData } from './use-unattended-runs'
+
+/**
+ * WHO IT IS, WHETHER IT IS ARMED, AND WHICH GENERATION.
+ *
+ * Owns the wall-filter store read because it owns the only button that uses it:
+ * a click on the project tag filters the WHOLE wall, and the row above has no
+ * other business with the filter.
+ *
+ * `gen` and `maxGens` prefer the inspect read and fall back to the activity
+ * entry -- inspect is fetched per visible run and can be a beat fresher, but the
+ * entry is what put the row on screen and is never absent.
+ */
+function RunHead({
+  row,
+  live,
+  run,
+  beats,
+}: {
+  row: EpicRunRowData
+  live: boolean
+  run: EpicRunSnapshot | null
+  beats: readonly EpicBeatRecord[]
+}) {
+  const toggleProject = useWallFilterStore(s => s.toggleProject)
+  const { entry, project, epicId } = row
+  const gen = run?.gen ?? entry.gen
+  const maxGens = run?.maxGens ?? entry.maxGens
+
+  return (
+    <div className="wall-run-head">
+      <RunTag armed={live} />
+      <button
+        type="button"
+        title={`Filter the whole wall to ${row.projectName}`}
+        onClick={() => toggleProject(row.projectName)}
+        className="wall-run-proj"
+      >
+        <ProjectTag name={row.projectName} icon={row.projectIcon} color={row.projectColor} />
+      </button>
+      <button
+        type="button"
+        title="Click -- the MAIN window opens this epic. The wall stays put."
+        onClick={() => navigateFromWall({ kind: 'epic', project, id: epicId })}
+        className="wall-run-name"
+      >
+        {epicId}
+      </button>
+      <BeatPulse ticks={beatTicks(beats)} />
+      <span className="flex-1" />
+      <span className="wall-run-gen">
+        {`gen ${gen}${maxGens > 0 ? `/${maxGens}` : ''}`}
+        {run?.cadence ? ` · ${run.cadence}` : ''}
+      </span>
+    </div>
+  )
+}
+
+/** A STALLED RUN SAYS SO, WITH THE AGE. Rendering this one as "running" is the
+ *  bug the whole pane exists to kill -- so the not-stalled case renders nothing
+ *  HERE rather than being guarded by the caller, where it could be forgotten. */
+function StallBanner({ stall }: { stall: RunStall }) {
+  if (!stall.stalled) return null
+  return (
+    <div className="wall-run-stalled">
+      {stall.sinceMs === null
+        ? 'STALLED -- armed and never beaten'
+        : `STALLED -- no beat for ${formatDurationShort(stall.sinceMs)}`}
+    </div>
+  )
+}
 
 /** The lease, as one sentence. `stale` is the only one that raises its voice. */
 function leaseSentence(lease: LeaseState): string {
@@ -43,80 +115,54 @@ function leaseSentence(lease: LeaseState): string {
   return `overseer ${lease.holder} woke ${age}`
 }
 
-// DEFERRED to `wall-integration-fallow-debt`, which owns the split. The model layer is
-// already out (runStall / leaseState / runBuckets / idleSentence); what trips the metric
-// is JSX, where every `??` and `&&` counts as a decision point. Delete this suppression
-// the day that card lands.
-// fallow-ignore-next-line complexity
+/** THE ALARM. A run whose overseer never woke looks healthy on every other
+ *  surface in this tree -- that is the 2026-08-18 failure -- so a stale lease
+ *  takes the destructive tone and nothing else on the row is allowed to be
+ *  louder. */
+function LeaseLine({ lease }: { lease: LeaseState }) {
+  const tone = lease.kind === 'stale' ? 'wall-run-overseer wall-run-overseer-bad' : 'wall-run-overseer'
+  return <div className={tone}>{leaseSentence(lease)}</div>
+}
+
+/** WHY IT IS NOT MOVING. The broker computes this sentence every beat and, until
+ *  this pane, threw it away. It is the first thing to read on a run that
+ *  stopped. */
+function IdleWhy({ sentence }: { sentence: string | null }) {
+  if (!sentence) return null
+  return <div className="wall-run-why">{sentence}</div>
+}
+
+/** HOW OLD THE READ IS. The inspect timer sleeps with the tab and a sleeping
+ *  laptop fires none at all, so an old read must never pass for a live one. */
+function ReadAge({ stale, fetchedAt, nowMs }: { stale: boolean; fetchedAt: number | null; nowMs: number }) {
+  if (!stale || fetchedAt === null) return null
+  return <div className="wall-run-read">{`read ${formatDurationShort(Math.max(0, nowMs - fetchedAt))} ago`}</div>
+}
+
+/**
+ * The row itself: the inspect fetch, the model reads, and the ORDER the blocks
+ * appear in. Every block above renders itself or nothing, so this is a list of
+ * what a run row is made of and not a tree of conditions.
+ */
 export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number }) {
   const { entry, project, epicId } = row
   const { data, fetchedAt, stale: readStale, refresh } = useOverseerInspect(project, epicId)
-  const toggleProject = useWallFilterStore(s => s.toggleProject)
 
   const live = isRunLive(entry)
   const stall = runStall(entry, nowMs)
-  const lease = leaseState(data?.lease ?? null, entry.overseerAlive, nowMs)
-  const idle = idleSentence(entry, data ?? null)
-  const gen = data?.run?.gen ?? entry.gen
-  const maxGens = data?.run?.maxGens ?? entry.maxGens
+  const inspect = data ?? null
+  const run = inspect?.run ?? null
 
   return (
     <div className="wall-run" data-epic={epicId} data-stalled={stall.stalled || undefined}>
-      <div className="wall-run-head">
-        <RunTag armed={live} />
-        <button
-          type="button"
-          title={`Filter the whole wall to ${row.projectName}`}
-          onClick={() => toggleProject(row.projectName)}
-          className="wall-run-proj"
-        >
-          <ProjectTag name={row.projectName} icon={row.projectIcon} color={row.projectColor} />
-        </button>
-        <button
-          type="button"
-          title="Click -- the MAIN window opens this epic. The wall stays put."
-          onClick={() => navigateFromWall({ kind: 'epic', project, id: epicId })}
-          className="wall-run-name"
-        >
-          {epicId}
-        </button>
-        <BeatPulse ticks={beatTicks(data?.beats ?? [])} />
-        <span className="flex-1" />
-        <span className="wall-run-gen">
-          {`gen ${gen}${maxGens > 0 ? `/${maxGens}` : ''}`}
-          {data?.run?.cadence ? ` · ${data.run.cadence}` : ''}
-        </span>
-      </div>
-
-      {/* A STALLED RUN SAYS SO, WITH THE AGE. Rendering this one as "running" is
-          the bug the whole pane exists to kill. */}
-      {stall.stalled && (
-        <div className="wall-run-stalled">
-          {stall.sinceMs === null
-            ? 'STALLED -- armed and never beaten'
-            : `STALLED -- no beat for ${formatDurationShort(stall.sinceMs)}`}
-        </div>
-      )}
-
-      <BucketStrip buckets={runBuckets(data ?? null)} />
-
-      <div className={lease.kind === 'stale' ? 'wall-run-overseer wall-run-overseer-bad' : 'wall-run-overseer'}>
-        {leaseSentence(lease)}
-      </div>
-
-      {/* The broker already computes this sentence every beat and, until this
-          pane, threw it away. It is the first thing to read on a run that stopped. */}
-      {idle && <div className="wall-run-why">{idle}</div>}
-
-      <BatonTail entries={batonTail(data?.baton ?? [])} nowMs={nowMs} />
-
-      <RunActions project={project} epicId={epicId} run={data?.run ?? null} live={live} onDone={refresh} />
-
-      {/* The inspect timer sleeps with the tab and a sleeping laptop fires none
-          at all, so an old read must never pass for a live one. */}
-      {readStale && fetchedAt !== null && (
-        <div className="wall-run-read">{`read ${formatDurationShort(Math.max(0, nowMs - fetchedAt))} ago`}</div>
-      )}
+      <RunHead row={row} live={live} run={run} beats={inspect?.beats ?? []} />
+      <StallBanner stall={stall} />
+      <BucketStrip buckets={runBuckets(inspect)} />
+      <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />
+      <IdleWhy sentence={idleSentence(entry, inspect)} />
+      <BatonTail entries={batonTail(inspect?.baton ?? [])} nowMs={nowMs} />
+      <RunActions project={project} epicId={epicId} run={run} live={live} onDone={refresh} />
+      <ReadAge stale={readStale} fetchedAt={fetchedAt} nowMs={nowMs} />
     </div>
   )
 }

@@ -1,10 +1,3 @@
-// `protocol.ts` re-exports this module and this module imports back from it.
-// DEFERRED, not accepted (overseer ruling, gen 15, re-affirmed gen 17): breaking
-// the cycle rewrites imports in files no pane branch has in its diff, which is
-// exactly the merge hazard that bit `wall-navigate.ts` at the gen-14 integration.
-// It goes LAST, after every pane merges, in a commit that touches nothing else.
-// Owner: `wall-integration-fallow-debt` -- delete this line there.
-// fallow-ignore-file re-export-cycle
 /**
  * THE WALL live channel -- the ONE typed frame the wall surface subscribes to.
  *
@@ -236,9 +229,10 @@ export interface WallFrame {
   fleet?: WallFleetCounters
 }
 
-/** Sections that carry per-project data and therefore need permission filtering
- *  before a frame reaches a given subscriber. */
-// Read by the per-pane filtering the pane cards bring; no consumer until the
-// first scoped pane lands.
-// fallow-ignore-next-line unused-export
-export const WALL_SCOPED_SECTIONS = ['pulse', 'commits', 'cards'] as const
+// WHICH SECTIONS ARE PROJECT-SCOPED is not a constant here, on purpose. It was
+// one (`WALL_SCOPED_SECTIONS`) and never gained a reader, because the fact it
+// named was already spelled out where it is ENFORCED: `wall-frame.ts` filters
+// pulse, commits and cards through the subscriber's `allowed(project)` and
+// leaves hosts and plan alone (they are node/profile facts, gated at subscribe
+// time). A second copy that nothing consults cannot go out of date loudly -- it
+// goes out of date silently, which is worse than not having it.

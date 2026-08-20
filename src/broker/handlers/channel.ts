@@ -236,9 +236,15 @@ function wallUnsubscribe(ctx: HandlerContext): void {
   ctx.reply({ type: 'channel_ack', channel: WALL_CHANNEL, status: 'unsubscribed' })
 }
 
+// PERMANENT suppression, and it says so on purpose (overseer ruling, gen 15,
+// ratified and recorded here by `wall-integration-fallow-debt`).
 // CRAP 31.6 against a threshold of 30, and the excess is the coverage ESTIMATE,
-// not the branching -- `wall-channel.test.ts` exercises this handler directly.
-// Tracked on `wall-live-channel-fallow-debt`.
+// not the branching: cyclomatic and cognitive are both under threshold, and
+// `src/broker/__tests__/integration/wall-channel.test.ts` drives this handler
+// directly. Refactoring a working subscribe handler to move an estimated number
+// is a strictly negative trade -- it risks the live channel for a metric that a
+// runtime-coverage merge would zero out on its own. Nothing here names a card to
+// delete it; this is the ONE exception to "every suppression names its owner".
 // fallow-ignore-next-line complexity
 const channelSubscribe: MessageHandler = (ctx, data) => {
   const channel = data.channel as SubscriptionChannel
