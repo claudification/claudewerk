@@ -47,7 +47,10 @@ export const ASPECTS: Aspect[] = [
       { path: 'src/shared/*.ts', needle: 'WALL_CHANNEL', as: 'the WALL_CHANNEL contract symbol' },
       { path: 'src/shared/protocol.ts', needle: 'WallFrame', as: 'the WallFrame wire type' },
     ],
-    feeds: [{ path: 'web/src/hooks/use-websocket.ts', needle: 'channel_subscribe' }],
+    // The subscribe/unsubscribe watchers moved out of the 733-line `use-websocket.ts`
+    // when `wall-use-websocket-hook-split` cut the hook eleven ways. The feed is the
+    // same wire message from the same mount effect -- only its module moved.
+    feeds: [{ path: 'web/src/hooks/ws-subscription-watchers.ts', needle: 'channel_subscribe' }],
   },
   {
     code: 'P1',
