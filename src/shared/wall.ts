@@ -123,6 +123,16 @@ export interface WallCommitRow {
  */
 export const WALL_HOST_CPU_SAMPLES = 60
 
+/** The node-stats cadence the ring is filled at. Stated as a constant because
+ *  the ring carries no timestamps -- its samples are positions, and the only
+ *  thing that turns a position back into a time is this number. */
+export const WALL_HOST_CPU_INTERVAL_MS = 5_000
+
+/** How much wall-clock the full ring spans: five minutes. What a boot-time
+ *  rehydration is allowed to read back, since anything older than this could
+ *  never have been in the ring in the first place. */
+export const WALL_HOST_CPU_WINDOW_MS = WALL_HOST_CPU_SAMPLES * WALL_HOST_CPU_INTERVAL_MS
+
 /** One node's vitals sample. Producer: `wall-host-vitals`. */
 export interface WallHostVitals {
   nodeId: string
@@ -190,6 +200,18 @@ export interface WallPlanSample {
   polledAt?: number
   /** `ProfileUsageSnapshot.error.kind`, when `state === 'error'`. */
   errorKind?: 'http' | 'parse' | 'network' | 'no_token'
+  /**
+   * THERE IS NO MEASUREMENT BETWEEN THE PREVIOUS SAMPLE OF THIS SERIES AND THIS
+   * ONE -- do not connect them.
+   *
+   * Set on the first live sample after the broker rehydrated this series from
+   * the durable stats store, when the outage was longer than the series' own
+   * minimum spacing. A restart IS a discontinuity: whatever accumulated since
+   * the last flush is gone, and a line drawn straight across the hole reads as a
+   * measurement that says "nothing changed while the broker was down", which is
+   * the one thing nobody knows.
+   */
+  gapBefore?: true
 }
 
 /** Fleet-wide counters, summed over the projects this subscriber may read. */
