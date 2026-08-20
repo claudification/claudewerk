@@ -209,6 +209,12 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
   // (card not settled, pass above skips it) on the very beat that ends the run.
   // Still BEFORE the actions -- `b766b75e`'s rule -- so the write happens while
   // there is still a beat to do it in.
+  //
+  // `plan-checkpoint` pauses the run too and is deliberately NOT here: it fires
+  // on generation 0, before anything has been dispatched, so no card has a
+  // `worktree-epic/<epic>/<card>` branch for the ledger to resolve and every
+  // card would buy a refusal entry for nothing. A checkpoint is also resumed
+  // rather than ended -- beats follow it. Park and complete do not.
   if (beat.actions.some(a => a.kind === 'park' || a.kind === 'complete')) {
     await recordFinalPromises(deps, group, plan.rollup?.children.map(c => c.card) ?? [])
   }
