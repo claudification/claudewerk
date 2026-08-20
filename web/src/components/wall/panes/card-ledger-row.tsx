@@ -19,13 +19,16 @@
  * `handleChipCapture`, which is also what stops it opening the card underneath.
  */
 
+import type { PromiseVerdict } from '@shared/promise-ledger'
 import type { ProjectTaskStatus } from '@shared/protocol'
+import { verdictFace } from '@/lib/promise-verdict'
 import { haptic } from '@/lib/utils'
 import type { LedgerRow } from '@/lib/wall/card-ledger'
 import { PRIORITY_COLORS } from '../../project-board/board-constants'
 import { ProjectIcon } from '../../project-icons'
 import { navigateFromWall } from '../wall-navigate'
 import { hoverCardRow, leaveWallRow } from '../wall-row-hover'
+import { PromiseVerdictChip } from './promise-verdict-chip'
 
 /** Lane names go out RAW. `inbox`, `in-progress`, `in-review` are what the card
  *  file says and what the editor's own `<option>`s say; a wall that renamed them
@@ -34,7 +37,7 @@ function lane(status: ProjectTaskStatus): string {
   return status
 }
 
-export function CardLedgerRow({ row }: { row: LedgerRow }) {
+export function CardLedgerRow({ row, verdict }: { row: LedgerRow; verdict: PromiseVerdict }) {
   function open() {
     haptic('tick')
     navigateFromWall({ kind: 'card', project: row.project, id: row.id })
@@ -50,7 +53,7 @@ export function CardLedgerRow({ row }: { row: LedgerRow }) {
       // and a native tooltip renders ON TOP of it a second later -- two
       // descriptions of one card, the worse one winning. Same fix as the river
       // row; see `commit-river-row.tsx` for the screenshot that found it.
-      aria-label={`${row.title} -- ${row.projectName} · ${lane(row.from)} -> ${lane(row.to)} · click -- the MAIN window opens this card`}
+      aria-label={`${row.title} -- ${row.projectName} · ${lane(row.from)} -> ${lane(row.to)} · promise: ${verdictFace(verdict).long} · click -- the MAIN window opens this card`}
       onClick={open}
       onMouseEnter={event => hoverCardRow(row.id, row.project, event.currentTarget)}
       onMouseLeave={leaveWallRow}
@@ -72,6 +75,12 @@ export function CardLedgerRow({ row }: { row: LedgerRow }) {
         {row.projectIcon ? <ProjectIcon iconId={row.projectIcon} className="size-[10px]" /> : <i />}
       </span>
       <span className="wall-ledger-title">{row.title}</span>
+      {/* THE VERDICT IS A COLUMN, not a decoration on the title: it has to line
+          up down the pane so a reader scans one strip of glyphs instead of
+          hunting for a pill inside each row. The word is dropped at this width
+          -- the glyph plus its tone is the whole state, and the full wording
+          rides the row's `aria-label`. */}
+      <PromiseVerdictChip verdict={verdict} showWord={false} />
       {row.priority && <span className={`wall-ledger-prio ${PRIORITY_COLORS[row.priority]}`}>{row.priority}</span>}
       <span className="wall-ledger-move">
         <span className="wall-ledger-from">{lane(row.from)}</span>

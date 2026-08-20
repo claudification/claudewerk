@@ -19,7 +19,7 @@
  * whole point of a registry that ships inside the bundle.
  */
 
-import { parseFrontmatter } from './frontmatter'
+import { parseCardFrontmatter } from './card-frontmatter'
 import { checkCardSchema } from './project-doctor-schema'
 import type { DoctorFinding } from './project-doctor-types'
 
@@ -44,7 +44,7 @@ export function checkCard(card: CardSource): DoctorFinding[] {
     ]
   }
 
-  const { meta, body } = parseFrontmatter(card.content)
+  const { meta, body } = parseCardFrontmatter(card.content)
   const findings = checkCardSchema({ id: card.id, meta, laneStatus: card.laneStatus })
 
   if (!card.content.startsWith('---')) {

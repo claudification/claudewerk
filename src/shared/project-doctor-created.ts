@@ -30,7 +30,7 @@
  */
 
 import { statSync, writeFileSync } from 'node:fs'
-import { parseFrontmatter } from './frontmatter'
+import { parseCardFrontmatter } from './card-frontmatter'
 import { serializeCard } from './project-card-file'
 import type { DoctorFinding } from './project-doctor-types'
 
@@ -130,12 +130,12 @@ function finding(id: string, stamp: Stamp, mode: RepairMode): DoctorFinding {
  */
 export function stampMissingCreated(card: StampTarget, mode: RepairMode, deps: CreatedStampDeps): DoctorFinding[] {
   if (mode === 'off' || card.content === null) return []
-  // No fences means no frontmatter to patch: parseFrontmatter would hand back
+  // No fences means no frontmatter to patch: parseCardFrontmatter would hand back
   // the whole file as a body and serializeCard would wrap it in a block it never
   // had. `card-no-frontmatter` already reports this one.
   if (!card.content.startsWith('---')) return []
 
-  const { meta, body } = parseFrontmatter(card.content)
+  const { meta, body, raw } = parseCardFrontmatter(card.content)
   if (alreadyDated(meta.created)) return []
 
   const stat = deps.stat(card.abs)
@@ -144,7 +144,7 @@ export function stampMissingCreated(card: StampTarget, mode: RepairMode, deps: C
 
   if (mode === 'write') {
     try {
-      deps.write(card.abs, serializeCard({ ...meta, created: stamp.iso }, body))
+      deps.write(card.abs, serializeCard({ ...meta, created: stamp.iso }, body, raw))
     } catch {
       // A stamp that did not land must not be reported as one. The card keeps
       // its mute `created:` and the next run will try again.

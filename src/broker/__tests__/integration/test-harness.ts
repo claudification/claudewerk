@@ -185,6 +185,7 @@ function createMockStoreDriver(): StoreDriver {
     }),
     queryProfileBreakdown: () => [],
     sumCostByConversations: () => 0,
+    queryTurnActivity: () => [],
     pruneOlderThan: () => ({ turns: 0, hourly: 0 }),
   }
   const noopTokens = {

@@ -99,8 +99,16 @@ acquire_suite_lock
 #
 #   BUN_TEST_BIN=/path/to/bun   run the suite on that binary instead
 #
-# Measured 2026-08-20: 1.4.0 via this override cut the suite 74s -> 20s with
-# identical pass/fail counts, while the global bun stayed 1.3.14.
+# This override buys CORRECTNESS on a newer bun, not SPEED. An earlier note here
+# read "1.4.0 via this override cut the suite 74s -> 20s", which attributed the
+# --parallel win below to the version. It is not a version win: measured
+# 2026-08-21 at the same base, same flags, 7743 tests, 1.3.14 ran 20.05s and
+# 1.4.0 ran 21.06s with identical 7684 pass / 59 skip / 0 fail. Do not quote a
+# speedup as a reason to move the fleet.
+#
+# What 1.4.0 does buy is the macOS fs.watch stale-filename defect being fixed
+# (0/3300 vs 190/3300 on 1.3.14) -- see scripts/fswatch-bun-1.4-retest.results.md
+# and the bun-upgrade-fleet-to-1.4 card.
 BUN_BIN="${BUN_TEST_BIN:-bun}"
 if ! command -v "$BUN_BIN" >/dev/null 2>&1 && [[ ! -x "$BUN_BIN" ]]; then
   echo "bun-test.sh: BUN_TEST_BIN='$BUN_BIN' is not executable" >&2
@@ -115,11 +123,15 @@ else
   echo "bun-test.sh: this bun has no --no-orphans -- leaked children will survive the run" >&2
 fi
 
-# --- fan the suite across cores (bun >= 1.4) ----------------------------
+# --- fan the suite across cores -----------------------------------------
 #
-# Measured 2026-08-20 on 601 files / 7453 tests, same 1.4 binary both arms:
-# sequential 74s, --parallel 20s, with identical pass/skip/fail AND identical
-# expect() counts -- so nothing is being silently skipped.
+# NOT gated on bun 1.4: 1.3.14 has --parallel too (`bun test --help` on both).
+# The runtime probe below is a guard against some older bun, not a version story.
+#
+# Measured 2026-08-20 on 601 files / 7453 tests, same 1.4 binary BOTH arms --
+# so this is --parallel on vs off, NOT 1.3.14 vs 1.4.0: sequential 74s,
+# --parallel 20s, with identical pass/skip/fail AND identical expect() counts,
+# so nothing is being silently skipped.
 #
 # Safe here specifically BECAUSE of the suite lock above: --parallel claims a
 # worker per core, which is the exact resource the lock is serialising. One

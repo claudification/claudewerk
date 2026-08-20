@@ -25,7 +25,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { parseFrontmatter } from './frontmatter'
+import { parseCardFrontmatter } from './card-frontmatter'
 import { serializeCard } from './project-card-file'
 import { type LegacyCard, listLegacyCards, listLegacyCollisions } from './project-legacy'
 import { boardRoot, cardPath, cardsDir, legacyLaneDir } from './project-paths'
@@ -97,11 +97,11 @@ function migrateCard(root: string, card: LegacyCard): string | null {
   } catch (err) {
     return `unreadable: ${(err as Error).message}`
   }
-  const { meta, body } = parseFrontmatter(raw)
+  const { meta, body, raw: blocks } = parseCardFrontmatter(raw)
   try {
     // The DIRECTORY wins over any stale `status:` key already in the file: it
     // is where the board actually had this card.
-    writeFileSync(dest, serializeCard({ ...meta, status: card.status }, body), 'utf8')
+    writeFileSync(dest, serializeCard({ ...meta, status: card.status }, body, blocks), 'utf8')
   } catch (err) {
     return `write failed: ${(err as Error).message}`
   }

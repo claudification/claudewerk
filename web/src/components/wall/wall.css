@@ -1607,6 +1607,127 @@ button.wall-burn-hit:hover {
 	font-weight: 600;
 }
 
+/* ---------- The promise verdict pill ----------
+   FOUR TONES FOR FIVE VERDICTS, and `unknown` is deliberately NOT the grey one.
+   `could not verify` sharing a colour with `not started` is the folding the
+   feature exists to refuse -- "I could not check" would then render as "nothing
+   was claimed", which is a benign sentence about a state that is not benign. It
+   gets the panel's own info colour, which nothing else on this pane uses. */
+.wall-verdict {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	font-size: 9px;
+	line-height: 14px;
+	white-space: nowrap;
+}
+.wall-verdict-glyph {
+	font-size: 10px;
+	line-height: 14px;
+}
+.wall-verdict[data-tone='delivered'] {
+	color: var(--active);
+}
+.wall-verdict[data-tone='broken'] {
+	color: var(--destructive);
+	font-weight: 600;
+}
+.wall-verdict[data-tone='unknown'] {
+	color: var(--info);
+}
+/* The only tone allowed to recede: nobody claimed anything, which on an open
+   card is the honest default and not news. It is still ABOVE the text floor --
+   `--comment` is what the delta-t column uses. */
+.wall-verdict[data-tone='unclaimed'] {
+	color: var(--comment);
+}
+
+/* ---------- THE LOUD TABLE ----------
+   Sticky, because the card asks for a table "a person cannot scroll past" and
+   the pane body is the only thing that scrolls. The ledger runs underneath it.
+   A background is mandatory, not cosmetic: without one the rows scrolling below
+   would show through a transparent sticky header. */
+.wall-broken {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	margin-bottom: 4px;
+	padding: 4px;
+	border: 1px solid var(--destructive);
+	border-radius: 4px;
+	/* OPAQUE, and it must be the PANE's own background: the ledger scrolls
+	   underneath and any transparency here would show the rows through the one
+	   thing on this pane that must stay readable. */
+	background: var(--card);
+}
+.wall-broken-head {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	margin-bottom: 2px;
+}
+.wall-broken-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--destructive);
+}
+.wall-broken-count {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--destructive);
+}
+.wall-broken-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 2px 2px;
+	border-radius: 3px;
+	cursor: pointer;
+	font-size: 10px;
+}
+.wall-broken-row:hover {
+	background: var(--surface-raised);
+}
+.wall-broken-row:focus-visible {
+	outline: 1px solid var(--border-strong);
+	outline-offset: -1px;
+}
+.wall-broken-card {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fg-muted);
+}
+.wall-broken-why {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--comment);
+}
+.wall-broken-lane {
+	flex: 0 0 auto;
+	color: var(--destructive);
+}
+.wall-broken-more,
+.wall-broken-refused {
+	font-size: 9px;
+	color: var(--comment);
+	padding: 2px 2px 0;
+}
+
 /* ---------- A6 sheaf ---------- */
 .wall-sheaf-totals {
 	display: flex;
@@ -1760,6 +1881,194 @@ button.wall-burn-hit:hover {
 	background: var(--card);
 	color: var(--comment);
 	font-size: 10px;
+}
+
+/* ---------- A9 activity matrix ----------
+   THREE CELL STATES, THREE DIFFERENT THINGS ON SCREEN -- and the ramp is only
+   one of them. `is-active` is the only state that is ever FILLED; `is-empty` is
+   a bare outline; `is-unavailable` is hatched, so a run of days nobody has data
+   for reads as missing rather than as the palest shade of quiet. Switching the
+   metric from commits to turns must make eleven months go NO DATA, not idle,
+   and that difference has to survive being read from three metres away in
+   ambient mode -- which is why it is a TEXTURE and not a slightly different
+   grey. */
+.wall-activity {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 4px var(--wall-pane-pad) 8px;
+}
+.wall-activity-switch {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+.wall-activity-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+	padding-bottom: 2px;
+}
+.wall-activity-scroll::-webkit-scrollbar {
+	height: 5px;
+}
+.wall-activity-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+.wall-activity-months {
+	display: grid;
+	/* The dow gutter, so a month label sits over its own column. */
+	margin-left: 26px;
+	color: var(--comment);
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	height: 12px;
+}
+.wall-activity-body {
+	display: flex;
+	gap: 4px;
+}
+.wall-activity-dow {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 22px;
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.06em;
+}
+.wall-activity-dow span {
+	height: 9px;
+	line-height: 9px;
+}
+.wall-activity-weeks {
+	display: flex;
+	gap: 2px;
+}
+.wall-activity-week {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.wall-activity-cell,
+.wall-activity-pad {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	padding: 0;
+	flex: 0 0 auto;
+}
+.wall-activity-pad {
+	background: transparent;
+}
+/* WE MEASURED, AND THERE WAS NOTHING. An outline: present, and plainly zero. */
+.wall-activity-cell.is-empty {
+	background: transparent;
+	border: 1px solid var(--border-subtle);
+}
+/* WE DO NOT KNOW. Hatched, and deliberately not on the ramp at all -- this is
+   the state that stops missing history reading as a year off. */
+.wall-activity-cell.is-unavailable {
+	border: 1px solid transparent;
+	background-image: repeating-linear-gradient(
+		45deg,
+		var(--border-subtle) 0,
+		var(--border-subtle) 1px,
+		transparent 1px,
+		transparent 3px
+	);
+}
+.wall-activity-cell.is-active {
+	border: 1px solid transparent;
+	background: var(--success);
+}
+.wall-activity-cell.lvl-1 {
+	background: color-mix(in oklab, var(--success) 26%, transparent);
+}
+.wall-activity-cell.lvl-2 {
+	background: color-mix(in oklab, var(--success) 50%, transparent);
+}
+.wall-activity-cell.lvl-3 {
+	background: color-mix(in oklab, var(--success) 74%, transparent);
+}
+.wall-activity-cell.lvl-4 {
+	background: var(--success);
+}
+.wall-activity-cell.is-scoped {
+	outline: 1px solid var(--accent);
+	outline-offset: 1px;
+}
+.wall-activity-cell:focus-visible {
+	outline: 1px solid var(--accent);
+	outline-offset: 1px;
+}
+.wall-activity-legend {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.wall-activity-legend-row {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+.wall-activity-legend-label {
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.08em;
+}
+.wall-activity-horizon {
+	margin: 0;
+	color: var(--comment);
+	font-size: 9px;
+}
+.wall-activity-idle {
+	margin: 0;
+	color: var(--fg-faint);
+	font-size: 10px;
+}
+.wall-activity-day-title {
+	margin: 0;
+	color: var(--fg-muted);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+}
+.wall-activity-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+	gap: 2px 8px;
+	margin: 2px 0 0;
+}
+.wall-activity-fact dt {
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.wall-activity-fact dd {
+	margin: 0;
+	font-size: 11px;
+}
+/* A silence in the hover card is dimmed rather than emphasised -- `none` and
+   `no data` are facts, not readings, and they must not out-shout the numbers. */
+.wall-activity-fact[data-state='empty'] dd,
+.wall-activity-fact[data-state='unavailable'] dd {
+	color: var(--fg-faint);
+}
+.wall-activity-fact.is-selected dd {
+	color: var(--foreground);
+	font-weight: 600;
+}
+/* THE ONE PIECE OF CHROME THAT IS NOT ALLOWED TO BE SUBTLE. An estimated dollar
+   rendered as a measured one is this pane's whole design risk. */
+.wall-activity-provenance {
+	display: block;
+	color: var(--warning);
+	font-size: 8px;
+	font-style: normal;
+	letter-spacing: 0.04em;
 }
 
 @media (prefers-reduced-motion: reduce) {

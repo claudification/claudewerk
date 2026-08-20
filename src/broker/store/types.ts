@@ -698,6 +698,27 @@ export interface ProfileBreakdownFilter {
   sentinelId?: string
 }
 
+/**
+ * The narrowest projection of a turn that a DAY-BUCKETED read needs: when it
+ * happened, how big it was, what it cost, and whether that cost was measured.
+ *
+ * Its own read rather than `queryTurns` because that one is a PAGED list capped
+ * at 1000 rows -- a month of this fleet is several thousand, so a caller that
+ * needs all of them either loops or silently truncates the oldest end of a
+ * chart. This returns the whole window in one pass over `idx_turns_timestamp`,
+ * carrying four numbers per row instead of fourteen columns of strings.
+ */
+export interface TurnActivityRow {
+  timestamp: number
+  /** input + output + cache read + cache write, summed in the driver. */
+  tokens: number
+  costUsd: number
+  /** True when the agent host filed a real cost; false when it was priced from
+   *  tokens. An estimated number is never rendered as a measured one, and this
+   *  is the flag that makes that enforceable downstream. */
+  exactCost: boolean
+}
+
 export type CostPeriod = '24h' | '7d' | '30d'
 
 // ---------------------------------------------------------------------------
@@ -807,6 +828,15 @@ export interface CostStore {
    * Legacy turns predating Phase 5 bucket under sentinelId='' / profile='default'.
    */
   queryProfileBreakdown(filter?: ProfileBreakdownFilter): ProfileBreakdownRow[]
+  /**
+   * Every turn in [from, to], oldest first, as the four numbers a day-bucketed
+   * fold needs. Unpaged on purpose -- see `TurnActivityRow`.
+   *
+   * NOT bucketed in SQL: SQLite has no IANA timezone database, so it can group
+   * by UTC day or by a fixed offset and nothing else. The caller owns the
+   * projection into the viewer's calendar.
+   */
+  queryTurnActivity(from: number, to: number): TurnActivityRow[]
   /** Delete turns + hourly rows older than cutoffMs. Returns counts deleted. */
   pruneOlderThan(cutoffMs: number): { turns: number; hourly: number }
 }

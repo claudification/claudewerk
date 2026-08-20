@@ -9,6 +9,7 @@
     // Each module has to be listed as it gains its first web importer; a new
     // one otherwise fails the gate as an "unlisted dependency" the moment a
     // component imports it.
+    "@shared/activity-matrix",
     "@shared/canvas-selection",
     "@shared/card-path",
     "@shared/commit-ledger",
@@ -25,6 +26,8 @@
     "@shared/project-order-types",
     "@shared/project-task-types",
     "@shared/project-uri",
+    "@shared/promise-ledger",
+    "@shared/promise-rows",
     "@shared/protocol",
     "@shared/spawn-diagnostics",
     "@shared/spawn-naming",

@@ -14,7 +14,7 @@
  */
 
 export { constrainsNothing, restrictToAxes, WALL_AXES, type WallAxis } from './axes'
-export { selectWallProject, useWallFilterStore, type WallFilterState } from './filter-store'
+export { selectWallDay, selectWallProject, useWallFilterStore, type WallFilterState } from './filter-store'
 export { projectToken } from './project-token'
 export { matchesWallRow, parseWallQuery, type WallQuery, type WallRowFacets } from './query'
 export { useWallFilter, type WallFilterResult } from './use-wall-filter'

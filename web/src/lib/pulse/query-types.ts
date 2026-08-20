@@ -9,6 +9,10 @@ import type { PulseBand } from './bands'
  *   @proj       scope to a project
  *   #tag        scope to a branch / worktree / agent name
  *   ~30m        time window; also ~90s ~2h ~1d (bare number means minutes)
+ *   ~2026-08-14 ONE calendar day, in the reader's own zone — not a window back
+ *               from now. Both forms ride the `~` sigil because both are the
+ *               same question ("when"), and a surface that split them across two
+ *               sigils would have to teach the reader which one it meant.
  *   $1          cost floor in USD — spent at least this much ($0.5 works)
  *   %80         context pressure floor — at or past this % of the window
  *   &host       scope to a sentinel / host
@@ -42,6 +46,21 @@ export interface PulseQuery {
   tag: string | null
   /** Max age in ms, or null for unbounded. */
   windowMs: number | null
+  /**
+   * `YYYY-MM-DD` — keep only rows that fall on THIS calendar day, or null.
+   *
+   * A SECOND, DISJOINT shape of the same axis, and it exists because the
+   * activity matrix needed a click on a square from six months ago to mean
+   * something. `windowMs` can only ever say "the last N", which reaches
+   * backwards from now and therefore cannot name a Tuesday in March; the time
+   * cursor tops out at three hours. Both live on the `time` axis, so a pane that
+   * already declared it honours a day with no wiring of its own.
+   *
+   * Resolved against the READER's zone at match time, which is the same zone the
+   * grid asked the server to bucket in — so the square you clicked and the rows
+   * you get back agree by construction.
+   */
+  day: string | null
   /** Minimum spend in USD. */
   minCostUsd: number | null
   /** Minimum context-window pressure, 0-100. */
@@ -98,6 +117,7 @@ export const EMPTY_QUERY: PulseQuery = {
   project: null,
   tag: null,
   windowMs: null,
+  day: null,
   minCostUsd: null,
   minContextPct: null,
   host: null,

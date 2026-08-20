@@ -31,8 +31,10 @@ import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 import { WallTab } from '../wall-tab'
+import { BrokenPromiseTable } from './broken-promise-table'
 import { CardLedgerRow } from './card-ledger-row'
 import { useCardLedgerViewStore } from './card-ledger-view'
+import { useCardVerdicts } from './use-card-verdicts'
 import { useLedgerRows } from './use-ledger-rows'
 
 const AXES: readonly WallAxis[] = ['text', 'project', 'time']
@@ -56,6 +58,11 @@ export default function CardLedgerPane() {
   const inView = useMemo(() => (view === 'done' ? all.filter(row => row.isDone) : all), [all, view])
   const { rows, matched, total } = useWallFilter(inView, AXES, facets)
   const reportView = useWallReportView()
+  // Asked for the FEED's projects, not the filtered rows'. A query box that
+  // leaves no moves on screen must not also empty the loud table -- a card filed
+  // as finished with nothing behind it does not stop being one because somebody
+  // typed `~10m`. The ask is still bounded: only projects the move ring has seen.
+  const verdicts = useCardVerdicts(all)
 
   return (
     <WallPane
@@ -79,6 +86,12 @@ export default function CardLedgerPane() {
         </div>
       }
     >
+      {/* ABOVE the empty-state branch and OUTSIDE it. A filter that leaves no
+          moves on screen does not make a card filed as finished with nothing
+          behind it stop being one, and this table going quiet whenever the
+          ledger did would let a query box hide the only thing on the pane that
+          is an accusation. */}
+      <BrokenPromiseTable rows={verdicts.broken} refused={verdicts.refused} />
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0
@@ -90,7 +103,7 @@ export default function CardLedgerPane() {
       ) : (
         <div className="wall-ledger" onClickCapture={handleChipCapture}>
           {rows.map(row => (
-            <CardLedgerRow key={row.key} row={row} />
+            <CardLedgerRow key={row.key} row={row} verdict={verdicts.verdictFor(row.project, row.id)} />
           ))}
         </div>
       )}

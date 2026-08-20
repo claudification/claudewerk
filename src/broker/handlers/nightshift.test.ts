@@ -5,11 +5,19 @@
  * the run op calls `runNightshift` with the manual trigger, never touches the
  * sentinel socket, is files-permission gated, and surfaces a non-error skip
  * (e.g. empty queue) back to the caller -- while a normal op (config_read) still
- * relays. `runNightshift` is mocked so no real agents spawn.
+ * relays. `runNightshift` is stubbed so no real agents spawn.
+ *
+ * Via `configureNightshiftRunner`, NOT `mock.module`: Bun's module mocks are
+ * process-global and permanent, so a partial factory here silently deleted the
+ * orchestrator's other exports for every later file in the run. See the seam's
+ * comment in `nightshift-orchestrator.ts` and the guard in
+ * `nightshift-orchestrator-no-module-mock.test.ts`.
  */
 
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import { GuardError, type HandlerContext } from '../handler-context'
+import { configureNightshiftRunner, resetNightshiftRunner } from '../nightshift-orchestrator'
+import { nightshiftRequest } from './nightshift'
 
 interface RunCall {
   project: string
@@ -22,15 +30,15 @@ let runOutcome: { ok: boolean; runId?: string; dispatched?: number; error?: stri
   dispatched: 1,
 }
 
-mock.module('../nightshift-orchestrator', () => ({
-  runNightshift: async (_store: unknown, project: string, opts: { trigger: string }) => {
+// Installed per-test (not at module scope) so the stub is only live while THIS
+// file's tests run -- the runner is a process-wide slot like any other seam.
+function installStub(): void {
+  configureNightshiftRunner(async (_store, project, opts) => {
     runCalls.push({ project, trigger: opts.trigger })
     return runOutcome
-  },
-  isNightshiftRunActive: () => false,
-}))
-
-const { nightshiftRequest } = await import('./nightshift')
+  })
+}
+afterAll(resetNightshiftRunner)
 
 const PROJECT = 'claude://default/Users/jonas/projects/remote-claude'
 
@@ -62,6 +70,7 @@ function makeCtx(opts?: { denyPermission?: boolean }) {
 beforeEach(() => {
   runCalls = []
   runOutcome = { ok: true, runId: '2026-06-26', dispatched: 1 }
+  installStub()
 })
 
 describe('nightshift run-now intercept', () => {

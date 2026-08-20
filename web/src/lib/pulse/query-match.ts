@@ -14,6 +14,7 @@ export function isEmptyQuery(q: PulseQuery): boolean {
     !q.host &&
     !q.model &&
     q.windowMs === null &&
+    q.day === null &&
     q.minCostUsd === null &&
     q.minContextPct === null &&
     !q.includeManaged &&
@@ -26,6 +27,20 @@ export function isEmptyQuery(q: PulseQuery): boolean {
  *  Absent is never a wildcard: `&studio` must not match an unknown host. */
 function has(field: string | undefined, needle: string): boolean {
   return (field ?? '').toLowerCase().includes(needle)
+}
+
+/**
+ * `YYYY-MM-DD` as the READER's own calendar reads that instant.
+ *
+ * Local parts, never `toISOString()`: the ISO form is UTC, so a Bangkok evening
+ * lands on tomorrow's square and the `~day` filter would then hand back a
+ * different set of rows than the square the reader clicked. This is the browser
+ * half of the same rule the fold obeys on the server.
+ */
+export function localDayKey(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 /** Everything a free-text term searches, lowercased once. */
@@ -66,6 +81,13 @@ const CONSTRAINTS: Array<{
   { applies: q => q.host !== null, holds: (row, q) => has(row.host, q.host ?? '') },
   { applies: q => q.model !== null, holds: (row, q) => has(row.model, q.model ?? '') },
   { applies: q => q.windowMs !== null, holds: (row, q) => row.ageMs <= (q.windowMs ?? 0) },
+  // A row carries an AGE, not an instant, so the day it fell on is recovered
+  // against the clock at match time. At day granularity the sub-second drift
+  // between the render that measured the age and this call is invisible except
+  // in the last instant before local midnight, where it can only ever move a row
+  // by one square -- and the alternative, threading a timestamp through every
+  // pane's facets, is a change to thirteen files for that one instant.
+  { applies: q => q.day !== null, holds: (row, q) => localDayKey(Date.now() - row.ageMs) === q.day },
   { applies: q => q.minCostUsd !== null, holds: (row, q) => (row.costUsd ?? 0) >= (q.minCostUsd ?? 0) },
   { applies: q => q.minContextPct !== null, holds: (row, q) => (row.contextPct ?? 0) >= (q.minContextPct ?? 0) },
   { applies: q => q.text !== '', holds: (row, q) => matchesText(row, q.text) },

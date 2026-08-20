@@ -470,6 +470,39 @@ export interface AppendResult extends InsertResult {
 
 const INDENT = '  '
 
+/** Every write refuses a mixed-ending card with this exact string. */
+const MIXED_EOL = 'card mixes CRLF and LF line endings'
+
+/**
+ * The card's OWN line ending, or null when it does not have one.
+ *
+ * Not a nicety. The reader splits on `/\r?\n/`, so a CRLF card reads perfectly;
+ * both writers used to split on `'\n'`, which leaves a trailing `\r` on every
+ * line and breaks the head probe in `spliceCloses` -- `/^\s+closes:\s*(.*)$/`
+ * cannot match `  closes: [abc]\r`, because `.` DOES NOT MATCH `\r` in JS (it is
+ * a line terminator) and `$` is not at that position. `head` fell back to `''`,
+ * so an INLINE list was misread as an empty block-list key and a `- ` item was
+ * spliced underneath it: invalid YAML, the sha unreadable on read-back, and
+ * `refused: null, changed: true, added: [sha]` reported to the caller. A write
+ * that REPORTS SUCCESS AND LOSES THE DATA is the one failure class this module
+ * exists to prevent, and it left the engine no refusal to log. It compounded,
+ * too -- the lost sha never became visible to the idempotence check, so every
+ * retry appended another duplicate line, without bound.
+ *
+ * MIXED endings return null and every writer REFUSES. Picking one ending for
+ * the whole file would rewrite lines the splice never meant to touch, and
+ * re-serialising a card on a guess is the exact damage the box above forbids. A
+ * half-CRLF card is either mid-edit or already damaged by the old bug; both
+ * deserve a reason, not a repair.
+ */
+function detectEol(text: string): '\n' | '\r\n' | null {
+  const lf = text.split('\n').length - 1
+  if (lf === 0) return '\n'
+  const crlf = text.split('\r\n').length - 1
+  if (crlf === 0) return '\n'
+  return crlf === lf ? '\r\n' : null
+}
+
 /** The lines of a fresh `promise:` block, ready to splice into front matter. */
 export function renderPromiseBlock(seed: PromiseSeed): string[] {
   return [
@@ -492,13 +525,16 @@ export function renderPromiseBlock(seed: PromiseSeed): string[] {
  * loudly without drowning in no-ops.
  */
 export function insertPromiseBlock(text: string, seed: PromiseSeed): InsertResult {
-  const lines = text.split('\n')
+  const eol = detectEol(text)
+  if (eol === null) return { text, changed: false, refused: MIXED_EOL }
+
+  const lines = text.split(/\r?\n/)
   const fm = frontMatterBounds(lines)
   if (fm === null) return { text, changed: false, refused: 'card has no front matter' }
   if (promiseBounds(lines, fm) !== null) return { text, changed: false, refused: null }
 
   const next = [...lines.slice(0, fm.end), ...renderPromiseBlock(seed), ...lines.slice(fm.end)]
-  return { text: next.join('\n'), changed: true, refused: null }
+  return { text: next.join(eol), changed: true, refused: null }
 }
 
 /**
@@ -539,7 +575,11 @@ function item(sha: string, subject: string | undefined): string {
  */
 export function appendCloses(text: string, commits: ClosingCommit[]): AppendResult {
   const none = { text, changed: false, added: [], skipped: [] }
-  const lines = text.split('\n')
+
+  const eol = detectEol(text)
+  if (eol === null) return { ...none, refused: MIXED_EOL }
+
+  const lines = text.split(/\r?\n/)
 
   const fm = frontMatterBounds(lines)
   if (fm === null) return { ...none, refused: 'card has no front matter' }
@@ -552,7 +592,7 @@ export function appendCloses(text: string, commits: ClosingCommit[]): AppendResu
   if (added.length === 0) return { ...none, skipped, refused: null }
 
   const spliced = spliceCloses(lines, bounds, existing, added)
-  return { text: spliced.join('\n'), changed: true, added: added.map(a => a.sha), skipped, refused: null }
+  return { text: spliced.join(eol), changed: true, added: added.map(a => a.sha), skipped, refused: null }
 }
 
 /** Split the incoming commits into the ones this card does not already name and

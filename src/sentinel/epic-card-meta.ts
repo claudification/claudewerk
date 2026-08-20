@@ -13,7 +13,8 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { parseFrontmatter, serializeFrontmatter } from '../shared/frontmatter'
+import { parseCardFrontmatter } from '../shared/card-frontmatter'
+import { serializeFrontmatter } from '../shared/frontmatter'
 import { cardPath } from '../shared/project-paths'
 
 /** Read-modify-write of the card's frontmatter. False when there is no card --
@@ -26,14 +27,18 @@ export function patchCardMeta(root: string, epicId: string, patch: Record<string
   } catch {
     return false
   }
-  const { meta, body } = parseFrontmatter(raw)
-  writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body), 'utf8')
+  const { meta, body, raw: blocks } = parseCardFrontmatter(raw)
+  // `blocks` is not optional here even though the argument is. This writes a
+  // BOARD CARD, and an epic card is exactly the kind that carries a `promise:`
+  // block -- dropping it would empty `closes:` every time the overseer took or
+  // released the lease.
+  writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body, blocks), 'utf8')
   return true
 }
 
 export function readCardMeta(root: string, epicId: string): Record<string, unknown> | null {
   try {
-    return parseFrontmatter(readFileSync(cardPath(root, epicId, false), 'utf8')).meta
+    return parseCardFrontmatter(readFileSync(cardPath(root, epicId, false), 'utf8')).meta
   } catch {
     return null
   }

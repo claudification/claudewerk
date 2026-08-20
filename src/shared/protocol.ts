@@ -35,6 +35,7 @@ import type {
 import type { NodeStatsReport } from './node-stats'
 import type { PinnedEpicRow } from './pinned-epic-rows'
 import type { ProjectTask, ProjectTaskManifestEntry, ProjectTaskMeta, ProjectTaskRef } from './project-task-types'
+import type { PromiseLedger } from './promise-rows'
 import type {
   QuestAcceptanceContract,
   QuestGate,
@@ -4229,10 +4230,10 @@ export interface ProjectBoardOp {
   type: 'project_board_op'
   requestId: string
   projectRoot: string
-  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete' | 'pinned'
+  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete' | 'pinned' | 'promises'
   /** Canonical project URI, for ops whose RESULT has to name the project it came
-   *  from (`pinned` -- a wall row is an address you can click). The sentinel never
-   *  derives a path from it; `projectRoot` above is still the only path input. */
+   *  from (`pinned`, `promises` -- a row is an address you can click). The sentinel
+   *  never derives a path from it; `projectRoot` above is still the only path input. */
   project?: string
   /** LEGACY HINT, ignored. A card is addressed by `slug` alone -- its lane is a
    *  `status:` frontmatter key, not a location. Still sent so an older sentinel
@@ -4269,6 +4270,11 @@ export interface ProjectBoardResult {
   /** pinned: the whole A8 fold, done beside the files. Only the pinned epics and
    *  their not-closed children cross the wire -- never the board. */
   pinned?: PinnedEpicRow[]
+  /** promises: the promise-ledger fold, done beside the files for the same reason
+   *  `pinned` is -- a promise is a NESTED front-matter block, and the board's flat
+   *  parser has already dropped it by the time a card reaches the wire. Carries
+   *  only the cards that have a promise or are filed as finished, never the board. */
+  promises?: PromiseLedger
   /** get / update */
   task?: ProjectTask | null
   /** create */

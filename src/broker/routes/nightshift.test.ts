@@ -2,11 +2,20 @@
  * Nightshift HTTP route -- the `run` (Run-now) intercept on the agent writer
  * path. POST {op:'run'} must execute IN the broker (orchestrator) and return a
  * JSON result without ever forwarding to the sentinel; it is files-permission
- * gated like the other writes. `runNightshift` is mocked so no real agents spawn.
+ * gated like the other writes. `runNightshift` is stubbed so no real agents spawn.
+ *
+ * Via `configureNightshiftRunner`, NOT `mock.module`. This file's module mock was
+ * the actual cause of the "Export named 'noteCapacityUsageEvent' not found in
+ * module" failures that hit 4 files in `bun test src/broker/handlers
+ * src/broker/routes`: Bun module mocks are process-global and permanent, and the
+ * factory returned 2 of the orchestrator's 9 exports, deleting the rest for every
+ * file linked after it. See `nightshift-orchestrator-no-module-mock.test.ts`.
  */
 
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { ConversationStore } from '../conversation-store'
+import { configureNightshiftRunner, resetNightshiftRunner } from '../nightshift-orchestrator'
+import { createNightshiftRouter } from './nightshift'
 import type { RouteHelpers } from './shared'
 
 interface RunCall {
@@ -16,15 +25,15 @@ interface RunCall {
 let runCalls: RunCall[] = []
 let runOutcome: { ok: boolean; runId?: string; error?: string; skipped?: string } = { ok: true, runId: '2026-06-26' }
 
-mock.module('../nightshift-orchestrator', () => ({
-  runNightshift: async (_store: unknown, project: string, opts: { trigger: string }) => {
+// Installed per-test (not at module scope) so the stub is only live while THIS
+// file's tests run -- the runner is a process-wide slot like any other seam.
+function installStub(): void {
+  configureNightshiftRunner(async (_store, project, opts) => {
     runCalls.push({ project, trigger: opts.trigger })
     return runOutcome
-  },
-  isNightshiftRunActive: () => false,
-}))
-
-const { createNightshiftRouter } = await import('./nightshift')
+  })
+}
+afterAll(resetNightshiftRunner)
 
 const PROJECT = 'claude://default/Users/jonas/projects/remote-claude'
 const SECRET = { Authorization: 'Bearer x', 'Content-Type': 'application/json' }
@@ -48,6 +57,7 @@ function makeApp(opts?: { denyPermission?: boolean }) {
 beforeEach(() => {
   runCalls = []
   runOutcome = { ok: true, runId: '2026-06-26' }
+  installStub()
 })
 
 describe('POST /api/nightshift op=run', () => {

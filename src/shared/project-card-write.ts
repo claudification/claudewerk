@@ -72,7 +72,9 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     created,
     [WALL_PINNED_KEY]: input.wallPinned ? true : undefined,
   }
-  writeFileSync(cardPath(root, id), serializeCard(meta, input.body), 'utf8')
+  // No blocks: a card being created has no prior bytes to preserve. A `promise:`
+  // block arrives later, via promise-ledger's line surgery.
+  writeFileSync(cardPath(root, id), serializeCard(meta, input.body, {}), 'utf8')
   return {
     slug: id,
     status,
@@ -125,7 +127,7 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
   const status = asStatus(meta.status) ?? target.laneStatus ?? 'inbox'
   meta.status = status
 
-  writeFileSync(target.abs, serializeCard(meta, patch.body ?? raw.body), 'utf8')
+  writeFileSync(target.abs, serializeCard(meta, patch.body ?? raw.body, raw.raw), 'utf8')
   return getProjectTask(root, id)
 }
 
@@ -133,6 +135,12 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
  * Change a card's lane. Rewrites ONE frontmatter key: the file does not move
  * and the id does not change. Returns the PREVIOUS status, or null if there is
  * no such card. mtime is bumped so the card sorts to the top of its new column.
+ *
+ * "Rewrites ONE key" was an aspiration until the nested-block capture landed:
+ * this is the write path `project_set_status` uses, so before it threaded
+ * `raw.raw` every lane change de-indented a card's `promise:` block and emptied
+ * its `closes:`. A promise that HAD been delivered came back reading `not
+ * started` -- a confident wrong answer, which is worse than no ledger at all.
  */
 export function setProjectTaskStatus(root: string, id: string, toStatus: TaskStatus, nowMs: number): TaskStatus | null {
   const target = locateForWrite(root, id)
@@ -141,7 +149,7 @@ export function setProjectTaskStatus(root: string, id: string, toStatus: TaskSta
   if (!raw) return null
 
   const prev = asStatus(raw.meta.status) ?? target.laneStatus ?? 'inbox'
-  writeFileSync(target.abs, serializeCard({ ...raw.meta, status: toStatus }, raw.body), 'utf8')
+  writeFileSync(target.abs, serializeCard({ ...raw.meta, status: toStatus }, raw.body, raw.raw), 'utf8')
   const now = new Date(nowMs)
   try {
     utimesSync(target.abs, now, now)

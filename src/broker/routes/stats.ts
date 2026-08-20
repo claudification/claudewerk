@@ -13,6 +13,7 @@ import type { ConversationStore } from '../conversation-store'
 import { querySpendRollup, type SpendPeriod } from '../openrouter-spend-store'
 import { listProjects } from '../project-store'
 import type { StoreDriver } from '../store/types'
+import { createActivityMatrixRouter } from './activity-matrix'
 import type { RouteHelpers } from './shared'
 
 // Token-flow widget windows -> (lookback, bucket width). Each targets ~60-72
@@ -205,6 +206,13 @@ export function createStatsRouter(
     }
     return c.json(querySpendRollup(period, c.req.query('feature') || undefined))
   })
+
+  // ─── Activity matrix ───────────────────────────────────────────────
+  // `/api/stats/activity-matrix` -- its own router, mounted here so it keeps
+  // the admin gate and the `/api/stats/*` prefix of the cost routes above
+  // without adding a seventh screen to this function. See
+  // `routes/activity-matrix.ts`.
+  app.route('/', createActivityMatrixRouter(store, helpers))
 
   // ─── Projects ──────────────────────────────────────────────────────
 
