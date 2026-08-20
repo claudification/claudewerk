@@ -142,10 +142,12 @@ cp "$TMP_JSON" "$REPORT" 2>/dev/null || REPORT="$TMP_JSON"
   jq -r '.attribution // {} | "  new     : \(.complexity_introduced // 0) complexity, \(.dead_code_introduced // 0) dead-code, \(.duplication_introduced // 0) duplication"' <"$TMP_JSON"
   jq -r '.attribution // {} | "  carried : \(.complexity_inherited // 0) complexity, \(.dead_code_inherited // 0) dead-code, \(.duplication_inherited // 0) duplication"' <"$TMP_JSON"
   echo "──────────────────────────────────────────────────────────────────────"
+  # `crap` is null whenever the finding tripped a cognitive or cyclomatic
+  # threshold instead of the CRAP one, so print all three and name which gave.
   jq -r '
     (.complexity.findings // [])[]
     | select(.introduced == true)
-    | "  complexity  \(.path):\(.line)  \(.name)  crap=\(.crap) cyclomatic=\(.cyclomatic) (\(.exceeded // "threshold"))"
+    | "  complexity  \(.path):\(.line)  \(.name)  cyclomatic=\(.cyclomatic // "?") cognitive=\(.cognitive // "?") crap=\(.crap // "n/a") -- exceeded \(.exceeded // "threshold")"
   ' <"$TMP_JSON" 2>/dev/null || true
   jq -r '
     (.dead_code // {}) | to_entries[]
