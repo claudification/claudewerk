@@ -10,6 +10,7 @@ import { beatStale, runVitality } from '@shared/epic-vitality'
 import type { EpicInspectResult } from '@shared/protocol'
 import { useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import { leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { cn } from '@/lib/utils'
 import { ago, Empty, Stat, StatusPill } from './overseer-bits'
 import { OverseerControls } from './overseer-controls'
@@ -59,6 +60,7 @@ function RunHead({
   stale: boolean
 }) {
   const { gen, maxGens, pct, lastBeat, target, concurrency, vitality } = headFacts(data, nowMs)
+  const lease = leaseState(data.lease, data.live.overseerAlive, nowMs)
 
   return (
     <div className="px-3.5 py-2.5 border-b border-border border-l-[3px] border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)] shrink-0">
@@ -79,6 +81,21 @@ function RunHead({
       >
         {vitality.why}
       </div>
+      {/* WHO HOLDS THE LEASE, AND AT WHICH GENERATION. This window used to
+          collapse the whole lease to a boolean and show live overseer
+          CONVERSATIONS beside it -- a different fact, which the engine keeps
+          apart and the panel did not. On 2026-08-20 the lease named 0dc1e780 at
+          gen 11 with no live conversation, which IS the explanation of the
+          deadlock, and the only place it was legible was the card file.
+
+          The never-taken case is left to the seats block below, which already
+          says it at the volume it deserves; saying it twice in one pane is how a
+          heading stops being read. */}
+      {lease.kind !== 'never' && (
+        <div className={cn('text-meta mt-0.5', lease.kind === 'stale' ? 'text-destructive' : 'text-fg-dim')}>
+          {leaseSentence(lease)}
+        </div>
+      )}
       <div className="flex items-center gap-2.5 mt-2">
         <span className="text-meta text-muted-foreground shrink-0">GEN {gen}</span>
         <span className="flex-1 h-[3px] bg-border/70">

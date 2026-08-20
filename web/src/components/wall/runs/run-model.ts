@@ -112,54 +112,8 @@ export function runStall(entry: EpicActivityEntry, nowMs: number): RunStall {
   return { stalled: runVitality(entry).vitality === 'stalled', sinceMs }
 }
 
-// ---------------------------------------------------------------------------
-// THE OVERSEER LEASE -- THE ALARM
-// ---------------------------------------------------------------------------
-
-/**
- * MIRRORS `LEASE_STALE_MS` in `src/shared/epic-lease.ts`, which cannot be
- * imported here: that module pulls `node:path` through `epic-paths.ts` and would
- * drag it into the browser bundle. Same number, same meaning -- a holder this old
- * is presumed dead however alive its conversation claims to be.
- */
-export const LEASE_STALE_MS = 10 * 60 * 1000
-
-export type LeaseKind =
-  /** The epic has never had an overseer. */
-  | 'never'
-  /** One woke and released the grip cleanly. */
-  | 'released'
-  /** Held by a conversation that is alive and recent. */
-  | 'held'
-  /** Held by something dead, or held far too long. THE alarm. */
-  | 'stale'
-
-export interface LeaseState {
-  kind: LeaseKind
-  /** How long the current holder has held it. */
-  sinceMs: number | null
-  /** Short form of the holding conversation id, for the sentence. */
-  holder: string
-  gen: number
-}
-
-export function leaseState(lease: EpicLease | null, overseerAlive: boolean, nowMs: number): LeaseState {
-  if (!lease) return { kind: 'never', sinceMs: null, holder: '', gen: 0 }
-
-  const taken = lease.at ? Date.parse(lease.at) : Number.NaN
-  const sinceMs = Number.isFinite(taken) ? Math.max(0, nowMs - taken) : null
-  const base = { sinceMs, holder: lease.convId.slice(0, 8), gen: lease.gen }
-
-  // Released is a FACT, not an absence: the generation counter survives a
-  // release, so an empty holder with a generation means it ran and let go.
-  if (!lease.convId) return { ...base, kind: 'released' }
-
-  // A holder whose conversation is gone is the 2026-08-18 failure verbatim: the
-  // run keeps its grip, the next wake's CAS keeps losing, and nothing says so.
-  const dead = !overseerAlive
-  const ancient = sinceMs === null || sinceMs > LEASE_STALE_MS
-  return { ...base, kind: dead || ancient ? 'stale' : 'held' }
-}
+// THE OVERSEER LEASE moved to `@/lib/epic-lease-view` -- the overseer window
+// needs the same sentence, and it could not import it from inside the wall.
 
 // ---------------------------------------------------------------------------
 // THE TAILS -- baton and beat pulse

@@ -18,23 +18,14 @@
 import type { RunVitalityView } from '@shared/epic-vitality'
 import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
+import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { ProjectTag } from '../../project-tag'
 import { navigateFromWall } from '../wall-navigate'
 import { RunActions } from './run-actions'
 import { BatonTail, BeatPulse, BucketStrip, RunTag } from './run-bits'
-import {
-  batonTail,
-  beatTicks,
-  idleSentence,
-  type LeaseState,
-  leaseState,
-  type RunStall,
-  runBuckets,
-  runStall,
-  runView,
-} from './run-model'
+import { batonTail, beatTicks, idleSentence, type RunStall, runBuckets, runStall, runView } from './run-model'
 import type { EpicRunRowData } from './use-unattended-runs'
 
 /**
@@ -105,15 +96,6 @@ function StallBanner({ stall }: { stall: RunStall }) {
         : `STALLED -- no beat for ${formatDurationShort(stall.sinceMs)}`}
     </div>
   )
-}
-
-/** The lease, as one sentence. `stale` is the only one that raises its voice. */
-function leaseSentence(lease: LeaseState): string {
-  const age = lease.sinceMs === null ? 'unknown age' : `${formatDurationShort(lease.sinceMs)} ago`
-  if (lease.kind === 'never') return 'overseer has never woken'
-  if (lease.kind === 'released') return `overseer released the lease at gen ${lease.gen}`
-  if (lease.kind === 'stale') return `STALE LEASE -- ${lease.holder} has held gen ${lease.gen} since ${age}`
-  return `overseer ${lease.holder} woke ${age}`
 }
 
 /** THE ALARM. A run whose overseer never woke looks healthy on every other
