@@ -24,6 +24,10 @@ const EPIC = card('e1', 'open', { tags: ['epic'] })
 const plan = (cards: ProjectTaskMeta[], concurrency = 3, inFlight: string[] = [], inVerify: string[] = []) =>
   planEpic({ cards, epicId: 'e1', concurrency, inFlight, inVerify })
 
+/** Cards whose seats keep failing to launch (`EpicGroup.unspawnable`). */
+const planDead = (cards: ProjectTaskMeta[], unspawnable: string[]) =>
+  planEpic({ cards, epicId: 'e1', concurrency: 3, inFlight: [], inVerify: [], unspawnable })
+
 describe('planEpic', () => {
   test('an epic nobody declared is reported, not crashed on', () => {
     const p = planEpic({ cards: [], epicId: 'ghost', concurrency: 3, inFlight: [], inVerify: [] })
@@ -138,5 +142,44 @@ describe('planEpic', () => {
     const p = plan([EPIC, card('t1', 'done', { epic: 'e1' }), card('t2', 'archived', { epic: 'e1' })])
     expect(p.complete).toBe(true)
     expect(p.idleReason).toContain('terminal')
+  })
+})
+
+/**
+ * A card whose SEAT cannot launch is not a card that is not ready -- it is a
+ * card the engine must stop sending work at. Gen 2 of `epic-the-wall-ii` spent
+ * thirteen seats discovering that one card id was too long to be a worktree
+ * name; excluding it here is what makes the thirteenth attempt impossible.
+ */
+describe('cards the engine has given up launching', () => {
+  test('are withheld from dispatch', () => {
+    const p = planDead([EPIC, card('t1', 'open', { epic: 'e1' }), card('t2', 'open', { epic: 'e1' })], ['t1'])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t2'])
+  })
+
+  test('are withheld from VERIFY too -- the launch fails whatever the seat is', () => {
+    const p = planDead([EPIC, card('t1', 'in-review', { epic: 'e1' })], ['t1'])
+    expect(p.verify).toEqual([])
+  })
+
+  test('are named rather than silently dropped', () => {
+    const p = planDead([EPIC, card('t1', 'open', { epic: 'e1' })], ['t1'])
+    expect(p.unspawnable.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('outrank every other idle reason -- nothing else here stays broken on its own', () => {
+    const p = planDead(
+      [EPIC, card('t1', 'in-review', { epic: 'e1' }), card('q1', 'open', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] })],
+      ['t1'],
+    )
+    expect(p.idleReason).toContain('seats keep dying')
+    expect(p.idleReason).toContain('t1')
+    expect(p.idleReason).toContain('Spawn FAILED stderr:')
+  })
+
+  test('an empty list changes nothing -- the field is optional by design', () => {
+    const cards = [EPIC, card('t1', 'open', { epic: 'e1' })]
+    expect(planDead(cards, []).dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(plan(cards).unspawnable).toEqual([])
   })
 })

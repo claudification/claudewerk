@@ -69,6 +69,19 @@ export interface EpicGroup {
    * "dispatchable again".
    */
   failedLegs: FailedLeg[]
+  /**
+   * Cards that have burned `MAX_LAUNCH_ATTEMPTS` seats without one of them
+   * producing anything. THE BOUND ON THE RETRY PATH.
+   *
+   * Leaving a failed launch dispatchable is right exactly once per attempt and
+   * catastrophic without a ceiling: gen 2 of `epic-the-wall-ii` wrote thirteen
+   * `dispatch` entries for one card, thirteen seats died, and the engine would
+   * happily have written a fourteenth. A card in here is dispatched no further
+   * -- it goes into `idleReason`, which drives a dry generation, which wakes the
+   * overseer once and parks the run on the second. Visible and stopped, rather
+   * than retried forever.
+   */
+  unspawnable: string[]
   /** The highest generation seen across this epic's conversations. Diagnostic
    *  only -- the run file owns the real counter, this just makes a mismatch
    *  visible in the log instead of silent. */
@@ -105,6 +118,18 @@ export type ProducedOutput = (conv: Conversation) => boolean
  *  live retry. */
 type CardLiveness = Map<string, Map<string, boolean>>
 
+/**
+ * How many seats a card may lose to a failed launch before the engine stops
+ * sending more.
+ *
+ * THREE, not one: a spawn can fail transiently (a sentinel mid-restart, a name
+ * race), and refusing to retry at all would strand a healthy card on one bad
+ * second. Three is also small enough that the DETERMINISTIC failure this card
+ * was filed for -- a card id too long to be a worktree name -- costs three
+ * spawns instead of the thirteen gen 2 actually spent.
+ */
+export const MAX_LAUNCH_ATTEMPTS = 3
+
 function emptyGroup(epicId: string, project: string): EpicGroup {
   return {
     epicId,
@@ -115,6 +140,7 @@ function emptyGroup(epicId: string, project: string): EpicGroup {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 0,
   }
 }
@@ -140,6 +166,33 @@ interface Accumulators {
   outputs: CardLiveness
 }
 
+/** A card-holding seat -- implementer or verifier -- folded into all three
+ *  per-card accumulators. Its own function so `absorb` stays "which kind of
+ *  conversation is this" and nothing else. */
+function absorbCardSeat(
+  conv: Conversation,
+  tag: { epicId: string; cardId: string; role: FailedLeg['role']; gen: number },
+  live: boolean,
+  producedOutput: ProducedOutput,
+  acc: Accumulators,
+  group: EpicGroup,
+): void {
+  noteCardLiveness(acc.cards, tag.epicId, tag.cardId, live)
+  // Second, role-scoped fold. The combined one above still owns settle/dispatch;
+  // this one exists so the beat can ask "is a VERDICT already being written" --
+  // a question the combined bit cannot answer, which is how one card ended up
+  // with eight simultaneous verifiers.
+  if (tag.role === 'verifier') noteCardLiveness(acc.verifiers, tag.epicId, tag.cardId, live)
+
+  const output = producedOutput(conv)
+  noteCardLiveness(acc.outputs, tag.epicId, tag.cardId, output)
+  // A LIVE seat with nothing yet is young, not dead. Only a finished one that
+  // never said anything is a failed launch.
+  if (!live && !output) {
+    group.failedLegs.push({ cardId: tag.cardId, convId: conv.id, role: tag.role, gen: tag.gen })
+  }
+}
+
 /** Fold one conversation into the accumulators. Split out so the grouping pass
  *  reads as "for each conversation, absorb it" and nothing else. */
 function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutput, acc: Accumulators): void {
@@ -158,21 +211,9 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
     }
     return
   }
-  if (!tag.cardId) return
-  noteCardLiveness(acc.cards, tag.epicId, tag.cardId, live)
-  // Second, role-scoped fold. The combined one above still owns settle/dispatch;
-  // this one exists so the beat can ask "is a VERDICT already being written" --
-  // a question the combined bit cannot answer, which is how one card ended up
-  // with eight simultaneous verifiers.
-  if (tag.role === 'verifier') noteCardLiveness(acc.verifiers, tag.epicId, tag.cardId, live)
-
-  const output = producedOutput(conv)
-  noteCardLiveness(acc.outputs, tag.epicId, tag.cardId, output)
-  // A LIVE seat with nothing yet is young, not dead. Only a finished one that
-  // never said anything is a failed launch.
-  if (!live && !output) {
-    group.failedLegs.push({ cardId: tag.cardId, convId: conv.id, role: tag.role, gen: tag.gen })
-  }
+  const { epicId, cardId, role, gen } = tag
+  if (!cardId) return
+  absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, acc, group)
 }
 
 /**
@@ -184,12 +225,25 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
  * would claim it finished, and neither is true of work that never began.
  */
 function foldWorkLanes(group: EpicGroup, byCard: Map<string, boolean>, outputs: Map<string, boolean>): void {
+  const failures = new Map<string, number>()
+  for (const leg of group.failedLegs) failures.set(leg.cardId, (failures.get(leg.cardId) ?? 0) + 1)
+
   for (const [cardId, live] of byCard) {
-    if (live) group.inFlight.push(cardId)
-    else if (outputs.get(cardId) ?? true) group.settled.push(cardId)
+    if (live) {
+      group.inFlight.push(cardId)
+      continue
+    }
+    // Anything that ever produced output settles, however many seats died
+    // around it -- a card that eventually worked is not unspawnable.
+    if (outputs.get(cardId) ?? true) {
+      group.settled.push(cardId)
+      continue
+    }
+    if ((failures.get(cardId) ?? 0) >= MAX_LAUNCH_ATTEMPTS) group.unspawnable.push(cardId)
   }
   group.inFlight.sort()
   group.settled.sort()
+  group.unspawnable.sort()
 }
 
 /** Verifier-role only, and only the LIVE half: a dead verifier is not a reason

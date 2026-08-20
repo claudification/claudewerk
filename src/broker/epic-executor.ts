@@ -93,6 +93,7 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     concurrency: run.concurrency,
     inFlight: group.inFlight,
     inVerify: group.inVerify,
+    unspawnable: group.unspawnable,
   })
 
   const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true

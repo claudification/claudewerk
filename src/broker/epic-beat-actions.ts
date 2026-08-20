@@ -22,7 +22,7 @@ import {
   planPlannerSpawn,
   planVerifierSpawn,
 } from './epic-spawn-plan'
-import type { EpicGroup, FailedLeg } from './epic-sweep'
+import { type EpicGroup, type FailedLeg, MAX_LAUNCH_ATTEMPTS } from './epic-sweep'
 import type { BeatDeps } from './epic-types'
 
 /**
@@ -62,7 +62,16 @@ export async function acknowledge(deps: BeatDeps, group: EpicGroup, pending: rea
  * line now carries the sentinel's stderr (handlers/sentinel.ts).
  */
 export async function noteFailedLaunches(deps: BeatDeps, group: EpicGroup, legs: readonly FailedLeg[]): Promise<void> {
+  const dead = new Set(group.unspawnable)
   for (const leg of legs) {
+    // The bound is stated IN the entry that trips it. A reader following the
+    // log forward must not have to count `dispatch-failed` entries to learn
+    // that the engine has stopped trying.
+    const outcome = dead.has(leg.cardId)
+      ? `This card has now lost ${MAX_LAUNCH_ATTEMPTS} or more seats without one of them producing anything. ` +
+        'IT WILL NOT BE DISPATCHED OR VERIFIED AGAIN. Something about the card itself makes the seat ' +
+        'unlaunchable -- most often an id too long for a worktree name. Rename it, or fix the seat.'
+      : 'The card is dispatchable again; this is not a completion.'
     const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
       kind: 'dispatch-failed',
       convId: leg.convId,
@@ -71,8 +80,7 @@ export async function noteFailedLaunches(deps: BeatDeps, group: EpicGroup, legs:
         `The ${leg.role} dispatched for \`${leg.cardId}\` at generation ${leg.gen} ` +
         `(conversation \`${leg.convId}\`) ENDED WITHOUT PRODUCING ANYTHING -- the launch failed, ` +
         'no work was done and no verdict was written. Grep the broker log for ' +
-        `\`Spawn FAILED stderr: conv=${leg.convId.slice(0, 8)}\` for the cause. ` +
-        'The card is dispatchable again; this is not a completion.',
+        `\`Spawn FAILED stderr: conv=${leg.convId.slice(0, 8)}\` for the cause. ${outcome}`,
     })
     if (!res.ok) deps.log(`${tag(group.epicId, leg.gen)} dispatch-failed append FAILED for ${leg.cardId}: ${res.error}`)
   }

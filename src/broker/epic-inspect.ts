@@ -32,6 +32,7 @@ function emptyGroup(epicId: string, project: string): EpicGroup {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 0,
   }
 }

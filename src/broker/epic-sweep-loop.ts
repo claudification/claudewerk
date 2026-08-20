@@ -221,6 +221,7 @@ export async function beatOneEpic(
       liveOverseers: [],
       settled: [],
       failedLegs: [],
+      unspawnable: [],
       maxGenSeen: 0,
     }
     const outcome = await runEpicBeat(deps, group)

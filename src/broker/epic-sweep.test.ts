@@ -4,6 +4,7 @@ import type { Conversation } from '../shared/protocol'
 import {
   generationMismatch,
   groupEpicConversations,
+  MAX_LAUNCH_ATTEMPTS,
   unacknowledgedCards,
   unacknowledgedFailedLegs,
 } from './epic-sweep'
@@ -156,6 +157,58 @@ describe('a launch that produced nothing is not a completed leg', () => {
   })
 })
 
+/**
+ * THE BOUND ON THE RETRY PATH.
+ *
+ * Leaving a failed launch dispatchable is right once per attempt and ruinous
+ * without a ceiling. Generation 2 of `epic-the-wall-ii` wrote THIRTEEN
+ * `dispatch` entries for one card; thirteen seats died; the log recorded
+ * thirteen dispatches and zero failures. A fix that only stopped the false
+ * settle would have turned that into thirteen retries a beat apart, forever.
+ */
+describe('a card whose seats keep dying stops being retried', () => {
+  const dead = (n: number) => Array.from({ length: n }, () => conv(verifier('t1'), false, false))
+  const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput).get('e1')
+
+  test('the bound is three attempts', () => {
+    expect(MAX_LAUNCH_ATTEMPTS).toBe(3)
+  })
+
+  test('two failures still leave the card retryable -- a transient death must not strand it', () => {
+    const g = group(dead(2))
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.failedLegs).toHaveLength(2)
+  })
+
+  test('the third failure marks it unspawnable', () => {
+    expect(group(dead(3))?.unspawnable).toEqual(['t1'])
+  })
+
+  test('and it never lands in settled -- being given up on is not being done', () => {
+    const g = group(dead(4))
+    expect(g?.settled).toEqual([])
+    expect(g?.inFlight).toEqual([])
+    expect(g?.unspawnable).toEqual(['t1'])
+  })
+
+  test('a card that eventually PRODUCED something is never unspawnable, however many seats died', () => {
+    const g = group([...dead(5), conv(verifier('t1'), false, true)])
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.settled).toEqual(['t1'])
+  })
+
+  test('a live retry outranks the bound -- do not give up on work that is running', () => {
+    const g = group([...dead(3), conv(verifier('t1'), true, false)])
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.inFlight).toEqual(['t1'])
+  })
+
+  test('the bound is per card, not per epic', () => {
+    const g = group([...dead(3), conv(impl('t2'), false, false)])
+    expect(g?.unspawnable).toEqual(['t1'])
+  })
+})
+
 describe('unacknowledgedFailedLegs -- one baton entry per dead leg, not one per sweep', () => {
   const leg = (convId: string, cardId = 't1') => ({ cardId, convId, role: 'verifier' as const, gen: 1 })
   const failedEntry = (convId: string): EpicLogEntry => ({
@@ -224,6 +277,7 @@ describe('generationMismatch', () => {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 5,
   }
 
