@@ -1,25 +1,42 @@
 import type { Conversation } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
-export function StatusIndicator({ status, adHoc }: { status: Conversation['status']; adHoc?: boolean }) {
-  // Ad-hoc conversations get a lightning bolt instead of status dots
-  if (adHoc) {
-    if (status === 'ended') {
-      return (
-        <span className="text-[10px] shrink-0" title="ad-hoc completed">
-          &#x2713;
-        </span>
-      )
-    }
+/** Statuses that mean "this conversation is doing something right now". */
+const BUSY: ReadonlySet<string> = new Set(['active', 'booting', 'starting'])
+
+/**
+ * Ad-hoc state glyph: the SAME spinning-ring motion the normal "working"
+ * indicator uses, so a moving ring always means the same thing everywhere,
+ * with the ad-hoc identity carried by colour (amber, not green) and a bolt
+ * riding in the middle of the ring.
+ *
+ * The old form was a static bolt with `animate-pulse` -- it read as decoration,
+ * not as progress, so a busy ad-hoc conversation looked idle.
+ */
+function AdHocIndicator({ status }: { status: Conversation['status'] }) {
+  if (status === 'ended') {
     return (
-      <span
-        className={cn('text-xs shrink-0', status === 'active' ? 'text-amber-400 animate-pulse' : 'text-amber-400/60')}
-        title="ad-hoc task"
-      >
-        &#x26A1;
+      <span className="text-[10px] shrink-0 text-amber-400/70" title="ad-hoc completed">
+        &#x2713;
       </span>
     )
   }
+  const busy = BUSY.has(status)
+  return (
+    <span
+      className={cn('relative size-4 shrink-0 inline-flex items-center justify-center', !busy && 'opacity-50')}
+      title={busy ? `ad-hoc task -- working (${status})` : `ad-hoc task -- ${status}`}
+    >
+      {busy && (
+        <span className="absolute inset-0 rounded-full border-[1.5px] border-amber-400 border-t-transparent animate-spin" />
+      )}
+      <span className="text-[10px] leading-none text-amber-400">&#x26A1;</span>
+    </span>
+  )
+}
+
+export function StatusIndicator({ status, adHoc }: { status: Conversation['status']; adHoc?: boolean }) {
+  if (adHoc) return <AdHocIndicator status={status} />
   if (status === 'ended') {
     return <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold bg-ended text-foreground">ended</span>
   }
