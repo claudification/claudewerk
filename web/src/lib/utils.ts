@@ -1,3 +1,4 @@
+import { formatDuration } from '@shared/format-duration'
 import { projectIdentityKey } from '@shared/project-uri'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -34,14 +35,14 @@ export function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString('en-US', { hour12: false })
 }
 
+/**
+ * Elapsed time since `timestamp`, as `45s ago` / `12m ago` / `3h 20m ago`.
+ *
+ * `clampNegative: false` keeps the pre-existing render for a clock-skewed
+ * future timestamp (`-5s ago`) instead of flattening it to `0s ago`.
+ */
 export function formatAge(timestamp: number): string {
-  const diff = Date.now() - timestamp
-  const seconds = Math.floor(diff / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  return `${hours}h ${minutes % 60}m ago`
+  return `${formatDuration(Date.now() - timestamp, { clampNegative: false })} ago`
 }
 
 export function formatDurationMs(ms: number): string {

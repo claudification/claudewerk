@@ -16,6 +16,12 @@ describe('formatDuration', () => {
   it('clamps negatives to 0s', () => {
     expect(formatDuration(-5000)).toBe('0s')
   })
+  it('lets negatives through when clampNegative is false', () => {
+    expect(formatDuration(-5000, { clampNegative: false })).toBe('-5s')
+    expect(formatDuration(-3_600_000, { clampNegative: false })).toBe('-3600s')
+    expect(formatDuration(0, { clampNegative: false })).toBe('0s')
+    expect(formatDuration(45_000, { clampNegative: false })).toBe('45s')
+  })
 })
 
 // Characterization table captured from the three byte-identical copies this
