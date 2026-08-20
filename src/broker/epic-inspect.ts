@@ -18,25 +18,8 @@ import { recentBeats } from './epic-beat-log'
 import { fetchBoardCards, fetchEpicRun } from './epic-broker-rpc'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
 import { isArmed, listArmedEpics } from './epic-registry'
-import { type EpicGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
+import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
-
-/** An epic with no conversations still has a live picture -- an empty one. */
-function emptyGroup(epicId: string, project: string): EpicGroup {
-  return {
-    epicId,
-    project,
-    inFlight: [],
-    inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    settled: [],
-    failedLegs: [],
-    unspawnable: [],
-    convIds: [],
-    maxGenSeen: 0,
-  }
-}
 
 /** The group for one epic, from a conversation list the caller already has.
  *  Takes the list rather than the deps so an inspect enumerates the registry

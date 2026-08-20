@@ -12,6 +12,7 @@ import type {
   TurnFilter,
   TurnRecord,
 } from '../types'
+import { type Binds, queryAll, queryGet } from './query'
 
 function normalizeUri(uri: string): string {
   if (!uri) return uri
@@ -22,21 +23,9 @@ function normalizeUri(uri: string): string {
   }
 }
 
-type Binds = Record<string, string | number | null>
-
 /** Conversation ids per `IN (...)` batch. SQLite's default ceiling is 999 bound
  *  variables per statement; 500 leaves room and keeps the plan cache small. */
 const SUM_CHUNK = 500
-
-function queryAll(db: Database, sql: string, binds?: Binds): unknown[] {
-  const stmt = db.query(sql)
-  return binds ? stmt.all(binds as never) : stmt.all()
-}
-
-function queryGet(db: Database, sql: string, binds?: Binds): unknown {
-  const stmt = db.query(sql)
-  return binds ? stmt.get(binds as never) : stmt.get()
-}
 
 function toHourKey(ms: number): string {
   const d = new Date(ms)

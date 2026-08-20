@@ -140,7 +140,11 @@ type CardLiveness = Map<string, Map<string, boolean>>
  */
 export const MAX_LAUNCH_ATTEMPTS = 3
 
-function emptyGroup(epicId: string, project: string): EpicGroup {
+/** An epic with no conversations still has a live picture -- an empty one.
+ *  Exported because `epic-inspect` needs the identical zero value: two copies
+ *  drift the moment `EpicGroup` gains a field, and one of the two readers then
+ *  reports a shape the other cannot. */
+export function emptyGroup(epicId: string, project: string): EpicGroup {
   return {
     epicId,
     project,

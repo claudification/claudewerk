@@ -1,13 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { type PerMessageTokenSample, sampleFromMessageUsage } from '../../../shared/token-usage'
 import type { TokenBucket, TokenBucketFilter, TokenSampleInput, TokenStore } from '../types'
-
-type Binds = Record<string, string | number | null>
-
-function queryAll(db: Database, sql: string, binds?: Binds): unknown[] {
-  const stmt = db.query(sql)
-  return binds ? stmt.all(binds as never) : stmt.all()
-}
+import { type Binds, queryAll } from './query'
 
 /** Parse a stored transcript_entries.content JSON blob into a token sample. */
 function parseEntryUsage(content: string): PerMessageTokenSample | null {

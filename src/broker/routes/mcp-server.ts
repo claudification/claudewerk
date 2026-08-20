@@ -36,6 +36,29 @@ function toolText(text: string, isError = false): ToolResult {
   return { content: [{ type: 'text', text }], isError }
 }
 
+/** Speak one line through the live voice orb, and say WHY when nobody heard it.
+ *
+ *  Its own function because the three-way note is the whole point: a line
+ *  dropped by SCOPING reads identically to "nobody home" unless we spell it
+ *  out, and an agent told "nobody was there" when panels were connected and
+ *  simply not this line's audience will go on to make the wrong next move. */
+function orbSinkResult(
+  conversationStore: ConversationStore,
+  callerConversationId: string | null | undefined,
+  message: string,
+  orbId: string | null,
+): { ok: boolean; status: 'delivered'; note: string } {
+  const res = relayToOrb(conversationStore, callerConversationId, message, orbId)
+  if (res.subscribers > 0) {
+    return { ok: res.ok, status: 'delivered', note: `spoken to the orb (${res.subscribers} listening)` }
+  }
+  if (res.refused > 0) {
+    const note = `no orb of yours is connected -- the line was dropped (${res.refused} other panel(s) are not its audience)`
+    return { ok: res.ok, status: 'delivered', note }
+  }
+  return { ok: res.ok, status: 'delivered', note: 'no orb is summoned right now -- nobody heard it' }
+}
+
 /** Resolve the explicit-or-implicit web-control target, then run one op. */
 async function runWebControlOp(
   clientId: string | undefined,
@@ -310,17 +333,7 @@ export function createMcpServer(
           // gate. Best-effort: `subscribers` reports how many panels heard it.
           const orb = parseOrbTarget(t)
           if (orb.isOrb) {
-            const res = relayToOrb(conversationStore, callerConversationId, message, orb.orbId)
-            // A drop caused by SCOPING reads identically to "nobody home" unless
-            // we say so -- and the agent should not be told nobody was there when
-            // panels were connected and simply not this line's audience.
-            const note =
-              res.subscribers > 0
-                ? `spoken to the orb (${res.subscribers} listening)`
-                : res.refused > 0
-                  ? `no orb of yours is connected -- the line was dropped (${res.refused} other panel(s) are not its audience)`
-                  : 'no orb is summoned right now -- nobody heard it'
-            return { to: t, ok: res.ok, status: 'delivered' as const, note }
+            return { to: t, ...orbSinkResult(conversationStore, callerConversationId, message, orb.orbId) }
           }
           const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)
           if (!target) {
