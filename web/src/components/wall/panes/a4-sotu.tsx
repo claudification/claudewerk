@@ -80,7 +80,7 @@ function SotuBlockView({ block, now }: { block: SotuBlock; now: number }) {
 }
 
 export default function SotuPane() {
-  useWallSheafFeed()
+  const { stale } = useWallSheafFeed()
   const data = useWallSheafStore(s => s.data)
   const error = useWallSheafStore(s => s.error)
   const look = useProjectLook()
@@ -99,7 +99,7 @@ export default function SotuPane() {
   const now = data?.generatedAt ?? 0
 
   return (
-    <WallPane title="STATE OF THE UNION" code="A4" hideInAmbient count={`${matched}/${total}`}>
+    <WallPane title="STATE OF THE UNION" code="A4" hideInAmbient count={`${matched}/${total}`} stale={stale}>
       {pills.length > 0 && (
         <div className="wall-sotu-pills">
           {pills.map(p => (

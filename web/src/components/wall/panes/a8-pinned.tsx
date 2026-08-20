@@ -28,7 +28,7 @@ import { WallPane } from '../wall-pane'
 const AXES = ['project', 'text'] as const
 
 export default function PinnedEpicsPane() {
-  const pins = useWallPins()
+  const { rows: pins, stale } = useWallPins()
   const { rows, matched, total } = useWallFilter(pins, AXES, row => ({
     project: row.projectName,
     title: row.epicTitle,
@@ -38,7 +38,7 @@ export default function PinnedEpicsPane() {
   }))
 
   return (
-    <WallPane title="PINNED" code="A8" maxHeight="34%" count={`${matched}/${total} pinned`}>
+    <WallPane title="PINNED" code="A8" maxHeight="34%" count={`${matched}/${total} pinned`} stale={stale}>
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0 ? 'nothing pinned -- pin an epic from the board to watch it here' : 'no pinned epic matches'}

@@ -345,6 +345,35 @@
 	color: var(--comment);
 	font-size: 10px;
 }
+/* ---------- the staleness contract ----------
+   Read from three metres away with no cursor and no chrome, so it is a WORD in
+   the alert colour, not a dot and not a tooltip. It sits directly after the
+   pane code, before the flex spacer, so it lands next to the title rather than
+   at the far edge where a wide pane would put it out of the eye's path. */
+.wall-stale-mark {
+	font-size: 9px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	padding: 0 3px;
+	border-radius: 2px;
+	color: var(--wall-warn, #e0a33e);
+	border: 1px solid currentColor;
+	line-height: 1.4;
+	white-space: nowrap;
+}
+.wall-kpi-val .wall-stale-mark {
+	margin-left: 5px;
+	vertical-align: middle;
+}
+/* The accumulated series lost their past to a reconnect. Quieter than STALE:
+   the numbers on screen ARE current, it is the history behind them that is not. */
+.wall-history-gap {
+	margin-top: 4px;
+	font-size: 10px;
+	color: var(--comment);
+	font-style: italic;
+}
+
 .wall-pane-body {
 	overflow: auto;
 	padding: var(--wall-pane-pad);
