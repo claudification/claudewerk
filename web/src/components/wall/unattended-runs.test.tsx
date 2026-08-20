@@ -301,6 +301,11 @@ describe('A7 liveness: what renders, and in what order', () => {
   it('calls a night run whose workers have all exited EXPIRED instead of vanishing it', () => {
     // The old feed dropped these in the hook, where the only possible answer was
     // "no row" -- a second liveness test, disagreeing with the epic half.
+    //
+    // THIS TEST DOES NOT PIN THAT DELETION, and reads as if it does: the feed is
+    // mocked above, so all it proves is what the pane does with a hand-built
+    // `liveWorkers: 0`. The half that proves the feed can still PRODUCE one lives
+    // in `runs/use-unattended-runs.test.ts`, against a real conversation store.
     feed.rows = [nightRow('2026-08-14', 0)]
     render(<UnattendedRunsPane />)
 
