@@ -29,7 +29,49 @@ export function initPush(config: PushConfig): void {
   vapidConfigured = true
 }
 
+/**
+ * THE PUSH TEST SEAM.
+ *
+ * The two calls the attention/notify paths make -- "is push even on?" and "send
+ * it to everyone" -- behind a swappable slot, so a test can substitute them
+ * WITHOUT `mock.module('./push')`.
+ *
+ * Why this exists rather than a module mock: Bun's `mock.module` is
+ * process-global, permanent, and REPLACES the module record, so a factory that
+ * returns 2 of this module's 7 exports deletes the other 5 for every file linked
+ * afterwards in the same `bun test` process. The importer then dies at LINK time
+ * with `SyntaxError: Export named 'initPush' not found in module` -- in a file
+ * that has nothing to do with push. `nightshift-orchestrator` lost four test
+ * files to exactly that; `module-mock-completeness.test.ts` now guards the class.
+ *
+ * Same shape as `configureNightshiftIo` in `nightshift-orchestrator.ts`.
+ * `sendPushToUser` is deliberately NOT in the seam yet -- nothing needs to stub
+ * it; add it here (never a module mock) the day something does.
+ */
+export interface PushIo {
+  isPushConfigured: () => boolean
+  sendPushToAll: (payload: PushPayload) => Promise<{ sent: number; failed: number }>
+}
+
+// Both are hoisted function declarations further down this file.
+const REAL_IO: PushIo = { isPushConfigured: isPushConfiguredReal, sendPushToAll: sendPushToAllReal }
+let io: PushIo = REAL_IO
+
+/** Swap the push seam (tests only). Call `resetPushIo()` when done. */
+export function configurePushIo(next: Partial<PushIo>): void {
+  io = { ...REAL_IO, ...next }
+}
+
+/** Restore the real VAPID check and the real sender. */
+export function resetPushIo(): void {
+  io = REAL_IO
+}
+
 export function isPushConfigured(): boolean {
+  return io.isPushConfigured()
+}
+
+function isPushConfiguredReal(): boolean {
   return vapidConfigured
 }
 
@@ -120,7 +162,11 @@ export async function sendPushToUser(
 }
 
 /** Send push to all users who have notifications permission for the conversation's project */
-export async function sendPushToAll(payload: PushPayload): Promise<{ sent: number; failed: number }> {
+export function sendPushToAll(payload: PushPayload): Promise<{ sent: number; failed: number }> {
+  return io.sendPushToAll(payload)
+}
+
+async function sendPushToAllReal(payload: PushPayload): Promise<{ sent: number; failed: number }> {
   if (!vapidConfigured) return { sent: 0, failed: 0 }
 
   const jsonPayload = JSON.stringify(payload)

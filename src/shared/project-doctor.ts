@@ -27,8 +27,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs'
+import { parseCardFrontmatter } from './card-frontmatter'
 import { readLinkage, readOne } from './card-linkage-read'
-import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
 import { fsStampDeps, type RepairMode, stampMissingCreated } from './project-doctor-created'
 import { checkEpics, type EpicCardView } from './project-doctor-epics'
@@ -83,7 +83,7 @@ function loadCards(root: string, legacyIds: Set<string>): LoadedCard[] {
 function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>): DoctorFinding[] {
   const findings = checkCard({ id: card.id, content: card.raw, laneStatus: card.laneStatus })
   if (card.raw === null) return findings
-  const { meta, body } = parseFrontmatter(card.raw)
+  const { meta, body } = parseCardFrontmatter(card.raw)
   const refs = Array.isArray(meta.refs) ? meta.refs.map(String) : []
   return [
     ...findings,
@@ -104,7 +104,7 @@ function epicViews(cards: LoadedCard[]): EpicCardView[] {
   const out: EpicCardView[] = []
   for (const card of cards) {
     if (card.raw === null) continue
-    const { meta } = parseFrontmatter(card.raw)
+    const { meta } = parseCardFrontmatter(card.raw)
     const linkage = readLinkage(meta)
     out.push({
       id: card.id,

@@ -25,9 +25,9 @@
  */
 
 import { writeFileSync } from 'node:fs'
+import { parseCardFrontmatter } from './card-frontmatter'
 import { cardKeySpec } from './card-schema'
 import { cardValueProblem } from './card-schema-validate'
-import { parseFrontmatter } from './frontmatter'
 import { serializeCard } from './project-card-file'
 import type { RepairMode, StampTarget } from './project-doctor-created'
 import type { DoctorFinding } from './project-doctor-types'
@@ -94,12 +94,12 @@ function finding(id: string, fix: Fix, mode: RepairMode): DoctorFinding {
  */
 export function repairCardShape(card: StampTarget, mode: RepairMode, deps: ShapeRepairDeps): ShapeRepair {
   if (mode === 'off' || card.content === null) return { findings: [], content: card.content }
-  // No fences means no frontmatter to patch: parseFrontmatter would hand back
+  // No fences means no frontmatter to patch: parseCardFrontmatter would hand back
   // the whole file as a body and serializeCard would wrap it in a block it never
   // had. `card-no-frontmatter` already reports this one.
   if (!card.content.startsWith('---')) return { findings: [], content: card.content }
 
-  const { meta, body, raw } = parseFrontmatter(card.content)
+  const { meta, body, raw } = parseCardFrontmatter(card.content)
   const fixes = fixesFor(meta)
   if (fixes.length === 0) return { findings: [], content: card.content }
 

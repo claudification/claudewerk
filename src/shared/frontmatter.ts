@@ -24,6 +24,14 @@
  * precisely because a YAML round trip is what inverted portal2's ledger. Teach
  * this parser nesting and you get a SECOND answer for the promise block, next to
  * the one that already exists, free to drift.
+ *
+ * ONE NARROW EXCEPTION now exists, and it is not this parser changing its mind:
+ * `parseBlockSequence` below reads a captured block BACK OUT as a flat list, and
+ * card-frontmatter.ts calls it for exactly the keys `card-schema` declares
+ * `string[]`. That was `werk-board-block-list-linkage-invisible`: three cards
+ * spelled `refs:`/`relates_to:` as a YAML block list -- the natural spelling --
+ * and the board read the edge as absent. Everything else stays opaque: every
+ * mapping, every block scalar, every key the schema does not know.
  */
 export type RawBlocks = Record<string, string[]>
 
@@ -102,6 +110,59 @@ function blockEnd(lines: string[], head: number, value: string): number | null {
   // No indented line under it: `color:` on its own is an empty scalar, exactly
   // as it has always been. Capturing it would move a key out of `meta`.
   return last === head ? null : last + 1
+}
+
+/** One `  - item` line: the indent, then the item text. */
+const SEQUENCE_ITEM = /^(\s+)-\s+(\S.*)$/
+
+/**
+ * Does this item text mean something other than a plain scalar? A mapping entry
+ * (`- key: value`, `- key:`) or a nested sequence (`- - a`) both do. A quoted
+ * item never does -- `- "a: b"` is a string that happens to contain a colon,
+ * which is exactly why it was quoted.
+ */
+function itemIsNotScalar(item: string): boolean {
+  if (/^["']/.test(item)) return false
+  return item.includes(': ') || item.endsWith(':') || /^-(\s|$)/.test(item)
+}
+
+/**
+ * A captured block read back as a plain sequence of scalars -- `key:` followed
+ * by `  - item` lines -- or null when it is ANY other shape.
+ *
+ * This is NOT the parser learning nesting. `parseFrontmatter` still captures
+ * every block opaquely and still refuses to interpret one; this is a separate,
+ * opt-in reader that a caller who ALREADY KNOWS the key is list-typed can point
+ * at a block to get the flat value back out. The knowledge of WHICH keys those
+ * are does not live here -- see card-frontmatter.ts, which asks `card-schema`.
+ * Keeping the two apart is what stops a `promise:` block from ever being read
+ * as a list of anything.
+ *
+ * Deliberately strict, and null is the safe answer: a mapping, a block scalar,
+ * an uneven indent or a blank line in the middle all return null, and the block
+ * stays verbatim bytes exactly as it is today. Guessing here would be a reader
+ * inventing a value the file does not carry.
+ */
+export function parseBlockSequence(block: string[]): string[] | null {
+  if (block.length < 2) return null
+  const head = block[0]
+  const colon = head.indexOf(':')
+  // `key: |` opens a literal scalar whose lines may well start with `- `. Only a
+  // bare `key:` can open a sequence.
+  if (colon === -1 || head.slice(colon + 1).trim() !== '') return null
+
+  const items: string[] = []
+  let indent: string | null = null
+  for (const line of block.slice(1)) {
+    const match = line.match(SEQUENCE_ITEM)
+    if (!match) return null
+    if (indent === null) indent = match[1]
+    else if (match[1] !== indent) return null
+    const item = match[2].trim()
+    if (itemIsNotScalar(item)) return null
+    items.push(unquote(item))
+  }
+  return items.length > 0 ? items : null
 }
 
 function parseInlineArray(raw: string): string[] {
