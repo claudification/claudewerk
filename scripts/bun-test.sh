@@ -87,8 +87,29 @@ acquire_suite_lock
 # Deliberately NOT set anywhere near the sentinel's agent-host spawn path: it
 # kills DETACHED descendants too, which is exactly the property that makes hosts
 # outlive a sentinel restart (HOST_DETACH_NOTE in src/sentinel/index.ts).
+# --- which bun runs the suite -------------------------------------------
+#
+# Defaults to whatever `bun` is on PATH. The override exists so the suite can
+# run on a NEWER bun than the machine's global one.
+#
+# That distinction matters here: ~48 agent hosts and the sentinel all launch via
+# `#!/usr/bin/env bun`, so upgrading the global bun re-runtimes the entire fleet
+# on the next spawn. Testing against a new bun should not require betting the
+# fleet on it.
+#
+#   BUN_TEST_BIN=/path/to/bun   run the suite on that binary instead
+#
+# Measured 2026-08-20: 1.4.0 via this override cut the suite 74s -> 20s with
+# identical pass/fail counts, while the global bun stayed 1.3.14.
+BUN_BIN="${BUN_TEST_BIN:-bun}"
+if ! command -v "$BUN_BIN" >/dev/null 2>&1 && [[ ! -x "$BUN_BIN" ]]; then
+  echo "bun-test.sh: BUN_TEST_BIN='$BUN_BIN' is not executable" >&2
+  exit 1
+fi
+[[ -n "${BUN_TEST_BIN:-}" ]] && echo "bun-test.sh: using $BUN_BIN ($("$BUN_BIN" --version))" >&2
+
 ORPHAN_GUARD=()
-if bun test --help 2>&1 | grep -q -- '--no-orphans'; then
+if "$BUN_BIN" test --help 2>&1 | grep -q -- '--no-orphans'; then
   ORPHAN_GUARD=(--no-orphans)
 else
   echo "bun-test.sh: this bun has no --no-orphans -- leaked children will survive the run" >&2
@@ -107,7 +128,7 @@ fi
 #
 #   TEST_NO_PARALLEL=1   force the old one-file-at-a-time behaviour
 PARALLEL=()
-if [[ -z "${TEST_NO_PARALLEL:-}" ]] && bun test --help 2>&1 | grep -q -- '--parallel'; then
+if [[ -z "${TEST_NO_PARALLEL:-}" ]] && "$BUN_BIN" test --help 2>&1 | grep -q -- '--parallel'; then
   PARALLEL=(--parallel)
 fi
 
@@ -119,10 +140,10 @@ TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 
 if [[ -z "$TIMEOUT_BIN" ]]; then
   echo "bun-test.sh: no timeout binary found (install coreutils) -- running UNGUARDED" >&2
-  exec bun test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
+  exec "$BUN_BIN" test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
 fi
 
-"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" bun test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
+"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" "$BUN_BIN" test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
 status=$?
 
 if [[ $status -eq 124 || $status -eq 137 ]]; then
