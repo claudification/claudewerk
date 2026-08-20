@@ -31,6 +31,15 @@ type LogFn = (msg: string) => void
  *  status only crosses the wire when it CHANGES, not on every heartbeat. */
 const reported = new Map<string, string>()
 
+/**
+ * Projects the last set asked for that are NOT being watched, keyed by resolved
+ * root. This is what makes the board write path able to re-arm: a board op
+ * arrives carrying a `projectRoot` and no URI, and `watchProject` needs the URI
+ * to tag the events it emits. The set is the only place both are known
+ * together, so it remembers them for exactly the projects that might need it.
+ */
+const skipped = new Map<string, { project: string; leaseMs: number; send: SendFn; log: LogFn }>()
+
 export interface WatchSetInput {
   projects: string[]
   leaseMs: number
@@ -68,6 +77,7 @@ function converge(project: string, input: WatchSetInput): string | null {
   // Re-checked on EVERY set (not cached): a project that grows a board later
   // joins on the next heartbeat instead of staying dark until a restart.
   if (!existsSync(join(root, '.rclaude', 'project'))) {
+    skipped.set(root, { project, leaseMs: input.leaseMs, send: input.send, log: input.log })
     skip(project, 'no-board', undefined, input)
     return null
   }
@@ -78,8 +88,45 @@ function converge(project: string, input: WatchSetInput): string | null {
     skip(project, 'error', String(err), input)
     return null
   }
+  skipped.delete(root)
   report(project, 'ok', input.send, { type: 'project_watch_status', project, ok: true })
   return root
+}
+
+/**
+ * A board write just landed on `root` -- arm it NOW if it was skipped.
+ *
+ * Called from the three sentinel handlers that write a board (`project_board_op`,
+ * `project_write_file`, `project_move_file`). Between them they carry EVERY
+ * structured card write in the system: the panel's Kanban UI, the MCP
+ * `project_set_status` tool, and the board editor all funnel through here. So
+ * creating the first card in a project arms its watch on the same message that
+ * created it, instead of up to one 7-minute heartbeat later -- and the move that
+ * card makes next is recorded rather than lost to the gap.
+ *
+ * A raw `Write`/`Edit`/shell write to a card path does NOT come through here and
+ * is deliberately not chased: it costs at most one heartbeat of latency, in a
+ * project that is in the interest set already (an agent working there IS a
+ * conversation), so it self-heals. Chasing it would mean a tool-hook path from
+ * the agent host for a bounded, self-correcting delay.
+ *
+ * No-op unless the root was skipped: a watched project needs nothing, and a
+ * project the broker never asked for has no URI here to arm it with.
+ */
+export function rearmAfterBoardWrite(root: string): void {
+  const pending = skipped.get(root)
+  if (!pending) return
+  if (!existsSync(join(root, '.rclaude', 'project'))) return // a write that made no board
+
+  try {
+    watchProject(root, pending.project, pending.leaseMs, pending.send, pending.log)
+  } catch (err) {
+    pending.log(`[project-watch] re-arm after board write FAILED for ${pending.project}: ${String(err)}`)
+    return
+  }
+  skipped.delete(root)
+  pending.log(`[project-watch] armed ${pending.project} on its first board write (was: no-board)`)
+  report(pending.project, 'ok', pending.send, { type: 'project_watch_status', project: pending.project, ok: true })
 }
 
 /**
@@ -105,12 +152,20 @@ export function applyProjectWatchSet(input: WatchSetInput): void {
     stopped++
   }
 
+  // A project that left the set entirely stops being a re-arm candidate too --
+  // otherwise a board write to a project the broker no longer wants would arm a
+  // watch nobody asked for.
+  const wanted = new Set(input.projects)
+  for (const [root, pending] of skipped) if (!wanted.has(pending.project)) skipped.delete(root)
+
   input.log(
     `[project-watch] set applied: ${keep.size} watching, ${input.projects.length - keep.size} skipped, ${stopped} stopped`,
   )
 }
 
-/** A disconnect drops every watch, so the next set must re-report from scratch. */
+/** A disconnect drops every watch, so the next set must re-report from scratch.
+ *  The re-arm candidates go with it: their `send` closes over the dead socket. */
 export function resetWatchSetReports(): void {
   reported.clear()
+  skipped.clear()
 }

@@ -114,7 +114,7 @@ import {
   handleProjectWriteFile,
 } from './project-handlers'
 import { stopAllWatches, unwatchProject, watchProject } from './project-watch'
-import { applyProjectWatchSet, resetWatchSetReports } from './project-watch-set'
+import { applyProjectWatchSet, rearmAfterBoardWrite, resetWatchSetReports } from './project-watch-set'
 import { ptyProfileEnvBlock, shouldInjectConfigDir } from './pty-env'
 import { handleQuestOp } from './quest-handlers'
 import { pickProfile, type UsageHeadroom } from './selection'
@@ -4233,10 +4233,14 @@ function connect(
           break
         }
 
+        // The three board WRITE paths. Each one re-arms a skipped project after
+        // the write, so the card that just created a board is watched from the
+        // message that created it -- see rearmAfterBoardWrite.
         case 'project_write_file': {
           const m = msg as ProjectWriteFile
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleProjectWriteFile(root, m)))
+          rearmAfterBoardWrite(root)
           break
         }
 
@@ -4244,6 +4248,7 @@ function connect(
           const m = msg as ProjectMoveFile
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleProjectMoveFile(root, m)))
+          rearmAfterBoardWrite(root)
           break
         }
 
@@ -4251,6 +4256,7 @@ function connect(
           const m = msg as ProjectBoardOp
           const root = expandPath(m.projectRoot, spawnRoot)
           ws.send(JSON.stringify(handleProjectBoardOp(root, m, Date.now())))
+          rearmAfterBoardWrite(root)
           break
         }
 
