@@ -11,7 +11,7 @@ import { commitsForBranch } from './commit-ledger/branch'
 import { normalizeCommit } from './commit-ledger/normalize'
 import { closeCommitLedger, initCommitLedger, insertCommit } from './commit-ledger/store'
 import { configureEpicIo, resetEpicIo } from './epic-io'
-import { recordSettledPromises, resetPromiseMemory } from './epic-promise'
+import { recordFinalPromises, recordSettledPromises, resetPromiseMemory } from './epic-promise'
 import type { EpicGroup } from './epic-sweep'
 import type { BeatDeps } from './epic-types'
 
@@ -183,21 +183,25 @@ describe('recordSettledPromises -- who writes `closes:`, and when', () => {
   })
 
   /**
-   * The card names the moment as acknowledgement; acknowledgement fires while
-   * the card is still `in-review`, with the verifier's `project_set_status`
-   * still to come -- and THAT write flattens a promise block and empties
-   * `closes:` (werk-promise-ledger-card-writer-flattens). Writing then would
-   * write into a shredder every time.
+   * THE GATE IS `settled`, AND NOTHING ELSE. This test used to assert the exact
+   * opposite -- that an `in-review` card was skipped -- because the verifier's
+   * `project_set_status` went on to flatten a nested promise block and empty
+   * `closes:`. That writer bug is fixed on main (`2ba978d0`), so the lane gate
+   * lost its reason, and it is inverted here rather than deleted: the pairing is
+   * the record of why the answer changed.
+   *
+   * Acknowledgement IS the moment. A card settles when its implementer ends, at
+   * which point the sha exists and no verdict is needed to know it.
    */
-  test('a settled card still in `in-review` is NOT written -- the verifier has yet to flatten it', async () => {
+  test('a settled card in `in-review` IS written -- acknowledgement is the moment', async () => {
     commit()
     const out = await recordSettledPromises(deps(), group(), [card('t1', 'in-review')])
-    expect(out).toHaveLength(0)
-    expect(reads).toBe(0)
-    expect(cardFile()).toBe(CARD)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ cardId: 't1', via: 'branch', refused: null })
+    expect(closesOf(cardFile())).toEqual(['a'.repeat(40)])
   })
 
-  test('a terminal card that never settled is not touched either', async () => {
+  test('a terminal card that never settled is not touched by the per-beat pass', async () => {
     commit()
     const out = await recordSettledPromises(deps(), group({ settled: [] }), [card('t1', 'done')])
     expect(out).toHaveLength(0)
@@ -329,6 +333,29 @@ describe('recordSettledPromises -- it never blocks and never guesses', () => {
     expect(writes).toBe(0)
   })
 
+  /**
+   * MIXED LINE ENDINGS. `insertPromiseBlock` and `appendCloses` refuse a card
+   * whose EOLs disagree rather than mangling the half they did not pick
+   * (`werk-promise-ledger-crlf-write-mangles`, landed on main after this feature
+   * was first cut). That refusal has to arrive here as a CLASSIFIED refusal with
+   * a reason in the baton -- a writer that returns `refused` and a caller that
+   * treats it as a no-op is a card silently losing its receipt.
+   */
+  test('a card with mixed CRLF and LF is refused with the reason, never rewritten', async () => {
+    commit()
+    const mangled = '---\r\ntitle: "A settled card"\nstatus: done\r\nepic: e1\r\n---\r\n\r\nBody.\r\n'
+    files.set('.rclaude/project/cards/t1.md', mangled)
+    const out = await recordSettledPromises(deps(), group(), [card('t1', 'done')])
+
+    expect(out[0].refused).toContain('CRLF')
+    // FINAL, not retryable: a card's line endings do not fix themselves, and
+    // asking again every 45 seconds for the rest of the run buys nothing.
+    expect(out[0].retryable).toBe(false)
+    expect(cardFile()).toBe(mangled)
+    expect(writes).toBe(0)
+    expect(records()[0].body).toContain('PROMISE NOT RECORDED')
+  })
+
   test('a card with no front matter is left ALONE with the reason logged', async () => {
     commit()
     files.set('.rclaude/project/cards/t1.md', 'no front matter here\n')
@@ -377,6 +404,59 @@ describe('recordSettledPromises -- it never blocks and never guesses', () => {
     const out = await recordSettledPromises(deps(), group(), [card('t1', 'done')])
     expect(out[0].refused).toContain('no commit on')
     initCommitLedger(dir)
+  })
+})
+
+/**
+ * LAST CALL -- the pass that exists because the per-beat one can run out of
+ * beats. A run completes off card LANES alone, so the last child's verifier can
+ * still be alive on the beat that ends the run: the card is not settled, the
+ * pass above skips it, and every later beat returns at `isInertRun` before a
+ * card is read. Reported as F1 against the first cut of this feature.
+ */
+describe('recordFinalPromises -- the beat that ends the run', () => {
+  test('records a TERMINAL card that never settled -- there is no next beat', async () => {
+    commit()
+    const out = await recordFinalPromises(deps(), group({ settled: [] }), [card('t1', 'done')])
+
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ cardId: 't1', refused: null })
+    expect(closesOf(cardFile())).toEqual(['a'.repeat(40)])
+  })
+
+  /** The lane is the ONLY evidence at last call, so it has to be asked. A card
+   *  still being worked is not finished, and a promise is a claim about
+   *  finished work -- a park with children in flight must not invent one. */
+  test('a card that is not terminal gets nothing, even at last call', async () => {
+    commit()
+    const out = await recordFinalPromises(deps(), group({ settled: [] }), [card('t1', 'in-progress')])
+
+    expect(out).toHaveLength(0)
+    expect(reads).toBe(0)
+    expect(cardFile()).toBe(CARD)
+  })
+
+  test('a card already recorded this run is skipped, not written twice', async () => {
+    commit()
+    await recordSettledPromises(deps(), group(), [card('t1', 'done')])
+    const writesAfterFirst = writes
+    const out = await recordFinalPromises(deps(), group(), [card('t1', 'done')])
+
+    expect(out).toHaveLength(0)
+    expect(writes).toBe(writesAfterFirst)
+  })
+
+  /** "We will ask again next beat" is a lie at last call -- there is no next
+   *  beat. The refusal is said even if a softer version was said earlier. */
+  test('a refusal that WAS retryable is announced again, as FINAL', async () => {
+    await recordSettledPromises(deps(), group(), [card('t1', 'done')])
+    expect(records()).toHaveLength(1)
+
+    const out = await recordFinalPromises(deps(), group({ settled: [] }), [card('t1', 'done')])
+
+    expect(out[0].refused).toContain('no commit on')
+    expect(records()).toHaveLength(2)
+    expect(records()[1].body).toContain('this is FINAL')
   })
 })
 

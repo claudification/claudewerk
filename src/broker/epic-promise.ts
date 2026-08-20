@@ -21,20 +21,31 @@
  * actions, which is `b766b75e`'s rule restated: a beat that crashes mid-dispatch
  * must still have recorded what it learned.
  *
- * WHY NOT AT ACKNOWLEDGEMENT EXACTLY -- the one deviation from the card, stated
- * out loud. Acknowledgement fires the beat a card SETTLES, and a card settles
- * when its implementer ends, at which point the card sits in `in-review` and a
- * verifier is about to move it to `done`. Every board status write in this repo
- * goes through `serializeCard`, which flattens a nested `promise:` block and
- * EMPTIES `closes:` (filed as `werk-promise-ledger-card-writer-flattens`, pinned
- * by a test in promise-ledger.test.ts). Writing at acknowledgement would
- * therefore write into a shredder, every time. So the gate is the same standing
- * question asked one lane later: SETTLED AND TERMINAL. Everything the card asked
- * for holds -- engine-side, once per card, card id known, branch already landed.
+ * TWO MOMENTS, NOT ONE, and the second one exists because the first can run out
+ * of beats:
+ *
+ *   1. ACKNOWLEDGEMENT -- the moment the card specified. A card settles the beat
+ *      its implementer ends; that is engine-side, once per card, card id known,
+ *      branch already committed. LANE-AGNOSTIC: a settled card in `in-review`
+ *      gets its `closes:` immediately, without waiting for a verdict.
+ *   2. LAST CALL -- the beat that parks or completes the run. After it, every
+ *      later beat returns at `isInertRun` before the card is ever looked at
+ *      again, so this is the final chance. See `recordFinalPromises`.
+ *
+ * AN EARLIER VERSION OF THIS FILE GATED ON `settled AND terminal` and said so in
+ * a long comment. That gate is gone. Its stated reason was that `serializeCard`
+ * flattened a nested `promise:` block and emptied `closes:`, so writing at
+ * acknowledgement wrote into a shredder -- true when it was written, FIXED on
+ * main since, by `2ba978d0` and pinned by "THIS repo's own card writer no longer
+ * flattens a promise block" in promise-ledger.test.ts. The gate outlived its
+ * reason and cost the last card of an epic its receipt permanently.
  *
  * IT NEVER BLOCKS. A promise is bookkeeping, and a blocking chore produces
  * `--skip-check`. Every failure here is log-and-continue: a board that cannot be
- * written loses you a card, never a merge and never a beat.
+ * written loses you a card, never a merge and never a beat. That now includes a
+ * card with MIXED LINE ENDINGS, which both writers refuse rather than mangle
+ * (`werk-promise-ledger-crlf-write-mangles`) -- a refusal with a reason in the
+ * baton, never a silent no-op.
  */
 
 import { cardRelPath } from '../shared/card-path'
@@ -48,11 +59,13 @@ import type { EpicGroup } from './epic-sweep'
 import type { BeatDeps } from './epic-types'
 
 /**
- * Lanes where nothing is going to rewrite the card's front matter again.
+ * Lanes that mean the board considers the work finished.
  *
- * `in-review` is deliberately NOT here even though a settled card usually sits
- * in it: the verifier's `project_set_status` is still to come, and that write is
- * what empties `closes:`.
+ * NOT a gate on the normal pass -- `group.settled` is, and it is lane-agnostic.
+ * This is the LAST CALL's evidence instead: on the beat that parks or completes
+ * a run there is no later beat to ask again, so a card that never settled is
+ * recorded on the strength of its lane alone. Anything short of terminal is
+ * still being worked and gets nothing, which is the point of asking.
  */
 const TERMINAL_LANES: ReadonlySet<TaskStatus> = new Set<TaskStatus>(['done', 'archived'])
 
@@ -112,22 +125,22 @@ export function resetPromiseMemory(): void {
   announced.clear()
 }
 
+/** Has this broker process already reached a FINAL answer for this card? */
+const done = (group: EpicGroup, slug: string) => settledPromises.has(memoKey(group.project, group.epicId, slug))
+
 /**
  * The cards a beat should try to record, in board order.
  *
- * Settled AND terminal AND not already done with. `group.settled` is the
- * engine's own standing answer to "every backing conversation has ended", and
- * the lane is the board's answer to "and nobody is going to rewrite this file".
- * Both have to be true.
+ * SETTLED, and nothing else. `group.settled` is the engine's own standing answer
+ * to "every backing conversation for this card has ended" -- which is exactly
+ * the acknowledgement moment the card specified, and the moment the branch is
+ * known to have been committed. The card's LANE is deliberately not asked about:
+ * a settled card sitting in `in-review` has already done the work that produced
+ * the sha, and waiting for a verdict to record it only invents ways to miss.
  */
 function candidates(group: EpicGroup, cards: readonly ProjectTaskMeta[]): ProjectTaskMeta[] {
   const settled = new Set(group.settled)
-  return cards.filter(
-    c =>
-      settled.has(c.slug) &&
-      TERMINAL_LANES.has(c.status) &&
-      !settledPromises.has(memoKey(group.project, group.epicId, c.slug)),
-  )
+  return cards.filter(c => settled.has(c.slug) && !done(group, c.slug))
 }
 
 /**
@@ -262,11 +275,18 @@ async function writeCloses(
 
 /** The sentence the baton gets for one card. Kept beside the outcome type so the
  *  wording and the fields can never describe different events. */
-function report(out: PromiseRecordOutcome): string {
+function report(out: PromiseRecordOutcome, lastCall: boolean): string {
   if (out.refused) {
+    // At last call a "retryable" refusal is retryable by nobody -- the run goes
+    // inert on this same beat. Saying "we will ask again" there would be a lie
+    // the overseer never gets to catch.
+    const again =
+      lastCall && out.retryable
+        ? ' The run ends on this beat, so there is no later beat to ask again: this is FINAL.'
+        : ''
     return (
       `PROMISE NOT RECORDED for \`${out.cardId}\`: ${out.refused}. Its \`closes:\` is unchanged -- nothing was ` +
-      'guessed, and "could not verify" is not "it is fine". This is bookkeeping only; no work was blocked.'
+      `guessed, and "could not verify" is not "it is fine". This is bookkeeping only; no work was blocked.${again}`
     )
   }
   if (out.added.length === 0) {
@@ -284,8 +304,8 @@ function report(out: PromiseRecordOutcome): string {
 }
 
 /**
- * Record `closes:` for every settled, terminal card this beat can honestly
- * resolve a sha for.
+ * Record `closes:` for every settled card this beat can honestly resolve a sha
+ * for.
  *
  * ORDER OF THE TWO LOOKUPS IS THE COST MODEL: the ledger query is a local
  * indexed read and the card is a sentinel round trip, so a card whose branch has
@@ -303,8 +323,48 @@ export async function recordSettledPromises(
   return out
 }
 
+/**
+ * LAST CALL -- the beat is about to park or complete the run, so this is the
+ * final time any card under it will be looked at.
+ *
+ * WHY THIS EXISTS AT ALL, and it is not a duplicate of the pass above. A run
+ * completes off CARD LANES alone (`planEpic` -> `rollup.complete`); it does not
+ * wait for the conversations behind those cards to end. So on the beat where the
+ * last child first reads `done` while its verifier is still alive, that card is
+ * NOT in `group.settled`, the normal pass skips it -- and `settleRun` then flips
+ * the run to `complete`, after which every later beat returns at `isInertRun`
+ * before the card is reached. There is no next beat. Without this, the one card
+ * per epic most likely to hit that race loses its receipt permanently.
+ *
+ * The gate here is the LANE, because at last call there is no settle signal left
+ * to lean on and the board saying `done`/`archived` is the only evidence there
+ * is. A parked run with children still in flight records nothing for them, which
+ * is correct: they are not finished, and a promise is a claim about finished
+ * work.
+ *
+ * The memo makes this cheap and safe to layer on top: a card already recorded
+ * this run is skipped, and `appendCloses` would add nothing anyway.
+ */
+export async function recordFinalPromises(
+  deps: BeatDeps,
+  group: EpicGroup,
+  children: readonly ProjectTaskMeta[],
+): Promise<PromiseRecordOutcome[]> {
+  const out: PromiseRecordOutcome[] = []
+  for (const card of children) {
+    if (!TERMINAL_LANES.has(card.status) || done(group, card.slug)) continue
+    out.push(await recordOne(deps, group, card, true))
+  }
+  return out
+}
+
 /** One card's whole pass: resolve, write, remember, say so. */
-async function recordOne(deps: BeatDeps, group: EpicGroup, card: ProjectTaskMeta): Promise<PromiseRecordOutcome> {
+async function recordOne(
+  deps: BeatDeps,
+  group: EpicGroup,
+  card: ProjectTaskMeta,
+  lastCall = false,
+): Promise<PromiseRecordOutcome> {
   const key = memoKey(group.project, group.epicId, card.slug)
   const branch = cardBranch(group.epicId, card.slug)
   const found = epicIo().commitsForBranch(group.project, branch)
@@ -323,8 +383,10 @@ async function recordOne(deps: BeatDeps, group: EpicGroup, card: ProjectTaskMeta
 
   // Only a FINAL answer retires the card. A retryable refusal is announced once
   // and then asked again silently, so a sentinel that was down for one beat does
-  // not cost the card its receipt for the whole run.
-  if (result.retryable) {
+  // not cost the card its receipt for the whole run. AT LAST CALL nothing is
+  // retryable in practice -- the run goes inert on this beat -- so the refusal is
+  // said even if an earlier beat already said its softer version.
+  if (result.retryable && !lastCall) {
     if (announced.has(key)) return result
     announced.add(key)
   } else {
@@ -332,7 +394,7 @@ async function recordOne(deps: BeatDeps, group: EpicGroup, card: ProjectTaskMeta
     announced.delete(key)
   }
 
-  await say(deps, group, card.slug, report(result))
+  await say(deps, group, card.slug, report(result, lastCall))
   if (result.refused) deps.log(`${tag(group.epicId, 0)} promise NOT recorded for ${card.slug}: ${result.refused}`)
   return result
 }

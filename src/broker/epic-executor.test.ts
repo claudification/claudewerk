@@ -13,7 +13,7 @@ import type { EpicBatonQuery, EpicResult, EpicRunSnapshot } from '../shared/prot
 import type { TaskStatus } from '../shared/task-statuses'
 import { toEpicRunView } from './epic-broker-rpc'
 import { type BeatDeps, runEpicBeat } from './epic-executor'
-import { configureEpicIo, resetEpicIo } from './epic-io'
+import { configureEpicIo, epicIo, resetEpicIo } from './epic-io'
 import { resetPromiseMemory } from './epic-promise'
 import type { EpicGroup } from './epic-sweep'
 
@@ -896,14 +896,17 @@ describe('the beat writes `closes:` for a card it settled', () => {
     expect(baton.find(e => e.kind === 'record')?.body).toContain('PROMISE NOT RECORDED')
   })
 
-  /** The card settles the beat its IMPLEMENTER ends, while it still sits in
-   *  `in-review` with the verifier's `project_set_status` still to come -- and
-   *  that write flattens a promise block and empties `closes:`
-   *  (werk-promise-ledger-card-writer-flattens). */
-  test('a settled card still awaiting its verdict is left alone', async () => {
+  /**
+   * INVERTED, and deliberately kept in that shape. This asserted that a settled
+   * card awaiting its verdict was left alone, because the verdict's board write
+   * flattened the promise block. That is fixed on main (`2ba978d0`), so the card
+   * gets its `closes:` the beat its implementer ends -- the acknowledgement
+   * moment the card specified all along.
+   */
+  test('a settled card still awaiting its verdict IS written, at acknowledgement', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
-    expect(files.get(CARD_REL)).toBe(CARD_TEXT)
+    expect(parsePromiseBlock(files.get(CARD_REL) ?? '')?.closes).toEqual([SHA])
   })
 
   test('a board write that fails loses the card, never the beat', async () => {
@@ -921,5 +924,143 @@ describe('the beat writes `closes:` for a card it settled', () => {
     expect(baton.find(e => e.kind === 'record')?.body).toContain('no work was blocked')
     // The settle still reached the overseer: bookkeeping never costs a wake.
     expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+  })
+
+  /**
+   * REGRESSION -- THE LAST CARD OF AN EPIC. Reported as F1 against the first cut
+   * of this feature, reproduced end to end, and fixed by `recordFinalPromises`.
+   *
+   * The race, which is not hypothetical: `planEpic` completes a run off card
+   * LANES alone and does not wait for the conversations behind them. So on the
+   * beat where the last child first reads `done` while its verifier is still
+   * alive, the card is NOT settled -- the per-beat pass skips it -- and the same
+   * beat then flips the run to `complete`. Every later beat returns at
+   * `isInertRun` before a card is read. There is no next beat, and the card's
+   * `closes:` used to stay empty forever.
+   *
+   * Note the local `sendEpicOp`: unless a status patch actually MOVES the run,
+   * the second beat never sees the inert short circuit and the test cannot fail
+   * the way the bug did.
+   */
+  describe('LAST CALL -- the beat that ends the run', () => {
+    /** As the real sentinel behaves: a `patch { status }` moves the run. */
+    const withLiveRunStatus = () =>
+      configureEpicIo({
+        sendEpicOp: async (_d, _p, op) => {
+          ops.push({ op: op.op, patch: op.patch, lease: op.lease })
+          const status = (op.patch as Record<string, unknown> | undefined)?.status
+          if (op.op === 'patch' && typeof status === 'string' && run) {
+            run = { ...run, status: status as EpicRunSnapshot['status'] }
+          }
+          if (op.op === 'lease') {
+            return {
+              type: 'epic_result',
+              requestId: 'r',
+              op: 'lease',
+              ok: true,
+              lease: { granted: true, convId: 'conv_overseer', gen: 4, at: '' },
+            } as EpicResult
+          }
+          return { type: 'epic_result', requestId: 'r', op: op.op, ok: true } as EpicResult
+        },
+      })
+
+    test('a card that is `done` while its verifier is still alive still gets its `closes:`', async () => {
+      withLiveRunStatus()
+
+      // The card reads `done`, but its verifier has not exited, so it is in
+      // NOBODY's settled list. This beat is the last one that will ever run.
+      await runEpicBeat(deps(), group({ settled: [], inFlight: ['t1'], inVerify: ['t1'] }))
+
+      expect(run?.status).toBe('complete')
+      expect(parsePromiseBlock(files.get(CARD_REL) ?? '')?.closes).toEqual([SHA])
+    })
+
+    test('and the beat AFTER it is inert, so the write had to happen on that beat', async () => {
+      withLiveRunStatus()
+      await runEpicBeat(deps(), group({ settled: [], inFlight: ['t1'], inVerify: ['t1'] }))
+
+      files.set(CARD_REL, CARD_TEXT)
+      const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+
+      expect(out.note).toContain('not touched')
+      // Proof the earlier write was the ONLY chance: the second beat reads no
+      // card at all, so a fix that relied on it would record nothing.
+      expect(files.get(CARD_REL)).toBe(CARD_TEXT)
+    })
+
+    test('the write happens BEFORE the run is patched complete', async () => {
+      withLiveRunStatus()
+      const order: string[] = []
+      configureEpicIo({
+        writeProjectFile: async (_d, _p, relPath, content) => {
+          order.push('card')
+          files.set(relPath, content)
+          return { type: 'project_write_file_result', requestId: 'r', ok: true, size: content.length }
+        },
+      })
+      const outer = epicIo().sendEpicOp
+      configureEpicIo({
+        sendEpicOp: async (d, p, op) => {
+          if (op.op === 'patch' && (op.patch as Record<string, unknown> | undefined)?.status) order.push('complete')
+          return outer(d, p, op)
+        },
+      })
+
+      await runEpicBeat(deps(), group({ settled: [], inFlight: ['t1'], inVerify: ['t1'] }))
+      expect(order).toEqual(['card', 'complete'])
+    })
+
+    /** A PARK is terminal for the sweep too, and it can fire with children still
+     *  being worked. Their lanes are the only evidence at last call, so an
+     *  unfinished card gets nothing -- a promise is a claim about finished work. */
+    test('a PARKED run records its terminal children and leaves the unfinished ones alone', async () => {
+      withLiveRunStatus()
+      run = { ...RUN, dryGens: 1 }
+      cards = [
+        card('e1', 'open', { tags: ['epic'] }),
+        card('t1', 'done', { epic: 'e1' }),
+        card('t2', 'in-progress', { epic: 'e1' }),
+      ]
+      files.set('.rclaude/project/cards/t2.md', CARD_TEXT)
+
+      const legs = ['a', 'b', 'c'].map(s => ({
+        cardId: 't2',
+        convId: `conv_dead_${s}`,
+        role: 'verifier' as const,
+        gen: 3,
+      }))
+      await runEpicBeat(deps(), group({ failedLegs: legs, unspawnable: ['t2'] }))
+
+      expect(statusPatch()).toMatchObject({ status: 'paused' })
+      expect(parsePromiseBlock(files.get(CARD_REL) ?? '')?.closes).toEqual([SHA])
+      expect(files.get('.rclaude/project/cards/t2.md')).toBe(CARD_TEXT)
+    })
+
+    /** At last call "we will ask again next beat" is a lie -- there is no next
+     *  beat. A refusal that was retryable a moment ago is now the final word. */
+    test('an unresolvable sha at last call is announced as FINAL, not as a retry', async () => {
+      withLiveRunStatus()
+      ledger = null
+
+      await runEpicBeat(deps(), group({ settled: [], inFlight: ['t1'], inVerify: ['t1'] }))
+
+      const body = baton.find(e => e.kind === 'record')?.body ?? ''
+      expect(body).toContain('PROMISE NOT RECORDED')
+      expect(body).toContain('this is FINAL')
+      expect(files.get(CARD_REL)).toBe(CARD_TEXT)
+    })
+
+    /** The two passes are layered, not duplicated: a card recorded at
+     *  acknowledgement is not read, rewritten or re-announced at last call. */
+    test('a card already recorded this run is not written twice', async () => {
+      withLiveRunStatus()
+      cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'done', { epic: 'e1' })]
+
+      await runEpicBeat(deps(), group({ settled: ['t1'] }))
+
+      expect(baton.filter(e => e.kind === 'record')).toHaveLength(1)
+      expect(parsePromiseBlock(files.get(CARD_REL) ?? '')?.closes).toEqual([SHA])
+    })
   })
 })
