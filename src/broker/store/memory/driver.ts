@@ -1188,6 +1188,18 @@ function createCostStore(): CostStore {
       return [...agg.values()].sort((a, b) => b.costUsd - a.costUsd)
     },
 
+    queryTurnActivity(from, to) {
+      return turns
+        .filter(t => t.timestamp >= from && t.timestamp <= to)
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .map(t => ({
+          timestamp: t.timestamp,
+          tokens: t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens,
+          costUsd: t.costUsd,
+          exactCost: !!t.exactCost,
+        }))
+    },
+
     pruneOlderThan(cutoffMs) {
       const before = turns.length
       for (let i = turns.length - 1; i >= 0; i--) {

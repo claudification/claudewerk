@@ -99,13 +99,13 @@ export function repairCardShape(card: StampTarget, mode: RepairMode, deps: Shape
   // had. `card-no-frontmatter` already reports this one.
   if (!card.content.startsWith('---')) return { findings: [], content: card.content }
 
-  const { meta, body } = parseFrontmatter(card.content)
+  const { meta, body, raw } = parseFrontmatter(card.content)
   const fixes = fixesFor(meta)
   if (fixes.length === 0) return { findings: [], content: card.content }
 
   const patched = { ...meta }
   for (const fix of fixes) patched[fix.key] = fix.value
-  const content = serializeCard(patched, body)
+  const content = serializeCard(patched, body, raw)
 
   if (mode === 'write') {
     try {

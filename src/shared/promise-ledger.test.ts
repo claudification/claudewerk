@@ -303,19 +303,36 @@ describe('detectCardDefects -- reported, never repaired', () => {
     expect(detectCardDefects(card(['  agreed: 2026-08-21', '  closes: []']))).toEqual([])
   })
 
-  it("catches THIS repo's own card writer flattening a promise block", () => {
-    // Not a hypothetical migration: `parseFrontmatter` is flat by design, so
-    // every write through `serializeCard` (project_set_status included) reads a
-    // promise block back as top-level keys and writes it out flattened, closes
-    // emptied. Filed as werk-promise-ledger-card-writer-flattens; pinned here so
-    // the day it is fixed, this test says so.
+  it("THIS repo's own card writer no longer flattens a promise block", () => {
+    // The INVERSION of what this test used to assert. `parseFrontmatter` is
+    // still flat, but it now CAPTURES a block it cannot represent and
+    // `serializeCard` re-emits it verbatim, so the corruption below is gone
+    // rather than merely detected (werk-promise-ledger-card-writer-flattens).
     const text = card(['  agreed: 2026-08-21', '  asked: "the ask"', '  closes:', '    - 83bf55f0'])
-    const { meta, body } = parseFrontmatter(text)
-    const round = serializeCard(meta, body)
+    const { meta, body, raw } = parseFrontmatter(text)
+    const round = serializeCard(meta, body, raw)
 
-    expect(detectCardDefects(round)).toContain('promise-keys-at-top-level')
-    expect(parsePromiseBlock(round)).toBeNull()
-    expect(parsePromiseBlock(text)?.closes).toEqual(['83bf55f0'])
+    expect(detectCardDefects(round)).toEqual([])
+    expect(parsePromiseBlock(round)).toEqual(parsePromiseBlock(text))
+    expect(parsePromiseBlock(round)?.closes).toEqual(['83bf55f0'])
+    // The parent key stays OUT of `meta`: nothing that reads `meta` today sees a
+    // new value or a new type. That is the whole reason this shape was chosen.
+    expect(meta.promise).toBeUndefined()
+    expect(meta.closes).toBeUndefined()
+  })
+
+  it('the write is IDEMPOTENT -- a second status move produces identical bytes', () => {
+    // Blocks are re-emitted after the flat keys rather than in place, so the
+    // FIRST write may move the block. Every write after it must not: otherwise
+    // the board churns a diff on every `project_set_status` forever.
+    const text = card(['  agreed: 2026-08-21', '  closes:', '    - 83bf55f0'], ['test_cmd: bun test'])
+    const roundTrip = (t: string) => {
+      const { meta, body, raw } = parseFrontmatter(t)
+      return serializeCard(meta, body, raw)
+    }
+    const once = roundTrip(text)
+    expect(roundTrip(once)).toBe(once)
+    expect(roundTrip(roundTrip(once))).toBe(once)
   })
 })
 

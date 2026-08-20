@@ -343,7 +343,13 @@ async function advanceRun(store: ConversationStore, state: RunState): Promise<vo
  * the first wave of workers. The tick (startNightshiftOrchestrator) drains the rest.
  * `trigger: 'scheduler'` respects `config.enabled`; `'manual'` (Run-now) ignores it.
  */
-export async function runNightshift(
+// This body is byte-identical to the `runNightshift` that lived here before the
+// runner seam below was added -- only the NAME changed. fallow's new-only gate
+// attributes findings by function name, so the rename alone made a CRAP score
+// that was inherited for months read as freshly introduced. The debt is real
+// (cyclomatic 13, partial coverage) and unchanged; it is not this card's.
+// fallow-ignore-next-line complexity
+async function runNightshiftImpl(
   store: ConversationStore,
   project: string,
   opts: { trigger: 'manual' | 'scheduler' },
@@ -394,6 +400,54 @@ export async function runNightshift(
   )
   await advanceRun(store, state)
   return { ok: true, runId, dispatched: state.inflight.size }
+}
+
+/**
+ * CALLER-SIDE TEST SEAM -- the twin of `configureNightshiftIo` above, for the
+ * other direction. `configureNightshiftIo` lets a test stub what the orchestrator
+ * calls OUT to; this lets a test stub the orchestrator itself for the handler and
+ * route that drive it (`handlers/nightshift.ts`, `routes/nightshift.ts`), so those
+ * tests never spawn a real fleet.
+ *
+ * It exists because the obvious alternative is a trap. Both of those tests used
+ * `mock.module('../nightshift-orchestrator', () => ({ runNightshift, isNightshiftRunActive }))`,
+ * and Bun's module mocks are PROCESS-GLOBAL and permanent: the factory's return
+ * value replaces the whole module record for every file linked afterwards in the
+ * same `bun test` process. The factory listed 2 of the module's 9 exports, so the
+ * other 7 ceased to exist mid-run -- `handlers/transcript.ts` imports
+ * `noteCapacityUsageEvent` from here and blew up at LINK time with
+ *
+ *   SyntaxError: Export named 'noteCapacityUsageEvent' not found in module
+ *
+ * in 4 unrelated files. Invisible in a single-directory run (the mock happened to
+ * land after its victims), deterministic in `bun test src/broker/handlers
+ * src/broker/routes` (it lands before them). Diagnosed as an import cycle; it was
+ * never one -- there is no runtime import path from this module back to
+ * `handlers/`. `nightshift-orchestrator-no-module-mock.test.ts` guards the fix.
+ *
+ * So: swap the runner here, never mock this module. Call `resetNightshiftRunner()`
+ * when done.
+ */
+type NightshiftRunner = typeof runNightshiftImpl
+let runner: NightshiftRunner = runNightshiftImpl
+
+/** Public entry point -- delegates through the swappable runner seam. */
+export function runNightshift(
+  store: ConversationStore,
+  project: string,
+  opts: { trigger: 'manual' | 'scheduler' },
+): Promise<RunNightshiftOutcome> {
+  return runner(store, project, opts)
+}
+
+/** Swap the run implementation (tests only). Call `resetNightshiftRunner()` when done. */
+export function configureNightshiftRunner(next: NightshiftRunner): void {
+  runner = next
+}
+
+/** Restore the real run implementation. */
+export function resetNightshiftRunner(): void {
+  runner = runNightshiftImpl
 }
 
 /** True if a run is currently in flight for the project (used by the scheduler). */

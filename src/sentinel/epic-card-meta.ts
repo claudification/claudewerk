@@ -26,8 +26,12 @@ export function patchCardMeta(root: string, epicId: string, patch: Record<string
   } catch {
     return false
   }
-  const { meta, body } = parseFrontmatter(raw)
-  writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body), 'utf8')
+  const { meta, body, raw: blocks } = parseFrontmatter(raw)
+  // `blocks` is not optional here even though the argument is. This writes a
+  // BOARD CARD, and an epic card is exactly the kind that carries a `promise:`
+  // block -- dropping it would empty `closes:` every time the overseer took or
+  // released the lease.
+  writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body, blocks), 'utf8')
   return true
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -16,6 +16,7 @@ import {
   updateProjectTask,
   writeProjectFile,
 } from './project-store'
+import { detectCardDefects, parsePromiseBlock } from './promise-ledger'
 
 let root: string
 
@@ -125,5 +126,57 @@ describe('board CRUD', () => {
 
   test('setProjectTaskStatus on a missing card returns null', () => {
     expect(setProjectTaskStatus(root, 'ghost', 'done', 1000)).toBeNull()
+  })
+})
+
+/**
+ * The end of the corruption `werk-promise-ledger-card-writer-flattens` names:
+ * every board write goes through `serializeCard`, `project_set_status` included,
+ * and a flat re-serialisation de-indented a card's `promise:` block and emptied
+ * its `closes:`. A DELIVERED promise then read `not started` -- a confident wrong
+ * answer, which is the one failure a ledger may never produce.
+ *
+ * Driven through the STORE and not the serializer, because the serializer was
+ * never the thing that lost the block: a call site that forgot to thread it was.
+ */
+describe('a nested `promise:` block survives every board write', () => {
+  const PROMISE = ['promise:', '  agreed: 2026-08-21', '  asked: "the ask"', '  closes:', '    - 83bf55f0  # the fix']
+
+  function cardWithPromise(id: string): string {
+    const abs = join(root, '.rclaude/project/cards', `${id}.md`)
+    mkdirSync(join(root, '.rclaude/project/cards'), { recursive: true })
+    writeFileSync(abs, ['---', 'title: A promise', 'status: open', ...PROMISE, '---', '', 'Body.', ''].join('\n'))
+    return abs
+  }
+
+  test('setProjectTaskStatus keeps the block AND its closes list', () => {
+    const abs = cardWithPromise('promised')
+    expect(setProjectTaskStatus(root, 'promised', 'done', 2000)).toBe('open')
+
+    const after = readFileSync(abs, 'utf8')
+    expect(after).toContain(PROMISE.join('\n'))
+    expect(after).toContain('status: done')
+    expect(parsePromiseBlock(after)?.closes).toEqual(['83bf55f0'])
+    expect(detectCardDefects(after)).toEqual([])
+  })
+
+  test('updateProjectTask keeps it too -- patching one key is not a licence to drop bytes', () => {
+    const abs = cardWithPromise('promised')
+    updateProjectTask(root, 'promised', { priority: 'high', tags: ['werk'] })
+
+    const after = readFileSync(abs, 'utf8')
+    expect(after).toContain(PROMISE.join('\n'))
+    expect(after).toContain('priority: high')
+    expect(parsePromiseBlock(after)?.asked).toBe('the ask')
+  })
+
+  test('repeated moves are idempotent -- the board does not churn a diff forever', () => {
+    // Blocks are re-emitted after the flat keys, so the FIRST write may relocate
+    // one. Every write after it must be byte-identical.
+    const abs = cardWithPromise('promised')
+    setProjectTaskStatus(root, 'promised', 'in-progress', 2000)
+    const once = readFileSync(abs, 'utf8')
+    setProjectTaskStatus(root, 'promised', 'in-progress', 3000)
+    expect(readFileSync(abs, 'utf8')).toBe(once)
   })
 })
