@@ -38,6 +38,20 @@ function num(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+/**
+ * The same read for a field that has a FRACTIONAL part. Money does.
+ *
+ * `num` above parses with `parseInt`, which was correct while every scalar on a
+ * run was a counter -- and silently truncates `31.40` to `31` the moment one is
+ * not. For the spend ledger that rounds TOWARD ZERO, so the run under-reports
+ * what it cost and the cap trips late, which is the one direction a brake must
+ * never be wrong in.
+ */
+function dec(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number.parseFloat(String(v ?? ''))
+  return Number.isFinite(n) ? n : fallback
+}
+
 /** Frontmatter is flat scalars, so a bool may arrive as a real boolean OR as the
  *  string a YAML round-trip left behind. Absent falls back, not to false. */
 function bool(v: unknown, fallback: boolean): boolean {
@@ -74,9 +88,9 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     // CAPPED AT THE DEFAULT rather than as uncapped. Falling back to 0 would
     // silently grandfather every long-lived run into the exact state this file's
     // ceilings exist to end.
-    maxUsd: num(meta.maxUsd, EPIC_RUN_DEFAULTS.maxUsd),
+    maxUsd: dec(meta.maxUsd, EPIC_RUN_DEFAULTS.maxUsd),
     maxWallClockMinutes: num(meta.maxWallClockMinutes, EPIC_RUN_DEFAULTS.maxWallClockMinutes),
-    spentUsd: num(meta.spentUsd, 0),
+    spentUsd: dec(meta.spentUsd, 0),
     concurrency: num(meta.concurrency, EPIC_RUN_DEFAULTS.concurrency),
     // A run armed before the planning stage existed carries neither field. It
     // reads as ALREADY PLANNED rather than as owing a plan: retro-fitting a

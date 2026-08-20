@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
-import { epicLogFile, isValidEpicId, safeEpicId } from './epic-paths'
+import { epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
 import { isOutOfGenerations, patchEpicRun, readEpicRun, startEpicRun } from './epic-run-store'
 
 const T0 = Date.parse('2026-08-17T10:00:00.000Z')
@@ -147,6 +147,79 @@ describe('the run artifact', () => {
     expect(isOutOfGenerations(readEpicRun(root, 'e1')!)).toBe(false)
     patchEpicRun(root, 'e1', { gen: 3 }, T0 + 2)
     expect(isOutOfGenerations(readEpicRun(root, 'e1')!)).toBe(true)
+  })
+
+  /**
+   * THE OTHER TWO HANDBRAKES. `maxGens` bounds how often the OVERSEER THINKS and
+   * bounds nothing about what the seats underneath it burn -- on 2026-08-19 this
+   * project billed $2,481 in a day with an unattended run going and nothing
+   * stopped it.
+   */
+  describe('the spend and wall-clock ceilings', () => {
+    test('are armable per run and survive a round trip to disk', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 25, maxWallClockMinutes: 60 }, T0)
+      const run = readEpicRun(root, 'e1')
+      expect(run?.maxUsd).toBe(25)
+      expect(run?.maxWallClockMinutes).toBe(60)
+    })
+
+    test('default to something rather than to infinity', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      expect(readEpicRun(root, 'e1')).toMatchObject({ maxUsd: 100, maxWallClockMinutes: 480 })
+    })
+
+    /** A run armed before the caps existed carries neither field, and must read
+     *  as CAPPED AT THE DEFAULT -- falling back to 0 would grandfather every
+     *  long-lived run into the state the ceilings exist to end. */
+    test('a run written before they existed reads as capped, not as uncapped', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      const file = epicRunFile(root, 'e1')
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8')
+          .split('\n')
+          .filter(l => !l.startsWith('maxUsd:') && !l.startsWith('maxWallClockMinutes:'))
+          .join('\n'),
+        'utf8',
+      )
+      expect(readEpicRun(root, 'e1')).toMatchObject({ maxUsd: 100, maxWallClockMinutes: 480 })
+    })
+
+    /**
+     * THE CLOCK RESTARTS, THE LEDGER DOES NOT. Wall clock measures the current
+     * unattended stretch, so resuming is a new one. Spend is cumulative for the
+     * life of the run and re-arming must never launder it -- a run that parked at
+     * its ceiling and resumes unchanged parks again, which is the brake working.
+     */
+    test('re-arming clears the wall clock and keeps the spend', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { spentUsd: 31.4, startedAt: new Date(T0).toISOString(), status: 'paused' }, T0 + 1)
+
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 2)
+
+      const run = readEpicRun(root, 'e1')
+      expect(run?.startedAt).toBeUndefined()
+      expect(run?.spentUsd).toBe(31.4)
+    })
+
+    test('and raising the ceiling on the resume is how a parked run continues', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 25 }, T0)
+      patchEpicRun(root, 'e1', { spentUsd: 31.4, status: 'paused' }, T0 + 1)
+      startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 60 }, T0 + 2)
+      expect(readEpicRun(root, 'e1')).toMatchObject({ maxUsd: 60, spentUsd: 31.4, status: 'armed' })
+    })
+
+    /**
+     * MONEY HAS CENTS. Every other scalar on a run is a counter, so the reader
+     * parsed with `parseInt` -- which truncated `31.40` to `31` on the way back
+     * off disk, TOWARD ZERO, so the run under-reported what it cost and the cap
+     * tripped late. Caught by the resume test above before this ever ran.
+     */
+    test('the ledger keeps its cents across a write and a read', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 12.75 }, T0)
+      patchEpicRun(root, 'e1', { spentUsd: 0.07 }, T0 + 1)
+      expect(readEpicRun(root, 'e1')).toMatchObject({ spentUsd: 0.07, maxUsd: 12.75 })
+    })
   })
 
   test('a junk value falls back to the default instead of poisoning the run', () => {
