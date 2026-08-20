@@ -37,17 +37,19 @@ function rowLabel(row: RiverRow): string {
   const where = row.hasConversation
     ? `from ${row.conversationName ?? 'a conversation'}`
     : 'made at a terminal, outside any conversation'
-  return `${row.subject} -- ${row.branch} · ${where} · click for the commit`
+  return `${row.subject} -- ${row.branch} · ${where} · click to open it here on the wall`
 }
 
 export function CommitRiverRow({ row }: { row: RiverRow }) {
   function open() {
     haptic('tick')
-    // Through the ONE transport, so a detached wall reaches the main window
-    // instead of opening a detail behind the popup you are looking at.
-    // `wall-commit-detail-in-wall` flips this target to `wall`; that is the
-    // only line it has to change.
-    navigateFromWall({ kind: 'commit', hash: row.hash })
+    // Through the ONE transport, with the IN-WALL target: a commit's detail is
+    // a read, and the wall is on the second monitor precisely so the main window
+    // can stay on whatever it was doing. Every other wall row still ships its
+    // intent to the dashboard -- this is the exception Jonas asked for, and the
+    // transport takes it as a parameter so it is one word rather than a second
+    // mechanism.
+    navigateFromWall({ kind: 'commit', hash: row.hash }, 'wall')
   }
 
   return (
