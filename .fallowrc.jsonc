@@ -16,6 +16,8 @@
     "@shared/epic-cards",
     "@shared/epic-color",
     "@shared/epic-linked",
+    "@shared/epic-run-cleared",
+    "@shared/epic-vitality",
     "@shared/pinned-epic-rows",
     "@shared/project-order-types",
     "@shared/project-task-types",
@@ -28,6 +30,7 @@
     "@shared/task-modes",
     "@shared/task-statuses",
     "@shared/wall",
+    "@shared/wall-pin",
     "@shared/ws-probe"
   ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
