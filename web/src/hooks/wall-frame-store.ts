@@ -129,11 +129,86 @@ function clearPicture(): void {
   frames = 0
 }
 
-/** Fold one frame into the picture and notify. */
-// Cognitive 18 vs a threshold of 15: one fold over the frame's sections, flat.
-// Tracked for a strategy-map rewrite on `wall-live-channel-fallow-debt`.
-// fallow-ignore-next-line complexity
-export function applyWallFrame(frame: WallFrame): void {
+/**
+ * THE FRAME'S PAYLOAD SECTIONS -- derived from `WallFrame` rather than listed,
+ * so adding a seventh section to the wire is a COMPILE ERROR here until it has
+ * a merge in `SECTION_MERGE` below. The envelope fields are the exclusion list.
+ *
+ * A silently-unmerged section is the exact failure this buys protection from: a
+ * frame would arrive carrying it, the fold would ignore it, and the pane reading
+ * it would render a permanently empty box that looks like a quiet fleet.
+ */
+type WallSection = Exclude<keyof WallFrame, 'type' | 'seq' | 'at' | 'full' | 'coalesced' | 'dropped'>
+
+/**
+ * One section's merge into the picture.
+ *
+ * Handed the WHOLE frame, not just its own slot, because two of the six need the
+ * envelope: `cards` reads `full` (a full frame REPLACES the ledger, including
+ * with nothing) and `plan` reads `at` (the series window is broker-clock-based).
+ *
+ * EACH MERGE GUARDS ITSELF. That is the point of the map: "is this section worth
+ * applying" and "how is it applied" are one section's business, in one place,
+ * instead of six `if`s stacked in a caller that then reads as a decision tree.
+ */
+type SectionMerge = (frame: WallFrame) => void
+
+const SECTION_MERGE: Record<WallSection, SectionMerge> = {
+  pulse: f => {
+    if (!f.pulse) return
+    for (const row of f.pulse.changed) pulse.set(row.id, row)
+    for (const id of f.pulse.gone ?? []) pulse.delete(id)
+  },
+
+  commits: f => {
+    if (!f.commits?.length) return
+    commits = ring(commits, f.commits, COMMIT_RING)
+  },
+
+  // Card moves belong to `card-ledger-feed.ts`, which owns the P3 ledger's
+  // ordering and bound. The wall channel is only its transport now, so the
+  // section is handed over rather than mirrored into a second copy here.
+  //
+  // The `full` arm is NOT redundant with the length check: a full frame carrying
+  // no cards means the ledger is genuinely empty, and skipping it would leave
+  // yesterday's moves on screen under today's snapshot.
+  cards: f => {
+    if (!f.full && !f.cards?.length) return
+    applyCardLedgerFrame(f.cards ?? [], { full: f.full })
+  },
+
+  hosts: f => {
+    if (!f.hosts) return
+    for (const h of f.hosts) hosts.set(h.nodeId, h)
+  },
+
+  plan: f => {
+    if (!f.plan?.length) return
+    // `minGapMs: 0` -- the broker already decided what is worth keeping. Thinning
+    // a second time here would drop points the chart was sent on purpose.
+    foldPlanSamples(planSeries, f.plan, f.at, { minGapMs: 0 })
+    prunePlanSeries(planSeries, f.at)
+    plan = flattenPlanSeries(planSeries)
+  },
+
+  fleet: f => {
+    if (!f.fleet) return
+    fleet = f.fleet
+  },
+}
+
+/** Fixed application order. `Object.keys` would take it from the literal above,
+ *  which makes a reorder-on-edit a silent behaviour change; naming it here means
+ *  the order is a decision rather than a side effect of how the map was typed. */
+const WALL_SECTIONS = Object.keys(SECTION_MERGE) as WallSection[]
+
+/**
+ * Snapshot vs delta, and the gap accounting.
+ *
+ * A `full` frame replaces the picture, so whatever gap count preceded it is
+ * meaningless -- it described a stream that no longer exists.
+ */
+function noteFrameArrival(frame: WallFrame): void {
   if (frame.full) {
     clearPicture()
     gaps = 0
@@ -142,26 +217,20 @@ export function applyWallFrame(frame: WallFrame): void {
   }
   lastSeq = frame.seq
   frames++
+}
 
-  if (frame.pulse) {
-    for (const row of frame.pulse.changed) pulse.set(row.id, row)
-    for (const id of frame.pulse.gone ?? []) pulse.delete(id)
-  }
-  if (frame.commits?.length) commits = ring(commits, frame.commits, COMMIT_RING)
-  // Card moves belong to `card-ledger-feed.ts`, which owns the P3 ledger's
-  // ordering and bound. The wall channel is only its transport now, so the
-  // section is handed over rather than mirrored into a second copy here.
-  if (frame.full || frame.cards?.length) applyCardLedgerFrame(frame.cards ?? [], { full: frame.full })
-  if (frame.hosts) for (const h of frame.hosts) hosts.set(h.nodeId, h)
-  if (frame.plan?.length) {
-    // `minGapMs: 0` -- the broker already decided what is worth keeping. Thinning
-    // a second time here would drop points the chart was sent on purpose.
-    foldPlanSamples(planSeries, frame.plan, frame.at, { minGapMs: 0 })
-    prunePlanSeries(planSeries, frame.at)
-    plan = flattenPlanSeries(planSeries)
-  }
-  if (frame.fleet) fleet = frame.fleet
-
+/**
+ * Fold one frame into the picture and notify.
+ *
+ * A section the wire carries but this client has no merge for is IGNORED, not an
+ * error: the loop is driven by the merges this build knows, so an older tab
+ * talking to a newer broker draws less of the wall rather than throwing on every
+ * frame. The compile-time `Record` above is what stops that being a silent
+ * omission for sections added in THIS build.
+ */
+export function applyWallFrame(frame: WallFrame): void {
+  noteFrameArrival(frame)
+  for (const section of WALL_SECTIONS) SECTION_MERGE[section](frame)
   rebuildView(frame)
   signal.bump()
 }
