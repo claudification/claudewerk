@@ -53,7 +53,10 @@ let insertSample: Statement | null = null
 let flushTimer: ReturnType<typeof setInterval> | null = null
 let sweepTimer: ReturnType<typeof setInterval> | null = null
 
-/** `nodeId kind name` -> the object row's id and its last-written label.
+/** `nodeId` + `kind` + `name`, joined by `\x1f` -> the object row's id and its
+ *  last-written label. This string is IDENTITY, so the separator is the ASCII
+ *  Unit Separator rather than a space: a name or a label may legally contain a
+ *  space, and two different objects must never collide onto one key.
  *  Bounded by the fleet, and rebuilt from the table on the next boot. The label
  *  is cached alongside the id so a rename costs one UPDATE, not one per sample. */
 const objectIds = new Map<string, { id: number; label?: string }>()
