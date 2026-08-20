@@ -76,7 +76,9 @@ interface PulseRowProps {
   query: PulseQuery
   active?: boolean
   onSelect: () => void
-  onHover?: () => void
+  /** The event carries the row's own element -- a hover PREVIEW has to anchor
+   *  to it, and a parent that only hears "row 3" cannot find it in the DOM. */
+  onHover?: (event: React.MouseEvent<HTMLElement>) => void
 }
 
 /**

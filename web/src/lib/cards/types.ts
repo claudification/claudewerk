@@ -55,6 +55,10 @@ export interface CardSummary {
   /** `partial` = identity + state known (manifest-cheap), detail still loading. */
   detail: 'partial' | 'full'
   title?: string
+  /** The card's opening lines, as the backend already summarises them. What the
+   *  card SAYS is the question a hover asks, and a title plus a lane is not an
+   *  answer to it. Absent when the backend has no cheap preview. */
+  preview?: string
   priority?: CardPriority
   tags: string[]
   /** ISO date the card was created. */

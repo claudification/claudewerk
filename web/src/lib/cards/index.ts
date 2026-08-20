@@ -13,6 +13,7 @@ import { registerCardProvider } from './registry'
 registerCardProvider(projectBoardProvider)
 
 export { cardGlyph } from './glyph'
+export { projectBoardCardRef } from './provider-project-board'
 export {
   cardRefKey,
   matchCardHref,

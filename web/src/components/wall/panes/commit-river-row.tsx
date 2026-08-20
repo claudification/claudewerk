@@ -14,13 +14,14 @@
  * detail.
  */
 
-import { openCommitDetail } from '@/hooks/use-commit-modals'
 import { haptic } from '@/lib/utils'
 import type { RiverRow } from '@/lib/wall/commit-river'
 import { ProjectTag } from '../../project-tag'
 import { CopyIconButton } from '../../ui/copy-icon-button'
+import { navigateFromWall } from '../wall-navigate'
+import { hoverCommitRow, leaveWallRow } from '../wall-row-hover'
 
-/** What the row promises the click will reach. The rich preview is W4's. */
+/** What the row promises the click will reach. The rich preview is the hover. */
 function rowTitle(row: RiverRow): string {
   const where = row.hasConversation
     ? `from ${row.conversationName ?? 'a conversation'}`
@@ -31,7 +32,11 @@ function rowTitle(row: RiverRow): string {
 export function CommitRiverRow({ row }: { row: RiverRow }) {
   function open() {
     haptic('tick')
-    openCommitDetail(row.hash)
+    // Through the ONE transport, so a detached wall reaches the main window
+    // instead of opening a detail behind the popup you are looking at.
+    // `wall-commit-detail-in-wall` flips this target to `wall`; that is the
+    // only line it has to change.
+    navigateFromWall({ kind: 'commit', hash: row.hash })
   }
 
   return (
@@ -42,6 +47,8 @@ export function CommitRiverRow({ row }: { row: RiverRow }) {
       data-hash={row.shortHash}
       title={rowTitle(row)}
       onClick={open}
+      onMouseEnter={event => hoverCommitRow(row, event.currentTarget)}
+      onMouseLeave={leaveWallRow}
       onKeyDown={event => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()

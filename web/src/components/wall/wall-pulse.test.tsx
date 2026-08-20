@@ -1,6 +1,6 @@
 /**
  * P1 as it RENDERS: the band vocabulary, the two views, the count, the chip that
- * drives the whole wall, and the selection that does NOT navigate.
+ * drives the whole wall, and the click that both MARKS and opens.
  *
  * `usePulseFleet` is mocked -- its own banding, sorting and managed detection are
  * pinned by `src/components/pulse/` and `src/lib/pulse/`. What is under test here
@@ -12,6 +12,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PulseFleet, PulseRow } from '@/components/pulse/use-pulse-fleet'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import type { PulseBand } from '@/lib/pulse/bands'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { parseWallQuery } from '@/lib/wall/query'
@@ -66,6 +67,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  useConversationsStore.setState({ selectedConversationId: null })
   vi.restoreAllMocks()
 })
 
@@ -172,7 +174,7 @@ describe('P1 pulse -- the shared filter', () => {
 })
 
 describe('P1 pulse -- selection', () => {
-  it('marks a row without navigating, and unmarks it on a second click', () => {
+  it('marks a row, and unmarks it on a second click', () => {
     feed.fleet = feedFleet([row({ title: 'pick me' })])
     render(<PulsePane />)
     const rowEl = () => screen.getByText('pick me').closest('button') as HTMLElement
@@ -180,6 +182,23 @@ describe('P1 pulse -- selection', () => {
     expect(rowEl().getAttribute('data-active')).toBe('true')
     fireEvent.click(rowEl())
     expect(rowEl().getAttribute('data-active')).toBe('false')
+  })
+
+  /**
+   * The mark and the open are two verbs on one click, and W4 is the second.
+   * `wall-pulse-state` says selection is not navigation; that stayed true --
+   * what changed is that the pane now ALSO drives the main window, and the mark
+   * has to survive it or the row you clicked stops reading as the row you
+   * clicked the moment the dashboard comes forward.
+   */
+  it('ALSO focuses the conversation in the main window, and keeps the mark', () => {
+    feed.fleet = feedFleet([row({ id: 'conv_pick', title: 'pick me' })])
+    render(<PulsePane />)
+
+    fireEvent.click(screen.getByText('pick me'))
+
+    expect(useConversationsStore.getState().selectedConversationId).toBe('conv_pick')
+    expect(useWallPulseStore.getState().selectedId).toBe('conv_pick')
   })
 
   it('survives a remount -- the wall unmounts its tree on every dock and detach', () => {
