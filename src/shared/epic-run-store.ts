@@ -70,6 +70,13 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     target: pick(meta.target, TARGETS, EPIC_RUN_DEFAULTS.target),
     dryGens: num(meta.dryGens, 0),
     maxGens: num(meta.maxGens, EPIC_RUN_DEFAULTS.maxGens),
+    // A run armed before the caps existed carries neither ceiling, and reads as
+    // CAPPED AT THE DEFAULT rather than as uncapped. Falling back to 0 would
+    // silently grandfather every long-lived run into the exact state this file's
+    // ceilings exist to end.
+    maxUsd: num(meta.maxUsd, EPIC_RUN_DEFAULTS.maxUsd),
+    maxWallClockMinutes: num(meta.maxWallClockMinutes, EPIC_RUN_DEFAULTS.maxWallClockMinutes),
+    spentUsd: num(meta.spentUsd, 0),
     concurrency: num(meta.concurrency, EPIC_RUN_DEFAULTS.concurrency),
     // A run armed before the planning stage existed carries neither field. It
     // reads as ALREADY PLANNED rather than as owing a plan: retro-fitting a
@@ -79,6 +86,7 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     planned: bool(meta.planned, true),
     created: typeof meta.created === 'string' ? meta.created : '',
     updated: typeof meta.updated === 'string' ? meta.updated : '',
+    ...(typeof meta.startedAt === 'string' && meta.startedAt ? { startedAt: meta.startedAt } : {}),
     ...(typeof meta.planBaseline === 'string' && meta.planBaseline ? { planBaseline: meta.planBaseline } : {}),
     ...(typeof meta.abortReason === 'string' && meta.abortReason ? { abortReason: meta.abortReason } : {}),
     ...(typeof meta.acknowledgedAt === 'string' && meta.acknowledgedAt ? { acknowledgedAt: meta.acknowledgedAt } : {}),
@@ -100,6 +108,12 @@ export interface StartEpicRunInput {
   target?: EpicRun['target']
   concurrency?: number
   maxGens?: number
+  /** Cumulative USD ceiling. `0` disarms it. Honoured on a RESUME too -- raising
+   *  it is exactly how a human says "yes, keep going" to a run that parked on
+   *  budget, and the alternative would be editing run.md by hand. */
+  maxUsd?: number
+  /** Minutes-since-first-dispatch ceiling. `0` disarms it. Same resume rule. */
+  maxWallClockMinutes?: number
   /** Run a planning generation before beat 1. Only consulted on a FRESH run --
    *  see `startEpicRun` for why a resume never re-plans. */
   plan?: boolean
@@ -129,6 +143,9 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     target: EPIC_RUN_DEFAULTS.target,
     dryGens: 0,
     maxGens: EPIC_RUN_DEFAULTS.maxGens,
+    maxUsd: EPIC_RUN_DEFAULTS.maxUsd,
+    maxWallClockMinutes: EPIC_RUN_DEFAULTS.maxWallClockMinutes,
+    spentUsd: 0,
     concurrency: EPIC_RUN_DEFAULTS.concurrency,
     plan: wantsPlan,
     planned: !wantsPlan,
@@ -143,8 +160,17 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     target: input.target ?? base.target,
     concurrency: input.concurrency ?? base.concurrency,
     maxGens: input.maxGens ?? base.maxGens,
+    maxUsd: input.maxUsd ?? base.maxUsd,
+    maxWallClockMinutes: input.maxWallClockMinutes ?? base.maxWallClockMinutes,
     status: 'armed',
     dryGens: 0,
+    // THE CLOCK RESTARTS, THE LEDGER DOES NOT. They are different kinds of fact:
+    // wall clock measures the current unattended stretch, so a human resuming a
+    // parked run is starting a new one and gets a fresh budget of minutes. Spend
+    // is cumulative for the life of the run and re-arming must never launder it
+    // -- a run that parked at $100 and resumes unchanged parks again on the next
+    // beat, which is the brake working. Raise `maxUsd` to mean "keep going".
+    startedAt: undefined,
     updated: ts,
     abortReason: undefined,
     // A RUN THAT STARTED AGAIN IS NEWS AGAIN. Leaving the acknowledgement on a

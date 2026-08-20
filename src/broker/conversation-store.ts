@@ -203,6 +203,16 @@ export interface ConversationStore {
    *  before CC wrote anything (epic-sweep.ts). Side-effect free, unlike
    *  `loadTranscriptFromStore`, which seeds the seq counter as it reads. */
   hasAnyTranscript: (conversationId: string) => boolean
+  /**
+   * Total USD these conversations have cost. The epic engine's spend cap reads
+   * it once per beat over one run's seats (epic-executor.ts).
+   *
+   * Durable-only: cost lives in the `turns` table and nowhere in memory, so with
+   * no store driver this is 0 -- and 0 means "no cap can trip", which is the
+   * conservative direction for a brake that must never stop a run over a number
+   * it cannot substantiate.
+   */
+  sumConversationCostUsd: (conversationIds: readonly string[]) => number
   recentTranscriptUuids: (conversationId: string, limit: number) => string[]
   loadTranscriptFromStore: (conversationId: string, limit: number) => TranscriptEntry[] | null
   /** Backward pagination for infinite scrollback: the `limit` entries with
@@ -3062,6 +3072,13 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return store ? store.transcripts.getLatest(conversationId, 1, null).length > 0 : false
   }
 
+  /** Total USD over a set of conversations. Store-only -- cost is never held in
+   *  memory -- so a broker running without persistence reports 0, which reads as
+   *  "no spend cap can trip" rather than as "this run was free". */
+  function sumConversationCostUsd(conversationIds: readonly string[]): number {
+    return store ? store.costs.sumCostByConversations(conversationIds) : 0
+  }
+
   /** Durable-first uuid probe. The store is authoritative (it outlives the
    *  in-memory cache across a broker restart); the cache scan is only the
    *  no-store fallback, bounded by MAX_TRANSCRIPT_ENTRIES. */
@@ -3555,6 +3572,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     getTranscriptEntries,
     hasTranscriptUuid,
     hasAnyTranscript,
+    sumConversationCostUsd,
     hasTranscriptCache,
     recentTranscriptUuids,
     loadTranscriptFromStore,

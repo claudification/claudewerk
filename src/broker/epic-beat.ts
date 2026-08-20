@@ -53,33 +53,60 @@ export interface EpicBeatInput {
   /** The board's dispatch-relevant fingerprint right now (epic-board-fingerprint).
    *  Only meaningful while a planning generation is owed. */
   boardFingerprint: string
+  /**
+   * Cumulative USD across every conversation tagged with this epic, folded fresh
+   * by the executor this beat from `turns.cost_usd`.
+   *
+   * A FLOOR ON THE TRUTH, not the truth: turns are pruned and the conversation
+   * registry forgets, so this can come back SMALLER than what the run has
+   * already banked. `spentSoFar` is where that is resolved, once.
+   */
+  spentUsd: number
+  /** Now, in epoch ms. Injected because the wall-clock cap is arithmetic on the
+   *  run row, and a pure decision must not read the process clock. */
+  nowMs: number
 }
+
+/**
+ * SCALARS THIS BEAT WANTS MERGED INTO `run.md`, BEFORE ITS ACTIONS RUN.
+ *
+ * THE SEAM, and it exists because of `b766b75e`: `dryGens` was read every beat
+ * as the "second dry generation parks the run" valve, reported in the overseer's
+ * briefing and promised by the lease module's comment -- and nothing in the
+ * engine ever incremented it. The park was unreachable for the life of the
+ * feature.
+ *
+ * The fix that followed put the counter ON THE BEAT rather than having `planBeat`
+ * write it, because planning is pure and the executor owns every write: a
+ * decision and its persistence cannot then disagree about what happened. This
+ * type is that arrangement generalised, so the next thing the engine needs to
+ * remember per beat is a field here plus an entry in `LEDGER_KEYS` -- not a
+ * second one-off `if` block bolted beside the first.
+ */
+export interface EpicBeatPatch {
+  dryGens?: number
+  spentUsd?: number
+  startedAt?: string
+}
+
+/** Every field a beat may write. The prune below walks THIS, so adding a field
+ *  to `EpicBeatPatch` without adding it here makes it silently un-writable. */
+const LEDGER_KEYS = ['dryGens', 'spentUsd', 'startedAt'] as const
 
 export interface EpicBeat {
   actions: EpicAction[]
   /** One line for the broker log. Never empty -- a beat that did nothing still
    *  has to say why, or a stalled epic is unexplainable from logs alone. */
   note: string
-  /**
-   * What `run.dryGens` should become, when this beat changes it.
-   *
-   * THE BRAKE THAT WAS NEVER WIRED. `dryGens` is read below as the "second dry
-   * generation parks the run" valve, and the overseer prompt reports it -- but
-   * nothing in the engine ever incremented it, so it was permanently 0. The park
-   * was unreachable and the only ceiling on a thrashing run was `maxGens: 40`,
-   * which is 40 overseer generations of billing before anything stops.
-   *
-   * Carried on the beat rather than written by `planBeat` because planning is
-   * pure: the executor owns every write, so a decision and its persistence
-   * cannot disagree about what happened.
-   */
-  dryGens?: number
+  /** What this beat wants `run.md` to say, applied BEFORE the actions. Absent
+   *  when the run already says all of it -- see `pruned`. */
+  patch?: EpicBeatPatch
 }
 
-const beat = (note: string, actions: EpicAction[] = [], dryGens?: number): EpicBeat => ({
+const beat = (note: string, actions: EpicAction[] = [], patch?: EpicBeatPatch): EpicBeat => ({
   actions,
   note,
-  ...(dryGens === undefined ? {} : { dryGens }),
+  ...(patch === undefined ? {} : { patch }),
 })
 
 /** Cadence gate. `now` runs whenever; `window` defers dispatch to the night. */
@@ -128,6 +155,91 @@ function planningBeat(run: EpicRunSnapshot, fingerprint: string): EpicBeat | nul
   ])
 }
 
+const usd = (n: number): string => `$${n.toFixed(2)}`
+
+/**
+ * WHAT THE RUN HAS SPENT, resolved once.
+ *
+ * The fresh fold and the banked figure can disagree in one direction only: turns
+ * are pruned on a retention window and the conversation registry forgets, so a
+ * fold taken today over a week-old run comes back SMALLER than what that run
+ * actually cost. Cumulative spend must never decrease -- a brake that garbage
+ * collection can release is not a brake -- so the higher of the two wins, and
+ * that is also the figure the cap is judged against.
+ *
+ * THIS IS THE DIFFERENCE FROM `dryGens`, and it is written here because the next
+ * reader will otherwise "fix" it into symmetry: the dry streak counts CONSECUTIVE
+ * empty generations and a productive beat clears it, while spend is cumulative
+ * and no beat, however productive, may zero it.
+ */
+function spentSoFar(input: EpicBeatInput): number {
+  return Math.max(input.run.spentUsd, input.spentUsd)
+}
+
+/** Minutes the run has been permitted to work, or null when its clock has never
+ *  started -- a `window` run waiting for the night has no wall clock yet, and
+ *  must not be billed minutes it was forbidden to use. */
+function wallClockMinutes(run: EpicRunSnapshot, nowMs: number): number | null {
+  if (!run.startedAt) return null
+  const started = Date.parse(run.startedAt)
+  return Number.isFinite(started) ? Math.floor((nowMs - started) / 60_000) : null
+}
+
+/**
+ * THE HANDBRAKES, checked before anything else a beat could do.
+ *
+ * `maxGens` was the only one for the life of the feature, and it is a unit of
+ * PLANNING rather than of spend: it bounds how many times the overseer thinks
+ * and bounds nothing about what the seats underneath it burn. On 2026-08-19 this
+ * project billed $2,481 in one calendar day with THE WALL II running unattended,
+ * and no cap of any kind was involved in stopping it.
+ *
+ * Order is dollars, then wall clock, then generations -- most expensive unit
+ * first, so a run that is over two ceilings at once reports the one that
+ * actually cost something. A ceiling of `0` is a deliberate, typed disarm; the
+ * defaults are in `EPIC_RUN_DEFAULTS` and none of them is infinity.
+ *
+ * Every branch PARKS, which is the same terminal shape as the dry-generation
+ * park: the run stops, the reason goes into the append-only baton as a
+ * structured entry, and a human decides whether to raise the ceiling.
+ */
+function capBeat(input: EpicBeatInput): EpicBeat | null {
+  const { run } = input
+
+  const spent = spentSoFar(input)
+  if (run.maxUsd > 0 && spent >= run.maxUsd) {
+    return beat(`spend ceiling reached (${usd(spent)}/${usd(run.maxUsd)})`, [
+      {
+        kind: 'park',
+        reason:
+          `hit the spend ceiling: ${usd(spent)} of ${usd(run.maxUsd)} across every conversation this run ` +
+          'spawned. A generation is a unit of planning, not of spend -- raise `maxUsd` and start the run ' +
+          'again if this epic genuinely warrants more.',
+      },
+    ])
+  }
+
+  const minutes = wallClockMinutes(run, input.nowMs)
+  if (run.maxWallClockMinutes > 0 && minutes !== null && minutes >= run.maxWallClockMinutes) {
+    return beat(`wall clock ceiling reached (${minutes}/${run.maxWallClockMinutes} min)`, [
+      {
+        kind: 'park',
+        reason:
+          `hit the wall-clock ceiling of ${run.maxWallClockMinutes} minute(s): the run has been dispatching ` +
+          `for ${minutes}. It has outlived the stretch it was armed for -- read the digest before resuming.`,
+      },
+    ])
+  }
+
+  if (run.gen >= run.maxGens) {
+    return beat(`generation ceiling reached (${run.gen}/${run.maxGens})`, [
+      { kind: 'park', reason: `hit the generation ceiling of ${run.maxGens} -- the run is thrashing, not working` },
+    ])
+  }
+
+  return null
+}
+
 /**
  * Reasons a beat does something OTHER than move work, most urgent first. Order
  * is the design: an epic that is simultaneously over its ceiling, owed a plan
@@ -139,13 +251,8 @@ function planningBeat(run: EpicRunSnapshot, fingerprint: string): EpicBeat | nul
 function guardBeat(input: EpicBeatInput): EpicBeat | null {
   const { run, plan } = input
 
-  if (INERT.includes(run.status)) return beat(`run is ${run.status}; nothing to do`)
-
-  if (run.gen >= run.maxGens) {
-    return beat(`generation ceiling reached (${run.gen}/${run.maxGens})`, [
-      { kind: 'park', reason: `hit the generation ceiling of ${run.maxGens} -- the run is thrashing, not working` },
-    ])
-  }
+  const capped = capBeat(input)
+  if (capped) return capped
 
   // An overseer mid-turn owns the epic. Do not dispatch underneath it: it may be
   // rewriting the very cards the plan was computed from. The PLANNER sits in the
@@ -177,8 +284,52 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   return null
 }
 
+/**
+ * What this beat wants written down REGARDLESS of what it decided to do.
+ *
+ * Spend is folded every beat, and the wall clock starts on the first beat the
+ * run is actually permitted to dispatch -- not when it was armed. A `window`
+ * run armed at noon may not dispatch until the night window opens, and a clock
+ * started at arming would spend that whole wait burning a budget the run was
+ * never allowed to use.
+ */
+function ledgerWrites(input: EpicBeatInput): EpicBeatPatch {
+  const clockStarted = Boolean(input.run.startedAt)
+  const mayWork = dispatchAllowed(input.run, input.windowOpen)
+  return {
+    spentUsd: spentSoFar(input),
+    ...(clockStarted || !mayWork ? {} : { startedAt: new Date(input.nowMs).toISOString() }),
+  }
+}
+
+/**
+ * Drop every field the run already says, so a beat states what it WANTS `run.md`
+ * to read and never has to remember what it already reads. One rule in one
+ * place: without it each new counter grows its own `!== run.x` test at its own
+ * call site, and the one that gets the test wrong is unwritable in silence --
+ * which is exactly how `dryGens` spent a whole feature stuck at zero.
+ */
+function pruned(patch: EpicBeatPatch, run: EpicRunSnapshot): EpicBeatPatch | undefined {
+  const out: Record<string, unknown> = {}
+  for (const key of LEDGER_KEYS) {
+    const wanted = patch[key]
+    if (wanted !== undefined && wanted !== run[key]) out[key] = wanted
+  }
+  return Object.keys(out).length > 0 ? (out as EpicBeatPatch) : undefined
+}
+
 export function planBeat(input: EpicBeatInput): EpicBeat {
-  return guardBeat(input) ?? workBeat(input)
+  // A TERMINAL RUN IS TOUCHED BY NOTHING -- no action AND no write. Checked here
+  // rather than inside `guardBeat` because the ledger below writes on every
+  // other path, and a paused run appending a spend patch every 45 seconds is the
+  // same class of bug as the baton entries a paused epic used to collect.
+  if (isInertRun(input.run.status)) return beat(`run is ${input.run.status}; nothing to do`)
+
+  const decided = guardBeat(input) ?? workBeat(input)
+  // The decision's own writes win over the ledger's: they are about THIS beat,
+  // and the ledger is about the run.
+  const patch = pruned({ ...ledgerWrites(input), ...decided.patch }, input.run)
+  return patch ? { ...decided, patch } : { actions: decided.actions, note: decided.note }
 }
 
 /**
@@ -209,8 +360,9 @@ function workBeat(input: EpicBeatInput): EpicBeat {
       actions,
       // Work moved, so the dry streak is over. CONSECUTIVE is the whole point:
       // a run that alternates between a dry generation and a real one is making
-      // progress, and must never accumulate its way into a park.
-      run.dryGens === 0 ? undefined : 0,
+      // progress, and must never accumulate its way into a park. (Stated
+      // unconditionally -- `pruned` drops it when the counter is already 0.)
+      { dryGens: 0 },
     )
   }
 
@@ -234,6 +386,6 @@ function workBeat(input: EpicBeatInput): EpicBeat {
     `nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the overseer to replan ` +
       `(dry generation ${run.dryGens + 1})`,
     [{ kind: 'wake-overseer', expectGen: run.gen, reason: 'started' }],
-    run.dryGens + 1,
+    { dryGens: run.dryGens + 1 },
   )
 }

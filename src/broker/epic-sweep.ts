@@ -82,6 +82,16 @@ export interface EpicGroup {
    * than retried forever.
    */
   unspawnable: string[]
+  /**
+   * EVERY conversation this epic has ever had in the registry -- every role,
+   * live or dead. The denominator of the run's spend cap (epic-executor.ts).
+   *
+   * Deliberately not derived from the lanes above: those are keyed on CARDS and
+   * drop the overseer entirely, drop a card's earlier retries once a later seat
+   * settles it, and drop failed launches -- all of which still cost money. A cap
+   * fed from them would under-count exactly the runs that are going wrong.
+   */
+  convIds: string[]
   /** The highest generation seen across this epic's conversations. Diagnostic
    *  only -- the run file owns the real counter, this just makes a mismatch
    *  visible in the log instead of silent. */
@@ -141,6 +151,7 @@ function emptyGroup(epicId: string, project: string): EpicGroup {
     settled: [],
     failedLegs: [],
     unspawnable: [],
+    convIds: [],
     maxGenSeen: 0,
   }
 }
@@ -201,6 +212,11 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
 
   const group = acc.groups.get(tag.epicId) ?? emptyGroup(tag.epicId, conv.project)
   group.maxGenSeen = Math.max(group.maxGenSeen, tag.gen)
+  // Recorded HERE, before the role split below returns early for the overseer:
+  // the overseer is a seat like any other and its generations are billed like
+  // any other. A ledger that forgets the supervisor is a ledger that under-reads
+  // precisely on the runs that wake it most.
+  group.convIds.push(conv.id)
   acc.groups.set(tag.epicId, group)
 
   const live = isLive(conv)

@@ -23,7 +23,7 @@
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
-import { type EpicBeat, isInertRun, planBeat } from './epic-beat'
+import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
 import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
@@ -47,6 +47,28 @@ function finish(deps: BeatDeps, group: EpicGroup, gen: number, outcome: BeatOutc
   deps.log(`${tag(group.epicId, gen)} beat: ${outcome.note}${outcome.error ? ` -- ERROR ${outcome.error}` : ''}`)
   recordBeat(group.project, group.epicId, gen, outcome, deps.now())
   return outcome
+}
+
+/**
+ * THE BEAT'S WRITES, APPLIED BEFORE ITS ACTIONS.
+ *
+ * BEFORE, not after: a beat that crashes mid-dispatch must still have recorded
+ * what this generation was and what it spent, or the brake resets itself exactly
+ * when the thing it exists to stop is going wrong.
+ *
+ * ONE op for the whole bag, and the bag is already pruned to what actually
+ * changed (`planBeat`). The shape matters more than the two counters currently
+ * in it: this is where every future per-beat fact gets persisted, and the
+ * alternative -- a fresh `if (beat.x !== run.x) sendEpicOp(...)` block per
+ * counter -- is how you end up with four round trips a beat and one of them
+ * silently unreachable.
+ */
+async function applyBeatPatch(deps: BeatDeps, group: EpicGroup, gen: number, patch?: EpicBeatPatch): Promise<void> {
+  if (!patch) return
+  const res = await epicIo().sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch })
+  if (!res.ok) {
+    deps.log(`${tag(group.epicId, gen)} run patch FAILED (${Object.keys(patch).join(', ')}): ${res.error}`)
+  }
 }
 
 /**
@@ -154,19 +176,17 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     // Computed from the SAME card read the plan came from, so the fingerprint
     // and the plan can never describe two different boards.
     boardFingerprint: boardFingerprint(cards, group.epicId),
+    // THE RUN'S SPEND, FOLDED FRESH. Every conversation this epic has ever had
+    // in the registry, summed over `turns.cost_usd` -- the overseer's
+    // generations included, and the seats that died included, because both were
+    // billed. `planBeat` reconciles this against the figure already banked on
+    // the run; it is a FLOOR on the truth, since turns are pruned and the
+    // registry forgets, and it must never be allowed to lower the ledger.
+    spentUsd: deps.epicSpendUsd(group.convIds),
+    nowMs: deps.now(),
   })
 
-  // BEFORE the actions, not after. A beat that crashes mid-dispatch must still
-  // have recorded that this generation was dry, or the brake resets itself every
-  // time the thing it exists to stop actually goes wrong.
-  if (beat.dryGens !== undefined && beat.dryGens !== run.dryGens) {
-    const res = await io.sendEpicOp(deps, group.project, {
-      op: 'patch',
-      epicId: group.epicId,
-      patch: { dryGens: beat.dryGens },
-    })
-    if (!res.ok) deps.log(`${tag(group.epicId, run.gen)} dryGens patch FAILED: ${res.error}`)
-  }
+  await applyBeatPatch(deps, group, run.gen, beat.patch)
 
   const spawned = await performActions(deps, group, run, beat, {
     batonTail: renderEpicLogTail(view.baton),
