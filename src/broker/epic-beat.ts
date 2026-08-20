@@ -17,6 +17,7 @@
  */
 
 import type { EpicPlan } from '../shared/epic-ready'
+import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
 import type { EpicRunSnapshot } from '../shared/protocol'
 
 /** What the caller should do. Order in the array is the order to do it in. */
@@ -155,8 +156,6 @@ function planningBeat(run: EpicRunSnapshot, fingerprint: string): EpicBeat | nul
   ])
 }
 
-const usd = (n: number): string => `$${n.toFixed(2)}`
-
 /**
  * WHAT THE RUN HAS SPENT, resolved once.
  *
@@ -174,15 +173,6 @@ const usd = (n: number): string => `$${n.toFixed(2)}`
  */
 function spentSoFar(input: EpicBeatInput): number {
   return Math.max(input.run.spentUsd, input.spentUsd)
-}
-
-/** Minutes the run has been permitted to work, or null when its clock has never
- *  started -- a `window` run waiting for the night has no wall clock yet, and
- *  must not be billed minutes it was forbidden to use. */
-function wallClockMinutes(run: EpicRunSnapshot, nowMs: number): number | null {
-  if (!run.startedAt) return null
-  const started = Date.parse(run.startedAt)
-  return Number.isFinite(started) ? Math.floor((nowMs - started) / 60_000) : null
 }
 
 /**
@@ -208,18 +198,18 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
 
   const spent = spentSoFar(input)
   if (run.maxUsd > 0 && spent >= run.maxUsd) {
-    return beat(`spend ceiling reached (${usd(spent)}/${usd(run.maxUsd)})`, [
+    return beat(`spend ceiling reached (${formatUsd(spent)}/${formatUsd(run.maxUsd)})`, [
       {
         kind: 'park',
         reason:
-          `hit the spend ceiling: ${usd(spent)} of ${usd(run.maxUsd)} across every conversation this run ` +
+          `hit the spend ceiling: ${formatUsd(spent)} of ${formatUsd(run.maxUsd)} across every conversation this run ` +
           'spawned. A generation is a unit of planning, not of spend -- raise `maxUsd` and start the run ' +
           'again if this epic genuinely warrants more.',
       },
     ])
   }
 
-  const minutes = wallClockMinutes(run, input.nowMs)
+  const minutes = elapsedRunMinutes(run, input.nowMs)
   if (run.maxWallClockMinutes > 0 && minutes !== null && minutes >= run.maxWallClockMinutes) {
     return beat(`wall clock ceiling reached (${minutes}/${run.maxWallClockMinutes} min)`, [
       {

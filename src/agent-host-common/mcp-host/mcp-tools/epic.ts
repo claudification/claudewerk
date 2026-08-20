@@ -28,6 +28,10 @@ const DESCRIPTION = [
   'action=start        arm (or resume) the run. `cadence` "now" ignores the clock; "window" defers dispatch to',
   '                    the project night window. `concurrency` defaults to 3 -- that is a REVIEW ceiling, not a',
   '                    machine one; raising it means choosing to stop reviewing per-change.',
+  '                    THREE HANDBRAKES, none of them infinity: `max_gens` (40) bounds how often the overseer',
+  '                    THINKS, `max_usd` (100) bounds what the whole run SPENDS, `max_wall_clock_minutes` (480)',
+  '                    bounds how long it runs unattended. Whichever trips first PARKS the run and says so in',
+  '                    the baton. A parked run resumes by starting it again with the ceiling raised.',
   'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
   '                    generation counter.',
   'action=abort        terminal, with `reason` recorded in the append-only baton.',
@@ -90,7 +94,14 @@ export function toBody(p: Record<string, unknown>): Record<string, unknown> | st
 
   const start =
     action === 'start'
-      ? { cadence: p.cadence, target: p.target, concurrency: p.concurrency, maxGens: p.max_gens }
+      ? {
+          cadence: p.cadence,
+          target: p.target,
+          concurrency: p.concurrency,
+          maxGens: p.max_gens,
+          maxUsd: p.max_usd,
+          maxWallClockMinutes: p.max_wall_clock_minutes,
+        }
       : undefined
   const baton = toBatonQuery(p)
 
@@ -142,6 +153,19 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
           target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'start: delivery rung.' },
           concurrency: { type: 'number', description: 'start: max implementers in flight (default 3).' },
           max_gens: { type: 'number', description: 'start: overseer generation ceiling (default 40).' },
+          max_usd: {
+            type: 'number',
+            description:
+              'start: cumulative USD ceiling for the WHOLE run, across every conversation it spawns (default 100). ' +
+              'Tripping it PARKS the run. 0 disarms it. Raise it and start again to let a parked run continue.',
+          },
+          max_wall_clock_minutes: {
+            type: 'number',
+            description:
+              'start: ceiling on minutes since the run was first allowed to dispatch (default 480 = one night). ' +
+              'Tripping it PARKS the run. 0 disarms it. The clock starts when work may begin, not when you arm -- ' +
+              'a cadence=window run does not spend its budget waiting for the window.',
+          },
           reason: { type: 'string', description: 'abort / break_lease: why, recorded in the baton.' },
           force: { type: 'boolean', description: 'break_lease: break it even though the holder is still alive.' },
           beats: { type: 'number', description: 'inspect: how many past beats to show (default 10).' },

@@ -24,8 +24,8 @@ import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { ProjectTag } from '../../project-tag'
 import { navigateFromWall } from '../wall-navigate'
 import { RunActions } from './run-actions'
-import { BatonTail, BeatPulse, BucketStrip, RunTag } from './run-bits'
-import { batonTail, beatTicks, idleSentence, type RunStall, runBuckets, runStall, runView } from './run-model'
+import { BatonTail, BeatPulse, BucketStrip, CapStrip, RunTag } from './run-bits'
+import { batonTail, beatTicks, idleSentence, type RunStall, runBuckets, runCaps, runStall, runView } from './run-model'
 import type { EpicRunRowData } from './use-unattended-runs'
 
 /**
@@ -144,6 +144,7 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
           each print a different confident word for the same run. */}
       <div className="wall-run-why">{view.why}</div>
       <BucketStrip buckets={runBuckets(inspect)} />
+      <CapStrip caps={runCaps(run, nowMs)} />
       <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />
       <IdleWhy sentence={idleSentence(entry, inspect)} />
       <BatonTail entries={batonTail(inspect?.baton ?? [])} nowMs={nowMs} />

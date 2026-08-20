@@ -493,7 +493,7 @@ describe('the run caps stop the run', () => {
     run = { ...RUN, spentUsd: 40 }
     spendUsd = 3
     await runEpicBeat(deps(), group())
-    expect(patchOps().some(p => p.spentUsd !== undefined)) .toBe(false)
+    expect(patchOps().some(p => p.spentUsd !== undefined)).toBe(false)
   })
 
   test('and the cap is judged against the banked figure, not the shrunken fold', async () => {
