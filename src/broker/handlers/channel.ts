@@ -1404,6 +1404,64 @@ const conversationViewed: MessageHandler = (ctx, data) => {
 
 // ─── Link management (dashboard actions) ───────────────────────────
 
+// The loss `werk-link-pending-queue-volatile` exists for. An approve against a
+// previously-unknown pair implies the human was looking at a banner, which implies a
+// queued first-contact message -- so an empty drain means it was dropped, and the sender
+// was told `status: 'queued'`. Never let that pass silently. Deliberately NOT a generic
+// warn-on-empty: channelLinkGrant and the admin route drain speculatively, where empty
+// is the normal case.
+function warnPendingMessageLost(
+  ctx: HandlerContext,
+  pair: { fromConversation: string; toConversation: string; fromProject?: string; toProject?: string },
+): void {
+  const approver = ctx.caller?.id ?? (ctx.ws.data.isControlPanel ? 'control-panel' : 'unknown')
+  ctx.log.warn(
+    `[links] Approved ${pair.fromConversation.slice(0, 8)} <-> ${pair.toConversation.slice(0, 8)} ` +
+      `(${pair.fromProject ?? 'no-project'} <-> ${pair.toProject ?? 'no-project'}) but the pending-approval ` +
+      `queue was EMPTY -- the first-contact message that raised this banner is gone (broker restart before ` +
+      `approval, or it expired). The sender was told status:'queued' and will not be told otherwise. ` +
+      `approver=${approver}`,
+  )
+}
+
+function approveProjectLink(
+  ctx: HandlerContext,
+  fromConversation: string,
+  toConversation: string,
+  fromProject?: string,
+  toProject?: string,
+): void {
+  // Captured BEFORE linkProjects: 'unknown' means this approve answers a live
+  // channel_link_request, so a first-contact message SHOULD be waiting. Any other
+  // prior status means the pair was already authorized and an empty drain is normal.
+  const priorStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
+  ctx.conversations.linkProjects(fromConversation, toConversation)
+  if (fromProject && toProject) ctx.links.add(fromProject, toProject)
+
+  const queued = ctx.conversations.drainProjectMessages(fromConversation, toConversation)
+  const targetWs = ctx.conversations.getConversationSocket(toConversation)
+  if (targetWs) {
+    for (const msg of queued) targetWs.send(JSON.stringify(msg))
+  }
+  if (queued.length === 0 && priorStatus === 'unknown') {
+    warnPendingMessageLost(ctx, { fromConversation, toConversation, fromProject, toProject })
+  }
+  ctx.log.debug(`Link approved + persisted: ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)}`)
+}
+
+function blockProjectLink(
+  ctx: HandlerContext,
+  fromConversation: string,
+  toConversation: string,
+  fromProject?: string,
+  toProject?: string,
+): void {
+  ctx.conversations.blockProject(fromConversation, toConversation)
+  if (fromProject && toProject) ctx.links.remove(fromProject, toProject)
+  ctx.conversations.drainProjectMessages(fromConversation, toConversation) // discard
+  ctx.log.debug(`Link blocked: ${fromConversation.slice(0, 8)} X ${toConversation.slice(0, 8)}`)
+}
+
 export const channelLinkResponse: MessageHandler = (ctx, data) => {
   const fromConversation = data.fromConversation as string
   const toConversation = data.toConversation as string
@@ -1419,45 +1477,8 @@ export const channelLinkResponse: MessageHandler = (ctx, data) => {
   ctx.requirePermission('settings', fromConv.project)
   ctx.requirePermission('settings', toConv.project)
 
-  if (data.action === 'approve') {
-    // Captured BEFORE linkProjects: 'unknown' means this approve answers a live
-    // channel_link_request, so a first-contact message SHOULD be waiting. Any other
-    // prior status means the pair was already authorized and an empty drain is normal.
-    const priorStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
-    ctx.conversations.linkProjects(fromConversation, toConversation)
-    const fromConv = ctx.conversations.getConversation(fromConversation)
-    const toConv = ctx.conversations.getConversation(toConversation)
-    if (fromConv?.project && toConv?.project) ctx.links.add(fromConv.project, toConv.project)
-    const queued = ctx.conversations.drainProjectMessages(fromConversation, toConversation)
-    const targetWs = ctx.conversations.getConversationSocket(toConversation)
-    if (targetWs) {
-      for (const msg of queued) targetWs.send(JSON.stringify(msg))
-    }
-    // The loss this card exists for. An approve against a previously-unknown pair
-    // implies the human was looking at a banner, which implies a queued first-contact
-    // message -- so an empty drain means it was dropped, and the sender was told
-    // `status: 'queued'`. Never let that pass silently. Deliberately NOT a generic
-    // warn-on-empty: channelLinkGrant and the admin route drain speculatively, where
-    // empty is the normal case.
-    if (queued.length === 0 && priorStatus === 'unknown') {
-      const approver = ctx.caller?.id ?? (ctx.ws.data.isControlPanel ? 'control-panel' : 'unknown')
-      ctx.log.warn(
-        `[links] Approved ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)} ` +
-          `(${fromConv?.project ?? 'no-project'} <-> ${toConv?.project ?? 'no-project'}) but the pending-approval ` +
-          `queue was EMPTY -- the first-contact message that raised this banner is gone (broker restart before ` +
-          `approval, or it expired). The sender was told status:'queued' and will not be told otherwise. ` +
-          `approver=${approver}`,
-      )
-    }
-    ctx.log.debug(`Link approved + persisted: ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)}`)
-  } else {
-    ctx.conversations.blockProject(fromConversation, toConversation)
-    const fromConv = ctx.conversations.getConversation(fromConversation)
-    const toConv = ctx.conversations.getConversation(toConversation)
-    if (fromConv?.project && toConv?.project) ctx.links.remove(fromConv.project, toConv.project)
-    ctx.conversations.drainProjectMessages(fromConversation, toConversation) // discard
-    ctx.log.debug(`Link blocked: ${fromConversation.slice(0, 8)} X ${toConversation.slice(0, 8)}`)
-  }
+  const apply = data.action === 'approve' ? approveProjectLink : blockProjectLink
+  apply(ctx, fromConversation, toConversation, fromConv.project, toConv.project)
 }
 
 // Ad-hoc grant: the user sent a message referencing another conversation (via the

@@ -131,7 +131,10 @@ function bootBroker(kv: KVStore): Broker {
     reply: (msg: Record<string, unknown>) => replies.push(msg),
     broadcast: (msg: Record<string, unknown>) => broadcasts.push(msg),
     logMessage: () => {},
-    log: { info() {}, error() {}, debug() {} },
+    // `warn` is not optional: channelLinkResponse's empty-pending-drain path calls it
+    // (werk-link-pending-queue-volatile). A mock missing a method its target declares is
+    // the partial-mock class of bug -- see scripts/check-partial-module-mocks.ts.
+    log: { info() {}, error() {}, debug() {}, warn() {} },
   } as unknown as HandlerContext
 
   return { ctx, delivered, replies, broadcasts }
