@@ -21,7 +21,13 @@ export interface CmdResult {
   output: string
   timedOut: boolean
 }
-export type CmdRunner = (cmd: string, timeoutMs: number) => CmdResult
+/**
+ * ASYNC BY CONTRACT. The host's implementation shells out to a card's `test_cmd`,
+ * which is routinely a full suite -- a synchronous runner froze that conversation's
+ * whole MCP host for the duration (up to DEFAULT_TEST_TIMEOUT_MS). Everything that
+ * touches this runner is async for that one reason; do not "simplify" it back.
+ */
+export type CmdRunner = (cmd: string, timeoutMs: number) => Promise<CmdResult>
 
 /** One deterministic check + its actionable, agent-facing detail line. */
 export interface GateCheck {
@@ -100,14 +106,14 @@ function testDetail(r: CmdResult, timeoutMs: number): string {
   return r.exitCode === 0 ? 'test_cmd exit 0' : `test_cmd exit ${r.exitCode}: ${lastLines(r.output, 200)}`
 }
 
-function testCheck(input: GateInput, ev: Ev): GateCheck {
+async function testCheck(input: GateInput, ev: Ev): Promise<GateCheck> {
   const testCmd = str(input.meta.test_cmd)
   if (!testCmd) {
     ev.evidence_tests = 'none'
     return { name: 'test_cmd', ok: true, detail: 'no test_cmd on card' }
   }
   const timeoutMs = input.testTimeoutMs ?? DEFAULT_TEST_TIMEOUT_MS
-  const r = input.runCmd(testCmd, timeoutMs)
+  const r = await input.runCmd(testCmd, timeoutMs)
   const passed = r.exitCode === 0 && !r.timedOut
   ev.evidence_tests = passed ? 'pass' : 'fail'
   ev.evidence_tests_tail = lastLines(r.output, 400)
@@ -115,7 +121,7 @@ function testCheck(input: GateInput, ev: Ev): GateCheck {
 }
 
 /** Tier-2: deterministic git-state + test gate. Fails closed, precise reasons. */
-export function runTier2(input: GateInput): { ok: boolean; checks: GateCheck[]; evidence: Ev } {
+export async function runTier2(input: GateInput): Promise<{ ok: boolean; checks: GateCheck[]; evidence: Ev }> {
   const evidence: Ev = {}
   const base = str(input.meta.base) || DEFAULT_BASE
   const g = input.git
@@ -130,7 +136,7 @@ export function runTier2(input: GateInput): { ok: boolean; checks: GateCheck[]; 
     cleanTreeCheck(g),
     commitsCheck(g, base, evidence),
     diffCheck(g, base, evidence),
-    testCheck(input, evidence),
+    await testCheck(input, evidence),
   ]
 
   const acc = input.meta.acceptance_verified
