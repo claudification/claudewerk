@@ -67,10 +67,9 @@ export type StatMetric =
   | 'plan_utilization_percent'
   /* THE FOUR BELOW ARE FLOW, NOT GAUGE. Each is a per-EVENT delta -- what ONE
    * assistant message billed -- where every `_percent` above is a level read at
-   * an instant. The distinction is not cosmetic: `retention.ts` collapses rows
-   * older than 48h with AVG(), which is right for a gauge and lossy for a flow
-   * (the mean message, not the window's volume). Known and filed as
-   * `wall-stats-retention-flow-vs-gauge`; nothing reads these yet. */
+   * an instant. That distinction is what `STAT_FLOW_SUFFIX` below encodes, and
+   * `retention.ts` reads it: these collapse with SUM, the gauges with AVG.
+   * Nothing reads the four yet. */
   /** Uncached input tokens billed by ONE assistant message. Producer:
    *  `conversation-store/transcript-handlers/token-stats`. Disjoint from
    *  `cache_read_count` and `cache_write_count` -- the three sum to the
