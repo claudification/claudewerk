@@ -18,6 +18,13 @@
  * SOTU data is attached: a project the viewer cannot see gets NO `sotu` block and
  * is excluded from the union (and counted in `filteredProjects`, never silently
  * dropped). The structural Sheaf grid keeps its own (admin) gate at the route.
+ *
+ * SCOPE, distinct from permission (Jonas, 2026-08-20): the union also carries the
+ * STATE-OF-THE-UNION ROSTER (`sotu.blocks`) the wall's A4 pane renders, and a
+ * project whose chronicle is off (`sotuEnabled` unset or false) is ABSENT from
+ * it. It keeps its per-project `sotu` block -- the FREE floor is still real and
+ * A6 / the Sheaf modal still render its git alerts -- it just has no state to
+ * report, so it stops occupying a row that says nothing.
  */
 
 import type { GitAlert, GitFabric } from '../../shared/protocol'
@@ -32,7 +39,7 @@ import type {
 import { detectWorktreeName } from '../../shared/worktree-detect'
 import { readChronicle } from './chronicle'
 import { defaultResolveSotuConfig, type ResolveSotuConfig } from './config'
-import { buildFleetUnion } from './fleet-union'
+import { buildFleetUnion, type VisibleProjectSotu } from './fleet-union'
 import { scoreGrounding } from './grounding'
 import { projectSlug } from './paths'
 import { readLiveQueue } from './queue'
@@ -135,7 +142,7 @@ function buildProjectSotu(project: SheafProject, resolveConfig: ResolveSotuConfi
 export function enrichSheafWithSotu(sheaf: SheafResponse, opts: EnrichSheafOpts): SheafResponse {
   const resolveConfig = opts.resolveConfig ?? defaultResolveSotuConfig
   const now = opts.now ?? Date.now()
-  const visibleBlocks: SheafProjectSotu[] = []
+  const visible: VisibleProjectSotu[] = []
   let filteredProjects = 0
   for (const project of sheaf.projects) {
     if (!opts.canViewProject(project.projectUri)) {
@@ -145,11 +152,11 @@ export function enrichSheafWithSotu(sheaf: SheafResponse, opts: EnrichSheafOpts)
     try {
       const sotu = buildProjectSotu(project, resolveConfig, now)
       project.sotu = sotu
-      visibleBlocks.push(sotu)
+      visible.push({ projectUri: project.projectUri, sotu })
     } catch {
       // SOTU store unreadable for this project -- leave it structural-only.
     }
   }
-  sheaf.sotu = buildFleetUnion(visibleBlocks, filteredProjects)
+  sheaf.sotu = buildFleetUnion(visible, filteredProjects)
   return sheaf
 }

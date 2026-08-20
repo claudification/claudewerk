@@ -132,6 +132,40 @@ export interface SheafProject {
   sotu?: SheafProjectSotu
 }
 
+/**
+ * ONE ROW OF THE STATE OF THE UNION -- the server-scoped roster the wall's A4
+ * pane renders.
+ *
+ * It sits beside `SheafProjectSotu` rather than being folded out of it in the
+ * browser because the two answer different questions. `SheafProject.sotu` is
+ * "everything known about this project", free floor included, and a
+ * chronicle-OFF project still gets one -- Sheaf's modal and A6 want its git
+ * alerts. This roster is "the projects that have a state to report", and a
+ * chronicle-off project is ABSENT from it, never a `no data` row. Jonas,
+ * 2026-08-20: *"DO NOT SHOW projects that have chronicle off or disabled .. only
+ * show relevant information."*
+ *
+ * The scope is decided SERVER-side, on the same side of the wire as the
+ * per-project visibility filter, so the panel is told what to show rather than
+ * handed everything and trusted to hide some of it.
+ */
+export interface SheafSotuBlock {
+  /** Canonical project URI. The only identity on the roster -- the label is
+   *  resolved client-side from the project registry. */
+  projectUri: string
+  /** The distilled chronicle prose, trimmed. Absent = chronicle ON but nothing
+   *  distilled yet (chronicle-off never reaches this list at all). */
+  narrative?: string
+  /** When the chronicle was generated (epoch ms). Absent until the first distill. */
+  generatedAt?: number
+  /** Deduped git escalation alerts (at-risk/unpushed/stalled) for this project. */
+  alerts: GitAlert[]
+  /** Count of CONTENDED targets (2+ convs on one claim/stake). */
+  contended: number
+  /** Ahead-of-origin commits summed across this project's branches. */
+  unmerged: number
+}
+
 /** The cheap fleet rollup (Phase 6): a zero-LLM UNION across the projects the
  *  viewer can see -- total git alerts, contention, grounding average. The optional
  *  LLM "fleet narrative" (on-return) is a later add; this union is always free. */
@@ -156,6 +190,10 @@ export interface SheafFleetSotu {
    *  (never silently dropped) so the view never reads as "the whole fleet" when it
    *  is a filtered slice. */
   filteredProjects: number
+  /** THE STATE-OF-THE-UNION ROSTER: one row per project that is BOTH visible to
+   *  this viewer AND chronicle-enabled. A chronicle-off project has no row here
+   *  even though it still carries a `sotu` block on its project section. */
+  blocks: SheafSotuBlock[]
 }
 
 export interface SheafResponse {
