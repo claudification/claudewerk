@@ -9,31 +9,99 @@
  * the on-disk format can never drift between them.
  */
 
+/**
+ * The verbatim lines of every block the flat subset cannot represent, keyed by
+ * the parent key. The value INCLUDES the parent's own line, so re-emitting a
+ * block is a splice and never a render.
+ *
+ * THE DELIBERATE COST, so nobody "fixes" it by teaching the parser nesting: a
+ * captured block never enters `meta`, so NOTHING CAN VALIDATE IT -- not
+ * `card-schema`, not the doctor, not the panel. It is opaque bytes to every
+ * reader here. That is the trade we chose (card
+ * `werk-promise-ledger-card-writer-flattens`): the flat parser stays flat and
+ * honest about its subset, and the one module that needs a nested block --
+ * `promise-ledger.ts` -- already parses and writes the RAW TEXT by line surgery
+ * precisely because a YAML round trip is what inverted portal2's ledger. Teach
+ * this parser nesting and you get a SECOND answer for the promise block, next to
+ * the one that already exists, free to drift.
+ */
+export type RawBlocks = Record<string, string[]>
+
 export interface Frontmatter {
   meta: Record<string, unknown>
   body: string
+  /** Blocks preserved byte-for-byte; see `RawBlocks`. Empty for almost every file. */
+  raw: RawBlocks
 }
 
 /**
  * Split `---\n...\n---\n<body>` into parsed frontmatter + trimmed body.
- * Files with no frontmatter block return `{ meta: {}, body: content }`.
+ * Files with no frontmatter block return `{ meta: {}, body: content, raw: {} }`.
  *
  * Values: bare scalars are kept as strings (callers coerce). `[a, b]` becomes
- * a string array. Quoted scalars are unwrapped. No nesting, no multi-line values.
+ * a string array. Quoted scalars are unwrapped. No nesting, no multi-line values
+ * -- a key that OPENS one is captured whole into `raw` instead (see below), so
+ * every key that reaches `meta` reads exactly as it always did.
  */
 export function parseFrontmatter(content: string): Frontmatter {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-  if (!match) return { meta: {}, body: content }
+  if (!match) return { meta: {}, body: content, raw: {} }
 
   const meta: Record<string, unknown> = {}
-  for (const line of match[1].split('\n')) {
-    const idx = line.indexOf(':')
+  const raw: RawBlocks = {}
+  const lines = match[1].split('\n')
+  for (let i = 0; i < lines.length; i += 1) {
+    const idx = lines[i].indexOf(':')
     if (idx === -1) continue
-    const key = line.slice(0, idx).trim()
-    const raw = line.slice(idx + 1).trim()
-    meta[key] = raw.startsWith('[') && raw.endsWith(']') ? parseInlineArray(raw) : unquote(raw)
+    const key = lines[i].slice(0, idx).trim()
+    const value = lines[i].slice(idx + 1).trim()
+    const end = blockEnd(lines, i, value)
+    if (end !== null) {
+      raw[key] = lines.slice(i, end)
+      i = end - 1
+      continue
+    }
+    meta[key] = value.startsWith('[') && value.endsWith(']') ? parseInlineArray(value) : unquote(value)
   }
-  return { meta, body: match[2].trim() }
+  return { meta, body: match[2].trim(), raw }
+}
+
+/** A value that opens an indented region: nothing at all (nested mapping or
+ *  block sequence) or a block-scalar indicator with its optional chomping and
+ *  explicit-indent suffixes (`|`, `>-`, `|+2`). */
+const OPENS_A_BLOCK = /^([|>][-+]?\d*)?$/
+
+/**
+ * One past the last line of the block `lines[head]` opens, or null when it opens
+ * none and is an ordinary flat key.
+ *
+ * WHY THIS EXISTS AT ALL: the flat reader takes a line's key as everything
+ * before the first `:` and IGNORES INDENTATION, so a nested block does not
+ * merely fail to parse, it INVERTS -- the parent becomes an empty scalar and
+ * every child becomes a TOP-LEVEL key. `serializeCard` then wrote that back out
+ * flattened, which emptied `closes:` on every `project_set_status` and made a
+ * delivered promise read as never started. Byte-for-byte portal2's 2026-08-11
+ * migration.
+ *
+ * A BLANK LINE DOES NOT END THE BLOCK -- it is legal inside a YAML mapping and
+ * is the entire point of a `|` scalar. Only a non-blank line back at column 0
+ * does. Trailing blanks stay OUT of the capture, so they keep belonging to
+ * whatever follows.
+ */
+function blockEnd(lines: string[], head: number, value: string): number | null {
+  if (!OPENS_A_BLOCK.test(value)) return null
+  let last = head
+  for (let i = head + 1; i < lines.length; i += 1) {
+    if (/^\s+\S/.test(lines[i])) {
+      last = i
+      continue
+    }
+    if (lines[i].trim() === '') continue
+    break
+  }
+  // No indented line under it: `color:` on its own is an empty scalar, exactly
+  // as it has always been. Capturing it would move a key out of `meta`.
+  return last === head ? null : last + 1
 }
 
 function parseInlineArray(raw: string): string[] {
@@ -121,14 +189,37 @@ export function serializeScalar(s: string): string {
  * `null` values are skipped; arrays render inline; numbers/booleans render bare.
  * Strings are written verbatim (the subset has no escaping -- keep values on
  * one line and free of leading `[`).
+ *
+ * `raw` is the third argument and it is OPTIONAL ON PURPOSE: a call site that
+ * passes nothing behaves byte-for-byte as it did before this existed. Blocks are
+ * re-emitted VERBATIM, after the flat keys -- a stable position inside the
+ * frontmatter is a nice-to-have, and re-emitting at a fixed place is what makes
+ * the write IDEMPOTENT (parse the output, serialize again, same bytes), which is
+ * the property that stops "preserved but relocated" from churning every card on
+ * every board write.
+ *
+ * A KEY IN BOTH WINS AS THE BLOCK, because only the block can carry what a
+ * nested value says and emitting both would write a duplicate YAML key. The two
+ * are disjoint straight out of `parseFrontmatter`, so this only fires when a
+ * caller hand-built a flat value for a key the file already nests.
+ *
+ * WHICH CALLERS MUST PASS IT: every one that ROUND-TRIPS a file it just parsed
+ * -- the board's card writers, all of which go through `serializeCard`, plus
+ * `epic-card-meta.ts`. The ones that legitimately pass nothing (nightshift-store,
+ * epic-run-store, quest-manifest) do not round-trip: they RENDER frontmatter from
+ * a typed struct, already dropping every key that is not in it, so there is no
+ * unknown shape to preserve. If you are adding a caller that reads a file and
+ * writes it back, you are in the first group.
  */
-export function serializeFrontmatter(meta: Record<string, unknown>, body: string): string {
+export function serializeFrontmatter(meta: Record<string, unknown>, body: string, raw: RawBlocks = {}): string {
   const lines = ['---']
   for (const [key, val] of Object.entries(meta)) {
+    if (key in raw) continue
     const rendered = serializeValue(val)
     if (rendered === null) continue
     lines.push(`${key}: ${rendered}`)
   }
+  for (const block of Object.values(raw)) lines.push(...block)
   lines.push('---')
   lines.push('')
   lines.push(body)

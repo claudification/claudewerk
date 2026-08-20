@@ -24,7 +24,7 @@ import {
   resolveGateMode,
 } from '../../../shared/board-gate'
 import { type GateCwd, parseWorktreeList, resolveGateCwd } from '../../../shared/board-gate-worktree'
-import { parseFrontmatter } from '../../../shared/frontmatter'
+import { type Frontmatter, parseFrontmatter } from '../../../shared/frontmatter'
 import { serializeCard } from '../../../shared/project-card-file'
 import type { TaskStatus } from '../../../shared/task-statuses'
 
@@ -166,7 +166,8 @@ export async function gateTransition(t: GateTransition): Promise<GateTransitionR
   } catch {
     /* card vanished between find + gate -- meta stays empty, gate resolves off/default */
   }
-  const { meta, body } = parseFrontmatter(raw)
+  const card = parseFrontmatter(raw)
+  const meta = card.meta
   const mode = resolveGateMode(meta, readProjectGateMode(t.dialogCwd))
   const willRun = mode !== 'off' && isGatedTarget(t.targetStatus)
   const { cwd, note } = willRun ? gateCwdFor(t.dialogCwd, t.cardId) : skippedCwd(t.dialogCwd)
@@ -184,7 +185,7 @@ export async function gateTransition(t: GateTransition): Promise<GateTransitionR
   )
 
   if (outcome.decision === 'allow' && Object.keys(outcome.evidence).length > 0) {
-    writeGateEvidence(t.cardPath, meta, body, outcome.evidence)
+    writeGateEvidence(t.cardPath, card, outcome.evidence)
   }
   return { outcome, gitCwd: cwd, cwdNote: note }
 }
@@ -201,19 +202,17 @@ export async function gateTransition(t: GateTransition): Promise<GateTransitionR
  * one fact, two spellings, which is the exact thing the closed linkage
  * vocabulary exists to prevent.
  *
- * Takes the meta the gate actually EVALUATED rather than re-reading the file,
- * so a concurrent edit cannot make the stamp describe state that was never
- * checked. Best-effort: a card that cannot be written must not block a move the
- * gate has already allowed.
+ * Takes the WHOLE parse the gate actually EVALUATED rather than re-reading the
+ * file, so a concurrent edit cannot make the stamp describe state that was never
+ * checked. Whole, and not `(meta, body)`: the third field is the card's nested
+ * blocks, and a signature that let a caller pass two of three would let the gate
+ * stamp evidence onto a card while quietly flattening its `promise:` block.
+ * Best-effort: a card that cannot be written must not block a move the gate has
+ * already allowed.
  */
-export function writeGateEvidence(
-  cardPath: string,
-  meta: Record<string, unknown>,
-  body: string,
-  evidence: Record<string, unknown>,
-): void {
+export function writeGateEvidence(cardPath: string, card: Frontmatter, evidence: Record<string, unknown>): void {
   try {
-    writeFileSync(cardPath, serializeCard({ ...meta, ...evidence }, body), 'utf-8')
+    writeFileSync(cardPath, serializeCard({ ...card.meta, ...evidence }, card.body, card.raw), 'utf-8')
   } catch {
     /* the move still proceeds */
   }
