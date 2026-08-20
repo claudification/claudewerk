@@ -25,7 +25,7 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import type { useConversationsStore } from '@/hooks/use-conversations'
 import { pulseActionText, pulseTag } from '@/lib/pulse/action-text'
-import { bandOf, hardBlockOf, isAttentionBand, type PulseAttentionFlags } from '@/lib/pulse/bands'
+import { bandOf, hardBlockOf, isAttentionBand, type PulseAttentionFlags, type PulseBand } from '@/lib/pulse/bands'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { projectDisplayName } from '@/lib/utils'
 import { type AnswerableDialog, askAnswerable, dialogAnswerable } from '@/lib/voice-orb/dialog-answerable'
@@ -144,12 +144,57 @@ function planActions(src: AttentionSources, conversationId: string, dialogId: st
   ]
 }
 
-// Cognitive 18 vs a threshold of 15, ruled DEFER at the merge (overseer, gen 17):
-// this is one of the six protocol folds and splitting it mid-fan-out would put a
-// second writer in a file three pane cards still branch from. The fix is owned by
-// `wall-integration-fallow-debt`, which runs after the panes drain -- delete this
-// suppression there, do not renew it.
-// fallow-ignore-next-line complexity
+/** One entry of `pendingDialogs`, named off the store so a shape change over
+ *  there breaks here. */
+type PendingDialog = AttentionSources['dialogs'][string]
+
+/**
+ * A PLAN APPROVAL. Always answerable in place, always two buttons.
+ *
+ * The deliberate divergence from `dialog-answerable.ts`: voice bars plan
+ * approvals because nothing SPOKEN should exit plan mode, and a click is not
+ * that. The plan's own title is the DETAIL rather than the question -- the
+ * question is always the same one.
+ */
+function planApprovalRow(src: AttentionSources, who: Who, conversationId: string, d: PendingDialog): AttentionEntry {
+  return {
+    key: `dialog:${d.dialogId}`,
+    tier: 'hard',
+    band: 'blocked',
+    kind: 'plan',
+    conversationId,
+    ...who,
+    question: 'plan needs approval',
+    detail: d.layout.title,
+    since: d.timestamp,
+    actions: planActions(src, conversationId, d.dialogId),
+  }
+}
+
+/**
+ * AN ORDINARY DIALOG. Answerable in place only when `dialog-answerable.ts` says
+ * so -- one single-select list, no wizards, no forms, the same line the voice orb
+ * draws. Anything past that line is still LISTED, with no buttons and a hint
+ * saying where to answer, because a block we cannot answer here still has to be
+ * visible.
+ */
+function dialogQuestionRow(src: AttentionSources, who: Who, conversationId: string, d: PendingDialog): AttentionEntry {
+  const answerable = dialogAnswerable({ conversationId, ...d })
+  const actions = answerable ? optionActions(answerable, src.answers) : []
+  return {
+    key: `dialog:${d.dialogId}`,
+    tier: 'hard',
+    band: 'blocked',
+    kind: 'dialog',
+    conversationId,
+    ...who,
+    question: answerable?.question ?? d.layout.title,
+    since: d.timestamp,
+    hint: actions.length === 0 ? 'this one needs the full dialog -- open the conversation' : undefined,
+    actions,
+  }
+}
+
 function dialogRows(src: AttentionSources, who: (id: string) => Who): AttentionEntry[] {
   const rows: AttentionEntry[] = []
   for (const [conversationId, d] of Object.entries(src.dialogs)) {
@@ -157,23 +202,12 @@ function dialogRows(src: AttentionSources, who: (id: string) => Who): AttentionE
     // re-displayable pill elsewhere. Holding it here would keep a dead question
     // at the top of the queue forever.
     if (d.expired) continue
-    const plan = d.source === 'plan_approval'
-    const answerable = plan ? null : dialogAnswerable({ conversationId, ...d })
-    const actions = plan ? planActions(src, conversationId, d.dialogId) : []
-    if (answerable) actions.push(...optionActions(answerable, src.answers))
-    rows.push({
-      key: `dialog:${d.dialogId}`,
-      tier: 'hard',
-      band: 'blocked',
-      kind: plan ? 'plan' : 'dialog',
-      conversationId,
-      ...who(conversationId),
-      question: plan ? 'plan needs approval' : (answerable?.question ?? d.layout.title),
-      detail: plan ? d.layout.title : undefined,
-      since: d.timestamp,
-      hint: actions.length === 0 ? 'this one needs the full dialog -- open the conversation' : undefined,
-      actions,
-    })
+    const asker = who(conversationId)
+    rows.push(
+      d.source === 'plan_approval'
+        ? planApprovalRow(src, asker, conversationId, d)
+        : dialogQuestionRow(src, asker, conversationId, d),
+    )
   }
   return rows
 }
@@ -245,36 +279,71 @@ function spawnRows(src: AttentionSources, who: (id: string) => Who): AttentionEn
 }
 
 /**
- * The rows the conversation records themselves produce: a hard block with no
- * answerable slice behind it (`stuck`), and the soft self-reports (`needs`).
+ * WHAT THE ROW SAYS, most specific first.
+ *
+ * The conversation's own action text wins when it has one. Failing that, a hard
+ * block names the gate it is stuck on (`hardBlockOf`) and a soft one just says
+ * so. `'blocked'` is the last resort and is deliberately vague: it means the
+ * umbrella flag is up and NOTHING can say why, which is the case this whole
+ * second path exists to keep visible instead of silent.
+ */
+function conversationQuestion(c: Conversation, flags: PulseAttentionFlags, blocked: boolean): string {
+  const said = pulseActionText(c, flags)
+  if (said) return said
+  return blocked ? (hardBlockOf(c, flags) ?? 'blocked') : 'needs you'
+}
+
+/**
+ * WHEN THE WAITING STARTED. The self-report's own clock first -- it is stamped
+ * when the agent said it needed you, which is the moment that matters. Then the
+ * umbrella's timestamp, and only then last activity, which is a floor rather
+ * than an answer.
+ */
+function waitingSince(c: Conversation): number {
+  return c.liveStatus?.updatedAt ?? c.pendingAttention?.timestamp ?? c.lastActivity
+}
+
+/**
+ * A row from the conversation record itself: a hard block with no answerable
+ * slice behind it (`stuck`), or the agent's own soft self-report (`needs`).
+ *
+ * NO ACTIONS, ever, in either case. A `stuck` row is by definition one nothing
+ * here can answer, and a `needs` row is an invitation rather than a gate.
+ */
+function conversationRow(c: Conversation, flags: PulseAttentionFlags, band: PulseBand, who: Who): AttentionEntry {
+  const blocked = band === 'blocked'
+  return {
+    key: `conv:${c.id}`,
+    tier: blocked ? 'hard' : 'soft',
+    band,
+    kind: blocked ? 'stuck' : 'needs',
+    conversationId: c.id,
+    ...who,
+    question: conversationQuestion(c, flags, blocked),
+    since: waitingSince(c),
+    hint: blocked ? 'no answer path on this surface -- open the conversation' : undefined,
+    actions: [],
+  }
+}
+
+/**
+ * The rows the conversation records themselves produce.
  *
  * `detailed` carries the conversations a slice already spoke for, so a
  * permission never renders twice -- once from its slice and once from the
  * umbrella that describes the same gate.
  */
-// Same ruling as `dialogRows` above: cognitive 16, deferred to
-// `wall-integration-fallow-debt`, not permanent.
-// fallow-ignore-next-line complexity
 function conversationRows(src: AttentionSources, who: (id: string) => Who, detailed: Set<string>): AttentionEntry[] {
   const rows: AttentionEntry[] = []
   for (const c of src.conversations) {
+    // Checked BEFORE the band is computed: a conversation a slice already
+    // detailed is skipped whatever its band is, and `flagsFor` + `bandOf` are
+    // real work to throw away.
+    if (detailed.has(c.id)) continue
     const flags = src.flagsFor(c.id)
     const band = bandOf(c, flags, src.now)
     if (!isAttentionBand(band)) continue
-    if (detailed.has(c.id)) continue
-    const blocked = band === 'blocked'
-    rows.push({
-      key: `conv:${c.id}`,
-      tier: blocked ? 'hard' : 'soft',
-      band,
-      kind: blocked ? 'stuck' : 'needs',
-      conversationId: c.id,
-      ...who(c.id),
-      question: pulseActionText(c, flags) || (blocked ? (hardBlockOf(c, flags) ?? 'blocked') : 'needs you'),
-      since: c.liveStatus?.updatedAt ?? c.pendingAttention?.timestamp ?? c.lastActivity,
-      hint: blocked ? 'no answer path on this surface -- open the conversation' : undefined,
-      actions: [],
-    })
+    rows.push(conversationRow(c, flags, band, who(c.id)))
   }
   return rows
 }

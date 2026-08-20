@@ -132,9 +132,11 @@ import {
   stopSotuFloor,
   stopSotuGitScan,
 } from './sotu'
+import { closeStatsStore, initStatsStore } from './stats/store'
 import { createStore } from './store'
 import { createTerminationLog, startTerminationLogSweep } from './termination-log'
 import { cleanupVoiceForWs } from './voice-stream'
+import { rehydrateWallRings } from './wall/rehydrate'
 import { revokeWebControlBySocket } from './web-control'
 
 /**
@@ -422,6 +424,13 @@ async function main() {
   // call chat() -- the sink is a silent no-op until this runs, so a call made
   // earlier logs but never lands a row.
   initOpenRouterSpendStore(authCacheDir)
+
+  // THE STATS TABLE: the durable time-series behind every in-memory ring. MUST
+  // come before anything that can produce a sample -- `recordStat()` is a silent
+  // no-op until this runs -- and the rehydration MUST come before the first node
+  // or sentinel reports, or the ring it refills has already been overwritten.
+  initStatsStore(authCacheDir)
+  rehydrateWallRings()
 
   // Initialize the SOTU file store (queue.jsonl + chronicle + state under
   // {cacheDir}/sotu/). The contribution spine + lifecycle floor write here.
@@ -785,6 +794,9 @@ async function main() {
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
     closeOpenRouterSpendStore()
+    // Flushes the buffer before closing. Without this the last ~3s of every
+    // series dies on exactly the restart the store exists for.
+    closeStatsStore()
     closeProjectStore()
     closeCommitLedger()
     closeChecklistStore()
