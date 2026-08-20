@@ -56,6 +56,12 @@ function isMatrix(body: unknown): body is ActivityMatrix {
   return typeof m.tz === 'string' && Array.isArray(m.days) && Array.isArray(m.metrics)
 }
 
+// Fallow reads the twelve lines below as a clone of `use-burn-feed`. They are the
+// same IDIOM (mounted ref, fetch, validate, keep-what-we-had) and not the same
+// LOGIC -- different URL, different guard, different state shape. Two instances of
+// a React idiom is not yet an abstraction; a THIRD feed hook is the moment to
+// extract `useJsonFeed<T>(url, isT)` and to fold both of these into it.
+// fallow-ignore-next-line code-duplication
 export function useActivityFeed(refreshMs: number = ACTIVITY_REFRESH_MS): ActivityFeed {
   const [feed, setFeed] = useState<ActivityFeed>(EMPTY)
 

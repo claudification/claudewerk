@@ -20,6 +20,12 @@ import type { ActivityCell, ActivityMatrix, ActivityMetricSeries } from '@shared
  *  `unavailable`, which is the case worth having in a rig. */
 const FIXTURE_DAYS = 70
 
+// KEPT SEPARATE FROM `localDayKey` ON PURPOSE, though fallow reads the two as a
+// clone: this is the RIG's own calendar. Importing the production formatter would
+// make a bug in it wrong on both sides of every A9 assertion at once, and the
+// suites that pin day bucketing would go green on it. Four lines is a cheap price
+// for an independent witness.
+// fallow-ignore-next-line code-duplication
 function isoDay(ms: number): string {
   const d = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')

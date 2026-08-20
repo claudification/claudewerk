@@ -63,6 +63,12 @@ import { WallTab } from '../wall-tab'
 /** The one facet a day genuinely has. See the header for why it is the only one. */
 const AXES: readonly WallAxis[] = ['text']
 
+// RULED at integration, generation 8: its CRAP is driven by an ESTIMATED
+// coverage tier while `a9-activity.test.tsx` exercises this pane hard, and its
+// parts are already four sibling files (squares, legend, day card, grid). What
+// is left is JSX plus hook wiring, which an extra indirection relocates rather
+// than removes. Revisit if a sixth hook or a third silence lands here.
+// fallow-ignore-next-line complexity
 export default function ActivityPane() {
   const { matrix, settled, stale } = useActivityFeed()
   const [metric, setMetric] = useState<ActivityMetricId>(ACTIVITY_DEFAULT_METRIC)
@@ -84,10 +90,17 @@ export default function ActivityPane() {
   }, [axis.rows, series])
 
   const reading = (square: ActivitySquare): string => {
+    // Resolved once per call, not once per branch: six inline `??` defaults put
+    // this at cyclomatic 12 for what is a three-branch string builder, and three
+    // separate spellings of the same fallback are three places to drift. Kept
+    // INSIDE `reading` deliberately -- hoisting them to the component body moves
+    // the same decision points onto `ActivityPane`, which is the bigger function.
+    const label = series?.label ?? metric
+    const unit = series?.unit ?? 'count'
     const day = formatActivityDay(square.day.day, square.day.dow)
-    if (square.cell.state === 'unavailable') return `${day}: no data for ${series?.label ?? metric}`
-    if (square.cell.state === 'empty') return `${day}: no ${series?.label ?? metric}`
-    return `${day}: ${formatActivityCount(square.cell.value ?? 0, series?.unit ?? 'count')} ${series?.label ?? metric}`
+    if (square.cell.state === 'unavailable') return `${day}: no data for ${label}`
+    if (square.cell.state === 'empty') return `${day}: no ${label}`
+    return `${day}: ${formatActivityCount(square.cell.value ?? 0, unit)} ${label}`
   }
 
   const view = useWallReportView()
