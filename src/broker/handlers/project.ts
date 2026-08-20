@@ -21,6 +21,7 @@ import type {
   ProjectReadFile,
   ProjectSubscribe,
   ProjectUnsubscribe,
+  ProjectWatchStatus,
 } from '../../shared/protocol'
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
@@ -156,6 +157,22 @@ const projectChanged: MessageHandler = (ctx, data: MessageData) => {
   else ctx.log.debug('[project] dropping project_changed: no project URI')
 }
 
+// Sentinel -> broker: one project in the last watch set started, or was skipped.
+// Log only. The broker cannot act on it -- it has no filesystem and cannot tell
+// a project without a board from one whose disk is unreachable -- but "why is
+// that board dark" must be answerable from `docker compose logs broker` rather
+// than an ssh session, per LOG EVERYTHING.
+const projectWatchStatus: MessageHandler = (ctx, data: MessageData) => {
+  const d = data as unknown as ProjectWatchStatus
+  if (!d.project) return
+  if (d.ok) {
+    ctx.log.info(`[project-watch] sentinel watching ${d.project}`)
+    return
+  }
+  const detail = d.detail ? `: ${d.detail}` : ''
+  ctx.log.info(`[project-watch] sentinel SKIPPED ${d.project} (${d.reason ?? 'unknown'})${detail}`)
+}
+
 export function registerProjectHandlers(): void {
   // Project board + file I/O expose the project's on-disk tree -- restricted to
   // the authenticated control panel. Share-link guests are rejected by the
@@ -176,6 +193,7 @@ export function registerProjectHandlers(): void {
       project_write_file_result: projectResult,
       project_move_file_result: projectResult,
       project_changed: projectChanged,
+      project_watch_status: projectWatchStatus,
     },
     SENTINEL_ONLY,
   )

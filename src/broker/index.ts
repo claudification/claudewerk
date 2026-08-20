@@ -99,7 +99,12 @@ import {
 import { initProjectOrder } from './project-order'
 import { getAllProjectSettings, getProjectSettings, initProjectSettings, setProjectSettings } from './project-settings'
 import { closeProjectStore, initProjectStore, listProjects } from './project-store'
-import { dropSocketFromWatches, initProjectWatchRegistry } from './project-watch-registry'
+import {
+  dropSocketFromWatches,
+  initProjectWatchRegistry,
+  PROJECT_INTEREST_WINDOW_MS,
+  stopProjectWatchRegistry,
+} from './project-watch-registry'
 import { initPush, isPushConfigured, sendPushToAll } from './push'
 import { makeCommitGatherer } from './recap/commit-gather'
 import { gatherConversations } from './recap/period/gather'
@@ -796,6 +801,10 @@ async function main() {
   // run the identical teardown -- one chokepoint so they can never drift apart.
   const shutdown = (): never => {
     stopExternalStatusPolling()
+    // The standing-watch heartbeat. Sentinel-side watches drain on their own
+    // lease, so this only stops the broker from talking to a socket it is about
+    // to drop.
+    stopProjectWatchRegistry()
     clearInterval(costCleanupTimer)
     closeAnalyticsStore()
     closeOpenRouterSpendStore()
@@ -963,6 +972,10 @@ async function main() {
 
     // Project board watch registry (LEASE MODEL): resolve a project URI to its
     // owning sentinel so the broker can arm/renew/unwatch sentinel-side watches.
+    // The STANDING interest set is every scope with a conversation active in the
+    // last 30 days -- boards are watched because work happens in them, not
+    // because someone has one on screen. That is what makes the card ledger
+    // record while nobody is looking.
     initProjectWatchRegistry({
       getSentinelForProject: project => {
         const authority = parseProjectUri(project).authority
@@ -970,6 +983,7 @@ async function main() {
           (authority ? conversationStore.getSentinelByAlias(authority) : undefined) ?? conversationStore.getSentinel()
         )
       },
+      listInterestProjects: () => store.conversations.listScopesActiveSince(Date.now() - PROJECT_INTEREST_WINDOW_MS),
       log: msg => console.log(msg),
     })
 

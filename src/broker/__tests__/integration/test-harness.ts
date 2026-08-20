@@ -157,6 +157,7 @@ function createMockStoreDriver(): StoreDriver {
     countByScopeAndStatus: () => [],
     liveStatusByScope: () => [],
     listScopes: () => [],
+    listScopesActiveSince: () => [],
     updateStats: noop,
   }
   const noopKv = {

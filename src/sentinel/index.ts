@@ -47,6 +47,7 @@ import type {
   ProjectReadFile,
   ProjectUnwatch,
   ProjectWatch,
+  ProjectWatchSet,
   ProjectWriteFile,
   QuestOp,
   ReviveConversation,
@@ -113,6 +114,7 @@ import {
   handleProjectWriteFile,
 } from './project-handlers'
 import { stopAllWatches, unwatchProject, watchProject } from './project-watch'
+import { applyProjectWatchSet, resetWatchSetReports } from './project-watch-set'
 import { ptyProfileEnvBlock, shouldInjectConfigDir } from './pty-env'
 import { handleQuestOp } from './quest-handlers'
 import { pickProfile, type UsageHeadroom } from './selection'
@@ -4293,6 +4295,18 @@ function connect(
           break
         }
 
+        case 'project_watch_set': {
+          const m = msg as ProjectWatchSet
+          applyProjectWatchSet({
+            projects: Array.isArray(m.projects) ? m.projects : [],
+            leaseMs: m.leaseMs,
+            resolveRoot: project => expandPath(project, spawnRoot),
+            send: out => ws.send(JSON.stringify(out)),
+            log: l => log(l),
+          })
+          break
+        }
+
         case 'sentinel_patch_config': {
           const ack = handleSentinelPatchConfig(msg as SentinelPatchConfig, config, configPath, spawnRoot)
           ws.send(JSON.stringify(ack))
@@ -4326,6 +4340,10 @@ function connect(
     stopUsagePolling()
     stopDaemonRosterWatch()
     stopAllWatches(l => log(l))
+    // Every watch just died, so the next set has to re-report from scratch --
+    // otherwise the change-only status filter would suppress the very first
+    // report of a project it still believes is fine.
+    resetWatchSetReports()
     // Same reason as adoptedReapTimer: `connect()` re-runs on reconnect, so an
     // un-stopped reporter would stack one 5s timer per reconnect.
     if (nodeStatsReporter) {

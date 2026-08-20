@@ -4308,6 +4308,55 @@ export interface ProjectUnwatch {
   project: string
 }
 
+/** Broker -> Sentinel: the WHOLE set of boards this sentinel should be watching.
+ *
+ *  A SET, not an add/remove pair, and that is the point. `project_watch` +
+ *  `project_unwatch` are edge-triggered: a dropped message leaves a watcher
+ *  running forever or a board permanently dark, with nothing to correct it. The
+ *  set is level-triggered -- the sentinel diffs it against its live watches and
+ *  converges, so a lost message costs one heartbeat of staleness and nothing
+ *  more.
+ *
+ *  The broker sends this on sentinel connect, whenever the set changes, and on
+ *  the standing renew heartbeat (which doubles as the lease renewal for every
+ *  member). The lease remains the failsafe for a dead broker.
+ *
+ *  This is what makes the CARD LEDGER a ledger: the interest set is derived from
+ *  recently-active conversation scopes, NOT from who has a board on screen, so
+ *  lane changes are recorded while nobody is looking. */
+export interface ProjectWatchSet {
+  type: 'project_watch_set'
+  /** Canonical project URIs. The SENTINEL resolves each to a root and decides
+   *  which are actually watchable -- the broker has no host filesystem and must
+   *  never derive a path (CWD-IS-INFORMATIONAL). */
+  projects: string[]
+  /** Lease duration in ms applied to every member; sentinel self-stops a watch
+   *  that is not renewed before expiry. */
+  leaseMs: number
+}
+
+/** Why a project in a `project_watch_set` is not being watched. `no-board` is
+ *  the ordinary case (a project with conversations but no `.rclaude/project`),
+ *  not a fault -- it is reported so "why is this board dark" is answerable from
+ *  the broker log instead of an ssh session. */
+export type ProjectWatchSkipReason = 'no-board' | 'unresolvable' | 'error'
+
+/** Sentinel -> Broker: outcome of one project in the last `project_watch_set`.
+ *  SOFT: one bad entry never fails the set, and the sentinel keeps watching the
+ *  rest. Only sent on a state CHANGE (started, or newly-skipped), never every
+ *  heartbeat -- a healthy fleet is silent. */
+export interface ProjectWatchStatus {
+  type: 'project_watch_status'
+  /** Canonical project URI, exactly as it arrived in the set. */
+  project: string
+  /** True once the watch is live; false when it was skipped or torn down. */
+  ok: boolean
+  /** Present only when `ok` is false. */
+  reason?: ProjectWatchSkipReason
+  /** Human detail for `error` (the thrown message), for the broker log. */
+  detail?: string
+}
+
 /** Sentinel -> Broker: project board changed. Tagged with the project URI (NO
  *  conversationId) -- the broker broadcasts permission-gated by `project`. */
 export interface ProjectChanged {
@@ -6408,6 +6457,8 @@ export type BrokerSentinelMessage =
   | ProjectBoardOp
   | ProjectWatch
   | ProjectUnwatch
+  | ProjectWatchSet
+  | ProjectWatchStatus
   | NightshiftOp
   | QuestOp
   | SentinelPatchConfig
