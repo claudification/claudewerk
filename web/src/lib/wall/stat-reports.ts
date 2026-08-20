@@ -19,7 +19,14 @@ import type { BurnCapState, BurnSplit } from './burn-splits'
 import { formatUsd } from './burn-splits'
 import { type HostVitalsRow, vitalsLine } from './host-vitals'
 import { reportChild, reportMore, reportParens, reportRow, type WallReportView, wallReport } from './report'
-import { formatTokens, type SheafRow, type SheafView, type SotuBlock, type SotuPill } from './sheaf-rows'
+import {
+  formatTokens,
+  type SheafRow,
+  type SheafView,
+  SOTU_NOT_DISTILLED,
+  type SotuBlock,
+  type SotuPill,
+} from './sheaf-rows'
 
 /** A dollar figure that may not have arrived. `formatUsd` already dashes on
  *  null/undefined -- this names the intent at the call site. */
@@ -205,7 +212,9 @@ export function sotuReport(pills: readonly SotuPill[], blocks: readonly SotuBloc
           block.unmerged > 0 ? `${block.unmerged} unmerged` : null,
           block.contended > 0 ? `${block.contended} contended` : null,
         ),
-        reportChild(block.narrative ?? (block.quiet === 'not-enabled' ? 'chronicle off' : 'nothing distilled yet')),
+        // The same sentence the pane prints. A chronicle-OFF project is not on
+        // this roster at all, so there is exactly one silence to report.
+        reportChild(block.narrative ?? SOTU_NOT_DISTILLED),
       ]),
     ],
     empty: 'no project reports a state',

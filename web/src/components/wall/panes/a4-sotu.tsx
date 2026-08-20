@@ -31,7 +31,7 @@
 
 import { useMemo } from 'react'
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
-import { fleetPills, type SotuBlock, sotuBlocks } from '@/lib/wall/sheaf-rows'
+import { fleetPills, SOTU_NOT_DISTILLED, type SotuBlock, sotuBlocks } from '@/lib/wall/sheaf-rows'
 import { sotuReport } from '@/lib/wall/stat-reports'
 import { useWallReportView } from '@/lib/wall/use-wall-report-view'
 import { ProjectTag } from '../../project-tag'
@@ -44,12 +44,6 @@ const AXES: readonly WallAxis[] = ['text', 'project']
 
 /** Stable empty identity -- the filter memo keys on the array. */
 const NO_BLOCKS: readonly SotuBlock[] = []
-
-/** The ONE way a project on the roster can still have nothing to say. A project
- *  whose chronicle is OFF never reaches this pane -- the broker leaves it off
- *  `sotu.blocks` entirely -- so "chronicle off for this project" is a line this
- *  pane no longer has to render. */
-const NOT_DISTILLED = 'chronicle on, nothing distilled yet'
 
 /** The four ways this pane can have nothing to say, told apart. */
 function emptyLine(error: string | null, loaded: boolean, total: number): string {
@@ -83,7 +77,7 @@ function SotuBlockView({ block, now }: { block: SotuBlock; now: number }) {
       {block.narrative ? (
         <p className="wall-sotu-text">{block.narrative}</p>
       ) : (
-        <p className="wall-sotu-quiet">{NOT_DISTILLED}</p>
+        <p className="wall-sotu-quiet">{SOTU_NOT_DISTILLED}</p>
       )}
     </div>
   )

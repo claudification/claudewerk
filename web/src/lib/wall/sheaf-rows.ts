@@ -114,6 +114,17 @@ export function sotuBlocks(response: SheafResponse, look: (uri: string) => Proje
   return out.sort((a, b) => Number(Boolean(b.narrative)) - Number(Boolean(a.narrative)))
 }
 
+/**
+ * The ONE way a project on the roster can still have nothing to say.
+ *
+ * It lives beside `SotuBlock` rather than in the pane because A4 renders it and
+ * A4's COPY REPORT pastes it, and those two saying different things about the
+ * same silence is exactly the drift a shared constant costs nothing to prevent.
+ * A chronicle-OFF project never reaches either -- the broker leaves it off
+ * `sotu.blocks` entirely -- so this is the only quiet sentence left.
+ */
+export const SOTU_NOT_DISTILLED = 'chronicle on, nothing distilled yet'
+
 export interface SotuPill {
   key: string
   label: string

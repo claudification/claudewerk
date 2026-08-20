@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest'
 import type { PlanLine } from '@/components/wall/plan/plan-model'
 import type { WallReading } from '@/components/wall/wall-reading-bus'
 import { hostVitalsRows } from './host-vitals'
-import type { SheafRow, SheafView, SotuBlock } from './sheaf-rows'
+import { type SheafRow, type SheafView, SOTU_NOT_DISTILLED, type SotuBlock } from './sheaf-rows'
 import { burnReport, fleetReport, hostVitalsReport, planUsageReport, sheafReport, sotuReport } from './stat-reports'
 
 const LIVE = { offsetMs: 0, filter: '' }
@@ -237,9 +237,12 @@ describe('A4 -- the prose is the payload, taken from the block and not the DOM',
     )
   })
 
-  test('a project with no chronicle says WHY rather than pasting a blank line', () => {
-    const text = sotuReport([], [block({ narrative: undefined, quiet: 'not-enabled' })], LIVE)
-    expect(text).toContain('chronicle off')
+  // A chronicle-OFF project never reaches this roster -- the broker leaves it off
+  // `sotu.blocks` -- so there is exactly ONE silence left to report, and the pane
+  // and the paste print the same sentence from the same constant.
+  test('a project with nothing distilled says WHY rather than pasting a blank line', () => {
+    const text = sotuReport([], [block({ narrative: undefined })], LIVE)
+    expect(text).toContain(SOTU_NOT_DISTILLED)
   })
 
   test('the fleet pills lead when there are any', () => {
