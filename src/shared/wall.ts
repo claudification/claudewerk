@@ -1,10 +1,3 @@
-// `protocol.ts` re-exports this module and this module imports back from it.
-// DEFERRED, not accepted (overseer ruling, gen 15, re-affirmed gen 17): breaking
-// the cycle rewrites imports in files no pane branch has in its diff, which is
-// exactly the merge hazard that bit `wall-navigate.ts` at the gen-14 integration.
-// It goes LAST, after every pane merges, in a commit that touches nothing else.
-// Owner: `wall-integration-fallow-debt` -- delete this line there.
-// fallow-ignore-file re-export-cycle
 /**
  * THE WALL live channel -- the ONE typed frame the wall surface subscribes to.
  *
