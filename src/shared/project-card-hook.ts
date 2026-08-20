@@ -16,8 +16,8 @@
  * thing is testable without a hook, a board, or a process.
  */
 
+import { parseCardFrontmatter } from './card-frontmatter'
 import { CARDS_DIR, canonicalizeCardPath } from './card-path'
-import { parseFrontmatter } from './frontmatter'
 import { checkCard } from './project-doctor-cards'
 import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
@@ -80,7 +80,7 @@ export function checkWrittenCard(target: CardWriteTarget, io: CardWriteChecks): 
 
   findings.push(...checkCard({ id: target.id, content }))
   if (content !== null) {
-    const { meta, body } = parseFrontmatter(content)
+    const { meta, body } = parseCardFrontmatter(content)
     const refs = Array.isArray(meta.refs) ? meta.refs.map(String) : []
     // A mistyped linkage verb is the one thing on a card that is completely
     // invisible afterwards -- it parses, it persists, and nothing reads it. This
