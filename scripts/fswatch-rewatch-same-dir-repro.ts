@@ -53,16 +53,22 @@ const LATE_BUDGET_MS = 25_000
 
 /**
  * Milliseconds to let the FIRST watcher settle before writing to the file it
- * watches. The contract test writes immediately, with no settle -- which is the
- * arm this defaults to, so the harness reproduces the test rather than a
- * friendlier version of it.
+ * watches.
+ *
+ * The default stays **0**, which is the BROKEN arm: it reproduces what the
+ * contract test used to do, before card `werk-fs-watch-contract-a-arming-race`
+ * added the settle. Keeping the defect reachable is the point -- this file is
+ * the instrument that proved the diagnosis, and an instrument that can only
+ * measure the fixed shape cannot re-prove anything.
+ *
+ * `SETTLE_MS=50` is what the test now ships:
+ *
+ *   SETTLE_MS=50 bun scripts/fswatch-rewatch-same-dir-repro.ts 600
  *
  * The second arm exists because the first observed failures were all `w1` never
  * firing at all, never the re-watch. That points at an ARMING RACE rather than a
  * dropped event, and the only way to tell those apart is to vary the settle and
- * watch the rate move:
- *
- *   SETTLE_MS=50 bun scripts/fswatch-rewatch-same-dir-repro.ts 600
+ * watch the rate move.
  */
 // A repro harness is EVIDENCE, and evidence has to be runnable exactly as it was
 // when the measurement was taken -- `bun scripts/<one file>.ts 600`, no imports to

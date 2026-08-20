@@ -95,6 +95,16 @@ describe('fs.watch contract', () => {
         aHits++
       })
       watchers.push(w1)
+      // Let w1 arm before writing to the file it watches. `fs.watch` arms
+      // asynchronously, and without this the append landed ~0.3ms later and was
+      // simply never reported ~3% of the time (7.5% under 10-way load), blowing
+      // stage 1 before the close-and-re-watch this test exists to pin was
+      // reached at all. Measured over 2600 iterations with
+      // `scripts/fswatch-rewatch-same-dir-repro.ts`: 95 of 95 failures produced
+      // ZERO events, and SETTLE_MS=50 took both arms to 0. The re-watch below
+      // and cases B and C already settle; A alone did not, which is what made it
+      // the file's most frequent flake.
+      await sleep(50)
       note('append a.jsonl')
       await appendFile(a, 'one\n')
       await withLog(waitFor(() => aHits > 0, { label: 'fileA change' }))
