@@ -34,6 +34,7 @@
  * pipe does not care which of them are live.
  */
 
+import { NODE_STATS_INTERVAL_MS } from './node-stats'
 import type { CardMove } from './protocol'
 
 /** Board lane moves ride the wall as `CardMove`, the shape
@@ -123,10 +124,11 @@ export interface WallCommitRow {
  */
 export const WALL_HOST_CPU_SAMPLES = 60
 
-/** The node-stats cadence the ring is filled at. Stated as a constant because
- *  the ring carries no timestamps -- its samples are positions, and the only
- *  thing that turns a position back into a time is this number. */
-export const WALL_HOST_CPU_INTERVAL_MS = 5_000
+/** The node-stats cadence the ring is filled at. DERIVED, never restated: the
+ *  ring carries no timestamps -- its samples are positions, and the only thing
+ *  that turns a position back into a time is the cadence the producer actually
+ *  sends at. Change `NODE_STATS_INTERVAL_MS` and the window below follows. */
+export const WALL_HOST_CPU_INTERVAL_MS = NODE_STATS_INTERVAL_MS
 
 /** How much wall-clock the full ring spans: five minutes. What a boot-time
  *  rehydration is allowed to read back, since anything older than this could

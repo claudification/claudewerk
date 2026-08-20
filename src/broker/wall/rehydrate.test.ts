@@ -96,7 +96,7 @@ describe('the CPU sparkline', () => {
     // Before rehydration the ring is what a restart used to leave behind.
     expect(rehydrateWallHostVitals(NOW)).toBe(1)
 
-    const socket = { send: () => {} }
+    const socket = { send: () => 0 }
     wallHub.subscribe(socket)
     recordWallHostVitals(report(99, NOW))
     expect(wallHub.state.snapshot().hosts[0]?.cpuHistory).toEqual([0, 10, 20, 30, 40, 50, 60, 70, 99])
@@ -111,7 +111,7 @@ describe('the CPU sparkline', () => {
 
     expect(rehydrateWallHostVitals(NOW)).toBe(0)
 
-    const socket = { send: () => {} }
+    const socket = { send: () => 0 }
     wallHub.subscribe(socket)
     recordWallHostVitals(report(99, NOW))
     // One point, honestly: the five minutes before the restart are in the table
@@ -188,7 +188,7 @@ describe('the five-hour plan chart', () => {
   test('an unauthed or errored profile leaves NOTHING behind to restore', () => {
     samplePlanUsage([{ profile: 'default', authed: false, polledAt: NOW }], SENTINEL, NOW - 60 * 60 * 1000)
     samplePlanUsage(
-      [{ profile: 'other', authed: true, polledAt: NOW, error: { kind: 'http', message: '429' } }],
+      [{ profile: 'other', authed: true, polledAt: NOW, error: { kind: 'http', status: 429, detail: '429' } }],
       SENTINEL,
       NOW - 60 * 60 * 1000,
     )
