@@ -19,11 +19,13 @@ const codes = (col: WallColumn): string[] => WALL_COLUMNS[col].map(e => e.code)
 
 describe('the wall pane order', () => {
   it('is the fixed v1 arrangement, column by column', () => {
-    // A9 APPENDED (werk-activity-matrix, 2026-08-21) -- the append this file's
-    // header says is fine. The three before it did not move.
-    expect(codes('a')).toEqual(['P1', 'A8', 'A7', 'A9'])
+    expect(codes('a')).toEqual(['P1', 'A8', 'A7'])
     expect(codes('b')).toEqual(['A1', 'P2', 'P3'])
-    expect(codes('c')).toEqual(['A2', 'S2', 'S1', 'P4', 'A4', 'A6'])
+    // A9 APPENDED (werk-activity-matrix, 2026-08-21) -- the append this file's
+    // header says is fine. The six before it did not move, and it went to C
+    // rather than to the wider A because C is the column that scrolls; see the
+    // registry for why that is the deciding property and not the width.
+    expect(codes('c')).toEqual(['A2', 'S2', 'S1', 'P4', 'A4', 'A6', 'A9'])
   })
 
   it('keeps FLEET and HOST VITALS above the SHEAF (Jonas, 2026-08-20)', () => {

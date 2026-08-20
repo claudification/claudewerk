@@ -43,8 +43,10 @@ describe('the wall shell', () => {
     expect(columns).toHaveLength(3)
     expect(columns[0].classList.contains('wall-col-scroll')).toBe(false)
     expect(columns[2].classList.contains('wall-col-scroll')).toBe(true)
-    // Column C is the stack the mockup gives six panes.
-    expect(columns[2].querySelectorAll('.wall-pane')).toHaveLength(6)
+    // Column C is the stack the mockup gives six panes, plus A9 -- the only
+    // column that scrolls is the only one a fixed-height pane can join without
+    // taking that height off a neighbour.
+    expect(columns[2].querySelectorAll('.wall-pane')).toHaveLength(7)
     // A5 is the strip above the grid, not a column pane.
     expect(wallRoot().querySelector('.wall-nowbar')).toBeTruthy()
     expect(pane('A5')?.closest('.wall-col')).toBeNull()

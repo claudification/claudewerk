@@ -180,10 +180,10 @@ describe('the project chip round-trips from every pane that renders one', () => 
   it('finds a project dot on every pane whose rows carry a project', async () => {
     await openTheFullWall()
 
-    // The five without one are the five with no per-project row: A9 is a
-    // fleet-wide day fold, S1 is per-node, S2 is per-account, P4 is fleet-wide
-    // tiles, A5 is a stacked band.
-    expect(WALL_PANE_CODES.filter(code => !chipPanes().includes(code))).toEqual(['A9', 'S2', 'S1', 'P4', 'A5'])
+    // The five without one are the five with no per-project row: S1 is per-node,
+    // S2 is per-account, P4 is fleet-wide tiles, A9 is a fleet-wide day fold,
+    // A5 is a stacked band.
+    expect(WALL_PANE_CODES.filter(code => !chipPanes().includes(code))).toEqual(['S2', 'S1', 'P4', 'A9', 'A5'])
   })
 
   it('scopes the whole wall from any pane, and a second click clears it', async () => {
@@ -201,7 +201,7 @@ describe('the project chip round-trips from every pane that renders one', () => 
       for (const other of sources) expect(`${other}:${paneCount(other)?.matched}`).toBe(`${other}:1`)
       // A9 sits with the three: its fold is fleet-wide, so it declares no
       // `project` axis and a scope leaves it whole.
-      expect(fullPanes()).toEqual(['A9', 'S2', 'S1', 'P4'])
+      expect(fullPanes()).toEqual(['S2', 'S1', 'P4', 'A9'])
 
       // The same dot again is the way OUT. It has to be re-found: the click
       // above re-rendered the pane around it.
