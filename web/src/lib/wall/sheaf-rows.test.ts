@@ -4,7 +4,7 @@
  * file adds -- the look, the rail, the window label, and the two SOTU shapes.
  */
 
-import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
+import type { SheafProject, SheafResponse, SheafSotuBlock } from '@shared/sheaf-types'
 import { describe, expect, it } from 'vitest'
 import type { ProjectLook } from '@/components/wall/use-project-look'
 import { fleetPills, formatTokens, sheafView, sheafWindowLabel, sotuBlocks } from './sheaf-rows'
@@ -97,7 +97,9 @@ const union = (over: Partial<NonNullable<SheafResponse['sotu']>> = {}): SheafRes
   ...over,
 })
 
-const row = (label: string, over: Record<string, unknown> = {}) => ({
+/** A roster row, typed against the wire contract -- these tests exist to pin
+ *  `SheafSotuBlock`'s shape, so opting out of checking it would defeat them. */
+const row = (label: string, over: Partial<SheafSotuBlock> = {}): SheafSotuBlock => ({
   projectUri: `claude:///${label}`,
   alerts: [],
   contended: 0,
@@ -118,13 +120,13 @@ describe('sotuBlocks', () => {
   })
 
   it('puts the projects that HAVE a chronicle first', () => {
-    const sotu = union({ blocks: [row('quiet'), row('loud', { narrative: 'main is RED' })] as never })
+    const sotu = union({ blocks: [row('quiet'), row('loud', { narrative: 'main is RED' })] })
     expect(sotuBlocks(response([], { sotu }), look).map(b => b.projectName)).toEqual(['loud', 'quiet'])
   })
 
   it('carries the alerts, the contention and the unmerged count through', () => {
     const sotu = union({
-      blocks: [row('p', { narrative: 'x', alerts: ['at-risk'], contended: 2, unmerged: 7 })] as never,
+      blocks: [row('p', { narrative: 'x', alerts: ['at-risk'], contended: 2, unmerged: 7 })],
     })
     expect(sotuBlocks(response([], { sotu }), look)[0]).toMatchObject({
       unmerged: 7,
@@ -134,7 +136,7 @@ describe('sotuBlocks', () => {
   })
 
   it('leaves the narrative absent for a chronicle-on project that never distilled', () => {
-    const sotu = union({ blocks: [row('never')] as never })
+    const sotu = union({ blocks: [row('never')] })
     expect(sotuBlocks(response([], { sotu }), look)[0].narrative).toBeUndefined()
   })
 })

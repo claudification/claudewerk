@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import type { BranchFabric, GitAlert, GitFabric } from '../../shared/protocol'
 import type { SheafNode, SheafProject, SheafResponse } from '../../shared/sheaf-types'
 import { writeChronicle } from './chronicle'
+import type { ResolveSotuConfig } from './config'
 import { recordContribution } from './contribute'
 import { enrichSheafWithSotu } from './fleet'
 import { initSotuStore } from './index'
@@ -133,7 +134,7 @@ function seedClaim(uri: string, convId: string, path: string): void {
 function run(
   projects: SheafProject[],
   canViewProject: (uri: string) => boolean = allVisible,
-  resolveConfig = enabled,
+  resolveConfig: ResolveSotuConfig = enabled,
 ): SheafResponse {
   const s = sheaf(projects)
   enrichSheafWithSotu(s, { canViewProject, resolveConfig, now: NOW })

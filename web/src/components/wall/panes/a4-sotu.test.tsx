@@ -11,7 +11,7 @@
  *  - one fetch serves this pane and A6, not two
  */
 
-import type { SheafProject, SheafResponse } from '@shared/sheaf-types'
+import type { SheafFleetSotu, SheafProject, SheafResponse, SheafSotuBlock } from '@shared/sheaf-types'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -34,12 +34,14 @@ function project(label: string, sotu?: Record<string, unknown>): SheafProject {
   } as unknown as SheafProject
 }
 
-/** One row of the state-of-the-union roster, as the broker scopes it. */
-function block(label: string, over: Record<string, unknown> = {}): Record<string, unknown> {
+/** One row of the state-of-the-union roster, as the broker scopes it. Typed
+ *  against the wire contract: this pane's claim IS the roster's shape, so a
+ *  fixture that opts out of checking it proves nothing. */
+function block(label: string, over: Partial<SheafSotuBlock> = {}): SheafSotuBlock {
   return { projectUri: `claude:///Users/j/${label}`, alerts: [], contended: 0, unmerged: 0, ...over }
 }
 
-function response(projects: SheafProject[], fleet: Record<string, unknown> = {}): SheafResponse {
+function response(projects: SheafProject[], fleet: Partial<SheafFleetSotu> = {}): SheafResponse {
   return {
     windowH: 24,
     windowStart: 0,
@@ -66,7 +68,7 @@ function response(projects: SheafProject[], fleet: Record<string, unknown> = {})
       blocks: [],
       ...fleet,
     },
-  } as unknown as SheafResponse
+  }
 }
 
 function serve(body: SheafResponse): void {
