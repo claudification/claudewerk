@@ -10,6 +10,7 @@
  * a SEPARATE (smaller) retry budget for timeouts, and normalised usage extraction.
  */
 
+import { recordOpenRouterSpendStats } from '../../openrouter-spend-stats'
 import { type OpenRouterSpendRecord, recordSpend } from '../../openrouter-spend-store'
 import { CancelledError, NoApiKeyError, OpenRouterError, RateLimitError, TimeoutError } from './errors'
 import { type NormalizedUsage, normalizeUsage } from './pricing'
@@ -148,10 +149,16 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
  * pane can render a by-feature rollup instead of asking someone to grep. It is a
  * no-op until the broker calls `initOpenRouterSpendStore()`, so importing this
  * client outside a running broker behaves as before.
+ *
+ * `recordOpenRouterSpendStats` is the third and coarsest: the same cost, filed
+ * into THE STATS TABLE so spend shares a time axis with CPU and token flow. It
+ * is likewise a no-op until the broker initializes that store, and it swallows
+ * its own failures -- no half of this sink may fail a `chat()` call.
  */
 function recordOpenRouterSpend(rec: OpenRouterSpendRecord): void {
   console.log(`[openrouter] ${formatSpendLine(rec)}`)
   recordSpend(rec)
+  recordOpenRouterSpendStats(rec)
 }
 
 function formatSpendLine(rec: OpenRouterSpendRecord): string {
