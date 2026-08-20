@@ -35,7 +35,10 @@ export interface ImplementerPromptCtx {
   projectRoot: string
   epicId: string
   cardId: string
-  /** Branch the overseer wants the work on. */
+  /** Branch the overseer wants the work on -- the REAL git ref, `worktree-`
+   *  prefixed, same spelling as `ImplementerDependency.branch`. Not the worktree
+   *  NAME: the two differ by that prefix, and the prompt quotes this at an agent
+   *  that will compare it against `git branch --show-current`. */
   branch: string
   /** Base ref to branch from and diff against. */
   base: string

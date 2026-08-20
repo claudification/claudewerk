@@ -224,6 +224,17 @@ function dependencyBranch(epicId: string, depCardId: string): string {
 /**
  * An IMPLEMENTER. Own worktree, own branch, muted.
  *
+ * TWO NAMES, NOT ONE, and they differ by exactly the `worktree-` prefix:
+ * `plan.worktree` is the worktree NAME (what CC is handed, what the 64-character
+ * cap is measured against), and the prompt quotes the BRANCH that
+ * `scripts/worktree-create.sh` actually cuts. Passing one string as both told an
+ * implementer to work on `epic/<epic>/<card>` while `git branch --show-current`
+ * in its own tree said `worktree-epic/<epic>/<card>` -- measured on this very
+ * fix's worktree. Harmless while the branch was never named for a git command;
+ * not harmless once `dependsOn` put a SECOND, correctly-prefixed branch ref in
+ * the same prompt, because an implementer that trusts rule 1's spelling then
+ * merges a ref that does not resolve.
+ *
  * `dependsOn` is the card's own `depends_on`, passed through so the prompt can
  * order a base check. It is only ever data here: this function does not consult
  * it, gate on it, or change the base ref because of it -- readiness stays exactly
@@ -235,16 +246,16 @@ export function planImplementerSpawn(
   baseRef = 'main',
   dependsOn: readonly string[] = [],
 ): EpicSpawnPlan {
-  const branch = seatBranch(ctx.epicId, cardId)
+  const worktree = seatBranch(ctx.epicId, cardId)
   return {
     ...base(ctx, 'implementer', cardId, seatName(ctx.epicId, ctx.gen, cardId)),
-    worktree: branch,
+    worktree,
     prompt: buildImplementerPrompt({
       projectUri: ctx.project,
       projectRoot: ctx.projectRoot,
       epicId: ctx.epicId,
       cardId,
-      branch,
+      branch: worktreeBranch(worktree),
       base: baseRef,
       dependsOn: dependsOn.map(id => ({ id, branch: dependencyBranch(ctx.epicId, id) })),
     }),
