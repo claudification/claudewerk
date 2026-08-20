@@ -64,6 +64,25 @@ describe('S2 plan usage', () => {
     expect(row('a@studio')?.hasAttribute('data-over')).toBe(false)
   })
 
+  it('breaks the line where the broker declared a hole, rather than drawing across it', () => {
+    // The two readings are 90s apart -- close enough that the pane's own
+    // time-gap heuristic would happily join them. `gapBefore` says the broker
+    // was away in between, so there is no measurement to join.
+    feed([sample({ at: T0 - 120_000, utilization: 30 }), sample({ at: T0 - 30_000, utilization: 80, gapBefore: true })])
+    render(<PlanUsagePane />)
+
+    const d = document.querySelector('.wall-plan-line')?.getAttribute('d') ?? ''
+    expect(d.match(/M/g)).toHaveLength(2)
+  })
+
+  it('draws one unbroken line when nothing declared a hole', () => {
+    feed([sample({ at: T0 - 120_000, utilization: 30 }), sample({ at: T0 - 30_000, utilization: 80 })])
+    render(<PlanUsagePane />)
+
+    const d = document.querySelector('.wall-plan-line')?.getAttribute('d') ?? ''
+    expect(d.match(/M/g)).toHaveLength(1)
+  })
+
   it('renders a stale reading with its age, never the number alone', () => {
     feed([sample({ utilization: 62, stale: true, polledAt: T0 - 40 * 60_000 })])
     render(<PlanUsagePane />)

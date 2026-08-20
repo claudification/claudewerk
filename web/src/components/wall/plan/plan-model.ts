@@ -6,10 +6,11 @@
  * screenshot will not show, so it lives here and is tested directly.
  *
  * THE LINE ONLY EVER CONNECTS REAL SAMPLES. A path is cut whenever the series
- * stops being a live reading -- a 429, a logged-out profile, or simply a hole in
- * time where nothing was recorded. Bridging those would draw a confident
- * straight line across an hour nobody measured, which is precisely the number a
- * throttle chart must not invent.
+ * stops being a live reading -- a 429, a logged-out profile, a hole in time
+ * where nothing was recorded, or a sample the broker itself marked `gapBefore`
+ * because it restarted and there is no measurement behind it. Bridging those
+ * would draw a confident straight line across an hour nobody measured, which is
+ * precisely the number a throttle chart must not invent.
  */
 
 import type { WallPlanSample } from '@shared/wall'
@@ -41,14 +42,25 @@ export interface PlanLine {
   color: string
 }
 
-/** Split one profile's samples into unbroken runs of live readings. */
+/**
+ * Split one profile's samples into unbroken runs of live readings.
+ *
+ * Three things cut a run, and `gapBefore` is the only one that is TOLD to us
+ * rather than inferred: the broker restarted, whatever happened in between was
+ * never measured, and the two readings either side can be seconds apart and
+ * still have nothing between them. So the flag outranks the clock -- the time
+ * heuristic below is a guess about missing data, the flag is a statement of it.
+ */
 function segmentsOf(samples: readonly WallPlanSample[]): PlanPoint[][] {
   const segments: PlanPoint[][] = []
   let current: PlanPoint[] = []
 
   for (const sample of samples) {
     const previous = current[current.length - 1]
-    const broken = sample.state !== 'ok' || (previous !== undefined && sample.at - previous.at > PLAN_GAP_BREAK_MS)
+    const broken =
+      sample.state !== 'ok' ||
+      sample.gapBefore === true ||
+      (previous !== undefined && sample.at - previous.at > PLAN_GAP_BREAK_MS)
     if (broken && current.length > 0) {
       segments.push(current)
       current = []
