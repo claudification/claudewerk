@@ -62,8 +62,11 @@ describe('ONE contract: neither sender forks it', () => {
     // be ~17k spawns per node per day. But statfs alone is not enough: it
     // EOVERFLOWs past 2^32 blocks and shipped disk 0/0 for a 30TB NAS array.
     // Both, in that order -- the ?? is the whole rule.
-    const sampler = readFileSync(join(SRC, 'shared/node-stats-sample.ts'), 'utf8')
-    expect(sampler).toMatch(/readDiskViaStatfs\(dir\)\s*\?\?\s*readDiskViaDf\(dir\)/)
+    // The readers moved to `node-stats-disk.ts` (split for size, and so the
+    // per-volume collector can share the one definition of used) -- the rule did
+    // not move with them.
+    const disk = readFileSync(join(SRC, 'shared/node-stats-disk.ts'), 'utf8')
+    expect(disk).toMatch(/readDiskViaStatfs\(dir\)\s*\?\?\s*readDiskViaDf\(dir\)/)
   })
 })
 

@@ -23,11 +23,16 @@
 /**
  * A named thing that lives ON a node and can be measured.
  *
- * `node` and `profile` are the two THE WALL produces today. `volume`,
- * `conversation` and `process` are the obvious next three and are deliberately
- * NOT pre-declared -- see the note above.
+ * `node`, `profile` and `volume` are the three THE WALL produces today.
+ * `conversation` and `process` are the obvious next two and are deliberately NOT
+ * pre-declared -- see the note above.
+ *
+ * A `volume` is named by its MOUNT PATH, and that is the rare case where the
+ * human-readable string genuinely is identity: a mount path is what a volume is
+ * called, in the way a hostname is never what a box is called. `label` carries
+ * the prettier version (`Fint` for `/Volumes/Fint`) and remains a label.
  */
-export type StatObjectKind = 'node' | 'profile'
+export type StatObjectKind = 'node' | 'profile' | 'volume'
 
 /** Every metric the broker records. Units are part of the name, always. */
 export type StatMetric =
@@ -35,11 +40,22 @@ export type StatMetric =
   | 'cpu_percent'
   /** `memory.usedBytes / memory.totalBytes`, 0-100. Producer: `wall/host-vitals`. */
   | 'mem_percent'
-  /** `disk.usedBytes / disk.totalBytes` for the reported mount, 0-100.
-   *  Producer: `wall/host-vitals`. ONE definition of "used": whatever the
-   *  node-stats frame reported, projected by the same `share()` the wall row
-   *  uses. Never recomputed a second way. */
+  /** `usedBytes / totalBytes` for a volume, 0-100. TWO producers, ONE meaning:
+   *  `wall/host-vitals` files it against the `node` (the volume the agent runs
+   *  on, so the node-level number keeps meaning exactly what it always meant),
+   *  and `wall/volume-stats` files it against each `volume` object. Both call
+   *  the same `share()` on bytes the collector already computed -- the broker
+   *  projects, it never recomputes. A `node` reading and its `volume` reading
+   *  that disagree would be the bug, not a rounding difference. */
   | 'disk_percent'
+  /** A volume's used bytes, exactly as the collector reported them (total minus
+   *  unprivileged-available). Producer: `wall/volume-stats`. Stored beside the
+   *  percentage because "89%" cannot tell you whether freeing 10 GB helps. */
+  | 'disk_used_bytes'
+  /** A volume's size in bytes. Producer: `wall/volume-stats`. Nearly constant,
+   *  and stored anyway: without the denominator the byte count above is a number
+   *  with no scale, and retention collapses a flat series to almost nothing. */
+  | 'disk_total_bytes'
   /** A profile's FIVE-HOUR plan utilization, 0-100. Producer:
    *  `wall/plan-usage-series`, and only for a reading that actually happened
    *  (`state === 'ok'`) -- an unauthed or errored profile has no number, and

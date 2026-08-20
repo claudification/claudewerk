@@ -119,6 +119,31 @@ export interface UsedTotal {
   totalBytes: number
 }
 
+/**
+ * One mounted volume, measured the same way `machine.disk` is.
+ *
+ * `mount` is IDENTITY -- a mount path is what a volume is called, in a way a
+ * hostname is never what a box is called. The broker keys a `volume` stats
+ * object on it and a series therefore survives a relabel, a remount and a
+ * reboot.
+ */
+export interface VolumeStats extends UsedTotal {
+  /** Absolute mount path, e.g. `/` or `/Volumes/Fint`. Identity. */
+  mount: string
+}
+
+/**
+ * The most volumes one frame may carry.
+ *
+ * A CEILING ON THE WIRE, not a display limit: every entry becomes a permanent
+ * row in `stat_objects`, so a sender with a pathological mount table (a CI box
+ * that mounts a thousand loopbacks) must be refused rather than absorbed. The
+ * collector's own filter puts a loaded Mac at ~8, so this is a backstop that
+ * should never fire. Raising it is a WIRE change: an older broker rejects a
+ * frame that exceeds the number IT was built with.
+ */
+export const NODE_STATS_MAX_VOLUMES = 24
+
 /** Machine facts. Per HOST -- identical for every agent on the same box. */
 export interface MachineStats {
   /**
@@ -149,6 +174,26 @@ export interface MachineStats {
    * is never the one on the wire.
    */
   disk: UsedTotal & { mount: string }
+  /**
+   * EVERY mounted volume worth a series, `disk` included -- the resolution that
+   * turns "this box is at 99%" into "this DISK is at 99%".
+   *
+   * OPTIONAL, AND THAT IS THE WHOLE VERSIONING STORY. A sender that predates the
+   * field omits it and its frames stay valid; a broker that predates it ignores
+   * an unknown key. No version counter, no second message name -- an additive
+   * optional field is the cheapest compatible change this contract can make, and
+   * `NodeStatsReport` did not need one.
+   *
+   * ABSENT, never `[]`, when the collector could not enumerate mounts. "We did
+   * not look" and "this box has no volumes" are different facts and only one of
+   * them is ever true.
+   *
+   * `machine.disk` IS NOT REDEFINED BY THIS. It still means the volume the agent
+   * runs on, still computed by the same reader, and its `disk_percent` series
+   * still means what it meant. This ADDS objects beside the node, it does not
+   * re-point the node's own number.
+   */
+  volumes?: VolumeStats[]
 }
 
 /**
@@ -194,7 +239,7 @@ export function validateNodeStats(value: unknown): NodeStatsValidation {
   if (value.type !== 'node_stats') errors.push("type: expected 'node_stats'")
 
   checkIdentity(value.node, errors)
-  checkMachine(value.machine, errors)
+  checkMachine(value.machine, NODE_STATS_MAX_VOLUMES, errors)
 
   if (!num(value.sampledAt) || value.sampledAt <= 0) errors.push('sampledAt: expected a positive ms epoch')
 

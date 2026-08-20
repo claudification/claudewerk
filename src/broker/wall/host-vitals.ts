@@ -46,8 +46,13 @@ function pct(value: number): number {
 }
 
 /** `used/total` as a percentage, or undefined when the total is missing -- a
- *  meter with no denominator must render as "unknown", never as 0%. */
-function share(used: number, total: number): number | undefined {
+ *  meter with no denominator must render as "unknown", never as 0%.
+ *
+ *  EXPORTED FOR `volume-stats.ts` on purpose. The per-volume producer projects
+ *  the same bytes into the same percentage, and a second copy of this three-line
+ *  function is exactly how a node's disk meter and its own volume's disk meter
+ *  end up disagreeing. */
+export function share(used: number, total: number): number | undefined {
   return total > 0 ? pct((used / total) * 100) : undefined
 }
 
