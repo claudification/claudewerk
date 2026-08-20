@@ -32,7 +32,7 @@ const TILES = [
   { key: 'tokens-min', label: 'TOKENS/MIN', Tile: FleetTokenRate },
   { key: 'tokens-day', label: 'TOKENS 24H', Tile: FleetTokensDay },
   { key: 'hosts', label: 'HOSTS UP', Tile: FleetHosts },
-  { key: 'socket', label: 'WS', Tile: FleetSocket },
+  { key: 'socket', label: 'WS RTT', Tile: FleetSocket },
 ] as const
 
 export default function FleetPane() {

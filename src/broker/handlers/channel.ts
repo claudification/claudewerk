@@ -14,6 +14,7 @@ import {
   type TerminationSource,
 } from '../../shared/protocol'
 import { WALL_CHANNEL, WALL_SCOPE } from '../../shared/wall'
+import { isValidProbeToken, WS_PING, WS_PONG } from '../../shared/ws-probe'
 import { slugify } from '../address-book'
 import { getUser } from '../auth'
 import { deliverDispatcherReport } from '../desk/async-impulse'
@@ -186,6 +187,23 @@ const syncCheck: MessageHandler = (ctx, data) => {
     (data.lastSeq as number) || 0,
     data.transcripts as Record<string, number> | undefined,
   )
+}
+
+/**
+ * THE ECHO. Send the token back and do nothing else -- no state, no log line, no
+ * clock read. The broker deliberately never learns what the round trip was; the
+ * client owns the measurement because the client owns both ends of the interval
+ * it is measuring. A malformed or oversized token is dropped in silence rather
+ * than answered with an error: the client discards unmatched pongs anyway, and
+ * an error reply would only be a second thing to echo.
+ *
+ * Runs at whatever cadence an open wall picks (currently one probe every 5s per
+ * panel with P4 on screen). No panel with the tile visible means no traffic --
+ * see `ws-rtt.ts`.
+ */
+const wsPing: MessageHandler = (ctx, data) => {
+  if (!isValidProbeToken(data.token)) return
+  ctx.reply({ type: WS_PONG, token: data.token })
 }
 
 // ─── Channel subscriptions (per-conversation event streams) ─────────────
@@ -1535,6 +1553,7 @@ export function registerChannelHandlers(): void {
     {
       refresh_conversations: refreshConversations,
       sync_check: syncCheck,
+      [WS_PING]: wsPing,
       channel_subscribe: channelSubscribe,
       channel_unsubscribe: channelUnsubscribe,
       channel_unsubscribe_all: channelUnsubscribeAll,

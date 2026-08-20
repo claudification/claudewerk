@@ -11,6 +11,7 @@ import { unstable_batchedUpdates as batchUpdates } from 'react-dom'
 // Graceful fallback if unstable_batchedUpdates is ever removed
 const batch: (fn: () => void) => void = batchUpdates ?? (fn => fn())
 
+import { WS_PONG, type WsPongMessage } from '@shared/ws-probe'
 import { isCanvasChatMessage } from '@/components/canvas/canvas-chat-bus'
 import { failAllPendingSends } from '@/lib/pending-sends'
 import { beginMessage, endMessage, setFlushBatch } from '@/lib/perf-message-context'
@@ -28,6 +29,7 @@ import { dispatchShellData } from './use-shells'
 import { type DashboardMessage, handlers } from './use-websocket-handlers'
 import { resetWallFrames } from './wall-frame-store'
 import { resubscribeWall } from './wall-subscription'
+import { recordFlushDepth, recordPong, resetWsRtt, setSocketDepthProbe } from './ws-rtt'
 import { recordIn, recordOut } from './ws-stats'
 
 let _wsUrl: string | null = null
@@ -65,6 +67,12 @@ function flushMessages() {
 
   const pending = msgBuffer
   msgBuffer = []
+
+  // The rAF backlog, at the one moment it is knowable: how many messages piled
+  // up since the last frame. P4's socket tile reports the high-water mark of
+  // this between its probes (see ws-rtt.ts) -- sampling msgBuffer.length from
+  // the outside would read 0 forever, because this line has already drained it.
+  recordFlushDepth(pending.length)
 
   // Track sync state (epoch+seq) from incoming messages
   const { syncSeq: prevSeq, syncEpoch: prevEpoch } = useConversationsStore.getState()
@@ -195,6 +203,12 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
 
       ws.onopen = () => {
         send({ type: 'subscribe', protocolVersion: 2 })
+
+        // Hand the RTT store a pull for THIS socket's send-side backlog. The
+        // socket is the only thing that knows its own bufferedAmount and it does
+        // not survive a reconnect, so the seam is (re)bound per connection and
+        // cleared on close rather than read out of a module-level ref.
+        setSocketDepthProbe(() => ws.bufferedAmount)
 
         // Single batched setState for ALL onopen state changes.
         // Multiple separate setState calls fire Zustand subscribers individually,
@@ -331,6 +345,13 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
       ws.onclose = e => {
         wsRef.current = null
 
+        // Every in-flight probe just became unanswerable and every sample in the
+        // window describes a connection that no longer exists. Drop both, so the
+        // tile dashes instead of holding a latency for a dead wire until the
+        // window happens to age out.
+        setSocketDepthProbe(null)
+        resetWsRtt()
+
         // Sends still in flight can never be confirmed now -- queue them for
         // retry rather than letting a mid-post disconnect eat the text.
         const orphaned = failAllPendingSends('Connection lost mid-send')
@@ -369,6 +390,14 @@ export function useWebSocket(opts?: { conversationChannels?: boolean }) {
           msg = JSON.parse(raw) as DashboardMessage
 
           // --- Bypass buffer: latency-sensitive handlers ---
+
+          // The round-trip probe's echo. FIRST, and bypassing the rAF buffer for
+          // the obvious reason: a latency sample that waits for the next frame
+          // has a frame of jitter baked into the number it reports.
+          if (msg.type === WS_PONG) {
+            recordPong((msg as unknown as WsPongMessage).token)
+            return
+          }
 
           // rclaude config responses -> promise resolution
           if (msg.type === 'rclaude_config_data' || msg.type === 'rclaude_config_ok') {
