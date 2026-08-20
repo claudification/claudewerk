@@ -29,8 +29,7 @@ export class StringWriter implements Writer {
   }
 }
 
-/** Reads a transcript file (Bun). Production I/O; consumed when wired to the agent host. */
-// fallow-ignore-next-line unused-export
+/** Reads a transcript file (Bun). Production I/O; used by the sentinel's session fork. */
 export class FileReader implements Reader {
   constructor(private readonly path: string) {}
   read(): Promise<string> {
@@ -38,8 +37,7 @@ export class FileReader implements Reader {
   }
 }
 
-/** Writes a transcript file (Bun). Production I/O; consumed when wired to the agent host. */
-// fallow-ignore-next-line unused-export
+/** Writes a transcript file (Bun). Production I/O; used by the sentinel's session fork. */
 export class FileWriter implements Writer {
   constructor(private readonly path: string) {}
   async write(data: string): Promise<void> {
