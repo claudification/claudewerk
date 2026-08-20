@@ -28,8 +28,16 @@ import { createExternalStoreSignal } from '@/hooks/external-store-utils'
  * A pull-fed data source behind one or more panes. Adding a member here is half
  * the job -- the pane must also declare it in `wall-pane-registry.ts`, which is
  * what the census is folded out of.
+ *
+ * `commit-detail` is the ONE exception, and it is deliberate: the in-wall commit
+ * detail is not a pane, it is a panel that opens over the grid on a click, so it
+ * has no registry row to declare. It still pulls HTTP, so it still has to revive
+ * on a reconnect and still has to be able to say STALE. The census subtracts
+ * REGISTERED from DECLARED, so a feed nothing declares cannot break it -- but
+ * neither would the census have caught this one going quietly stale, which is
+ * why `wall-detail.test.tsx` asserts the re-pull and the mark directly.
  */
-export type WallFeedId = 'sheaf' | 'burn' | 'commits' | 'fleet-tokens' | 'pins' | 'runs'
+export type WallFeedId = 'sheaf' | 'burn' | 'commits' | 'commit-detail' | 'fleet-tokens' | 'pins' | 'runs'
 
 /**
  * What a feed does when asked to re-read itself.

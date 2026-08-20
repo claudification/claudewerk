@@ -12,6 +12,7 @@ import { useCommitModalStore } from '@/hooks/use-commit-modals'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { KANBAN_MODAL } from '@/hooks/use-kanban-modal'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
+import { useWallDetail } from './wall-detail-store'
 import { navigateFromWall, WALL_NAV_MESSAGE } from './wall-navigate'
 import { WALL_MODAL } from './wall-state'
 
@@ -22,6 +23,7 @@ afterEach(() => {
   useModalManagerStore.setState({ records: {} })
   useConversationsStore.setState({ pendingEpicReveal: null, pendingTaskEdit: null, selectedConversationId: null })
   useCommitModalStore.setState({ hash: null })
+  useWallDetail.setState({ hash: null })
   vi.restoreAllMocks()
 })
 
@@ -111,10 +113,13 @@ describe('navigateFromWall', () => {
 })
 
 /**
- * `wall-commit-detail-in-wall` opens a commit INSIDE the wall window. It is a
- * separate card, but the transport had to support the destination on day one or
- * that card would have had to fork a second mechanism -- which the ownership
- * note in `wall-navigate.ts` forbids.
+ * `wall-commit-detail-in-wall`: a commit opens INSIDE the wall.
+ *
+ * The transport carried the destination from day one so this card would not have
+ * to fork a second mechanism. What the card changed is WHERE the target lands:
+ * on the wall's own detail store, which the wall surface renders inside
+ * `.wall-root` -- never on the main window's commit modal, and never with a
+ * `focus()` that raises the dashboard over the popup the click came from.
  */
 describe('navigateFromWall with an IN-WALL target', () => {
   it('keeps the intent in the popup and does NOT raise the opener', () => {
@@ -123,16 +128,34 @@ describe('navigateFromWall with an IN-WALL target', () => {
 
     expect(navigateFromWall({ kind: 'commit', hash: 'deadbeefcafe' }, 'wall')).toBe('wall')
 
-    expect(useCommitModalStore.getState().hash).toBe('deadbeefcafe')
+    expect(useWallDetail.getState().hash).toBe('deadbeefcafe')
+    expect(useCommitModalStore.getState().hash).toBeNull()
     expect(opener.postMessage).not.toHaveBeenCalled()
     expect(opener.focus).not.toHaveBeenCalled()
   })
 
-  it('is the ordinary HERE path when the wall is not its own window', () => {
-    // Inline or portaled, the wall's React tree IS the main window's, so there
-    // is no second destination to choose between.
-    expect(navigateFromWall({ kind: 'commit', hash: 'abc' }, 'wall')).toBe('here')
-    expect(useCommitModalStore.getState().hash).toBe('abc')
+  /**
+   * THE PORTALED CASE, which is the ordinary detached wall: the DOM is in the
+   * popup, the React tree is still the opener's, so `window` here IS the main
+   * window. Answering "apply here and raise the window" would open the commit in
+   * the dashboard and pull the dashboard in front of the second monitor -- the
+   * dead-letter bug W4 exists to kill, running backwards.
+   */
+  it('never raises a window, even when it is running in the main one', () => {
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {})
+
+    expect(navigateFromWall({ kind: 'commit', hash: 'abc' }, 'wall')).toBe('wall')
+
+    expect(useWallDetail.getState().hash).toBe('abc')
+    expect(useCommitModalStore.getState().hash).toBeNull()
+    expect(focus).not.toHaveBeenCalled()
+  })
+
+  it('falls through to the main window for a kind the wall cannot show', () => {
+    // There is no in-wall epic surface, and there should not be one: an epic is
+    // a place you go and WORK. A target with no answer must not eat the click.
+    expect(navigateFromWall({ kind: 'epic', project: PROJECT, id: 'epic-the-wall' }, 'wall')).toBe('here')
+    expect(useModalManagerStore.getState().records[KANBAN_MODAL.id]).toBeTruthy()
   })
 
   it('still crosses to the opener when the target is the default main window', () => {
@@ -141,5 +164,6 @@ describe('navigateFromWall with an IN-WALL target', () => {
 
     expect(navigateFromWall({ kind: 'commit', hash: 'abc' })).toBe('opener')
     expect(useCommitModalStore.getState().hash).toBeNull()
+    expect(useWallDetail.getState().hash).toBeNull()
   })
 })

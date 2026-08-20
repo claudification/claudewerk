@@ -11,11 +11,18 @@
  * case is still a direct call. A popup that was RELOADED is a genuinely separate
  * context, and then the intent has to cross:
  *
- *   target 'wall'           -> apply HERE, deliberately; never raise the opener
+ *   target 'wall'           -> the wall's OWN surface; never raise anything
  *   not a wall popup        -> apply here, raise this window
  *   popup, opener alive     -> postMessage to the opener, raise IT
  *   popup, opener CLOSED    -> say so; a dead click is the bug this prevents
  *   popup, opener ref gone  -> BroadcastChannel, the reload fallback
+ *
+ * THE `wall` TARGET IS NOT "APPLY HERE". It is answered by the wall's own detail
+ * panel, which renders inside `.wall-root` -- and that matters precisely because
+ * the ordinary detached wall PORTALS its DOM into the popup while its React tree
+ * stays in the opener. An in-wall target that merely applied "here" would open a
+ * MAIN-WINDOW modal and raise the dashboard over the popup you are looking at:
+ * the dead-letter bug this transport exists to kill, running backwards.
  *
  * THE TARGET IS A PARAMETER, NOT A CONSTANT. `wall-commit-detail-in-wall`
  * (Jonas, 2026-08-20) opens a commit's detail INSIDE the wall window rather than
@@ -40,6 +47,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
 import { showToast } from '@/lib/toast-bus'
 import { openProjectCard } from '../conversation-detail/project-card-verbs'
+import { openWallCommitDetail } from './wall-detail-store'
 import { WALL_MODAL } from './wall-state'
 
 /** What a wall row asks a window to open. One entry per clickable row. */
@@ -103,15 +111,29 @@ function inDetachedWallContext(): boolean {
   return typeof window !== 'undefined' && window.name === WALL_MODAL.id
 }
 
-export function navigateFromWall(intent: WallNavIntent, target: WallNavTarget = 'main'): WallNavDelivery {
-  const detached = inDetachedWallContext()
+/**
+ * Answer an intent on the WALL's own surface. `false` = there is no in-wall
+ * surface for this kind, so the caller falls through to the main window rather
+ * than swallowing the click.
+ *
+ * Only a commit has one, and that is the whole of Jonas's exception: an epic or
+ * a card is a place you go and WORK, which is the main window's job.
+ */
+function applyInWall(intent: WallNavIntent): boolean {
+  if (intent.kind !== 'commit') return false
+  openWallCommitDetail(intent.hash)
+  return true
+}
 
-  // Asked for HERE, and here is its own window: keep it, and do NOT raise the
-  // opener -- the whole point of an in-wall target is that you never leave.
-  if (target === 'wall' && detached) {
-    applyWallIntent(intent)
-    return 'wall'
-  }
+export function navigateFromWall(intent: WallNavIntent, target: WallNavTarget = 'main'): WallNavDelivery {
+  // Asked for the WALL: answer it on the wall's own surface, whatever window
+  // this code happens to be running in, and raise NOTHING. Deliberately ahead of
+  // the detached check -- the portaled case looks exactly like the inline one
+  // from in here, and it is the case where raising the opener would bury the
+  // popup the click came from.
+  if (target === 'wall' && applyInWall(intent)) return 'wall'
+
+  const detached = inDetachedWallContext()
 
   if (!detached) {
     applyWallIntent(intent)

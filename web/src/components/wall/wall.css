@@ -17,6 +17,10 @@
 	--wall-pane-pad: 10px;
 	--wall-gap: 8px;
 
+	/* The in-wall commit detail is positioned against THIS, so it lands over the
+	   grid instead of over the whole document -- and travels with the root when
+	   the wall is portaled into a detached popup. */
+	position: relative;
 	display: flex;
 	flex: 1;
 	min-height: 0;
@@ -364,6 +368,60 @@
 .wall-kpi-val .wall-stale-mark {
 	margin-left: 5px;
 	vertical-align: middle;
+}
+/* ---------- P2b the in-wall commit detail ----------
+   An OVERLAY sheet, not a rail: closed, it costs the hard v1 grid nothing;
+   open, it covers panes rather than resizing a column. Right-anchored because
+   the river it opens from lives in the middle column, so the panel lands beside
+   the row you clicked rather than on top of it. */
+.wall-detail {
+	position: absolute;
+	inset: 0;
+	z-index: 40;
+	display: flex;
+	justify-content: flex-end;
+}
+.wall-detail-scrim {
+	position: absolute;
+	inset: 0;
+	border: 0;
+	padding: 0;
+	cursor: default;
+	/* Dim, not opaque: the rest of the wall stays readable behind an open
+	   detail, which is the whole reason it opens here and not in the dashboard. */
+	background: color-mix(in oklab, var(--background) 55%, transparent);
+}
+.wall-detail-panel {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	width: min(560px, 46%);
+	min-width: 300px;
+	margin: var(--wall-gap);
+	overflow: hidden;
+	background: var(--card);
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius);
+	box-shadow: 0 8px 32px rgb(0 0 0 / 0.45);
+}
+.wall-detail-panel:focus-visible {
+	outline: none;
+}
+.wall-detail-body {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	padding: var(--wall-pane-pad);
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+}
+.wall-detail-close {
+	display: flex;
+	align-items: center;
+	color: var(--comment);
+}
+.wall-detail-close:hover {
+	color: var(--foreground);
 }
 /* The accumulated series lost their past to a reconnect. Quieter than STALE:
    the numbers on screen ARE current, it is the history behind them that is not. */
