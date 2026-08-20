@@ -6,6 +6,6 @@
  * Only what callers outside this folder actually need is re-exported —
  * tokenizing, the empty-query constant and the exclusion shape are internals.
  */
-export { highlightRange, isEmptyQuery, matchesPulseQuery } from './query-match'
-export { parsePulseQuery, parseWindow } from './query-parse'
+export { highlightRange, isEmptyQuery, localDayKey, matchesPulseQuery } from './query-match'
+export { parseDay, parsePulseQuery, parseWindow } from './query-parse'
 export type { PulseQuery, PulseSearchable } from './query-types'

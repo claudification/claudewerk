@@ -1883,6 +1883,194 @@ button.wall-burn-hit:hover {
 	font-size: 10px;
 }
 
+/* ---------- A9 activity matrix ----------
+   THREE CELL STATES, THREE DIFFERENT THINGS ON SCREEN -- and the ramp is only
+   one of them. `is-active` is the only state that is ever FILLED; `is-empty` is
+   a bare outline; `is-unavailable` is hatched, so a run of days nobody has data
+   for reads as missing rather than as the palest shade of quiet. Switching the
+   metric from commits to turns must make eleven months go NO DATA, not idle,
+   and that difference has to survive being read from three metres away in
+   ambient mode -- which is why it is a TEXTURE and not a slightly different
+   grey. */
+.wall-activity {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 4px var(--wall-pane-pad) 8px;
+}
+.wall-activity-switch {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+.wall-activity-scroll {
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: thin;
+	scrollbar-color: var(--border-strong) transparent;
+	padding-bottom: 2px;
+}
+.wall-activity-scroll::-webkit-scrollbar {
+	height: 5px;
+}
+.wall-activity-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	border-radius: 3px;
+}
+.wall-activity-months {
+	display: grid;
+	/* The dow gutter, so a month label sits over its own column. */
+	margin-left: 26px;
+	color: var(--comment);
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	height: 12px;
+}
+.wall-activity-body {
+	display: flex;
+	gap: 4px;
+}
+.wall-activity-dow {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 22px;
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.06em;
+}
+.wall-activity-dow span {
+	height: 9px;
+	line-height: 9px;
+}
+.wall-activity-weeks {
+	display: flex;
+	gap: 2px;
+}
+.wall-activity-week {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.wall-activity-cell,
+.wall-activity-pad {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	padding: 0;
+	flex: 0 0 auto;
+}
+.wall-activity-pad {
+	background: transparent;
+}
+/* WE MEASURED, AND THERE WAS NOTHING. An outline: present, and plainly zero. */
+.wall-activity-cell.is-empty {
+	background: transparent;
+	border: 1px solid var(--border-subtle);
+}
+/* WE DO NOT KNOW. Hatched, and deliberately not on the ramp at all -- this is
+   the state that stops missing history reading as a year off. */
+.wall-activity-cell.is-unavailable {
+	border: 1px solid transparent;
+	background-image: repeating-linear-gradient(
+		45deg,
+		var(--border-subtle) 0,
+		var(--border-subtle) 1px,
+		transparent 1px,
+		transparent 3px
+	);
+}
+.wall-activity-cell.is-active {
+	border: 1px solid transparent;
+	background: var(--success);
+}
+.wall-activity-cell.lvl-1 {
+	background: color-mix(in oklab, var(--success) 26%, transparent);
+}
+.wall-activity-cell.lvl-2 {
+	background: color-mix(in oklab, var(--success) 50%, transparent);
+}
+.wall-activity-cell.lvl-3 {
+	background: color-mix(in oklab, var(--success) 74%, transparent);
+}
+.wall-activity-cell.lvl-4 {
+	background: var(--success);
+}
+.wall-activity-cell.is-scoped {
+	outline: 1px solid var(--accent);
+	outline-offset: 1px;
+}
+.wall-activity-cell:focus-visible {
+	outline: 1px solid var(--accent);
+	outline-offset: 1px;
+}
+.wall-activity-legend {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.wall-activity-legend-row {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+}
+.wall-activity-legend-label {
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.08em;
+}
+.wall-activity-horizon {
+	margin: 0;
+	color: var(--comment);
+	font-size: 9px;
+}
+.wall-activity-idle {
+	margin: 0;
+	color: var(--fg-faint);
+	font-size: 10px;
+}
+.wall-activity-day-title {
+	margin: 0;
+	color: var(--fg-muted);
+	font-size: 10px;
+	letter-spacing: 0.06em;
+}
+.wall-activity-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+	gap: 2px 8px;
+	margin: 2px 0 0;
+}
+.wall-activity-fact dt {
+	color: var(--comment);
+	font-size: 8px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+.wall-activity-fact dd {
+	margin: 0;
+	font-size: 11px;
+}
+/* A silence in the hover card is dimmed rather than emphasised -- `none` and
+   `no data` are facts, not readings, and they must not out-shout the numbers. */
+.wall-activity-fact[data-state='empty'] dd,
+.wall-activity-fact[data-state='unavailable'] dd {
+	color: var(--fg-faint);
+}
+.wall-activity-fact.is-selected dd {
+	color: var(--foreground);
+	font-weight: 600;
+}
+/* THE ONE PIECE OF CHROME THAT IS NOT ALLOWED TO BE SUBTLE. An estimated dollar
+   rendered as a measured one is this pane's whole design risk. */
+.wall-activity-provenance {
+	display: block;
+	color: var(--warning);
+	font-size: 8px;
+	font-style: normal;
+	letter-spacing: 0.04em;
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.wall-livedot {
 		animation: none;

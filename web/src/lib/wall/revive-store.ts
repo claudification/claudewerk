@@ -37,7 +37,7 @@ import { createExternalStoreSignal } from '@/hooks/external-store-utils'
  * neither would the census have caught this one going quietly stale, which is
  * why `wall-detail.test.tsx` asserts the re-pull and the mark directly.
  */
-export type WallFeedId = 'sheaf' | 'burn' | 'commits' | 'commit-detail' | 'fleet-tokens' | 'pins' | 'runs'
+export type WallFeedId = 'sheaf' | 'burn' | 'commits' | 'commit-detail' | 'fleet-tokens' | 'pins' | 'runs' | 'activity'
 
 /**
  * What a feed does when asked to re-read itself.

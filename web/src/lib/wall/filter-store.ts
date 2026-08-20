@@ -20,6 +20,7 @@
  */
 
 import { create } from 'zustand'
+import { toggledDay } from './day-token'
 import { toggledProject, withProject } from './project-token'
 import { parseWallQuery, type WallQuery } from './query'
 
@@ -40,6 +41,14 @@ export interface WallFilterState {
   toggleProject(project: string): void
   /** Set or clear the project scope outright, no toggle. */
   setProject(project: string | null): void
+  /**
+   * THE SQUARE ACTION, and the day twin of `toggleProject`. Scope the wall to
+   * one calendar day (`YYYY-MM-DD`), or clear it when that day is already the
+   * scope. Owned here for the same reason the project one is: a second
+   * implementation living inside the pane is a second thing that can disagree
+   * with what the header box says.
+   */
+  toggleDay(day: string): void
 }
 
 export const useWallFilterStore = create<WallFilterState>((set, get) => ({
@@ -57,7 +66,11 @@ export const useWallFilterStore = create<WallFilterState>((set, get) => ({
   clear: () => get().setRaw(''),
   toggleProject: project => get().setRaw(toggledProject(get().raw, project)),
   setProject: project => get().setRaw(withProject(get().raw, project)),
+  toggleDay: day => get().setRaw(toggledDay(get().raw, day)),
 }))
 
 /** The project currently scoped, or null. A primitive, so it is selector-safe. */
 export const selectWallProject = (s: WallFilterState): string | null => s.query.project
+
+/** The calendar day currently scoped, or null. Also a primitive. */
+export const selectWallDay = (s: WallFilterState): string | null => s.query.day

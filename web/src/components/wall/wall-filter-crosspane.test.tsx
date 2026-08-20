@@ -180,9 +180,10 @@ describe('the project chip round-trips from every pane that renders one', () => 
   it('finds a project dot on every pane whose rows carry a project', async () => {
     await openTheFullWall()
 
-    // The four without one are the four with no per-project row: S1 is per-node,
-    // S2 is per-account, P4 is fleet-wide tiles, A5 is a stacked band.
-    expect(WALL_PANE_CODES.filter(code => !chipPanes().includes(code))).toEqual(['S2', 'S1', 'P4', 'A5'])
+    // The five without one are the five with no per-project row: S1 is per-node,
+    // S2 is per-account, P4 is fleet-wide tiles, A9 is a fleet-wide day fold,
+    // A5 is a stacked band.
+    expect(WALL_PANE_CODES.filter(code => !chipPanes().includes(code))).toEqual(['S2', 'S1', 'P4', 'A9', 'A5'])
   })
 
   it('scopes the whole wall from any pane, and a second click clears it', async () => {
@@ -198,7 +199,9 @@ describe('the project chip round-trips from every pane that renders one', () => 
       // panes with no project facet stay full, which is the same guarantee the
       // axis table makes, arriving through the chip instead of the keyboard.
       for (const other of sources) expect(`${other}:${paneCount(other)?.matched}`).toBe(`${other}:1`)
-      expect(fullPanes()).toEqual(['S2', 'S1', 'P4'])
+      // A9 sits with the three: its fold is fleet-wide, so it declares no
+      // `project` axis and a scope leaves it whole.
+      expect(fullPanes()).toEqual(['S2', 'S1', 'P4', 'A9'])
 
       // The same dot again is the way OUT. It has to be re-found: the click
       // above re-rendered the pane around it.
@@ -234,16 +237,17 @@ describe('a query that matches nothing leaves every pane visibly empty', () => {
     A6: /no project matches the filter/,
     A7: /no unattended run matches/,
     A8: /no pinned epic matches/,
+    A9: /no day matches the filter/,
     S1: /no node matches the filter/,
     S2: /no (profile|account|plan|line) matches/,
   }
 
-  it('reports 0/N on all thirteen, never a blank surface', async () => {
+  it('reports 0/N on every pane, never a blank surface', async () => {
     await openTheFullWall()
     const before = census()
     typeQuery('zzzznothingmatchesthis')
 
-    // Still thirteen panes on screen, every one of them saying 0 of what it HAD.
+    // Every pane still on screen, each one saying 0 of what it HAD.
     expect(census()).toEqual(before.map(line => line.replace(/=\d+\//, '=0/')))
   })
 

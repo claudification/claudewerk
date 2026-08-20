@@ -64,7 +64,7 @@ describe('the wall survives a disconnect', () => {
     // The declaration itself, pinned. A pane that quietly drops its `feeds: [...]`
     // line would still pass the census below (nothing declared, nothing missing),
     // so the list of what the wall pulls is asserted too.
-    expect(census()).toEqual(['burn', 'commits', 'fleet-tokens', 'pins', 'runs', 'sheaf'])
+    expect(census()).toEqual(['activity', 'burn', 'commits', 'fleet-tokens', 'pins', 'runs', 'sheaf'])
 
     await openTheWall()
 
