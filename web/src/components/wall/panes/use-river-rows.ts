@@ -18,6 +18,7 @@ import { useMemo } from 'react'
 import { type FeedFilters, useCommitFeed } from '@/components/commits/use-commit-feed'
 import { useFullCommitStream } from '@/components/commits/use-commit-subscription'
 import { commitRiverRows, type RiverRow } from '@/lib/wall/commit-river'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 import { useProjectLook } from '../use-project-look'
 import { useWallClock } from '../use-wall-clock'
 
@@ -40,14 +41,23 @@ export interface RiverFeed {
   loading: boolean
   /** The ledger holds commits older than the page on screen. */
   hasMore: boolean
+  /** The page on screen was read on an earlier connection, so commits that
+   *  landed during the drop are missing from it. */
+  stale: boolean
 }
 
 export function useRiverRows(): RiverFeed {
   useFullCommitStream()
-  const { commits, loading, hasMore } = useCommitFeed(EVERYTHING)
+  const { commits, loading, hasMore, reload } = useCommitFeed(EVERYTHING, false)
   const look = useProjectLook()
   const nowMs = useWallClock(RIVER_TICK_MS)
 
+  // THE LIVE PREPEND IS NOT ENOUGH. It carries commits that land while the socket
+  // is up and by definition none that land while it is down, so a reconnect has
+  // to re-read the first page or the river silently skips the outage. No poll:
+  // with the socket up the push half is complete.
+  const { stale } = useWallRevive('commits', reload)
+
   const rows = useMemo(() => commitRiverRows(commits, look, nowMs), [commits, look, nowMs])
-  return { rows, loading, hasMore }
+  return { rows, loading, hasMore, stale }
 }

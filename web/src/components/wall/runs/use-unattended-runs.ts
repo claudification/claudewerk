@@ -21,9 +21,10 @@
  */
 
 import type { EpicActivityEntry } from '@shared/protocol'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 import { useProjectLook } from '../use-project-look'
 import { useWallClock } from '../use-wall-clock'
 
@@ -87,7 +88,14 @@ function useLiveNightRuns(): { project: string; runId: string; liveWorkers: numb
   }, [conversationsById])
 }
 
-export function useUnattendedRuns(): UnattendedRow[] {
+export interface UnattendedFeed {
+  rows: UnattendedRow[]
+  /** The epic half was primed on an earlier connection. Night runs come off the
+   *  conversation registry, which re-syncs on its own. */
+  stale: boolean
+}
+
+export function useUnattendedRuns(): UnattendedFeed {
   const epics = useOverseerActivityStore(selectAllRuns)
   const prime = useOverseerActivityStore(s => s.prime)
   const nights = useLiveNightRuns()
@@ -95,11 +103,13 @@ export function useUnattendedRuns(): UnattendedRow[] {
 
   // The one HTTP read, shared with the header badge and idempotent behind
   // `primed` -- a wall opened mid-run must not sit blank until the next sweep.
-  useEffect(() => {
-    void prime()
-  }, [prime])
+  // FORCED through the revive seam, because after a drop `primed` only means the
+  // rows were true on a connection that no longer exists. No poll: with the
+  // socket up `epic_activity` keeps this current for free.
+  const reprime = useCallback(() => prime(true), [prime])
+  const { stale } = useWallRevive('runs', reprime)
 
-  return useMemo(() => {
+  const rows = useMemo(() => {
     const rows: UnattendedRow[] = []
     for (const entry of epics) {
       rows.push({
@@ -123,4 +133,6 @@ export function useUnattendedRuns(): UnattendedRow[] {
     }
     return rows
   }, [epics, nights, look])
+
+  return useMemo(() => ({ rows, stale }), [rows, stale])
 }

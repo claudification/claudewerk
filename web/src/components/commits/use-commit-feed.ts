@@ -54,9 +54,25 @@ export interface CommitFeed {
   loading: boolean
   hasMore: boolean
   loadMore: () => void
+  /**
+   * Throw away the pages and re-read from the top. Resolves FALSE when the read
+   * did not land.
+   *
+   * The live prepend keeps this feed current while the socket is up; it says
+   * nothing about the commits that landed while it was down. Re-reading the first
+   * page is the only thing that closes that hole, and THE WALL's revive seam is
+   * what calls it. Manual refresh buttons can use it too.
+   */
+  reload: () => Promise<boolean>
 }
 
-export function useCommitFeed(filters: FeedFilters): CommitFeed {
+/**
+ * @param autoLoad  read the first page on mount and on every filter change.
+ *   THE WALL passes `false`: its revive seam owns every read of this feed, and
+ *   two owners means two requests for the same page every time the wall opens.
+ *   Its filters are a module constant, so there is no filter change to miss.
+ */
+export function useCommitFeed(filters: FeedFilters, autoLoad = true): CommitFeed {
   const [commits, setCommits] = useState<CommitRow[]>([])
   const [conversations, setConversations] = useState(new Map<string, ConversationDecoration>())
   const [projects, setProjects] = useState(new Map<string, ProjectDecoration>())
@@ -83,6 +99,7 @@ export function useCommitFeed(filters: FeedFilters): CommitFeed {
   }, [])
 
   useEffect(() => {
+    if (!autoLoad) return
     let cancelled = false
     setLoading(true)
     cursor.current = null
@@ -94,6 +111,19 @@ export function useCommitFeed(filters: FeedFilters): CommitFeed {
     return () => {
       cancelled = true
     }
+  }, [key, absorb, autoLoad])
+
+  const reload = useCallback(async () => {
+    cursor.current = null
+    const page = await fetchPage(JSON.parse(key) as FeedFilters, null)
+    // A failed re-read leaves the rows that ARE on screen alone. Blanking a river
+    // because the broker blinked is worse than a river with a hole in it.
+    if (!page) {
+      setLoading(false)
+      return false
+    }
+    absorb(page, false)
+    return true
   }, [key, absorb])
 
   const loadMore = useCallback(() => {
@@ -116,5 +146,5 @@ export function useCommitFeed(filters: FeedFilters): CommitFeed {
     return () => window.removeEventListener('rclaude-commit-recorded', onRecorded)
   }, [key])
 
-  return { commits, conversations, projects, loading, hasMore, loadMore }
+  return { commits, conversations, projects, loading, hasMore, loadMore, reload }
 }

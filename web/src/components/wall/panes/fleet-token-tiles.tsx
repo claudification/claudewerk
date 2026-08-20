@@ -13,10 +13,11 @@
  * that is nothing.
  */
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { formatTokens, StackedBars } from '@/components/token-flow-bar'
 import { fetchWindow, getSamples, getVersion, subscribe } from '@/hooks/token-flow-store'
 import { tokenRate } from '@/lib/wall/fleet-rate'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 import { FleetKpi } from './fleet-kpi'
 
 /** The 24h total is a server aggregate; nothing pushes it, so it is pulled. */
@@ -41,26 +42,38 @@ export function FleetTokenRate() {
  *  is not read as something it is not. */
 export function FleetTokensDay() {
   const [total, setTotal] = useState<number | null>(null)
-
+  const alive = useRef(true)
   useEffect(() => {
-    let alive = true
-    const load = () => {
-      fetchWindow('1d', 'global')
-        .then(r => {
-          if (!alive) return
-          setTotal(r.buckets.reduce((n, b) => n + b.inputTokens + b.outputTokens, 0))
-        })
-        // Left at whatever we last knew (null on a cold failure) -- a failed
-        // fetch must not become a zero.
-        .catch(() => {})
-    }
-    load()
-    const t = setInterval(load, DAY_REFRESH_MS)
+    alive.current = true
     return () => {
-      alive = false
-      clearInterval(t)
+      alive.current = false
     }
   }, [])
 
-  return <FleetKpi label="TOKENS 24H" value={total == null ? null : formatTokens(total)} sub="in + out, rolling" />
+  /**
+   * KEEP THE VALUE, MARK IT STALE.
+   *
+   * This used to be a bare `.catch(() => {})`. Half of that was right -- a failed
+   * fetch must never become a zero. The other half was that through a broker
+   * restart the tile went on showing its last good number, confidently, forever,
+   * on a surface whose entire job is to be believed from across a room. The throw
+   * now reaches the revive seam, which is what puts STALE on the tile.
+   */
+  const load = useCallback(async () => {
+    const r = await fetchWindow('1d', 'global')
+    if (!alive.current) return false
+    setTotal(r.buckets.reduce((n, b) => n + b.inputTokens + b.outputTokens, 0))
+    return true
+  }, [])
+
+  const { stale } = useWallRevive('fleet-tokens', load, DAY_REFRESH_MS)
+
+  return (
+    <FleetKpi
+      label="TOKENS 24H"
+      value={total == null ? null : formatTokens(total)}
+      sub="in + out, rolling"
+      stale={stale}
+    />
+  )
 }

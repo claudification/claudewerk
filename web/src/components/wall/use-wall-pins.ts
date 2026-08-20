@@ -22,12 +22,12 @@
 
 import type { PinnedEpicRow } from '@shared/pinned-epic-rows'
 import { projectIdentityKey } from '@shared/project-uri'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { installSharedHandler } from '@/hooks/project-task-cache'
 import { sendBoardOp } from '@/hooks/project-task-wire'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectDisplayName } from '@/lib/utils'
-import { useWallClock } from './use-wall-clock'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 
 /** A pinned epic, plus how its project is meant to LOOK (the configured icon and
  *  colour, resolved once here rather than per row). */
@@ -86,10 +86,15 @@ async function fetchPins(projectUri: string): Promise<PinnedEpicRow[] | null> {
   }
 }
 
-export function useWallPins(): WallPinRow[] {
+export interface WallPinFeed {
+  rows: WallPinRow[]
+  /** The watchlist on screen was last answered on an earlier connection. */
+  stale: boolean
+}
+
+export function useWallPins(): WallPinFeed {
   const projectKey = useKnownProjectKey()
   const projectSettings = useConversationsStore(s => s.projectSettings)
-  const tick = useWallClock(PIN_POLL_MS)
   const [rowsByProject, setRowsByProject] = useState<Record<string, PinnedEpicRow[]>>({})
 
   // The one shared project handler routes every `project_board_result` back to
@@ -110,17 +115,37 @@ export function useWallPins(): WallPinRow[] {
     }
   }, [])
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `tick` IS the poll. The effect re-fires on the clock as well as on the project list, and that clock is the only thing making a pane that arms no watches live.
-  useEffect(() => {
-    if (!projectKey) return
-    for (const projectUri of projectKey.split('\n')) {
-      void fetchPins(projectUri).then(rows => {
-        if (mounted.current && rows) setRowsByProject(prev => ({ ...prev, [projectUri]: rows }))
-      })
-    }
-  }, [projectKey, tick])
+  /**
+   * Ask every known project at once. Resolves TRUE when at least one answered:
+   * one unreachable sentinel among six is a partial watchlist, not a dead one.
+   *
+   * The poll clock this hook used to run off `useWallClock` is the seam's now, so
+   * the same call heals a reconnect and drives the ordinary tick. A board op over
+   * a socket that just came back is exactly the read that used to fail silently
+   * and then wait fifteen seconds.
+   */
+  const load = useCallback(async () => {
+    const projects = projectKey ? projectKey.split('\n') : []
+    if (projects.length === 0) return false
+    const answers = await Promise.all(
+      projects.map(async projectUri => {
+        const rows = await fetchPins(projectUri)
+        if (rows && mounted.current) setRowsByProject(prev => ({ ...prev, [projectUri]: rows }))
+        return rows !== null
+      }),
+    )
+    return answers.some(Boolean)
+  }, [projectKey])
 
-  return useMemo(() => {
+  const { stale } = useWallRevive('pins', load, PIN_POLL_MS)
+
+  // The project list changing is a new QUESTION, not a stale answer: a project
+  // the panel has just learned about has never been asked at all.
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const rows = useMemo(() => {
     const rows: WallPinRow[] = []
     // Driven by the CURRENT project list, so a project that left the registry
     // stops rendering without anyone having to prune the map behind it.
@@ -140,4 +165,6 @@ export function useWallPins(): WallPinRow[] {
     }
     return rows.toSorted((a, b) => b.movedAt - a.movedAt)
   }, [projectKey, projectSettings, rowsByProject])
+
+  return useMemo(() => ({ rows, stale }), [rows, stale])
 }
