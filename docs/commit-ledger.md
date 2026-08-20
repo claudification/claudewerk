@@ -21,6 +21,37 @@ a `post-merge` hook, plus a merge-commit branch inside this `post-commit`
 dispatcher. It warns and never blocks, and it is disabled independently with
 `RCLAUDE_FALLOW_MERGE_WARN=0`.
 
+## The ledger needs BOTH hooks
+
+**`git post-commit` does not fire for a merge git completes on its own.** Until
+gen 25 the ledger was a `post-commit` hook only, so every integration merge that
+applied *cleanly* was invisible to `commits.db` -- and an integration merge is
+the commit you most want attributed later, because it is the one that changes
+`main`. The hole never looked like a hole: the ledger has plenty of
+`Merge branch ...` rows, just only the ones somebody had to resolve by hand.
+
+| what you ran | post-merge | post-commit |
+|---|---|---|
+| clean `git merge --no-ff` | fires | **does not** |
+| fast-forward `git merge` / `git pull` | fires | **does not** |
+| conflict + `git merge --continue` | -- | fires |
+| conflict + `git commit` | -- | fires |
+| an ordinary commit | -- | fires |
+
+So the ledger block is inlined into **both** dispatchers. The two paths are
+disjoint by git's own rules, and the broker's insert is
+`ON CONFLICT(hash, repo_uri) DO NOTHING`, so even a double post is a no-op.
+
+**A fast-forward is never recorded.** It writes no commit -- git moved `HEAD`
+onto commits authored on another branch, on another machine, in another
+conversation. The `post-merge` copy runs with `CLAUDEWERK_LEDGER_EVENT=merge`
+and records only a `HEAD` with **2+ parents**, which is exactly the commit the
+merge itself created. Fixture-backed in `scripts/install-git-hooks-ledger.test.ts`
+against a real local broker.
+
+`scripts/install-git-hooks.sh --status` says `+ commit ledger on merge commits`
+when `post-merge` carries the block, and flags it loudly when it does not.
+
 Any post-commit hook that was already there is preserved as
 `post-commit.pre-claudewerk` and still runs, first, **as its own process** --
 its shebang, its early `exit`s, and its failures cannot reach the ledger.

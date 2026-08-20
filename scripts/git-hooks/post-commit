@@ -22,6 +22,12 @@
 # below is scoped to the ledger. The installer chains this block onto whatever
 # post-commit hook already existed -- a bare `exit` would silently kill any hook
 # appended after ours.
+#
+# ── THIS FILE IS INLINED INTO **BOTH** DISPATCHERS ──────────────────────────
+# `git post-commit` does NOT fire for a merge git completes on its own, so a
+# ledger wired to post-commit alone records only the merges that happened to
+# conflict. The installer therefore inlines this block into post-merge too, with
+# CLAUDEWERK_LEDGER_EVENT=merge -- see the dispatch at the bottom of this file.
 
 claudewerk_commit_ledger() (
   [ "${RCLAUDE_COMMIT_LEDGER:-1}" = "0" ] && exit 0
@@ -136,4 +142,29 @@ EOF
   exit 0
 )
 
-claudewerk_commit_ledger
+# ─── Dispatch ────────────────────────────────────────────────────────────────
+# post-commit (the default): every commit git just made here.
+#
+# post-merge (CLAUDEWERK_LEDGER_EVENT=merge): ONLY when HEAD has 2+ parents.
+# post-merge also fires for a FAST-FORWARD, which writes no commit at all -- git
+# moved HEAD onto commits authored on another branch, on another machine, in
+# another conversation. Recording those as "a commit made here" would attribute
+# someone else's work to whoever ran `git pull`, and they may already be in the
+# ledger under their real author. A real merge commit is the only thing the
+# merge itself created, and 2+ parents is exactly how you recognise one.
+#
+# The two hooks are disjoint by git's own firing rules (a conflicted merge fires
+# post-commit and not post-merge, a clean one the reverse), so nothing is posted
+# twice -- and the broker's insert is `ON CONFLICT(hash, repo_uri) DO NOTHING`
+# anyway, so even a double post could only ever be a no-op.
+claudewerk_ledger_dispatch() {
+  if [ "${CLAUDEWERK_LEDGER_EVENT:-commit}" = "merge" ]; then
+    case "$(git log -1 --format=%P 2>/dev/null)" in
+      *' '*) ;;
+      *) return 0 ;;
+    esac
+  fi
+  claudewerk_commit_ledger
+}
+
+claudewerk_ledger_dispatch
