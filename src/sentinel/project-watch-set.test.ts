@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CardChanged, ProjectChanged, ProjectWatchStatus } from '../shared/protocol'
 import { stopAllWatches, watchedRoots } from './project-watch'
-import { applyProjectWatchSet, resetWatchSetReports } from './project-watch-set'
+import { applyProjectWatchSet, rearmAfterBoardWrite, resetWatchSetReports } from './project-watch-set'
 
 type Out = ProjectChanged | CardChanged | ProjectWatchStatus
 
@@ -174,6 +174,85 @@ describe('applyProjectWatchSet', () => {
 
     expect(watchedRoots().has(root)).toBe(true)
     expect(out.filter(m => m.type === 'project_watch_status' && m.ok).length).toBe(1)
+  })
+})
+
+/**
+ * Re-arm on the board write itself.
+ *
+ * A project with no board is skipped, and the heartbeat re-checks it -- but that
+ * is up to 7 minutes. The write that CREATES the board comes through the sentinel
+ * (the panel's Kanban UI, the MCP `project_set_status` tool and the board editor
+ * all funnel into `project_board_op` / `project_write_file` / `project_move_file`),
+ * so the watch can start on the same message instead of waiting for the tick.
+ */
+describe('rearmAfterBoardWrite', () => {
+  it('arms a skipped project the moment its first card is written', () => {
+    const root = projectWithoutBoard()
+    const out: Out[] = []
+    apply({ 'claude://default/fresh': root }, out)
+    expect(watchedRoots().has(root)).toBe(false)
+
+    // The board op lands (this is what handleProjectBoardOp would have done).
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeCard(root, 'first', 'inbox')
+    rearmAfterBoardWrite(root)
+
+    expect(watchedRoots().has(root)).toBe(true)
+    expect(out.filter(m => m.type === 'project_watch_status' && m.ok)).toHaveLength(1)
+  })
+
+  it('records the lane change that FOLLOWS the creating write', async () => {
+    const root = projectWithoutBoard()
+    const out: Out[] = []
+    apply({ 'claude://default/fresh': root }, out)
+
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeCard(root, 'first', 'inbox')
+    rearmAfterBoardWrite(root)
+
+    // Without the re-arm this move is simply lost -- that is the whole point.
+    writeCard(root, 'first', 'in-progress')
+    const moved = await waitFor(out, m => m.type === 'card_changed')
+    expect((moved as CardChanged).moves).toMatchObject([{ id: 'first', from: 'inbox', to: 'in-progress' }])
+  }, 20_000)
+
+  it('is a no-op for a root the broker never asked about', () => {
+    const root = projectWithBoard({ id: 'a', status: 'open' })
+
+    rearmAfterBoardWrite(root) // no set ever mentioned it -- no URI to arm with
+    expect(watchedRoots().size).toBe(0)
+  })
+
+  it('is a no-op when the write did not actually create a board', () => {
+    const root = projectWithoutBoard()
+    apply({ 'claude://default/fresh': root }, [])
+
+    rearmAfterBoardWrite(root) // write failed / wrote something else
+    expect(watchedRoots().has(root)).toBe(false)
+  })
+
+  it('stops re-arming a project that left the set', () => {
+    const root = projectWithoutBoard()
+    const out: Out[] = []
+    apply({ 'claude://default/fresh': root }, out)
+
+    apply({}, out) // dropped out of the interest set
+
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeCard(root, 'first', 'inbox')
+    rearmAfterBoardWrite(root)
+    expect(watchedRoots().has(root)).toBe(false)
+  })
+
+  it('does not re-arm a project that is already watched', () => {
+    const root = projectWithBoard({ id: 'a', status: 'open' })
+    const out: Out[] = []
+    apply({ 'claude://default/a': root }, out)
+    const before = out.filter(m => m.type === 'project_watch_status').length
+
+    rearmAfterBoardWrite(root)
+    expect(out.filter(m => m.type === 'project_watch_status').length).toBe(before)
   })
 })
 
