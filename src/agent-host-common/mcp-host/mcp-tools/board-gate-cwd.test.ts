@@ -1,0 +1,154 @@
+/**
+ * REGRESSION: the DONE-gate must measure the WORKER'S worktree, not the project
+ * root it was handed as `dialogCwd`.
+ *
+ * A real repo with a real `git worktree` -- the bug is entirely about which
+ * checkout git and `test_cmd` run in, so faking git would fake the bug away.
+ */
+
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { gateTransition } from './board-gate-host'
+
+const CARD_ID = 'my-card'
+let root: string
+let worktree: string
+
+function git(cwd: string, ...args: string[]): void {
+  const p = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  if (p.exitCode !== 0) throw new Error(`git ${args.join(' ')} failed: ${new TextDecoder().decode(p.stderr)}`)
+}
+
+function cardPath(): string {
+  return join(root, '.rclaude', 'project', 'cards', `${CARD_ID}.md`)
+}
+
+function writeCard(extraFrontmatter: string[] = []): void {
+  mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+  writeFileSync(
+    cardPath(),
+    `---\ntitle: T\nstatus: in-progress\n${extraFrontmatter.join('\n')}${extraFrontmatter.length ? '\n' : ''}---\n\nbody\n`,
+    'utf8',
+  )
+}
+
+function setGateMode(mode: string): void {
+  mkdirSync(join(root, '.rclaude', 'project'), { recursive: true })
+  writeFileSync(join(root, '.rclaude', 'project', 'gate.conf'), `${mode}\n`, 'utf8')
+}
+
+function transition(targetStatus: 'in-review' | 'done', over: Record<string, unknown> = {}) {
+  return gateTransition({
+    dialogCwd: root,
+    cardId: CARD_ID,
+    cardPath: cardPath(),
+    fromStatus: 'in-progress',
+    targetStatus,
+    actingConversationId: 'conv_worker',
+    nowMs: 0,
+    ...over,
+  })
+}
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'gate-cwd-'))
+  git(root, 'init', '-b', 'main', '-q')
+  git(root, 'config', 'user.email', 't@t.t')
+  git(root, 'config', 'user.name', 'T')
+  writeFileSync(join(root, 'seed.txt'), 'seed\n', 'utf8')
+  git(root, 'add', 'seed.txt')
+  git(root, 'commit', '-qm', 'seed')
+
+  // The worker's worktree, named after the card exactly as worktree-create.sh does.
+  worktree = join(root, '.claude', 'worktrees', 'epic', 'some-epic', CARD_ID)
+  mkdirSync(join(root, '.claude', 'worktrees', 'epic', 'some-epic'), { recursive: true })
+  git(root, 'worktree', 'add', '-q', '-b', `worktree-${CARD_ID}`, worktree)
+  writeFileSync(join(worktree, 'work.txt'), 'real work\n', 'utf8')
+  git(worktree, 'add', 'work.txt')
+  git(worktree, 'commit', '-qm', 'the work')
+})
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true })
+})
+
+describe('the gate measures the card\'s worktree, not the project root', () => {
+  test('root has nothing to show -- this is what the gate used to see', () => {
+    const p = Bun.spawnSync(['git', '-C', root, 'rev-list', '--count', 'main..HEAD'], { stdout: 'pipe' })
+    expect(new TextDecoder().decode(p.stdout).trim()).toBe('0')
+  })
+
+  test('in-review under tier2 allows and stamps the WORKTREE branch + commits', () => {
+    setGateMode('tier2')
+    writeCard()
+    const { outcome, gitCwd, cwdNote } = transition('in-review')
+
+    expect(cwdNote).toBe('worktree')
+    expect(gitCwd).toContain(join('.claude', 'worktrees', 'epic', 'some-epic', CARD_ID))
+    expect(outcome.decision).toBe('allow')
+    expect(outcome.evidence.evidence_branch).toBe(`worktree-${CARD_ID}`)
+    expect(outcome.evidence.evidence_commits).toBe(1)
+    expect(String(outcome.evidence.evidence_diffstat)).toContain('1 file changed')
+    expect(outcome.evidence.evidence_worker).toBe('conv_worker')
+  })
+
+  test('the evidence actually lands in the card frontmatter', () => {
+    setGateMode('tier2')
+    writeCard()
+    transition('in-review')
+    const card = readFileSync(cardPath(), 'utf8')
+    expect(card).toContain(`evidence_branch: worktree-${CARD_ID}`)
+    expect(card).toContain('evidence_commits: 1')
+    expect(card).toContain('evidence_worker: conv_worker')
+  })
+
+  test('test_cmd runs INSIDE the worktree, not the root', () => {
+    setGateMode('tier2')
+    writeCard(['test_cmd: test -f work.txt'])
+    const { outcome } = transition('in-review')
+    expect(outcome.decision).toBe('allow')
+    expect(outcome.evidence.evidence_tests).toBe('pass')
+    // `work.txt` exists only in the worktree -- a root-run test_cmd would exit 1.
+    expect(existsSync(join(root, 'work.txt'))).toBe(false)
+  })
+
+  test('a dirty WORKTREE is refused even though the root is clean', () => {
+    setGateMode('tier2')
+    writeCard()
+    writeFileSync(join(worktree, 'scratch.txt'), 'uncommitted\n', 'utf8')
+    const { outcome } = transition('in-review')
+    expect(outcome.decision).toBe('refuse')
+    expect(outcome.reason).toContain('tree dirty')
+  })
+
+  test('no worktree for the card -> the project root, i.e. the old behaviour', () => {
+    setGateMode('tier2')
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    const otherPath = join(root, '.rclaude', 'project', 'cards', 'other-card.md')
+    writeFileSync(otherPath, '---\ntitle: T\nstatus: in-progress\n---\n\nbody\n', 'utf8')
+    const { gitCwd, cwdNote, outcome } = gateTransition({
+      dialogCwd: root,
+      cardId: 'other-card',
+      cardPath: otherPath,
+      fromStatus: 'in-progress',
+      targetStatus: 'in-review',
+      actingConversationId: 'conv_worker',
+      nowMs: 0,
+    })
+    expect(cwdNote).toBe('no-worktree')
+    expect(gitCwd).not.toContain('.claude/worktrees')
+    expect(outcome.decision).toBe('refuse')
+    expect(outcome.reason).toContain('no commits since main')
+  })
+
+  test('gate off -> skip, and nothing is written to the card', () => {
+    writeCard()
+    const before = readFileSync(cardPath(), 'utf8')
+    const { outcome } = transition('in-review')
+    expect(outcome.decision).toBe('skip')
+    expect(outcome.mode).toBe('off')
+    expect(readFileSync(cardPath(), 'utf8')).toBe(before)
+  })
+})

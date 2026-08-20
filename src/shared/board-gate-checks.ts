@@ -139,41 +139,40 @@ export function runTier2(input: GateInput): { ok: boolean; checks: GateCheck[]; 
   return { ok: checks.every(c => c.ok), checks, evidence }
 }
 
+/**
+ * The machine-written approval trace, stamped on ANY allowed move to `done`.
+ *
+ * Deliberately NOT private to Tier-1. Tier-1 is the ENFORCEMENT that the
+ * approver is not the worker, and it only runs under `full`; recording WHO
+ * approved is cheap, unspoofable and useful in every mode. Making it Tier-1's
+ * side effect is why a board running with the gate off -- or at `tier2` -- had
+ * `grep '^verdict:' cards/*.md` return zero out of 30, so a `done` card and a
+ * card whose verifier spawn died looked identical from the board. A reader tells
+ * the two apart by comparing `verdict` against `evidence_worker`: same id means
+ * the mode did not prove independence, it only recorded the mover.
+ */
+export function approvalEvidence(input: GateInput): Record<string, unknown> {
+  return {
+    verdict: `APPROVED by ${input.actingConversationId}`,
+    evidence_verified_at: new Date(input.nowMs).toISOString(),
+  }
+}
+
+const failedTier1 = (detail: string) => ({ ok: false, check: { name: 'independent-verdict', ok: false, detail } })
+
 /** Tier-1: independent verdict. The worker cannot approve its own card. */
-export function runTier1(input: GateInput): { ok: boolean; check: GateCheck; evidence: Record<string, unknown> } {
+export function runTier1(input: GateInput): { ok: boolean; check: GateCheck } {
   if (input.fromStatus !== 'in-review') {
-    return {
-      ok: false,
-      check: {
-        name: 'independent-verdict',
-        ok: false,
-        detail: `card must pass through in-review before done (from=${input.fromStatus})`,
-      },
-      evidence: {},
-    }
+    return failedTier1(`card must pass through in-review before done (from=${input.fromStatus})`)
   }
   const worker = str(input.meta.evidence_worker)
   if (!worker) {
-    return {
-      ok: false,
-      check: {
-        name: 'independent-verdict',
-        ok: false,
-        detail: 'no worker recorded on card (never gated into in-review)',
-      },
-      evidence: {},
-    }
+    return failedTier1('no worker recorded on card (never gated into in-review)')
   }
   if (worker === input.actingConversationId) {
-    return {
-      ok: false,
-      check: {
-        name: 'independent-verdict',
-        ok: false,
-        detail: `self-approval refused: worker ${worker} cannot approve its own card -- a different conversation must move in-review -> done`,
-      },
-      evidence: {},
-    }
+    return failedTier1(
+      `self-approval refused: worker ${worker} cannot approve its own card -- a different conversation must move in-review -> done`,
+    )
   }
   return {
     ok: true,
@@ -181,10 +180,6 @@ export function runTier1(input: GateInput): { ok: boolean; check: GateCheck; evi
       name: 'independent-verdict',
       ok: true,
       detail: `approved by ${input.actingConversationId} (!= worker ${worker})`,
-    },
-    evidence: {
-      verdict: `APPROVED by ${input.actingConversationId}`,
-      evidence_verified_at: new Date(input.nowMs).toISOString(),
     },
   }
 }
