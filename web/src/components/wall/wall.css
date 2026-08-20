@@ -1607,6 +1607,127 @@ button.wall-burn-hit:hover {
 	font-weight: 600;
 }
 
+/* ---------- The promise verdict pill ----------
+   FOUR TONES FOR FIVE VERDICTS, and `unknown` is deliberately NOT the grey one.
+   `could not verify` sharing a colour with `not started` is the folding the
+   feature exists to refuse -- "I could not check" would then render as "nothing
+   was claimed", which is a benign sentence about a state that is not benign. It
+   gets the panel's own info colour, which nothing else on this pane uses. */
+.wall-verdict {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: baseline;
+	gap: 3px;
+	font-size: 9px;
+	line-height: 14px;
+	white-space: nowrap;
+}
+.wall-verdict-glyph {
+	font-size: 10px;
+	line-height: 14px;
+}
+.wall-verdict[data-tone='delivered'] {
+	color: var(--active);
+}
+.wall-verdict[data-tone='broken'] {
+	color: var(--destructive);
+	font-weight: 600;
+}
+.wall-verdict[data-tone='unknown'] {
+	color: var(--info);
+}
+/* The only tone allowed to recede: nobody claimed anything, which on an open
+   card is the honest default and not news. It is still ABOVE the text floor --
+   `--comment` is what the delta-t column uses. */
+.wall-verdict[data-tone='unclaimed'] {
+	color: var(--comment);
+}
+
+/* ---------- THE LOUD TABLE ----------
+   Sticky, because the card asks for a table "a person cannot scroll past" and
+   the pane body is the only thing that scrolls. The ledger runs underneath it.
+   A background is mandatory, not cosmetic: without one the rows scrolling below
+   would show through a transparent sticky header. */
+.wall-broken {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	margin-bottom: 4px;
+	padding: 4px;
+	border: 1px solid var(--destructive);
+	border-radius: 4px;
+	/* OPAQUE, and it must be the PANE's own background: the ledger scrolls
+	   underneath and any transparency here would show the rows through the one
+	   thing on this pane that must stay readable. */
+	background: var(--card);
+}
+.wall-broken-head {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	margin-bottom: 2px;
+}
+.wall-broken-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	color: var(--destructive);
+}
+.wall-broken-count {
+	flex: 0 0 auto;
+	font-size: 10px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--destructive);
+}
+.wall-broken-row {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 2px 2px;
+	border-radius: 3px;
+	cursor: pointer;
+	font-size: 10px;
+}
+.wall-broken-row:hover {
+	background: var(--surface-raised);
+}
+.wall-broken-row:focus-visible {
+	outline: 1px solid var(--border-strong);
+	outline-offset: -1px;
+}
+.wall-broken-card {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--fg-muted);
+}
+.wall-broken-why {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--comment);
+}
+.wall-broken-lane {
+	flex: 0 0 auto;
+	color: var(--destructive);
+}
+.wall-broken-more,
+.wall-broken-refused {
+	font-size: 9px;
+	color: var(--comment);
+	padding: 2px 2px 0;
+}
+
 /* ---------- A6 sheaf ---------- */
 .wall-sheaf-totals {
 	display: flex;

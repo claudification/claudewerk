@@ -28,6 +28,7 @@ import type {
   ProjectWriteFile,
   ProjectWriteFileResult,
 } from '../shared/protocol'
+import { scanPromiseLedger } from './promise-scan'
 
 export function handleProjectReadFile(root: string, msg: ProjectReadFile): ProjectReadFileResult {
   const r = readProjectFile(root, msg.relPath, msg.maxBytes)
@@ -65,6 +66,14 @@ const OPS: Record<ProjectBoardOp['op'], OpHandler> = {
   // `msg.project` is the canonical URI the row is an address for -- INFORMATIONAL
   // only, never a path (`root` is the sole path input, jailed as always).
   pinned: (root, msg) => ({ pinned: pinnedEpicRows(msg.project ?? '', listProjectTasks(root)) }),
+  // The promise ledger, folded beside the files for a STRONGER version of the
+  // reason `pinned` is: the pin at least survives the wire as a boolean, whereas
+  // a `promise:` block is NESTED front matter and the board's flat parser has
+  // already dropped it by the time a card is a `ProjectTaskMeta`. There is
+  // nothing on the wire to fold in the browser. This also runs git, which only
+  // the sentinel may -- see promise-git.ts for why every uncertain answer is
+  // `null` and never `false`.
+  promises: (root, msg, nowMs) => ({ promises: scanPromiseLedger(root, msg.project ?? '', nowMs) }),
   get: (root, msg) => (msg.slug ? { task: getProjectTask(root, msg.slug) } : { error: 'slug required' }),
   create: (root, msg, nowMs) =>
     msg.input ? { note: createProjectTask(root, msg.input, nowMs) } : { error: 'input required' },
