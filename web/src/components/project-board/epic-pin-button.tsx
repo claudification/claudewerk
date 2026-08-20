@@ -54,8 +54,17 @@ export function EpicPinButton({ rollup }: { rollup: EpicRollup }) {
         const next = !pinned
         setPending(next)
         const reply = await sendBoardOp(project, 'update', { slug: rollup.epicId, patch: { wallPinned: next } })
-        // A failed write must not leave the button lying about the card.
-        if (!reply.ok) setPending(null)
+        // A failed write must not leave the button lying about the card -- and
+        // neither must a write that SUCCEEDED WITHOUT APPLYING THE KEY. A
+        // sentinel bundle older than A8 accepts the `update`, ignores
+        // `wallPinned`, and answers ok: the button then showed PINNED over a
+        // card with nothing written on it, which is what "I just pinned an epic
+        // and the wall does not show it" looked like on 2026-08-20. Read the
+        // card back out of the reply and believe THAT.
+        const task = reply.task as { wallPinned?: boolean } | undefined
+        if (!reply.ok || (task && task.wallPinned !== next && !(next === false && task.wallPinned === undefined))) {
+          setPending(null)
+        }
       }}
       className={cn(
         'shrink-0 flex items-center gap-1 px-2 py-1 text-[10px] font-mono border transition-colors',
