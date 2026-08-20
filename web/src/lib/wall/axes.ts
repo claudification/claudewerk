@@ -33,7 +33,7 @@ export type WallAxis =
   | 'project'
   /** `#tag` */
   | 'tag'
-  /** `~30m` */
+  /** `~30m` (a window back from now) and `~2026-08-14` (one calendar day) */
   | 'time'
   /** `$1` */
   | 'cost'
@@ -86,8 +86,13 @@ const CLEAR_AXIS: Record<WallAxis, (q: WallQuery) => void> = {
     q.tag = null
     q.not.tags = []
   },
+  // BOTH shapes of "when", cleared together. A pane that never declared it
+  // understands time must be left alone by `~30m` AND by `~2026-08-14`; clearing
+  // only the window would let a day click blank every pane on the wall, which is
+  // the exact failure this file exists to prevent.
   time: q => {
     q.windowMs = null
+    q.day = null
   },
   cost: q => {
     q.minCostUsd = null

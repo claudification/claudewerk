@@ -13,6 +13,25 @@ export function parseWindow(token: string): number | null {
   return n * UNIT_MS[(m[2] ?? 'm').toLowerCase()]
 }
 
+/**
+ * `~2026-08-14` — ONE calendar day. Returns `YYYY-MM-DD`, or null so the token
+ * falls through to free text.
+ *
+ * The calendar is checked by round-trip rather than by regex alone: `~2026-02-30`
+ * is well-formed and does not exist, and a day nothing can ever fall on would
+ * silently empty every pane that reads the `time` axis. Falling through to free
+ * text instead leaves the reader with an obviously-wrong query in the box.
+ */
+export function parseDay(token: string): string | null {
+  const m = /^~(\d{4})-(\d{2})-(\d{2})$/.exec(token)
+  if (!m) return null
+  const [, y, mo, d] = m
+  const probe = new Date(Number(y), Number(mo) - 1, Number(d))
+  const roundTrip =
+    probe.getFullYear() === Number(y) && probe.getMonth() === Number(mo) - 1 && probe.getDate() === Number(d)
+  return roundTrip ? `${y}-${mo}-${d}` : null
+}
+
 /** Band shorthand. `!` is the fire, `!!` is everything still live. */
 const BAND_SHORTHAND: Record<string, readonly PulseBand[]> = {
   // `!` = "who wants me" -- both halves, hard blocks and soft asks. A shorthand
@@ -137,8 +156,19 @@ function applyNumberSigil(q: PulseQuery, token: string): boolean {
   return true
 }
 
-/** `~30m` — a time window. */
-function applyWindow(q: PulseQuery, token: string): boolean {
+/**
+ * `~30m` — a window back from now. `~2026-08-14` — one calendar day.
+ *
+ * ONE handler for both, because they share the sigil and the axis. The day form
+ * is tried first: its payload contains hyphens, which the window regex rejects,
+ * so the order is a statement of intent rather than a tie-break.
+ */
+function applyTime(q: PulseQuery, token: string): boolean {
+  const day = parseDay(token)
+  if (day !== null) {
+    q.day = day
+    return true
+  }
   const win = parseWindow(token)
   if (win === null) return false
   q.windowMs = win
@@ -147,7 +177,7 @@ function applyWindow(q: PulseQuery, token: string): boolean {
 
 /** Tried in order; the first that claims the token wins. Anything unclaimed is
  *  free text, which is why a stray sigil never eats the query. */
-const SIGIL_HANDLERS = [applyPlusFlag, applyBand, applyStringSigil, applyNumberSigil, applyWindow]
+const SIGIL_HANDLERS = [applyPlusFlag, applyBand, applyStringSigil, applyNumberSigil, applyTime]
 
 /** Apply one unquoted token to the query. Returns false if it is plain text. */
 function applySigil(q: PulseQuery, token: string): boolean {
