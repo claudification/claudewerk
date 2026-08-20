@@ -59,7 +59,7 @@ function WindowTab({ windowH, current, onPick }: { windowH: SheafWindow; current
 }
 
 export default function SheafPane() {
-  useWallSheafFeed()
+  const { stale } = useWallSheafFeed()
   const data = useWallSheafStore(s => s.data)
   const loading = useWallSheafStore(s => s.loading)
   const error = useWallSheafStore(s => s.error)
@@ -79,6 +79,7 @@ export default function SheafPane() {
       title="SHEAF"
       code="A6"
       count={`${matched}/${total}`}
+      stale={stale}
       tabs={
         <div className="flex gap-[2px]">
           {SHEAF_WINDOWS.map(w => (

@@ -17,17 +17,27 @@ interface FleetKpiProps {
   /** Small unit suffix riding the value ("ms", "/s"). Dropped when value is null. */
   unit?: string
   sub?: ReactNode
+  /** The number is real but it was read on an EARLIER connection. Shown, marked,
+   *  never silently passed off as current. */
+  stale?: boolean
   children?: ReactNode
 }
 
-export function FleetKpi({ label, value, unit, sub, children }: FleetKpiProps) {
+export function FleetKpi({ label, value, unit, sub, stale, children }: FleetKpiProps) {
   const known = value != null
+  const marked = known && stale === true
   return (
-    <div className="wall-kpi" data-kpi={label} data-unknown={known ? undefined : 'true'}>
+    <div
+      className="wall-kpi"
+      data-kpi={label}
+      data-unknown={known ? undefined : 'true'}
+      data-stale={marked ? 'true' : undefined}
+    >
       <div className="wall-kpi-lab">{label}</div>
       <div className="wall-kpi-val">
         {known ? value : '—'}
         {known && unit && <span className="wall-kpi-unit">{unit}</span>}
+        {marked && <span className="wall-stale-mark">STALE</span>}
       </div>
       {sub != null && <div className="wall-kpi-sub">{sub}</div>}
       {children}

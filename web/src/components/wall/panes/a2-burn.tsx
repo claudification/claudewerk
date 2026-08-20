@@ -90,7 +90,7 @@ export default function BurnPane() {
   const pickProject = (bar: BurnBar) => useWallFilterStore.getState().toggleProject(bar.label)
 
   return (
-    <WallPane title="BURN" code="A2" count={`${projects.matched}/${projects.total} · ${WINDOW}`}>
+    <WallPane title="BURN" code="A2" count={`${projects.matched}/${projects.total} · ${WINDOW}`} stale={feed.stale}>
       <div className="wall-burn">
         <BurnLive />
         <BurnTiles todayUsd={model.todayUsd} monthUsd={feed.monthUsd} cap={capState(capUsd, feed.monthUsd ?? 0)} />

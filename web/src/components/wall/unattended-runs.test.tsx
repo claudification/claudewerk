@@ -19,7 +19,7 @@ const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
 
 const feed = vi.hoisted(() => ({ rows: [] as unknown[] }))
 vi.mock('./runs/use-unattended-runs', () => ({
-  useUnattendedRuns: () => feed.rows,
+  useUnattendedRuns: () => ({ rows: feed.rows, stale: false }),
   useRunClock: () => Date.parse('2026-08-19T12:00:00.000Z'),
 }))
 

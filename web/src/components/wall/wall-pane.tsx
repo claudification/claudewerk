@@ -27,21 +27,49 @@ interface WallPaneProps {
   maxHeight?: string
   /** Drop out of ambient mode entirely. */
   hideInAmbient?: boolean
+  /**
+   * THE STALENESS CONTRACT. Everything below this pane's header was read on an
+   * EARLIER connection than the one the panel is on now.
+   *
+   * It lives on the shared chrome rather than in each pane for the same reason
+   * the border does: a wall that marks staleness in nine places and forgets it in
+   * the tenth is worse than one that never marked it, because now the absence of
+   * a mark reads as a promise. Ambient mode is why it is a word and not a dot --
+   * no chrome, no cursor, read from three metres away.
+   */
+  stale?: boolean
   children: ReactNode
 }
 
-export function WallPane({ title, code, count, tabs, copy, grow, maxHeight, hideInAmbient, children }: WallPaneProps) {
+export function WallPane({
+  title,
+  code,
+  count,
+  tabs,
+  copy,
+  grow,
+  maxHeight,
+  hideInAmbient,
+  stale,
+  children,
+}: WallPaneProps) {
   const style: CSSProperties | undefined = maxHeight ? { maxHeight } : undefined
   return (
     <section
       className={cn('wall-pane', grow && 'wall-pane-grow', hideInAmbient && 'wall-hide-ambient')}
       style={style}
       data-pane={code}
+      data-stale={stale ? 'true' : undefined}
       aria-label={title}
     >
       <div className="wall-pane-head">
         <h2 className="wall-pane-title">{title}</h2>
         <span className="wall-pane-code">{code}</span>
+        {stale && (
+          <span className="wall-stale-mark" title="read before the last disconnect -- not current">
+            STALE
+          </span>
+        )}
         <span className="flex-1" />
         {count != null && <span className="wall-pane-count">{count}</span>}
         {tabs}

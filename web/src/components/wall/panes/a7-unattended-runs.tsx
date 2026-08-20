@@ -45,7 +45,7 @@ function Row({ row, nowMs }: { row: UnattendedRow; nowMs: number }) {
 
 export default function UnattendedRunsPane() {
   const nowMs = useRunClock()
-  const runs = useUnattendedRuns()
+  const { rows: runs, stale } = useUnattendedRuns()
   const { rows, matched, total } = useWallFilter(runs, AXES, row => ({
     project: row.projectName,
     title: row.kind === 'epic' ? row.epicId : row.runId,
@@ -56,7 +56,13 @@ export default function UnattendedRunsPane() {
   const shown = rows.slice(0, RUN_CAP)
 
   return (
-    <WallPane title="UNATTENDED RUNS" code="A7" maxHeight="38%" count={`${matched}/${total} · ${armed} armed`}>
+    <WallPane
+      title="UNATTENDED RUNS"
+      code="A7"
+      maxHeight="38%"
+      count={`${matched}/${total} · ${armed} armed`}
+      stale={stale}
+    >
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0 ? 'nothing is running unattended' : 'no unattended run matches'}
