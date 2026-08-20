@@ -79,30 +79,56 @@ error: waitFor timed out after 5000ms waiting for: fileA change
 An empty log means the watcher never armed. A log with a `w2` event in it would mean
 something else entirely.
 
-## What to do about it -- NOT done here
+## What to do about it -- DONE, on a separate card
 
 The fix is one line: `await sleep(50)` after `watch(a, ...)` and before the first
-`appendFile`, which is exactly what cases B and C already do and case A alone omits.
+`appendFile`, which is exactly what cases B and C already do and case A alone omitted.
 
-Deliberately not applied on this branch. This card's scope is the time budgeting and the
-characterisation; changing the test's setup is a separate change a verifier should be able
-to review on its own, following the precedent set by the sibling card, which characterised
-case B and did not touch the test either. Filed as
-`werk-fs-watch-contract-a-arming-race`.
+Deliberately **not** applied on the branch that produced this document. That card's scope
+was the time budgeting and the characterisation; changing the test's setup was a separate
+change a verifier should be able to review on its own, following the precedent set by the
+sibling card, which characterised case B and did not touch the test either. It was filed
+as `werk-fs-watch-contract-a-arming-race` and has since **landed** -- case A now settles
+50 ms before its first append. See the re-measurement below.
 
 Note this is a defect in the TEST, not in bun. `fs.watch` arming asynchronously is
 ordinary behaviour -- which is why the fix does not weaken the contract: the assertion
 case A makes (`bHits > 0` after re-watching a different file in the same directory) is
 untouched and was never the thing failing.
 
+## Re-measured 2026-08-21, on the branch that applied the fix
+
+Same box, same bun 1.3.14 (`0d9b296a`), same harness, the two arms back to back and
+sequential rather than concurrent -- so this run carried **less** load than the table
+above, which is why the broken arm reads lower than 3.3 %:
+
+| arm | `SETTLE_MS` | iterations | failures | rate |
+|---|---|---|---|---|
+| what the test used to do | **0** | 600 | 7 | **1.2 %** |
+| what the test now does | 50 | 600 | 0 | **0 %** |
+
+`first-never 7, second-late 0, second-never 0` -- the same signature as all 95 earlier
+failures, and the same conclusion: every failure is the arming race in stage 1, never the
+re-watch the test exists to pin. The unsettled arm's `a.jsonl` latency again topped out at
+**290 ms** against the settled arm's **67 ms**; that tail IS the arming delay, showing up
+as latency in the runs that got away with it.
+
+The contract test itself then ran **12/12 green** (`3 pass 0 fail` each). Case B did not
+flake in those 12, which is expected -- its stale-filename bun bug is ~0.33 % sequential,
+and it is untouched by this change.
+
 ## How to verify
 
 ```bash
-bun scripts/fswatch-rewatch-same-dir-repro.ts 600               # expect ~3% FAIL, all first-never
+bun scripts/fswatch-rewatch-same-dir-repro.ts 600               # expect ~1-3% FAIL, all first-never
 SETTLE_MS=50 bun scripts/fswatch-rewatch-same-dir-repro.ts 600  # expect 0
 seq 1 10 | xargs -P 10 -I{} bun scripts/fswatch-rewatch-same-dir-repro.ts 100   # ~7-8%
 ```
 
-Budget >=600 iterations before believing any arm is clean: at ~3 % a 100-iteration run
-returns zero by luck often enough to mislead, which is the same trap that produced the
-sibling card's (wrong) "passes alone" premise.
+The harness default is still `SETTLE_MS=0` on purpose: that is the BROKEN arm, and an
+instrument that can only reproduce the fixed shape cannot re-prove the diagnosis. The
+settled arm is what the shipped test now does.
+
+Budget >=600 iterations before believing any arm is clean: at a few percent a
+100-iteration run returns zero by luck often enough to mislead, which is the same trap
+that produced the sibling card's (wrong) "passes alone" premise.
