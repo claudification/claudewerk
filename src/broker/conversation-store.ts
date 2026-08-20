@@ -2980,7 +2980,9 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     const sentinelId = message.sentinelId
     if (message.profileUsage && sentinelId) {
       const conn = sentinelState.sentinels.get(sentinelId)
-      samplePlanUsage(message.profileUsage, conn?.alias || sentinelId)
+      // Both halves travel: the alias is what the wire and the series key use,
+      // the id is what the durable stats object is keyed on.
+      samplePlanUsage(message.profileUsage, { id: sentinelId, ...(conn?.alias ? { alias: conn.alias } : {}) })
     }
     broadcast(message)
   }
