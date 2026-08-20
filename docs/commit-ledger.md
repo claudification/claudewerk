@@ -16,6 +16,11 @@ scripts/install-git-hooks.sh --uninstall
 Hooks live in the git **common** dir, so one install covers the main checkout
 and every linked worktree under `.claude/worktrees/`.
 
+The same installer also wires the [fallow merge audit](fallow-merge-audit.md) --
+a `post-merge` hook, plus a merge-commit branch inside this `post-commit`
+dispatcher. It warns and never blocks, and it is disabled independently with
+`RCLAUDE_FALLOW_MERGE_WARN=0`.
+
 Any post-commit hook that was already there is preserved as
 `post-commit.pre-claudewerk` and still runs, first, **as its own process** --
 its shebang, its early `exit`s, and its failures cannot reach the ledger.

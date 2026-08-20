@@ -1,0 +1,14 @@
+#!/bin/bash
+# CLAUDEWERK merge audit -- source of truth for the installed .git/hooks/post-merge.
+# Installed by scripts/install-git-hooks.sh. Edit THIS, then re-run the installer.
+#
+# Fires on a clean `git merge` and on a fast-forward `git merge`/`git pull`.
+# A CONFLICTED merge finished with `git merge --continue` or `git commit` does
+# NOT fire post-merge -- that path is covered by the post-commit hook, which
+# calls the same script with --event commit.
+
+hooks_dir=$(cd "$(dirname "$0")" && pwd)
+if [ -x "$hooks_dir/fallow-merge-warn.sh" ]; then
+  "$hooks_dir/fallow-merge-warn.sh" --event merge || true
+fi
+exit 0
