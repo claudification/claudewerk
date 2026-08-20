@@ -76,6 +76,17 @@ export function abortEpicRun(project: string, epicId: string, reason: string): P
   return post({ project, epicId, op: 'abort', reason })
 }
 
+/**
+ * ACKNOWLEDGE a run that has already ended, so it leaves the wall's dimmed tail.
+ *
+ * NOT an abort and not a delete: the artifact, the baton and every card stay
+ * exactly as they are. The sentinel REFUSES this on an armed or running run, so
+ * a stray click on an ambient surface can never stop live work.
+ */
+export function clearEpicRun(project: string, epicId: string): Promise<EpicRunReply> {
+  return post({ project, epicId, op: 'clear' })
+}
+
 /** Is the run doing anything right now? Drives the button's two faces. */
 export function isRunLive(run: EpicRunState | null): boolean {
   return run !== null && (run.status === 'armed' || run.status === 'running')

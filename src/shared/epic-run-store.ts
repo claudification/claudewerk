@@ -81,6 +81,7 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     updated: typeof meta.updated === 'string' ? meta.updated : '',
     ...(typeof meta.planBaseline === 'string' && meta.planBaseline ? { planBaseline: meta.planBaseline } : {}),
     ...(typeof meta.abortReason === 'string' && meta.abortReason ? { abortReason: meta.abortReason } : {}),
+    ...(typeof meta.acknowledgedAt === 'string' && meta.acknowledgedAt ? { acknowledgedAt: meta.acknowledgedAt } : {}),
     digest: body.trim() || DEFAULT_DIGEST,
   }
 }
@@ -146,6 +147,10 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     dryGens: 0,
     updated: ts,
     abortReason: undefined,
+    // A RUN THAT STARTED AGAIN IS NEWS AGAIN. Leaving the acknowledgement on a
+    // re-armed run would keep it off the wall while it was genuinely running,
+    // which is the exact invisibility O2 exists to prevent.
+    acknowledgedAt: undefined,
   })
 }
 

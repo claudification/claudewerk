@@ -64,32 +64,44 @@ function Row({ row, nowMs }: { row: UnattendedRow; nowMs: number }) {
 }
 
 /** The dimmed half: a heading that counts, the rows, and the truncation notice. */
-function NotRunning({ tail }: { tail: readonly TailRow[] }) {
-  if (tail.length === 0) return null
+function NotRunning({
+  tail,
+  cleared,
+  onCleared,
+}: {
+  tail: readonly TailRow[]
+  cleared: number
+  onCleared: () => void
+}) {
+  if (tail.length === 0 && cleared === 0) return null
   const shown = tail.slice(0, TAIL_CAP)
   return (
     <div className="wall-run-tail-section">
       <div className="wall-run-tail-head">{`not running · ${tail.length}`}</div>
       {shown.map(({ row, liveness }) => (
-        <RunTailRow key={row.key} row={row} liveness={liveness} />
+        <RunTailRow key={row.key} row={row} liveness={liveness} onCleared={onCleared} />
       ))}
       {tail.length > shown.length && (
         <div className="wall-run-more">{`+ ${tail.length - shown.length} more not running`}</div>
       )}
+      {/* NO SILENT CAPS. A row that left the pane is still a row that existed,
+          and a surface that drops rows without saying so reads as "nothing
+          ended recently" -- the lie O2 was written to prevent. */}
+      {cleared > 0 && <div className="wall-run-more">{`+ ${cleared} cleared or aged out`}</div>}
     </div>
   )
 }
 
 export default function UnattendedRunsPane() {
   const nowMs = useRunClock()
-  const { rows: runs, stale } = useUnattendedRuns()
+  const { rows: runs, stale, reprime } = useUnattendedRuns()
   const { rows, matched, total } = useWallFilter(runs, AXES, row => ({
     project: row.projectName,
     title: rowTitle(row),
     action: row.kind === 'epic' ? 'epic run overseer' : 'nightshift night run',
   }))
 
-  const { live, tail } = runSections(rows)
+  const { live, tail, cleared } = runSections(rows, nowMs)
   const shown = live.slice(0, RUN_CAP)
   const view = useWallReportView()
 
@@ -102,7 +114,7 @@ export default function UnattendedRunsPane() {
       stale={stale}
       // The cap goes into the builder rather than the sliced rows, so the report
       // can count what it left out instead of dropping it in silence.
-      report={() => runsReport(rows, RUN_CAP, view)}
+      report={() => runsReport(rows, RUN_CAP, view, nowMs)}
     >
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
@@ -114,7 +126,7 @@ export default function UnattendedRunsPane() {
       {live.length > shown.length && (
         <div className="wall-run-more">{`+ ${live.length - shown.length} more running, not inspected`}</div>
       )}
-      <NotRunning tail={tail} />
+      <NotRunning tail={tail} cleared={cleared.length} onCleared={reprime} />
     </WallPane>
   )
 }

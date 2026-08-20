@@ -225,8 +225,14 @@ function tailRunLine({ row, liveness }: TailRow): string {
   return [reportRow(kind, row.projectName, rowTitle(row), liveness.label), reportChild(liveness.why)].join('\n')
 }
 
-export function runsReport(rows: readonly UnattendedRow[], shown: number, view: WallReportView): string {
-  const { live, tail } = runSections(rows)
+/**
+ * `nowMs` is the PANE's clock, passed in rather than read here. The tail's
+ * age-out is arithmetic against a moment, and a report that took its own moment
+ * would describe a slightly different pane than the one on screen -- in a string
+ * built to be pasted somewhere and believed.
+ */
+export function runsReport(rows: readonly UnattendedRow[], shown: number, view: WallReportView, nowMs: number): string {
+  const { live, tail, cleared } = runSections(rows, nowMs)
   return wallReport({
     title: 'UNATTENDED RUNS',
     code: 'A7',
@@ -237,6 +243,10 @@ export function runsReport(rows: readonly UnattendedRow[], shown: number, view: 
       tail.length > 0 ? `NOT RUNNING (${tail.length})` : null,
       ...tail.slice(0, shown).map(tailRunLine),
       reportMore(tail.length - shown, 'more not running'),
+      // Same rule as every other cap on this pane: a row that left is still a
+      // row that existed, and a report that omits it in silence reads as
+      // "nothing ended recently".
+      reportMore(cleared.length, 'cleared or aged out'),
     ],
     empty: 'nothing is running unattended',
   })

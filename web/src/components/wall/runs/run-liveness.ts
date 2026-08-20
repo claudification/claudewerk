@@ -22,6 +22,7 @@
  * unnoticed and not a pane being too busy.
  */
 
+import { runCleared } from '@shared/epic-run-cleared'
 import type { RunVitality } from '@shared/epic-vitality'
 import { runView } from './run-model'
 import type { UnattendedRow } from './use-unattended-runs'
@@ -92,6 +93,26 @@ export interface RunSections {
   /** Paused, aborted, finished, expired. Rendered last and dimmed, each with its
    *  reason. */
   tail: TailRow[]
+  /** Dead rows that have LEFT the pane -- acknowledged by a human, or older than
+   *  `RUN_AGE_OUT_MS`. Returned rather than silently dropped so the pane can say
+   *  what it is not showing: a surface that hides rows without saying so reads as
+   *  "nothing ended recently", which is the lie O2 exists to prevent. */
+  cleared: TailRow[]
+}
+
+/**
+ * WHAT A DEAD EPIC ROW COUNTS AS DEAD SINCE. The artifact's `updated` is the
+ * moment the run last changed -- when it was paused, or aborted. `lastBeatAt` is
+ * NOT the same fact: a paused run stops beating and keeps being updated, so
+ * ageing off the beat would bury a run the day it paused.
+ */
+function deadSince(row: UnattendedRow): string | null {
+  if (row.kind !== 'epic') return null
+  return row.entry.updatedAt ?? row.entry.lastBeatAt ?? null
+}
+
+function acknowledgedAt(row: UnattendedRow): string | undefined {
+  return row.kind === 'epic' ? row.entry.acknowledgedAt : undefined
 }
 
 /**
@@ -101,13 +122,22 @@ export interface RunSections {
  * id, and a comparator that re-sorted on liveness would make a run jump position
  * the moment it paused -- on an ambient second monitor, motion reads as news.
  */
-export function runSections(rows: readonly UnattendedRow[]): RunSections {
+export function runSections(rows: readonly UnattendedRow[], nowMs: number = Date.now()): RunSections {
   const live: UnattendedRow[] = []
   const tail: TailRow[] = []
+  const cleared: TailRow[] = []
   for (const row of rows) {
     const liveness = rowLiveness(row)
-    if (liveness.live) live.push(row)
-    else tail.push({ row, liveness })
+    if (liveness.live) {
+      live.push(row)
+      continue
+    }
+    // LIVENESS FIRST, ALWAYS. A live run is never cleared, whatever stamps it
+    // carries -- an acknowledgement left on a run that started again would hide
+    // it while it was genuinely running, which is the invisibility O2 exists to
+    // prevent. (`startEpicRun` also wipes the stamp; this is the second lock.)
+    const buried = runCleared({ acknowledgedAt: acknowledgedAt(row), deadSince: deadSince(row) }, nowMs)
+    ;(buried ? cleared : tail).push({ row, liveness })
   }
-  return { live, tail }
+  return { live, tail, cleared }
 }

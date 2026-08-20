@@ -31,6 +31,9 @@ const DESCRIPTION = [
   'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
   '                    generation counter.',
   'action=abort        terminal, with `reason` recorded in the append-only baton.',
+  'action=clear        acknowledge a run that has ALREADY ENDED, so it stops occupying THE WALL. It is not a',
+  '                    quieter abort and not a delete: run.md, the baton and every card stay exactly as they are,',
+  '                    and it REFUSES an armed or running run -- pause or abort first.',
   'action=beat         run ONE beat RIGHT NOW instead of waiting up to 45s for the sweep. Use this after arming',
   '                    to see immediately whether the run does anything, and to step a stalled run by hand.',
   '',
@@ -55,7 +58,7 @@ function err(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
-const ACTIONS = ['start', 'get', 'inspect', 'list', 'beat', 'pause', 'abort', 'break_lease'] as const
+const ACTIONS = ['start', 'get', 'inspect', 'list', 'beat', 'pause', 'abort', 'clear', 'break_lease'] as const
 
 /** Comma-separated or already a list -> a list. The MCP schema says string, and
  *  a model will send either spelling however the schema is worded. */

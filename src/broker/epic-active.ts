@@ -61,6 +61,26 @@ async function toEntry(deps: SweepDeps, group: EpicGroup, nowMs: number): Promis
     armed: listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
     lastBeatAt: at,
     stale: beatStale(at, nowMs),
+    ...runStamps(view.run),
+  }
+}
+
+/**
+ * The two stamps the wall's tail rule reads (`shared/epic-run-cleared.ts`).
+ *
+ * Carried on the SUMMARY rather than fetched per row: deciding whether a row
+ * belongs on the pane at all cannot cost an `inspect`, or the pane pays full
+ * price for the rows nobody is waiting on -- the trap `run-tail-row.tsx` exists
+ * to avoid. Omitted rather than nulled when absent, so a degraded row (no
+ * artifact readable) can never age itself out on an empty string.
+ */
+export function runStamps(run: { acknowledgedAt?: string; updated?: string } | null | undefined): {
+  acknowledgedAt?: string
+  updatedAt?: string
+} {
+  return {
+    ...(run?.acknowledgedAt ? { acknowledgedAt: run.acknowledgedAt } : {}),
+    ...(run?.updated ? { updatedAt: run.updated } : {}),
   }
 }
 
