@@ -11,9 +11,14 @@
  *
  *  - NIGHTSHIFT has no cross-project feed at all: every nightshift read is scoped
  *    to one project. So EXISTENCE is derived from the thing that is genuinely
- *    global, the conversation registry -- a night run is running exactly when it
- *    has a worker up. That keeps the pane quiet with no fetch when nothing runs,
- *    and only the projects that DO have a run pay for the per-project snapshot.
+ *    global, the conversation registry -- a night run exists while the registry
+ *    holds any conversation tagged with it. That keeps the pane quiet with no
+ *    fetch when nothing runs, and only the projects that DO have a run pay for
+ *    the per-project snapshot.
+ *
+ * EXISTENCE IS NOT LIVENESS, and this file only answers the first. Whether a row
+ * is RUNNING is `run-liveness.ts`'s single call, made once over both feeds; a
+ * second test in here is what let a paused run render as a live one.
  *
  * The list this returns is what the filter counts. Enrichment (buckets, baton,
  * task totals) happens inside the row, so a row can never remove itself after
@@ -47,7 +52,8 @@ export interface NightshiftRunRowData extends RowBase {
   kind: 'nightshift'
   runId: string
   /** Workers up right now, straight from the registry. The snapshot's own task
-   *  counts arrive in the row; this is what makes the row EXIST. */
+   *  counts arrive in the row; this is the number `run-liveness.ts` turns into
+   *  RUNNING or EXPIRED. Zero is a legitimate value and means the latter. */
   liveWorkers: number
 }
 
@@ -65,24 +71,39 @@ export function useRunClock(intervalMs = 5_000): number {
   return useWallClock(intervalMs)
 }
 
+interface NightRun {
+  project: string
+  runId: string
+  liveWorkers: number
+}
+
 /**
- * Night runs with a worker still up, keyed by project + run id.
+ * Night runs the registry knows about, keyed by project + run id, WITH a count
+ * of how many of their workers are still up.
  *
- * `status !== 'ended'` is the liveness test: a night run whose workers have all
- * finished is last night's report, and last night's report belongs on the
- * nightshift screen, not on a pane about what is running unattended NOW.
+ * THIS HOOK NO LONGER JUDGES LIVENESS. It used to `continue` past every ended
+ * conversation, which made `status !== 'ended'` a second, disagreeing liveness
+ * test living inside a feed -- the defect `run-liveness.ts` exists to delete. A
+ * run whose last worker exits now becomes `liveWorkers: 0` and is called EXPIRED
+ * once, in one place, where the pane can dim it instead of vanishing it.
+ *
+ * THAT IS BOUNDED, and by the store rather than by a rule here: ended
+ * conversations are NOT in `conversationsById` on load (they were 97.7% of the
+ * boot payload). So a night run comes back as an expired row only if it expired
+ * while this wall was open -- which is exactly the run you want told about --
+ * and a reload does not resurrect last week's.
  */
-function useLiveNightRuns(): { project: string; runId: string; liveWorkers: number }[] {
+function useNightRuns(): NightRun[] {
   const conversationsById = useConversationsStore(s => s.conversationsById)
   return useMemo(() => {
-    const byRun = new Map<string, { project: string; runId: string; liveWorkers: number }>()
+    const byRun = new Map<string, NightRun>()
     for (const conv of Object.values(conversationsById)) {
       const tag = conv.nightshift
-      if (!tag || !conv.project || conv.status === 'ended') continue
+      if (!tag || !conv.project) continue
       const key = `${conv.project} ${tag.runId}`
-      const row = byRun.get(key)
-      if (row) row.liveWorkers++
-      else byRun.set(key, { project: conv.project, runId: tag.runId, liveWorkers: 1 })
+      const row = byRun.get(key) ?? { project: conv.project, runId: tag.runId, liveWorkers: 0 }
+      if (conv.status !== 'ended') row.liveWorkers++
+      byRun.set(key, row)
     }
     return [...byRun.values()]
   }, [conversationsById])
@@ -98,7 +119,7 @@ export interface UnattendedFeed {
 export function useUnattendedRuns(): UnattendedFeed {
   const epics = useOverseerActivityStore(selectAllRuns)
   const prime = useOverseerActivityStore(s => s.prime)
-  const nights = useLiveNightRuns()
+  const nights = useNightRuns()
   const look = useProjectLook()
 
   // The one HTTP read, shared with the header badge and idempotent behind

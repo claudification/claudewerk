@@ -1145,6 +1145,31 @@
 	font-size: 10px;
 	color: var(--comment);
 }
+/* THE NOT-RUNNING TAIL. Paused / aborted / finished / expired runs, ranked last
+   and dimmed -- present so that nothing goes quiet unnoticed, quiet enough that
+   at four feet the live rows above are still the ones you read first. The rule
+   is opacity and not a colour swap, so every tone the tag already earns (a red
+   ABORTED, a quiet PAUSED) survives the demotion instead of being flattened. */
+.wall-run-tail-section {
+	margin-top: 6px;
+	border-top: 1px dashed var(--border-subtle);
+}
+.wall-run-tail-head {
+	padding-top: 5px;
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--comment);
+}
+.wall-run-tail {
+	padding: 4px 0;
+	opacity: 0.6;
+}
+/* A night run whose workers have all exited. The quiet default tone: it is
+   finished, not broken, and an alarm colour here would cry wolf every morning. */
+.wall-run-tag[data-vitality='expired'] {
+	color: var(--comment);
+}
 
 /* ---------- P2 commit river ---------- */
 /* THE CONTAINER THE ROW MEASURES. It sits inside `.wall-pane-body` and fills it,
