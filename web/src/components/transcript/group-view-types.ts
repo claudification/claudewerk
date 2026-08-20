@@ -89,7 +89,10 @@ export type RenderItem =
   // renderer can dispatch on subtype just like the standalone SystemLine.
   | { kind: 'system'; entry: Record<string, unknown>; subtype: string; timestamp?: string }
 
-// fallow-ignore-next-line dupes
+// Byte-identical to `formatDuration` in `src/acp-agent-host/translator.ts` and
+// `src/opencode-agent-host/ndjson-parser.ts` (fallow clone group `dup:36aa297d`).
+// Deliberately NOT suppressed -- consolidating it crosses the src/web boundary
+// and is tracked by `repo-format-duration-clone-group`.
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   const s = ms / 1000

@@ -19,7 +19,8 @@ import { menuContentClass } from '@/components/project-list/menu-shared'
 import { closeCardMenu, useCardMenu } from './card-menu-bus'
 import { CardMenuItems } from './card-menu-items'
 
-// fallow-ignore-next-line unused-export -- mounted through lazyModule(named(...)) in app.tsx
+// Mounted through `lazyModule(named(...))` in app.tsx, so the only static
+// importers are the two test files -- that is enough for fallow to resolve it.
 export function CardMenuLayer() {
   const target = useCardMenu(s => s.target)
   if (!target) return null
