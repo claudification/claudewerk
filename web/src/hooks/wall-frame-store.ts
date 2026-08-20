@@ -220,6 +220,58 @@ function noteFrameArrival(frame: WallFrame): void {
 }
 
 /**
+ * THE HOLD -- W1's "while rewound, live frames stop mutating what is displayed".
+ *
+ * A rewound wall that kept folding frames would move under the reader: P3 grows
+ * a row, S1's meters twitch, and the header still says `T-42m`. So the fold is
+ * SUSPENDED, not the socket: frames keep arriving, keep their seq accounting and
+ * queue up here, and releasing to LIVE applies them in order -- which is what
+ * makes the snap forward gapless and duplicate-free. Applying a frame twice is
+ * the only way to duplicate a commit row, and each buffered frame is applied
+ * exactly once.
+ *
+ * The cursor store owns this switch (`cursor-store.ts` calls it on every write).
+ * It is a plain function rather than a subscription so the two stores can be
+ * tested apart, and so the hold is released BEFORE the offset is published.
+ */
+let held = false
+let buffered: WallFrame[] = []
+
+/**
+ * How many frames a rewound wall will hold. At the channel's ~2 Hz this is five
+ * minutes of scrubbing, which is far longer than a real rewind and far shorter
+ * than the three-hour track.
+ *
+ * OVERFLOW IS REPORTED, NOT HIDDEN. Past the cap the oldest buffered frame is
+ * dropped, which leaves a seq gap that `noteFrameArrival` counts on release --
+ * so the loss surfaces through the SAME `gaps` counter a broker-side drop uses,
+ * rather than through a picture that is quietly missing a deletion.
+ */
+const HOLD_BUFFER_CAP = 600
+
+export function setWallFrameHold(next: boolean): void {
+  if (held === next) return
+  held = next
+  if (held) return
+  // Releasing: drain in arrival order, then ONE notify. Folding thirteen panes
+  // per buffered frame would repaint the wall six hundred times to show the
+  // single state that all of them add up to.
+  const pending = buffered
+  buffered = []
+  for (const frame of pending) foldWallFrame(frame)
+  const last = pending[pending.length - 1]
+  if (!last) return
+  rebuildView(last)
+  signal.bump()
+}
+
+/** The fold itself, with no notify -- shared by the live path and the drain. */
+function foldWallFrame(frame: WallFrame): void {
+  noteFrameArrival(frame)
+  for (const section of WALL_SECTIONS) SECTION_MERGE[section](frame)
+}
+
+/**
  * Fold one frame into the picture and notify.
  *
  * A section the wire carries but this client has no merge for is IGNORED, not an
@@ -229,15 +281,34 @@ function noteFrameArrival(frame: WallFrame): void {
  * omission for sections added in THIS build.
  */
 export function applyWallFrame(frame: WallFrame): void {
-  noteFrameArrival(frame)
-  for (const section of WALL_SECTIONS) SECTION_MERGE[section](frame)
+  if (held) {
+    // A full frame REPLACES the picture, so everything queued behind it is
+    // already moot -- dropping it here bounds a reconnect storm and cannot lose
+    // anything the drain would have kept.
+    if (frame.full) buffered = []
+    buffered.push(frame)
+    if (buffered.length > HOLD_BUFFER_CAP) buffered = buffered.slice(buffered.length - HOLD_BUFFER_CAP)
+    return
+  }
+  foldWallFrame(frame)
   rebuildView(frame)
   signal.bump()
 }
 
-/** Socket dropped: the broker forgot us, so the picture is now unverified.
- *  Cleared rather than left to rot -- the resubscribe brings a full snapshot. */
+/**
+ * Socket dropped: the broker forgot us, so the picture is now unverified.
+ * Cleared rather than left to rot -- the resubscribe brings a full snapshot.
+ *
+ * THIS RUNS EVEN WHILE THE CURSOR HOLDS THE FOLD, and that is not a hole in the
+ * hold. What the hold suspends is LIVE FRAMES moving a rewound picture; a
+ * disconnect is not a frame, it is the picture ceasing to be vouched for. A
+ * rewound wall that kept drawing the last verified state would be showing the
+ * one thing `historyLostAt` exists to prevent -- a number that outlived its
+ * connection, unmarked. The buffered frames go with it: they describe a stream
+ * that no longer exists, and the resubscribe's full snapshot replaces them.
+ */
 export function resetWallFrames(): void {
+  buffered = []
   // Only a picture that HAD something loses something. A reset before the first
   // frame -- the ordinary first connect -- is not a gap, and reporting one there
   // would put a permanent "history lost" on a wall that never had any.

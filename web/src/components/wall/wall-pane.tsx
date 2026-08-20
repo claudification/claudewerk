@@ -9,7 +9,25 @@
  */
 
 import type { CSSProperties, ReactNode } from 'react'
+import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 import { cn } from '@/lib/utils'
+
+/**
+ * WHAT THIS PANE CAN HONESTLY SHOW AT A PAST OFFSET.
+ *
+ * `rows`   -- its rows carry their own clock, so `useWallFilter` has already
+ *             narrowed them to the ones that existed at the cursor. Exactly the
+ *             panes that declare the `time` axis.
+ * `series` -- no rows to drop, but a real history to look a value up in. The
+ *             pane answers the cursor itself, per row (S1's ring, S2's chart).
+ *
+ * ABSENT IS THE DEFAULT AND IT MEANS BLIND: this pane has no history, so at a
+ * past offset it has nothing true to say and its body is replaced by a line that
+ * says exactly that. Defaulting the other way would make every pane added after
+ * this card silently print live numbers under a `T-42m` header -- a lie by
+ * omission, which is the one failure mode a rewind must not have.
+ */
+export type WallRewind = 'rows' | 'series'
 
 interface WallPaneProps {
   title: string
@@ -38,6 +56,8 @@ interface WallPaneProps {
    * no chrome, no cursor, read from three metres away.
    */
   stale?: boolean
+  /** What this pane can honestly show at a past offset. Absent = nothing. */
+  rewind?: WallRewind
   children: ReactNode
 }
 
@@ -51,15 +71,19 @@ export function WallPane({
   maxHeight,
   hideInAmbient,
   stale,
+  rewind,
   children,
 }: WallPaneProps) {
   const style: CSSProperties | undefined = maxHeight ? { maxHeight } : undefined
+  const { rewound, label } = useWallCursor()
+  const blind = rewound && rewind === undefined
   return (
     <section
       className={cn('wall-pane', grow && 'wall-pane-grow', hideInAmbient && 'wall-hide-ambient')}
       style={style}
       data-pane={code}
       data-stale={stale ? 'true' : undefined}
+      data-blind={blind ? 'true' : undefined}
       aria-label={title}
     >
       <div className="wall-pane-head">
@@ -71,11 +95,17 @@ export function WallPane({
           </span>
         )}
         <span className="flex-1" />
-        {count != null && <span className="wall-pane-count">{count}</span>}
+        {/* The count is the pane's claim about what it is showing. Blind, it is
+            showing nothing, so printing a live `12/12` beside "no history at
+            this offset" would have the pane contradict itself on screen. */}
+        {count != null && !blind && <span className="wall-pane-count">{count}</span>}
+        {blind && <span className="wall-pane-count wall-blind-mark">{label}</span>}
         {tabs}
         {copy}
       </div>
-      <div className="wall-pane-body">{children}</div>
+      <div className="wall-pane-body">
+        {blind ? <p className="wall-blind-line">no history at this offset</p> : children}
+      </div>
     </section>
   )
 }

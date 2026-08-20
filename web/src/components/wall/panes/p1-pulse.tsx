@@ -68,6 +68,10 @@ export default function PulsePane() {
       title="PULSE"
       code="P1"
       grow
+      // Every row carries `ageMs` (time since its last turn), so `useWallFilter`
+      // has already dropped the conversations whose last turn is NEWER than the
+      // cursor -- what is left is the fleet as it stood then.
+      rewind="rows"
       count={
         // Rose the moment anything is BLOCKED ON YOU: across a room the count is
         // the only part of this pane you can still read. Same table as the rows,
