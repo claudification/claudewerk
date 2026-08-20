@@ -42,6 +42,18 @@ export interface EpicPlanInput {
    * beat and collected eight concurrent Opus reviewers on one card.
    */
   inVerify: readonly string[]
+  /**
+   * Cards whose seats keep dying before producing anything (`EpicGroup.
+   * unspawnable`). Excluded from BOTH lanes -- the failure is in the launch,
+   * not in the role, so sending a verifier instead of an implementer would fail
+   * identically.
+   *
+   * THE BOUND ON THE RETRY PATH. Leaving a failed launch dispatchable is right
+   * once per attempt and ruinous without a ceiling: gen 2 of `epic-the-wall-ii`
+   * spent thirteen seats on one card. Excluded here, the card falls into
+   * `idleReason`, which drives a dry generation -> one overseer wake -> a park.
+   */
+  unspawnable?: readonly string[]
 }
 
 export interface EpicPlan {
@@ -68,6 +80,10 @@ export interface EpicPlan {
   heldBack: ProjectTaskMeta[]
   /** Not-started cards still waiting on an unfinished dependency. */
   waitingOnDeps: Array<{ card: ProjectTaskMeta; waitingOn: string[] }>
+  /** Cards withheld from both lanes because their seats keep failing to launch.
+   *  Named rather than silently dropped: a card the engine has given up on is
+   *  the single most important thing on the pane. */
+  unspawnable: ProjectTaskMeta[]
   /** Every child terminal, and there was at least one. */
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. Goes straight into the baton. */
@@ -94,6 +110,7 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
       questions: [],
       heldBack: [],
       waitingOnDeps: [],
+      unspawnable: [],
       complete: false,
       idleReason: `no epic \`${input.epicId}\` on the board (no card carries it and no card claims it as a parent)`,
     }
@@ -101,16 +118,21 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
 
   const inFlight = new Set(input.inFlight)
   const inVerify = new Set(input.inVerify)
-  const verify = rollup.children.filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug)).map(c => c.card)
+  const dead = new Set(input.unspawnable ?? [])
+  const verify = rollup.children
+    .filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug) && !dead.has(c.card.slug))
+    .map(c => c.card)
   const questions = rollup.children
     .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isQuestion(c.card))
     .map(c => c.card)
+  const unspawnable = rollup.children.filter(c => dead.has(c.card.slug)).map(c => c.card)
 
   const ready: ProjectTaskMeta[] = []
   const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
   for (const child of rollup.children) {
     if (child.bucket !== 'notStarted' || inFlight.has(child.card.slug)) continue
     if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
+    if (dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
     if (child.waitingOn.length > 0) waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
     else ready.push(child.card)
   }
@@ -126,8 +148,18 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
     questions,
     heldBack,
     waitingOnDeps,
+    unspawnable,
     complete: rollup.complete,
-    idleReason: idleReason({ rollup, ready, slots, verify, questions, waitingOnDeps, inFlight: inFlight.size }),
+    idleReason: idleReason({
+      rollup,
+      ready,
+      slots,
+      verify,
+      questions,
+      waitingOnDeps,
+      unspawnable,
+      inFlight: inFlight.size,
+    }),
   }
 }
 
@@ -138,6 +170,7 @@ interface IdleInput {
   verify: ProjectTaskMeta[]
   questions: ProjectTaskMeta[]
   waitingOnDeps: EpicPlan['waitingOnDeps']
+  unspawnable: ProjectTaskMeta[]
   inFlight: number
 }
 
@@ -149,6 +182,15 @@ interface IdleInput {
  * that order something you can read, reorder and test.
  */
 const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: IdleInput) => string }> = [
+  {
+    // FIRST, above open questions: a card nothing can launch is the only entry
+    // in this table that will not resolve itself with time, and the fix (rename
+    // the card, or fix the seat) is not one another beat can perform.
+    when: i => i.unspawnable.length > 0,
+    say: i =>
+      `${i.unspawnable.length} card(s) whose seats keep dying before producing anything, no longer retried: ` +
+      `${i.unspawnable.map(c => c.slug).join(', ')} -- grep the broker log for \`Spawn FAILED stderr:\``,
+  },
   {
     when: i => i.questions.length > 0,
     say: i => `${i.questions.length} open question(s) for the overseer: ${i.questions.map(c => c.slug).join(', ')}`,

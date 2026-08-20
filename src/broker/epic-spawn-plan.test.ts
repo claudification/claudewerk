@@ -35,6 +35,7 @@ const PLAN: EpicPlan = {
   questions: [],
   heldBack: [],
   waitingOnDeps: [],
+  unspawnable: [],
   complete: false,
 }
 
@@ -116,6 +117,53 @@ describe('worktrees', () => {
 
   test('the overseer has NO worktree -- it judges main, it cannot hide from it', () => {
     expect(overseer().worktree).toBeUndefined()
+  })
+})
+
+/**
+ * THE 2026-08-20 INCIDENT, pinned.
+ *
+ * `epic/epic-the-wall-ii/verify-epic-engine-baton-window-relitigates-settles` is
+ * 73 characters. Claude Code refuses a worktree name over 64 and exits 1 in
+ * ~1.2s, so the verifier never booted, produced zero output, and the sweep read
+ * its death as a completed leg. The conversation NAME had a budget; the worktree
+ * name did not, and it is the longer of the two by construction (`verify-` on
+ * top of the full card id, no truncation anywhere).
+ *
+ * The real line, off the sentinel's headless log for conv 90dd07af:
+ *   `ERR Error creating worktree: Invalid worktree name: must be 64 characters
+ *    or fewer (got 73)`
+ */
+describe('worktree names fit inside CC’s 64-character limit', () => {
+  const LONG = 'epic-engine-baton-window-relitigates-settles'
+  const ctx: EpicSpawnCtx = { ...CTX, epicId: 'epic-the-wall-ii' }
+
+  test('the incident case: a verifier for a 43-char card id', () => {
+    const plan = planVerifierSpawn(ctx, LONG)
+    expect(plan.worktree).toBeDefined()
+    expect((plan.worktree as string).length).toBeLessThanOrEqual(64)
+  })
+
+  test('an implementer branch is capped too -- and the PROMPT names the same branch', () => {
+    const plan = planImplementerSpawn({ ...ctx, epicId: 'a-fairly-long-epic-identifier-here' }, `${LONG}-and-more`)
+    const branch = plan.worktree as string
+    expect(branch.length).toBeLessThanOrEqual(64)
+    expect(plan.prompt).toContain(branch)
+  })
+
+  test('two long siblings that share a prefix do NOT truncate onto the same branch', () => {
+    const a = planVerifierSpawn(ctx, `${LONG}-alpha`).worktree
+    const b = planVerifierSpawn(ctx, `${LONG}-bravo`).worktree
+    expect(a).not.toBe(b)
+  })
+
+  test('the branch is deterministic -- a retry lands on the same worktree', () => {
+    expect(planVerifierSpawn(ctx, LONG).worktree).toBe(planVerifierSpawn({ ...ctx, gen: 99 }, LONG).worktree)
+  })
+
+  test('a short card id is left exactly as it was -- no gratuitous hashing', () => {
+    expect(planImplementerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
+    expect(planVerifierSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/verify-t1')
   })
 })
 

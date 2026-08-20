@@ -17,7 +17,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
-import { appendEpicLog, readEpicLogSlice } from '../shared/epic-log'
+import { acknowledgedCardIds, appendEpicLog, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import { parseFrontmatter, serializeFrontmatter } from '../shared/frontmatter'
@@ -77,12 +77,22 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
    * lives on the CARD -- so without it here the only way to answer "who is
    * holding this epic, and since when" was to open the card by hand, which
    * defeats the point of putting it somewhere visible.
+   *
+   * And it returns `acknowledgedCardIds` FOLDED OVER THE WHOLE LOG, beside the
+   * prompt-sized tail. Two answers because there are two questions: an overseer
+   * generation needs the last 20 entries to pick up cold, and the beat needs to
+   * know which cards have ever been acknowledged. Answering the second with the
+   * first is what froze epic-the-wall for five generations -- and the obvious
+   * repair, widening the tail, would put a 3000-line log in every overseer
+   * prompt. The file is read whole either way, so the fold is free.
    */
   get(root, msg) {
+    const entries = readEpicLog(root, msg.epicId)
     return {
       ok: true,
       run: snapshot(root, msg.epicId),
-      baton: readEpicLogSlice(root, msg.epicId, { limit: BATON_TAIL, ...(msg.baton ?? {}) }),
+      baton: sliceEpicLog(entries, { limit: BATON_TAIL, ...(msg.baton ?? {}) }),
+      acknowledgedCardIds: acknowledgedCardIds(entries),
       currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}),
     }
   },

@@ -30,6 +30,12 @@ vi.mock('@/hooks/use-conversations', () => ({
   ),
   sendInput: vi.fn(),
   useConversations: () => [],
+  // A `vi.mock` factory REPLACES the module wholesale, so every symbol the
+  // component tree reaches for has to be here or the import throws before a
+  // single test body runs. These two arrived with the launch/kanban wiring and
+  // were never added; the shiki resolution error masked them.
+  findBestConversationForProject: () => undefined,
+  wsSend: vi.fn(() => true),
 }))
 
 afterEach(cleanup)

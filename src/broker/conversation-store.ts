@@ -197,6 +197,12 @@ export interface ConversationStore {
    *  (see handlers/launch-event.ts): the store answer SURVIVES broker restart,
    *  which is exactly when agent hosts replay their buffers. */
   hasTranscriptUuid: (conversationId: string, uuid: string) => boolean
+  /** Did this conversation EVER produce a transcript entry? Durable-first, so a
+   *  broker restart does not turn a finished conversation into a silent one --
+   *  the epic sweep reads this to tell a completed leg from a launch that died
+   *  before CC wrote anything (epic-sweep.ts). Side-effect free, unlike
+   *  `loadTranscriptFromStore`, which seeds the seq counter as it reads. */
+  hasAnyTranscript: (conversationId: string) => boolean
   recentTranscriptUuids: (conversationId: string, limit: number) => string[]
   loadTranscriptFromStore: (conversationId: string, limit: number) => TranscriptEntry[] | null
   /** Backward pagination for infinite scrollback: the `limit` entries with
@@ -3043,6 +3049,19 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     return transcriptCache.has(conversationId)
   }
 
+  /**
+   * Did anything ever come out of this conversation?
+   *
+   * Cache first (the common case is a conversation that just ended and is still
+   * resident), store second. The store half is what makes the answer survive a
+   * broker restart: without it every ended epic seat would read as silent after
+   * a deploy, and the sweep would re-dispatch finished cards.
+   */
+  function hasAnyTranscript(conversationId: string): boolean {
+    if ((transcriptCache.get(conversationId)?.length ?? 0) > 0) return true
+    return store ? store.transcripts.getLatest(conversationId, 1, null).length > 0 : false
+  }
+
   /** Durable-first uuid probe. The store is authoritative (it outlives the
    *  in-memory cache across a broker restart); the cache scan is only the
    *  no-store fallback, bounded by MAX_TRANSCRIPT_ENTRIES. */
@@ -3535,6 +3554,7 @@ export function createConversationStore(options: ConversationStoreOptions = {}):
     addTranscriptEntries,
     getTranscriptEntries,
     hasTranscriptUuid,
+    hasAnyTranscript,
     hasTranscriptCache,
     recentTranscriptUuids,
     loadTranscriptFromStore,

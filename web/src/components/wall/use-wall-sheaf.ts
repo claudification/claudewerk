@@ -24,6 +24,8 @@
 import type { SheafResponse } from '@shared/sheaf-types'
 import { useEffect } from 'react'
 import { create } from 'zustand'
+import type { WallFreshness } from '@/lib/wall/revive-store'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 
 /** The three windows the card names. Hours; 168 = 7d. */
 export const SHEAF_WINDOWS = [6, 24, 168] as const
@@ -61,8 +63,10 @@ export const useWallSheafStore = create<WallSheafState>((set, get) => ({
  *  refresh tick collapse into one request. */
 let inflight: number | null = null
 
-async function loadWallSheaf(windowH: number, force = false): Promise<void> {
-  if (inflight === windowH && !force) return
+/** Resolves TRUE only when a response actually landed -- that is what the revive
+ *  seam turns into "this pane is showing the current connection's numbers". */
+async function loadWallSheaf(windowH: number, force = false): Promise<boolean> {
+  if (inflight === windowH && !force) return false
   inflight = windowH
   useWallSheafStore.setState({ loading: true })
   try {
@@ -71,11 +75,13 @@ async function loadWallSheaf(windowH: number, force = false): Promise<void> {
     const data = (await res.json()) as SheafResponse
     // A stale response for a window the user has since left must not overwrite
     // the current one.
-    if (useWallSheafStore.getState().windowH !== windowH) return
+    if (useWallSheafStore.getState().windowH !== windowH) return false
     useWallSheafStore.setState({ data, loading: false, error: null })
+    return true
   } catch (err) {
-    if (useWallSheafStore.getState().windowH !== windowH) return
+    if (useWallSheafStore.getState().windowH !== windowH) return false
     useWallSheafStore.setState({ loading: false, error: err instanceof Error ? err.message : String(err) })
+    return false
   } finally {
     if (inflight === windowH) inflight = null
   }
@@ -87,33 +93,31 @@ export function resetWallSheaf(): void {
   useWallSheafStore.setState({ windowH: 24, data: null, loading: false, error: null })
 }
 
-let subscribers = 0
-let timer: ReturnType<typeof setInterval> | null = null
+/** Re-read whatever window is selected NOW -- never the one captured when the
+ *  reload was handed to the seam, which may be a tab the user has since left. */
+const reloadSheaf = (): Promise<boolean> => loadWallSheaf(useWallSheafStore.getState().windowH, true)
 
 /**
- * Subscribe a pane to the feed. The FIRST pane to mount starts the refresh
- * interval and the LAST one to unmount stops it, so a closed wall polls nothing.
+ * Subscribe a pane to the feed.
+ *
+ * The refcounted interval this hook used to hand-roll now belongs to
+ * `useWallRevive`, along with the reconnect pull neither pane had. A6 and A4 both
+ * call this and the seam is keyed by FEED, so a reconnect with both panes on
+ * screen is still exactly one request.
+ *
+ * Returns the feed's freshness so a pane can mark numbers that predate the
+ * current connection instead of presenting them as live.
  */
-export function useWallSheafFeed(): void {
+export function useWallSheafFeed(): WallFreshness {
   const windowH = useWallSheafStore(s => s.windowH)
+  const freshness = useWallRevive('sheaf', reloadSheaf, SHEAF_REFRESH_MS)
 
+  // A window switch is a different QUESTION, not a stale answer, so it stays its
+  // own effect. Unforced, so it collapses into the seam's pull on mount rather
+  // than doubling it.
   useEffect(() => {
     void loadWallSheaf(windowH)
   }, [windowH])
 
-  useEffect(() => {
-    subscribers++
-    if (subscribers === 1 && !timer) {
-      timer = setInterval(() => {
-        void loadWallSheaf(useWallSheafStore.getState().windowH, true)
-      }, SHEAF_REFRESH_MS)
-    }
-    return () => {
-      subscribers--
-      if (subscribers === 0 && timer) {
-        clearInterval(timer)
-        timer = null
-      }
-    }
-  }, [])
+  return freshness
 }

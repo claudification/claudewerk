@@ -889,9 +889,15 @@ function spawnHeadlessDirect(
       // of whether we can reach the broker, so a later retry starts fresh.
       const preflightHints = consumePreflightWarnings(conversationId)
 
+      // Collected and PRINTED before the socket is consulted. On 2026-08-20 the
+      // whole explanation for a dead verifier was one line inside CC's
+      // `headless-<conv>.ndjsonl`, which this reads and nothing printed -- so
+      // the sentinel's own log, the file a human tails first, said only "EARLY".
+      const ctx = collectSpawnErrorContext(stderrSnapshot, cwd, conversationId, /*includeHeadlessLog*/ true)
+      logSpawnErrorContext(conversationId, ctx)
+
       // Report to broker
       if (activeWs?.readyState === WebSocket.OPEN) {
-        const ctx = collectSpawnErrorContext(stderrSnapshot, cwd, conversationId, /*includeHeadlessLog*/ true)
         let errorDetail: string
         if (isResume && earlyFailure) {
           errorDetail = `Resume failed: process exited in ${elapsedMs}ms (exit ${exitCode}) - session may no longer exist or be corrupted`
@@ -1501,6 +1507,19 @@ async function captureChildStderr(proc: Subprocess, conversationId: string) {
  * suitable for appending to the human-readable `error` string (e.g.
  * `WorktreeCreate hook failed: fatal: a branch named '...' already exists`).
  */
+/**
+ * Print what `collectSpawnErrorContext` found. The context was assembled purely
+ * to fill a wire message; if the broker socket happens to be down -- which is
+ * one of the reasons a spawn fails in the first place -- the cause was
+ * assembled, dropped, and never written anywhere. Logging is unconditional
+ * precisely because the send is not.
+ */
+function logSpawnErrorContext(conversationId: string, ctx: { stderrTail?: string[]; hookStage?: string }): void {
+  const short = conversationId.slice(0, 8)
+  if (ctx.hookStage) log(`spawn-failure stage: conv=${short} ${ctx.hookStage}`)
+  for (const line of ctx.stderrTail ?? []) log(`spawn-failure stderr: conv=${short} | ${line}`)
+}
+
 function collectSpawnErrorContext(
   ringLines: string[],
   cwd: string,

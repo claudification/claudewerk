@@ -4358,29 +4358,13 @@ export interface CardMove {
 
 /** Sentinel -> Broker: cards changed lane. Batched, because one board write can
  *  move several cards and the watcher sees them in a single diff. The broker
- *  records them in its ring and rebroadcasts this same frame permission-gated
- *  by `project`. */
+ *  records them in its ring (process-lifetime only, nothing persisted) and hands
+ *  them to THE WALL's channel. There is no dashboard-facing frame: the wall
+ *  carries both the cold ring and the live moves, so this type never leaves the
+ *  sentinel -> broker leg. */
 export interface CardChanged {
   type: 'card_changed'
   project: string
-  moves: CardMove[]
-}
-
-/** Dashboard -> Broker: seed a cold surface from the broker's in-memory ring.
- *  The ring is process-lifetime only; nothing here is persisted. */
-export interface CardLedgerRequest {
-  type: 'card_ledger_request'
-  requestId: string
-  /** Cap the reply. The ring's own bound is the ceiling. */
-  limit?: number
-}
-
-/** Broker -> Dashboard: the ring, newest first, filtered to projects the caller
- *  may read. */
-export interface CardLedgerResult {
-  type: 'card_ledger_result'
-  requestId: string
-  ok: boolean
   moves: CardMove[]
 }
 
@@ -4782,6 +4766,21 @@ export interface EpicResult {
   run?: EpicRunSnapshot | null
   /** get -- the baton slice, newest last. */
   baton?: EpicLogEntry[]
+  /**
+   * get -- every card the baton has EVER acknowledged, folded over the whole log
+   * rather than over the `baton` slice above.
+   *
+   * A separate field because it answers a different question than the tail does,
+   * and the tail is sized for a prompt. Deriving it from `baton` instead made a
+   * settle whose acknowledgement had scrolled past entry 20 read as unhandled
+   * again on every sweep, which is how one epic burned five generations without
+   * dispatching anything (2026-08-19).
+   *
+   * OPTIONAL for version skew only: broker and sentinel deploy separately, and a
+   * broker talking to an older sentinel must fall back to the old (wrong, but
+   * survivable) fold rather than treat every card as unacknowledged.
+   */
+  acknowledgedCardIds?: string[]
   /** log_append -- the persisted entry. */
   logEntry?: EpicLogEntry
   /** lease -- granted or refused, with the holder either way. */

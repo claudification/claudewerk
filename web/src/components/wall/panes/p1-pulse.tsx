@@ -29,9 +29,9 @@ import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { useWallFilter } from '@/lib/wall/use-wall-filter'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
-import { WallTab } from '../wall-tab'
 import { wallPulseFleet } from '../wall-pulse-fleet'
 import { useWallPulseStore } from '../wall-pulse-state'
+import { WallTab } from '../wall-tab'
 
 /** Ask the feed for the WHOLE fleet -- see the file header. */
 const WHOLE_FLEET = '+over'

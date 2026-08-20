@@ -2,6 +2,9 @@
  * P4: the claims the card makes about the pane.
  *
  *  - a tile with no feed behind it shows a DASH, never a plausible number
+ *  - the socket tile's round trip is MEASURED: it dashes until a probe answers,
+ *    and dashes again the moment the socket drops
+ *  - the probe is held by the pane, so an unmounted wall puts nothing on the wire
  *  - the sparkline updates on its own tick without dragging the pane with it
  *  - the shared filter: declared axes bite, undeclared axes leave the pane FULL,
  *    and `{matched}/{total}` rides the WallPane count slot
@@ -12,12 +15,36 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { recordTokenSample } from '@/hooks/token-flow-store'
+import { useConversationsStore } from '@/hooks/use-conversations'
 import { applyWallFrame, resetWallFrames } from '@/hooks/wall-frame-store'
+import { recordPong, resetRttProbeForTest, resetWsRtt, rttProbeRunning } from '@/hooks/ws-rtt'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { RATE_BUCKET_MS } from '@/lib/wall/fleet-rate'
 import FleetPane from './p4-fleet'
 
 const NOW = 1_700_000_040_000
+
+// A socket real enough for `wsSend` to accept: the probe only leaves the client
+// if there is an OPEN one, which is the behaviour under test.
+const wire: string[] = []
+const fakeSocket = {
+  readyState: 1,
+  send: (frame: string) => wire.push(frame),
+  bufferedAmount: 0,
+} as unknown as WebSocket
+
+/** The store measures with `performance.now()`, so the test owns that clock. */
+let clock = 0
+
+/** Answer the newest outstanding probe `rtt` ms after it went out. */
+function answerProbe(rtt: number): void {
+  const ping = wire
+    .map(f => JSON.parse(f) as { type: string; token?: string })
+    .filter(m => m.type === 'ws_ping')
+    .at(-1)
+  clock += rtt
+  recordPong(ping?.token)
+}
 
 const COUNTERS: WallFleetCounters = {
   conversations: 19,
@@ -47,6 +74,11 @@ function countSlot(): string {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(NOW)
+  clock = 0
+  vi.spyOn(performance, 'now').mockImplementation(() => clock)
+  wire.length = 0
+  resetRttProbeForTest()
+  useConversationsStore.setState({ ws: fakeSocket })
   resetWallFrames()
   useWallFilterStore.getState().clear()
   // The 24h tile is the only thing on this pane that fetches. Left unresolved by
@@ -59,7 +91,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  resetRttProbeForTest()
+  useConversationsStore.setState({ ws: null })
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   vi.useRealTimers()
 })
 
@@ -74,12 +109,42 @@ describe('P4 fleet', () => {
     expect(screen.getByText('no frame yet')).toBeTruthy()
   })
 
-  it('never dresses an absent round-trip feed as a number', () => {
+  it('dashes the round trip until a probe answers, then reads the median', () => {
     render(<FleetPane />)
-    // ws-stats measures throughput, so the socket rate is real and 0 is honest.
-    // The round trip has no probe anywhere on this wire, so it gets the dash.
-    expect(kpiValue('WS')).toBe('0/s')
-    expect(screen.getByText('— ms rtt (no probe)')).toBeTruthy()
+    // The probe is held by the tile and fired on mount, but nothing has answered
+    // it yet -- so the headline is a dash, and the sub-line carries the two
+    // numbers that ARE known (an empty queue and the measured throughput).
+    expect(kpiValue('WS RTT')).toBe('—')
+    expect(tile('WS RTT')?.dataset.unknown).toBe('true')
+    expect(screen.getByText('0 queued · 0/s')).toBeTruthy()
+
+    act(() => {
+      answerProbe(14)
+    })
+    expect(kpiValue('WS RTT')).toBe('14ms')
+    expect(tile('WS RTT')?.dataset.unknown).toBeUndefined()
+  })
+
+  it('drops the latency again when the socket does', () => {
+    render(<FleetPane />)
+    act(() => {
+      answerProbe(14)
+    })
+    expect(kpiValue('WS RTT')).toBe('14ms')
+
+    // What use-websocket's onclose does. A number for a dead wire is worse than
+    // no number, so the tile goes back to the dash.
+    act(() => {
+      resetWsRtt()
+    })
+    expect(kpiValue('WS RTT')).toBe('—')
+  })
+
+  it('stops probing when the pane goes away', () => {
+    const { unmount } = render(<FleetPane />)
+    expect(rttProbeRunning()).toBe(true)
+    unmount()
+    expect(rttProbeRunning()).toBe(false)
   })
 
   it('counts hosts and their conversations off the one wall frame', () => {
@@ -142,7 +207,7 @@ describe('P4 fleet', () => {
         useWallFilterStore.getState().setRaw(raw)
       })
       expect(countSlot()).toBe('4/4')
-      expect(tile('WS')).toBeTruthy()
+      expect(tile('WS RTT')).toBeTruthy()
     }
   })
 

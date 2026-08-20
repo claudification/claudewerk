@@ -53,6 +53,20 @@ export interface WallView {
   /** Frames the broker dropped for backpressure, inferred from seq gaps.
    *  Diagnostic only -- the next frame always carries current state. */
   gaps: number
+  /**
+   * WHEN THE HISTORY WAS LOST, or null if it never was.
+   *
+   * The two series the wall draws -- S1's cpu sparklines and S2's 5h plan graph --
+   * are ACCUMULATED from frames, so a dropped socket or a restarted broker leaves
+   * a real hole: whatever had built up here is discarded on the resubscribe, and
+   * whatever the broker's in-memory rings held died with it.
+   *
+   * A rebuilt series is visually identical to a quiet fleet, which is the whole
+   * failure. So the discontinuity is a FACT the surface carries and prints,
+   * rather than something a chart quietly draws through. It survives every later
+   * frame on purpose: the gap does not heal, it only ages.
+   */
+  historyLostAt: number | null
 }
 
 const EMPTY_VIEW: WallView = {
@@ -65,6 +79,7 @@ const EMPTY_VIEW: WallView = {
   at: 0,
   frames: 0,
   gaps: 0,
+  historyLostAt: null,
 }
 
 const pulse = new Map<string, WallPulseRow>()
@@ -79,6 +94,7 @@ let fleet = EMPTY_FLEET
 let lastSeq = 0
 let frames = 0
 let gaps = 0
+let historyLostAt: number | null = null
 
 const signal = createExternalStoreSignal()
 let view: WallView = EMPTY_VIEW
@@ -99,6 +115,7 @@ function rebuildView(frame: WallFrame): void {
     at: frame.at,
     frames,
     gaps,
+    historyLostAt,
   }
 }
 
@@ -152,14 +169,24 @@ export function applyWallFrame(frame: WallFrame): void {
 /** Socket dropped: the broker forgot us, so the picture is now unverified.
  *  Cleared rather than left to rot -- the resubscribe brings a full snapshot. */
 export function resetWallFrames(): void {
+  // Only a picture that HAD something loses something. A reset before the first
+  // frame -- the ordinary first connect -- is not a gap, and reporting one there
+  // would put a permanent "history lost" on a wall that never had any.
+  if (lastSeq > 0) historyLostAt = Date.now()
   clearPicture()
   // The ledger rides the same frames, so it is just as unverified. Emptying it
   // is honest: the resubscribe's full snapshot repopulates it from the ring.
   applyCardLedgerFrame([], { full: true })
   lastSeq = 0
   gaps = 0
-  view = EMPTY_VIEW
+  view = { ...EMPTY_VIEW, historyLostAt }
   signal.bump()
+}
+
+/** Test isolation only -- forget that anything was ever lost. */
+export function clearWallHistoryGap(): void {
+  historyLostAt = null
+  view = { ...view, historyLostAt: null }
 }
 
 export const subscribe = signal.subscribe

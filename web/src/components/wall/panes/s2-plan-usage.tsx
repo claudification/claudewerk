@@ -20,13 +20,14 @@ import { useWallFilter } from '@/lib/wall/use-wall-filter'
 import { PlanChart } from '../plan/plan-chart'
 import { buildPlanLines } from '../plan/plan-model'
 import { PlanRows } from '../plan/plan-rows'
+import { WallHistoryGap } from '../wall-history-gap'
 import { WallPane } from '../wall-pane'
 import { WallPaneEmpty } from '../wall-pane-empty'
 
 const AXES = ['text', 'host'] as const
 
 export default function PlanUsagePane() {
-  const { plan, at } = useWallChannel()
+  const { plan, at, historyLostAt } = useWallChannel()
   const lines = useMemo(() => buildPlanLines(plan), [plan])
   const { rows, matched, total } = useWallFilter(lines, AXES, line => ({
     title: line.profile,
@@ -40,14 +41,17 @@ export default function PlanUsagePane() {
 
   return (
     <WallPane title="PLAN USAGE" code="S2" count={`${matched}/${total} · 5h`} maxHeight="30%">
-      {rows.length === 0 ? (
-        <WallPaneEmpty />
-      ) : (
+      {rows.length === 0 ? <WallPaneEmpty /> : null}
+      {rows.length > 0 && (
         <div className="wall-plan">
           <PlanChart lines={rows} now={now} />
           <PlanRows lines={rows} />
         </div>
       )}
+      {/* Under the chart AND under the empty line, because after a broker restart
+          the empty case is the misleading one: a 5h window with nothing in it
+          reads as five quiet hours rather than as five hours we no longer have. */}
+      <WallHistoryGap at={historyLostAt} />
     </WallPane>
   )
 }

@@ -11,10 +11,12 @@
     // component imports it.
     "@shared/canvas-selection",
     "@shared/card-path",
+    "@shared/commit-ledger",
     "@shared/draw-dsl",
     "@shared/epic-cards",
     "@shared/epic-color",
     "@shared/epic-linked",
+    "@shared/pinned-epic-rows",
     "@shared/project-order-types",
     "@shared/project-task-types",
     "@shared/project-uri",
@@ -24,7 +26,9 @@
     "@shared/spawn-prompt",
     "@shared/spawn-schema",
     "@shared/task-modes",
-    "@shared/task-statuses"
+    "@shared/task-statuses",
+    "@shared/wall",
+    "@shared/ws-probe"
   ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [

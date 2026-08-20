@@ -22,6 +22,7 @@ import { useWallChannel } from '@/hooks/use-wall-channel'
 // substrate can move a file without eleven panes noticing.
 import { useWallFilter, type WallAxis } from '@/lib/wall/filter'
 import { hostVitalsRows } from '@/lib/wall/host-vitals'
+import { WallHistoryGap } from '../wall-history-gap'
 import { WallPane } from '../wall-pane'
 import { HostVitalsRowView } from './host-vitals-row'
 import { useVitalsClock } from './use-vitals-clock'
@@ -29,7 +30,7 @@ import { useVitalsClock } from './use-vitals-clock'
 const AXES: readonly WallAxis[] = ['text', 'host']
 
 export default function HostVitalsPane() {
-  const { hosts } = useWallChannel()
+  const { hosts, historyLostAt } = useWallChannel()
   const now = useVitalsClock()
 
   // `now` is in here so a row crosses into stale on the clock, not on the next
@@ -47,6 +48,9 @@ export default function HostVitalsPane() {
       ) : (
         shown.map(row => <HostVitalsRowView key={row.nodeId} row={row} />)
       )}
+      {/* The sparklines are accumulated from frames, so a reconnect leaves every
+          one of them short. A flat trace and a flat machine draw the same. */}
+      <WallHistoryGap at={historyLostAt} />
     </WallPane>
   )
 }

@@ -40,12 +40,12 @@ function facets(row: RiverRow): WallRowFacets {
 }
 
 export default function CommitRiverPane() {
-  const { rows: all, loading, hasMore } = useRiverRows()
+  const { rows: all, loading, hasMore, stale } = useRiverRows()
   const { rows, matched, total } = useWallFilter(all, AXES, facets)
   const bands = useMemo(() => riverBands(rows), [rows])
 
   return (
-    <WallPane title="COMMIT RIVER" code="P2" grow count={`${matched}/${total}`}>
+    <WallPane title="COMMIT RIVER" code="P2" grow count={`${matched}/${total}`} stale={stale}>
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {loading ? 'reading the ledger' : total === 0 ? 'no commit in the ledger' : 'no commit matches the filter'}

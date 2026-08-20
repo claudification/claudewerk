@@ -25,8 +25,14 @@ interface OverseerActivityState {
   primed: boolean
   /** Replace one project's slice. An empty array clears it from the map. */
   applyProject: (project: string, rows: EpicActivityEntry[]) => void
-  /** Prime from the single HTTP read. */
-  prime: () => Promise<void>
+  /**
+   * Prime from the single HTTP read. Idempotent unless forced.
+   *
+   * `force` is THE WALL's reconnect path: the push half went away with the
+   * socket, so `primed` no longer means "current", it means "was current on some
+   * earlier connection". Resolves TRUE when a read actually landed.
+   */
+  prime: (force?: boolean) => Promise<boolean>
 }
 
 export const useOverseerActivityStore = create<OverseerActivityState>((set, get) => ({
@@ -43,10 +49,10 @@ export const useOverseerActivityStore = create<OverseerActivityState>((set, get)
       return { byProject: { ...state.byProject, [project]: rows } }
     }),
 
-  prime: async () => {
-    if (get().primed) return
+  prime: async (force = false) => {
+    if (get().primed && !force) return true
     const reply = await fetchActiveRuns()
-    if (!reply.ok) return
+    if (!reply.ok) return false
     const byProject: Record<string, EpicActivityEntry[]> = {}
     for (const row of reply.data) {
       const rows = byProject[row.project] ?? []
@@ -54,6 +60,7 @@ export const useOverseerActivityStore = create<OverseerActivityState>((set, get)
       byProject[row.project] = rows
     }
     set({ byProject, primed: true })
+    return true
   },
 }))
 

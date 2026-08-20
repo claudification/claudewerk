@@ -24,10 +24,10 @@ import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
 import { type EpicBeat, planBeat } from './epic-beat'
-import { acknowledge, performActions } from './epic-beat-actions'
+import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
 import { epicIo, tag } from './epic-io'
-import { type EpicGroup, generationMismatch, unacknowledgedCards } from './epic-sweep'
+import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
 
 export type { BeatDeps, BeatOutcome } from './epic-types'
@@ -69,8 +69,25 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
   const mismatch = generationMismatch(group, run.gen)
   if (mismatch) deps.log(`${tag(group.epicId, run.gen)} ${mismatch}`)
 
-  const pending = unacknowledgedCards(group.settled, view.baton)
+  // Against the WHOLE log's acknowledgement set, never against `view.baton` --
+  // that is a 20-entry prompt tail, and asking it this question is what made the
+  // failure in this file's docstring real (gens 23-28, 2026-08-19).
+  const pending = unacknowledgedCards(group.settled, view.acknowledgedCardIds)
   if (pending.length > 0) await acknowledge(deps, group, pending)
+
+  // BEFORE the plan is computed, for `acknowledge`'s reason: a fact the baton
+  // never records is a fact the next sweep rediscovers forever. A failed launch
+  // does NOT wake the overseer, though -- the card simply stays dispatchable,
+  // and the beat below will re-dispatch or re-verify it from board state. That
+  // is the whole saving: one retry instead of a generation.
+  const failed = unacknowledgedFailedLegs(group.failedLegs, view.baton)
+  if (failed.length > 0) {
+    deps.log(
+      `${tag(group.epicId, run.gen)} ${failed.length} failed launch(es): ` +
+        failed.map(l => `${l.cardId}/${l.role}@${l.convId.slice(0, 8)}`).join(', '),
+    )
+    await noteFailedLaunches(deps, group, failed)
+  }
 
   const cards = await io.fetchBoardCards(deps, group.project)
   const plan = planEpic({
@@ -79,6 +96,7 @@ export async function runEpicBeat(deps: BeatDeps, group: EpicGroup): Promise<Bea
     concurrency: run.concurrency,
     inFlight: group.inFlight,
     inVerify: group.inVerify,
+    unspawnable: group.unspawnable,
   })
 
   const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true

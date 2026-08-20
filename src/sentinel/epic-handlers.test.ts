@@ -113,6 +113,64 @@ describe('handleEpicOp', () => {
   })
 })
 
+/**
+ * TWO ANSWERS FROM ONE READ. The baton is sized for an overseer prompt; the
+ * acknowledgement set is not a tail question at all. Answering the second with
+ * the first froze epic-the-wall for five generations (2026-08-19), and widening
+ * the tail to repair it would have put the whole log in every prompt.
+ */
+describe('get -- the acknowledgement set, folded over the WHOLE log', () => {
+  const settle = (cardId: string) =>
+    op('log_append', { logAppend: { kind: 'completion', convId: 'broker', cardId, body: `${cardId} settled` } })
+
+  test('cards acknowledged past the prompt tail are still reported as acknowledged', () => {
+    op('start')
+    const ids = Array.from({ length: 25 }, (_, i) => `t${i + 1}`)
+    for (const id of ids) settle(id)
+
+    const got = op('get')
+    expect(got.baton).toHaveLength(20) // the prompt tail is untouched
+    expect(got.acknowledgedCardIds).toHaveLength(25)
+    expect(got.acknowledgedCardIds).toContain('t1') // scrolled out of the tail, still acknowledged
+  })
+
+  test('a dispatch acknowledges nothing; a verdict does', () => {
+    op('start')
+    op('log_append', { logAppend: { kind: 'dispatch', convId: 'c', cardId: 't1', body: '' } })
+    op('log_append', { logAppend: { kind: 'verdict', convId: 'c', cardId: 't2', body: '' } })
+    expect(op('get').acknowledgedCardIds).toEqual(['t2'])
+  })
+
+  test('a run with no log yet acknowledges nothing rather than failing', () => {
+    op('start')
+    expect(op('get').acknowledgedCardIds).toEqual([])
+  })
+
+  /**
+   * The belt beside the braces. `log.md` held NINE identical
+   * `completion [broker] wall-surface-shell` lines during the live incident --
+   * one per sweep. The read bug that produced them is fixed; this makes the
+   * write refuse to produce them again, so a human reading the baton never has
+   * to work out which of nine is the real one.
+   */
+  test('re-acknowledging a settled card writes nothing and returns the entry already on disk', () => {
+    op('start')
+    const first = settle('t1')
+    const second = settle('t1')
+    expect(second.ok).toBe(true)
+    expect(second.logEntry).toEqual(first.logEntry)
+    expect(op('get').baton).toHaveLength(1)
+  })
+
+  test('but an agent-authored entry about the same card is still appended -- the log stays append-only', () => {
+    op('start')
+    settle('t1')
+    op('log_append', { logAppend: { kind: 'completion', convId: 'conv_overseer', cardId: 't1', body: 'my take' } })
+    op('log_append', { logAppend: { kind: 'verdict', convId: 'conv_verifier', cardId: 't1', body: 'approved' } })
+    expect(op('get').baton).toHaveLength(3)
+  })
+})
+
 describe('the lease op -- the singleton, under contention', () => {
   test('the first wake takes generation 1 and flips the run to running', () => {
     op('start')

@@ -24,8 +24,9 @@
  * the wall channel (`burn.ts`) with no fetch at all.
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BurnFeatureRow, BurnHourlyRow } from '@/lib/wall/burn-splits'
+import { useWallRevive } from '@/lib/wall/use-wall-revive'
 
 /** How often the historical half is re-read. Hourly buckets do not move faster. */
 const BURN_REFRESH_MS = 60_000
@@ -42,9 +43,12 @@ export interface BurnFeed {
   features: BurnFeatureRow[] | null
   /** True once every fetch has settled at least once, however it settled. */
   settled: boolean
+  /** The numbers above landed on an EARLIER connection than the one we are on.
+   *  They are the last thing we knew, not the current thing. */
+  stale: boolean
 }
 
-const EMPTY: BurnFeed = { hourly: null, monthUsd: null, features: null, settled: false }
+const EMPTY: BurnFeed = { hourly: null, monthUsd: null, features: null, settled: false, stale: false }
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
@@ -56,36 +60,49 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/** Read the three feeds once, then every `BURN_REFRESH_MS`. */
+/**
+ * Read the three feeds on mount, on every reconnect, and every `refreshMs`.
+ *
+ * The poll and the reconnect pull both belong to `useWallRevive` now: this hook
+ * owns the three requests and nothing about WHEN they happen. Before that, a
+ * broker restart left A2's 24h and 30d numbers frozen for up to a minute with
+ * nothing saying so.
+ */
 export function useBurnFeed(refreshMs: number = BURN_REFRESH_MS): BurnFeed {
   const [feed, setFeed] = useState<BurnFeed>(EMPTY)
 
+  const live = useRef(true)
   useEffect(() => {
-    let live = true
-
-    const load = async () => {
-      const from = Date.now() - HOURLY_WINDOW_MS
-      const [hourly, summary, openrouter] = await Promise.all([
-        getJson<BurnHourlyRow[]>(`/api/stats/hourly?from=${from}`),
-        getJson<{ totalCostUsd: number }>('/api/stats/summary?period=30d'),
-        getJson<{ byFeature: BurnFeatureRow[] }>('/api/stats/openrouter?period=24h'),
-      ])
-      if (!live) return
-      setFeed({
-        hourly: Array.isArray(hourly) ? hourly : null,
-        monthUsd: typeof summary?.totalCostUsd === 'number' ? summary.totalCostUsd : null,
-        features: Array.isArray(openrouter?.byFeature) ? openrouter.byFeature : null,
-        settled: true,
-      })
-    }
-
-    void load()
-    const timer = setInterval(() => void load(), refreshMs)
+    live.current = true
     return () => {
-      live = false
-      clearInterval(timer)
+      live.current = false
     }
-  }, [refreshMs])
+  }, [])
 
-  return feed
+  const load = useCallback(async () => {
+    const from = Date.now() - HOURLY_WINDOW_MS
+    const [hourly, summary, openrouter] = await Promise.all([
+      getJson<BurnHourlyRow[]>(`/api/stats/hourly?from=${from}`),
+      getJson<{ totalCostUsd: number }>('/api/stats/summary?period=30d'),
+      getJson<{ byFeature: BurnFeatureRow[] }>('/api/stats/openrouter?period=24h'),
+    ])
+    if (!live.current) return false
+    setFeed({
+      hourly: Array.isArray(hourly) ? hourly : null,
+      monthUsd: typeof summary?.totalCostUsd === 'number' ? summary.totalCostUsd : null,
+      features: Array.isArray(openrouter?.byFeature) ? openrouter.byFeature : null,
+      settled: true,
+      stale: false,
+    })
+    // THE PULL LANDED IF ANY OF THE THREE DID. One 403 on an admin-only route is
+    // an ordinary partial view (see the header comment); all three null is a
+    // broker that did not answer, and that is exactly what stale means.
+    return hourly !== null || summary !== null || openrouter !== null
+  }, [])
+
+  const { stale } = useWallRevive('burn', load, refreshMs)
+
+  // Memoised, not spread per render: A2 folds this object in three `useMemo`s and
+  // a fresh identity every render would rebuild all three for nothing.
+  return useMemo(() => (feed.stale === stale ? feed : { ...feed, stale }), [feed, stale])
 }

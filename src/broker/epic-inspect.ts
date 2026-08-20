@@ -31,6 +31,8 @@ function emptyGroup(epicId: string, project: string): EpicGroup {
     overseerAlive: false,
     liveOverseers: [],
     settled: [],
+    failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 0,
   }
 }
@@ -90,7 +92,7 @@ export async function inspectEpic(
     live: toInspectLive({
       group,
       armed: isArmed(project, epicId),
-      unacknowledged: unacknowledgedCards(group.settled, view.baton),
+      unacknowledged: unacknowledgedCards(group.settled, view.acknowledgedCardIds),
       runGen: view.run?.gen ?? 0,
       conversations: epicConversations(convs, deps.isLive, epicId),
     }),
