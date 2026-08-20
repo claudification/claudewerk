@@ -36,6 +36,14 @@ function ReadyBody({ summary }: { summary: CardSummary }) {
       <CardHoverHeader summary={summary} />
       <HoverSection>
         {summary.title ? <div className="text-foreground leading-snug">{summary.title}</div> : <CardHoverSkeleton />}
+        {/* What the card SAYS, not just what it is called -- the question a
+            hover over a card row is actually asking. Clamped: a preview that
+            grows to a screenful is a panel, not a preview. */}
+        {summary.preview && (
+          <div className="mt-1.5 text-[11px] leading-snug text-muted-foreground line-clamp-4 whitespace-pre-wrap break-words">
+            {summary.preview}
+          </div>
+        )}
         {summary.kind === 'epic' && <CardEpicProgress progress={summary.progress} />}
         <CardHoverTags tags={summary.tags} />
       </HoverSection>

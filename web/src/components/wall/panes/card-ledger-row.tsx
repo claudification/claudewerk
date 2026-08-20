@@ -25,6 +25,7 @@ import type { LedgerRow } from '@/lib/wall/card-ledger'
 import { PRIORITY_COLORS } from '../../project-board/board-constants'
 import { ProjectIcon } from '../../project-icons'
 import { navigateFromWall } from '../wall-navigate'
+import { hoverCardRow, leaveWallRow } from '../wall-row-hover'
 
 /** Lane names go out RAW. `inbox`, `in-progress`, `in-review` are what the card
  *  file says and what the editor's own `<option>`s say; a wall that renamed them
@@ -47,6 +48,8 @@ export function CardLedgerRow({ row }: { row: LedgerRow }) {
       data-card={row.id}
       title={`${row.title}\n${row.projectName} · ${lane(row.from)} -> ${lane(row.to)} · click -- the MAIN window opens this card`}
       onClick={open}
+      onMouseEnter={event => hoverCardRow(row.id, row.project, event.currentTarget)}
+      onMouseLeave={leaveWallRow}
       onKeyDown={event => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()

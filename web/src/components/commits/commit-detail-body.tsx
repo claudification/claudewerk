@@ -3,12 +3,11 @@
  * where it ran, and the way back into the conversation that produced it.
  */
 
-import { useEffect, useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { type CommitRow, commitTypeColor } from '@/lib/commits'
-import { appendShareParam } from '@/lib/share-mode'
 import { cn, haptic } from '@/lib/utils'
 import { CommitTranscriptLinkRow } from './commit-transcript-link'
+import { useCommitDetail } from './use-commit-detail'
 
 /** Only fields worth a row. A blank host or container says nothing, and a share
  *  guest gets them stripped server-side anyway -- so absent means absent. */
@@ -35,28 +34,12 @@ function facts(commit: CommitRow): Array<[string, string]> {
 }
 
 export function CommitDetailBody({ hash }: { hash: string }) {
-  const [commit, setCommit] = useState<CommitRow | null>(null)
-  const [missing, setMissing] = useState(false)
+  const detail = useCommitDetail(hash)
 
-  useEffect(() => {
-    let cancelled = false
-    setCommit(null)
-    setMissing(false)
-    void fetch(appendShareParam(`/api/commits/${encodeURIComponent(hash)}`))
-      .then(res => (res.ok ? res.json() : null))
-      .then((body: { commit?: CommitRow } | null) => {
-        if (cancelled) return
-        if (body?.commit) setCommit(body.commit)
-        else setMissing(true)
-      })
-      .catch(() => !cancelled && setMissing(true))
-    return () => {
-      cancelled = true
-    }
-  }, [hash])
-
-  if (missing) return <div className="text-[11px] text-muted-foreground">No commit matches {hash}.</div>
-  if (!commit) return <div className="text-[11px] text-muted-foreground">Loading...</div>
+  if (detail.status === 'missing')
+    return <div className="text-[11px] text-muted-foreground">No commit matches {hash}.</div>
+  if (detail.status === 'loading') return <div className="text-[11px] text-muted-foreground">Loading...</div>
+  const commit = detail.commit
 
   return (
     <div className="space-y-4">

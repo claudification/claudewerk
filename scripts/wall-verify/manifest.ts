@@ -202,8 +202,41 @@ export const ASPECTS: Aspect[] = [
     code: 'W4',
     card: 'wall-navigation-and-hover',
     promise: 'A row click navigates the MAIN window even when the wall is detached',
-    artifacts: [{ path: WALL, needle: 'navigateFromWall', as: 'the navigateFromWall contract symbol' }],
+    /**
+     * THE PROBE THAT COULD NOT FAIL, AND WHY IT NOW CAN.
+     *
+     * Until 2026-08-20 this aspect was one grep for `navigateFromWall`, which A8
+     * had already satisfied when it landed the sending half as its minimum seam.
+     * So W4 read 1/1 while every `postMessage` the wall sent landed in a window
+     * that was listening for nothing -- a live false green over a card that had
+     * shipped exactly zero of its four promises.
+     *
+     * A contract probe has to name the half that was MISSING, not the half that
+     * happened to exist. The three added here are the ones a stub cannot fake:
+     * the receiver must exist, it must be MOUNTED (a listener nobody mounts is
+     * the dead click this card exists to prevent), and the wall's hover must go
+     * through the shared hover bus rather than a third popover system.
+     */
+    artifacts: [
+      { path: WALL, needle: 'navigateFromWall', as: 'the navigateFromWall contract symbol' },
+      {
+        path: `${WALL_DIR}/wall-nav-receiver.ts`,
+        needle: 'useWallNavReceiver',
+        as: 'the RECEIVING half -- postMessage AND the BroadcastChannel reload fallback',
+      },
+      {
+        path: 'web/src/app.tsx',
+        needle: 'useWallNavReceiver',
+        as: 'the receiver MOUNTED in the main window (an unmounted listener is a dead click)',
+      },
+      {
+        path: WALL,
+        needle: 'card-hover-bus',
+        as: 'row hover riding the ONE hover layer, not a third popover system',
+      },
+    ],
     feeds: [{ path: 'web/src/hooks/use-hover-popover.ts' }],
+    test: { path: `${WALL_DIR}/wall-nav-receiver.test.ts`, as: 'a receiving-half test' },
   },
   {
     code: 'COPY',

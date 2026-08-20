@@ -58,6 +58,7 @@ import { useVacuumOpen } from '@/components/vacuum/vacuum-state'
 import { VoiceFab } from '@/components/voice-fab'
 import { VoiceKey } from '@/components/voice-key'
 import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
+import { useWallNavReceiver } from '@/components/wall/wall-nav-receiver'
 import { useWallOpen } from '@/components/wall/wall-state'
 import { useBackdropBypass } from '@/hooks/use-backdrop-bypass'
 import { useBuildUpdate } from '@/hooks/use-build-update'
@@ -354,6 +355,10 @@ function Dashboard() {
   useGlobalCommands(sidebar.toggle)
   // Hold Option for 2s to see through every scrim at once.
   useBackdropBypass()
+  // THE WALL is a driver: a row click in a detached wall popup has to land in
+  // THIS window. This is the only place that listens for it, so an unmounted
+  // receiver is a click that silently does nothing.
+  useWallNavReceiver()
 
   // Listen for user admin open event (from command palette)
   useEffect(() => {

@@ -30,6 +30,13 @@ import type { CardLookup, CardProgress, CardProvider, CardRef, CardSummary } fro
 
 const PROJECT_BOARD_PROVIDER = 'project-board'
 
+/** Address a board card directly, when the caller already knows the project --
+ *  THE WALL's rows do, so they never have to go through `matchHref` and the
+ *  ambient scope it infers. One builder, so the provider id has one spelling. */
+export function projectBoardCardRef(id: string, project: string): CardRef {
+  return { provider: PROJECT_BOARD_PROVIDER, id, scope: project }
+}
+
 /** The project the panel is currently looking at. Null when nothing is selected. */
 function ambientProject(): string | null {
   const state = useConversationsStore.getState()
@@ -75,6 +82,7 @@ function fullSummary(ref: CardRef, scope: string, meta: ProjectTaskMeta): CardSu
     statusLabel: meta.status,
     detail: 'full',
     title: meta.title,
+    preview: meta.bodyPreview || undefined,
     priority: meta.priority,
     tags: meta.tags,
     created: meta.created,
