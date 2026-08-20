@@ -15,9 +15,13 @@
  */
 
 import { vi } from 'vitest'
+import { activityMatrixFixture } from './activity-fixture'
 
 function bodyFor(url: string): unknown {
   if (url.includes('/api/stats/tokens')) return { buckets: [] }
+  // A9 counts DAYS off the response, so an empty body is not the thin end of
+  // this feed -- it is a pane that landed nothing. See `activity-fixture.ts`.
+  if (url.includes('/api/stats/activity-matrix')) return activityMatrixFixture(Date.now())
   if (url.includes('/api/stats/openrouter')) return { byFeature: [] }
   if (url.includes('/api/stats/summary')) return { totalCostUsd: 0 }
   if (url.includes('/api/commits/feed')) {

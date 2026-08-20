@@ -27,6 +27,7 @@ import { useConversationsStore } from '@/hooks/use-conversations'
 import { useOverseerActivityStore } from '@/hooks/use-overseer-activity'
 import { applyWallFrame } from '@/hooks/wall-frame-store'
 import type { Conversation } from '@/lib/types'
+import { activityMatrixFixture } from './activity-fixture'
 
 /**
  * The clock every age in the fixture is measured against.
@@ -158,6 +159,8 @@ function thisHour(): string {
 }
 
 function bodyFor(url: string): unknown {
+  // A9's axis, dated against the fixture's own NOW like every other row here.
+  if (url.includes('/api/stats/activity-matrix')) return activityMatrixFixture(NOW)
   if (url.includes('/api/stats/hourly')) {
     return [
       { hour: thisHour(), projectUri: RC, costUsd: 12 },
