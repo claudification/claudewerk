@@ -1,11 +1,21 @@
 /**
  * Shiki syntax highlighting - static imports for core + eager langs,
  * lazy imports only for rare languages.
+ *
+ * SUBPATH COVENANT: grammars and themes come from `@shikijs/langs` and
+ * `@shikijs/themes`, NOT from `shiki/langs/*` or `shiki/themes/*`. shiki 4's
+ * exports map has no per-file entry for either -- just the catch-all
+ * `"./*": "./dist/*"`, which resolves to an extensionless path. Vite retries
+ * extensions and links fine; bun obeys the map literally and cannot find the
+ * module, so `shiki/themes/tokyo-night` took the whole test suite down while
+ * the shipped bundle stayed green. `shiki/core` and `shiki/engine/javascript`
+ * ARE real exports-map entries and stay as they are. Pinned by
+ * `syntax-subpath.test.ts`.
  */
 
+import tokyoNight from '@shikijs/themes/tokyo-night'
 import { createHighlighterCore, type HighlighterCore } from 'shiki/core'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
-import tokyoNight from 'shiki/themes/tokyo-night'
 
 // LAZY-LOAD COVENANT: the default ("eager") grammar packs (js/ts/tsx/jsx/sh)
 // are ~775KB of grammar JSON. Statically importing them parked that data in
@@ -16,11 +26,11 @@ import tokyoNight from 'shiki/themes/tokyo-night'
 // every call site already awaits getHighlighter(), so the await already exists.
 const loadDefaultLangs = () =>
   Promise.all([
-    import('shiki/langs/javascript'),
-    import('shiki/langs/typescript'),
-    import('shiki/langs/tsx'),
-    import('shiki/langs/jsx'),
-    import('shiki/langs/shellscript'),
+    import('@shikijs/langs/javascript'),
+    import('@shikijs/langs/typescript'),
+    import('@shikijs/langs/tsx'),
+    import('@shikijs/langs/jsx'),
+    import('@shikijs/langs/shellscript'),
   ]).then(mods => mods.flatMap(m => m.default))
 
 // Lazy singleton highlighter
@@ -28,41 +38,41 @@ let highlighterPromise: Promise<HighlighterCore> | null = null
 
 // Languages available for lazy loading (less common)
 const LAZY_LANG_LOADERS: Record<string, () => Promise<unknown>> = {
-  html: () => import('shiki/langs/html'),
-  astro: () => import('shiki/langs/astro'),
-  css: () => import('shiki/langs/css'),
-  json: () => import('shiki/langs/json'),
-  yaml: () => import('shiki/langs/yaml'),
-  markdown: () => import('shiki/langs/markdown'),
-  python: () => import('shiki/langs/python'),
-  ruby: () => import('shiki/langs/ruby'),
-  rust: () => import('shiki/langs/rust'),
-  go: () => import('shiki/langs/go'),
-  java: () => import('shiki/langs/java'),
-  c: () => import('shiki/langs/c'),
-  cpp: () => import('shiki/langs/cpp'),
-  csharp: () => import('shiki/langs/csharp'),
-  scss: () => import('shiki/langs/scss'),
-  less: () => import('shiki/langs/less'),
-  sass: () => import('shiki/langs/sass'),
-  vue: () => import('shiki/langs/vue'),
-  svelte: () => import('shiki/langs/svelte'),
-  jsonc: () => import('shiki/langs/jsonc'),
-  json5: () => import('shiki/langs/json5'),
-  xml: () => import('shiki/langs/xml'),
-  toml: () => import('shiki/langs/toml'),
-  mdx: () => import('shiki/langs/mdx'),
-  sql: () => import('shiki/langs/sql'),
-  graphql: () => import('shiki/langs/graphql'),
-  php: () => import('shiki/langs/php'),
-  r: () => import('shiki/langs/r'),
-  coffee: () => import('shiki/langs/coffee'),
-  pug: () => import('shiki/langs/pug'),
-  handlebars: () => import('shiki/langs/handlebars'),
-  dockerfile: () => import('shiki/langs/dockerfile'),
-  swift: () => import('shiki/langs/swift'),
-  kotlin: () => import('shiki/langs/kotlin'),
-  lua: () => import('shiki/langs/lua'),
+  html: () => import('@shikijs/langs/html'),
+  astro: () => import('@shikijs/langs/astro'),
+  css: () => import('@shikijs/langs/css'),
+  json: () => import('@shikijs/langs/json'),
+  yaml: () => import('@shikijs/langs/yaml'),
+  markdown: () => import('@shikijs/langs/markdown'),
+  python: () => import('@shikijs/langs/python'),
+  ruby: () => import('@shikijs/langs/ruby'),
+  rust: () => import('@shikijs/langs/rust'),
+  go: () => import('@shikijs/langs/go'),
+  java: () => import('@shikijs/langs/java'),
+  c: () => import('@shikijs/langs/c'),
+  cpp: () => import('@shikijs/langs/cpp'),
+  csharp: () => import('@shikijs/langs/csharp'),
+  scss: () => import('@shikijs/langs/scss'),
+  less: () => import('@shikijs/langs/less'),
+  sass: () => import('@shikijs/langs/sass'),
+  vue: () => import('@shikijs/langs/vue'),
+  svelte: () => import('@shikijs/langs/svelte'),
+  jsonc: () => import('@shikijs/langs/jsonc'),
+  json5: () => import('@shikijs/langs/json5'),
+  xml: () => import('@shikijs/langs/xml'),
+  toml: () => import('@shikijs/langs/toml'),
+  mdx: () => import('@shikijs/langs/mdx'),
+  sql: () => import('@shikijs/langs/sql'),
+  graphql: () => import('@shikijs/langs/graphql'),
+  php: () => import('@shikijs/langs/php'),
+  r: () => import('@shikijs/langs/r'),
+  coffee: () => import('@shikijs/langs/coffee'),
+  pug: () => import('@shikijs/langs/pug'),
+  handlebars: () => import('@shikijs/langs/handlebars'),
+  dockerfile: () => import('@shikijs/langs/dockerfile'),
+  swift: () => import('@shikijs/langs/swift'),
+  kotlin: () => import('@shikijs/langs/kotlin'),
+  lua: () => import('@shikijs/langs/lua'),
 }
 
 // All known language IDs (eager + lazy)
