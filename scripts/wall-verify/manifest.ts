@@ -209,6 +209,47 @@ export const ASPECTS: Aspect[] = [
     artifacts: [{ path: WALL, needle: 'useWallCopy', as: 'the useWallCopy contract symbol' }],
   },
   {
+    code: 'RESILIENCE',
+    card: 'wall-survives-disconnect',
+    promise: 'Every pane revives after a disconnect; no number outlives its connection unmarked',
+    /**
+     * FIVE PROBES, AND THE THIRD IS THE ONE THAT MATTERS.
+     *
+     * A revive seam is trivially stubbable: one `useEffect` on `connectSeq`
+     * behind one pane satisfies "a seam exists" while twelve panes stay stale.
+     * That is the W4 false-green verbatim, and this card exists partly because
+     * of it. So the probe does not ask whether a seam exists -- it asks for the
+     * CENSUS CHECK: `unrevivedWallFeeds()`, the registry's declared pull feeds
+     * minus the ones that actually registered at runtime. A stub returns a
+     * non-empty set and its own test fails.
+     *
+     * The census cannot be hardcoded either: `WALL_PULL_FEEDS` is folded out of
+     * `WALL_COLUMNS`, and `WallPaneEntry.feeds` is a REQUIRED field, so the next
+     * pane does not compile until it declares what feeds it.
+     */
+    artifacts: [
+      { path: LIB, needle: 'useWallRevive', as: 'the useWallRevive contract symbol' },
+      {
+        path: `${WALL_DIR}/wall-pane-registry.ts`,
+        needle: 'WALL_PULL_FEEDS',
+        as: 'the pull-feed census, folded out of the registry rather than typed out',
+      },
+      {
+        path: `${WALL_DIR}/wall-revive-census.ts`,
+        needle: 'unrevivedWallFeeds',
+        as: 'the census CHECK -- declared feeds minus the ones that really registered',
+      },
+      { path: `${WALL_DIR}/wall-pane.tsx`, needle: 'stale', as: 'the staleness contract on the shared pane chrome' },
+      {
+        path: 'web/src/hooks/wall-frame-store.ts',
+        needle: 'historyLostAt',
+        as: 'the lost-history report a restart leaves behind',
+      },
+    ],
+    feeds: [{ path: 'web/src/hooks/use-conversations.ts', needle: 'connectSeq', as: 'the reconnect signal' }],
+    test: { path: `${WALL_DIR}/wall-revive.test.tsx`, as: 'the reconnect census + exactly-once re-pull test' },
+  },
+  {
     code: 'ICON',
     card: 'wall-surface-shell',
     promise: 'Every project mention carries its CONFIGURED icon and colour',
