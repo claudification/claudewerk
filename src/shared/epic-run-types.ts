@@ -89,6 +89,43 @@ export interface EpicRunMeta {
   /** Hard ceiling on generations, so a thrashing epic cannot bill forever. */
   maxGens: number
   /**
+   * Hard ceiling on cumulative USD, across every conversation this run has
+   * spawned. `0` disarms it -- deliberately, and it has to be typed.
+   *
+   * A GENERATION IS A UNIT OF PLANNING, NOT OF SPEND. `maxGens` bounds how many
+   * times the overseer thinks and bounds nothing about what the seats underneath
+   * it burn: one generation with three implementers chewing an XL card for two
+   * hours costs more than thirty dry ones.
+   */
+  maxUsd: number
+  /**
+   * Hard ceiling on minutes since `startedAt`. `0` disarms it, same rule.
+   *
+   * The second unit the run actually costs in: a fleet of seats that has been
+   * running all day is a fleet nobody reviewed, whatever it spent.
+   */
+  maxWallClockMinutes: number
+  /**
+   * Cumulative USD this run has cost. STICKY -- it never decreases.
+   *
+   * Written by the EXECUTOR on the beat (never by `planBeat`), folded from
+   * `turns.cost_usd` over every conversation tagged with this epic. Persisted
+   * rather than recomputed-only because the turn table is pruned and the
+   * conversation registry forgets: the fold is a floor on the truth, not the
+   * truth, and a brake that can be lowered by garbage collection is not a brake.
+   */
+  spentUsd: number
+  /**
+   * When the wall clock started -- the first beat this run was PERMITTED to
+   * dispatch, not when it was armed.
+   *
+   * A `window` run armed at noon may not dispatch until the night window opens,
+   * and a clock started at arming would spend that whole wait burning a budget
+   * the run was never allowed to use. Absent means the clock has not started, so
+   * the wall-clock cap cannot trip. Arming (or re-arming) clears it.
+   */
+  startedAt?: string
+  /**
    * Run a PLANNING generation before anything dispatches. Default on.
    *
    * Readiness is arithmetic over `depends_on` (epic-ready.ts) and nothing else
@@ -150,11 +187,30 @@ export interface EpicRunFull extends EpicRunMeta {
   digest: string
 }
 
-/** Sane defaults for a fresh run. */
+/**
+ * Sane defaults for a fresh run. NONE OF THEM IS INFINITY.
+ *
+ * `maxUsd: 100`. On 2026-08-19 -- the day THE WALL II ran unattended -- this
+ * project billed $2,481 in one calendar day, and no cap of any kind was involved
+ * in stopping it. $100 is about 4% of that day. It is a judgement call rather
+ * than a measurement (per-run spend was not being recorded at the time, which is
+ * itself half of what this card fixes), and it is deliberately set where a human
+ * reading "this run has spent $100 and is not finished" would say STOP: a run
+ * that has burned that much without converging is not going to converge by
+ * burning more. Raise it per run at arm time when an epic genuinely warrants it.
+ *
+ * `maxWallClockMinutes: 480`. Eight hours -- one night. The `window` cadence
+ * exists to run an epic through the night shift; a run still going after a full
+ * shift has outlived the supervision it was armed under. The clock only starts
+ * when the run is first allowed to dispatch (see `startedAt`), so a window run
+ * does not spend its budget waiting for the window.
+ */
 export const EPIC_RUN_DEFAULTS = {
   cadence: 'now' as EpicCadence,
   target: 'merged' as const,
   maxGens: 40,
+  maxUsd: 100,
+  maxWallClockMinutes: 480,
   concurrency: 3,
   /** ON by default: an unplanned epic dispatches against whatever edges someone
    *  remembered to write, which is the failure this stage exists to prevent. */

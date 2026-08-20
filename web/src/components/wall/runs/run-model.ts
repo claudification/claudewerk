@@ -14,10 +14,11 @@
  * `Date.now()` for itself cannot be asked what it thought at any other moment.
  */
 
+import { type EpicCapReading, epicRunCaps } from '@shared/epic-run-caps'
 import type { EpicLogEntry } from '@shared/epic-run-types'
 import { type RunVitalityView, runVitality } from '@shared/epic-vitality'
 import type { NightshiftTaskMeta, NightshiftTaskStatus } from '@shared/nightshift-types'
-import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
+import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
 
 /**
  * A run the sweep is supposed to be beating, and WHAT it is actually doing.
@@ -79,6 +80,24 @@ export function runBuckets(data: EpicInspectResult | null): RunBuckets {
 export function idleSentence(entry: EpicActivityEntry, data: EpicInspectResult | null): string | null {
   if (!data?.plan?.idleReason || !runView(entry).live) return null
   return data.plan.dispatch.length > 0 ? null : data.plan.idleReason
+}
+
+// ---------------------------------------------------------------------------
+// THE HANDBRAKES -- how much budget the run has left
+// ---------------------------------------------------------------------------
+
+/**
+ * The run's three ceilings and what is left of each, or an empty list when no
+ * run artifact has been read yet.
+ *
+ * A THIN WRAPPER ON PURPOSE. The readings are computed in `@shared/epic-run-caps`,
+ * beside the arithmetic the ENGINE parks on, so the pane cannot come to a
+ * different view of "how much is left" than the beat that enforces it. Rendering
+ * a run as healthy while the engine is about to park it for spend is precisely
+ * the class of disagreement this pane was built to end.
+ */
+export function runCaps(run: EpicRunSnapshot | null, nowMs: number): EpicCapReading[] {
+  return run ? epicRunCaps(run, nowMs) : []
 }
 
 // ---------------------------------------------------------------------------

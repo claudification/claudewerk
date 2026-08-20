@@ -495,6 +495,10 @@ export function createSchema(db: Database) {
   db.run('CREATE INDEX IF NOT EXISTS idx_turns_account ON turns(account)')
   db.run('CREATE INDEX IF NOT EXISTS idx_turns_project_uri ON turns(project_uri)')
   db.run('CREATE INDEX IF NOT EXISTS idx_turns_sentinel_profile ON turns(sentinel_id, profile)')
+  // The epic engine's spend cap sums `cost_usd` over one run's conversations on
+  // every 45s beat (store/types.ts `sumCostByConversations`). Unindexed that is
+  // a full scan of a multi-gigabyte table per epic per tick.
+  db.run('CREATE INDEX IF NOT EXISTS idx_turns_conversation ON turns(conversation_id)')
 
   db.run('CREATE INDEX IF NOT EXISTS idx_hourly_hour ON hourly_stats(hour)')
   db.run('CREATE INDEX IF NOT EXISTS idx_hourly_project_uri ON hourly_stats(project_uri)')

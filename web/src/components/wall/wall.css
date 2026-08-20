@@ -1061,6 +1061,23 @@
 	font-variant-numeric: tabular-nums;
 	color: var(--comment);
 }
+/* THE BUDGET STRIP. Same shape as the bucket strip above -- these are two rows
+   of the same kind of fact -- but a ceiling that has TRIPPED wears the alarm
+   tone, because "this run stopped because it ran out of money" is the sentence
+   the pane exists to deliver without anyone opening a tool. */
+.wall-run-caps {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 9px;
+	margin-top: 2px;
+	font-size: 10px;
+	font-variant-numeric: tabular-nums;
+	color: var(--comment);
+}
+.wall-run-caps [data-over] {
+	color: var(--destructive);
+	font-weight: 700;
+}
 /* THE ALARM. A stalled run and a dead lease are the two things this pane exists
    to make impossible to miss, so both get the destructive tone and weight. */
 .wall-run-stalled,

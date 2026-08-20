@@ -13,6 +13,7 @@
  * one of them directly would be assembling a half-report.
  */
 
+import { formatEpicRunCaps } from '../../../shared/epic-run-caps'
 import type { EpicLogEntry } from '../../../shared/epic-run-types'
 import type {
   EpicInspectCard,
@@ -52,6 +53,13 @@ function runHeader(run: EpicRunSnapshot): string[] {
   return [
     `epic ${run.epicId}: ${run.status} (generation ${run.gen}/${run.maxGens})`,
     `cadence ${run.cadence} . target ${run.target} . concurrency ${run.concurrency} . dry generations ${run.dryGens}`,
+    // THE THREE HANDBRAKES, on the line under the status, because "how much of
+    // its budget has this run left" is a question about the run and not a detail
+    // of it. `Date.now()` rather than an injected clock: this is a renderer, the
+    // elapsed figure it prints is only ever read by a human or an agent right
+    // now, and threading a clock through every call site to format a string
+    // would be ceremony. The DECISION uses the executor's injected clock.
+    `caps: ${formatEpicRunCaps(run, Date.now())}`,
     ...(run.abortReason ? [`aborted: ${run.abortReason}`] : []),
   ]
 }

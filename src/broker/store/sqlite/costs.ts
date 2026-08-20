@@ -24,6 +24,10 @@ function normalizeUri(uri: string): string {
 
 type Binds = Record<string, string | number | null>
 
+/** Conversation ids per `IN (...)` batch. SQLite's default ceiling is 999 bound
+ *  variables per statement; 500 leaves room and keeps the plan cache small. */
+const SUM_CHUNK = 500
+
 function queryAll(db: Database, sql: string, binds?: Binds): unknown[] {
   const stmt = db.query(sql)
   return binds ? stmt.all(binds as never) : stmt.all()
@@ -450,6 +454,38 @@ export function createSqliteCostStore(db: Database): CostStore {
     }
   }
 
+  /**
+   * Total USD over a set of conversations -- the epic engine's spend ledger.
+   *
+   * Chunked because SQLite caps a statement at 999 bound variables and an epic
+   * run accumulates one conversation per seat: an epic with forty cards, each
+   * implemented, bounced and re-verified, is well past that. A silent truncation
+   * here would under-report a run's cost, which is the one direction a spend CAP
+   * must never be wrong in.
+   *
+   * Needs `idx_turns_conversation` (schema.ts). Without it this is a full scan of
+   * a multi-gigabyte table once per epic per 45s tick.
+   */
+  function sumCostByConversations(conversationIds: readonly string[]): number {
+    if (conversationIds.length === 0) return 0
+    let total = 0
+    for (let i = 0; i < conversationIds.length; i += SUM_CHUNK) {
+      const chunk = conversationIds.slice(i, i + SUM_CHUNK)
+      const binds: Binds = {}
+      const names = chunk.map((id, n) => {
+        binds[`c${n}`] = id
+        return `$c${n}`
+      })
+      const row = queryGet(
+        db,
+        `SELECT COALESCE(SUM(cost_usd), 0) as cost FROM turns WHERE conversation_id IN (${names.join(', ')})`,
+        binds,
+      ) as { cost: number } | undefined
+      total += Number(row?.cost ?? 0)
+    }
+    return total
+  }
+
   function pruneOlderThan(cutoffMs: number): { turns: number; hourly: number } {
     const cutoffHour = toHourKey(cutoffMs)
     const turnsResult = stmtDeleteOldTurns.run({ cutoff: cutoffMs })
@@ -464,6 +500,7 @@ export function createSqliteCostStore(db: Database): CostStore {
     queryHourly,
     querySummary,
     queryProfileBreakdown,
+    sumCostByConversations,
     pruneOlderThan,
   }
 }

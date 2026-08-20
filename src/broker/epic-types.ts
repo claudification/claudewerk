@@ -28,6 +28,15 @@ export interface BeatDeps extends SentinelRpcDeps {
   windowOpen: (project: string) => Promise<boolean>
   /** Clock, injected so a beat's recorded time is not a test's wall clock. */
   now: () => number
+  /**
+   * Total USD these conversations have cost -- the run's spend ledger, folded
+   * fresh on every beat.
+   *
+   * SYNCHRONOUS and injected, like `now`: it is one indexed aggregate over the
+   * broker's own store, not a sentinel round trip, and making it async would
+   * put an await between the plan and the actions for no gain.
+   */
+  epicSpendUsd: (conversationIds: readonly string[]) => number
 }
 
 export interface BeatOutcome {

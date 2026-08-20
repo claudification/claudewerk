@@ -13,6 +13,7 @@
  * no colours of its own.
  */
 
+import type { EpicCapReading } from '@shared/epic-run-caps'
 import type { EpicLogEntry, EpicLogKind } from '@shared/epic-run-types'
 import type { RunVitalityView } from '@shared/epic-vitality'
 import { formatDurationShort } from '@/lib/status-style'
@@ -92,6 +93,30 @@ export function BucketStrip({ buckets }: { buckets: RunBuckets }) {
           </span>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * HOW MUCH BUDGET IS LEFT -- spend, wall clock, generations.
+ *
+ * `maxGens` used to be the only ceiling and the only one on screen, which made
+ * an expensive run and a cheap one look identical right up to the invoice. A
+ * tripped ceiling wears the alarm tone, so "this run stopped because it ran out
+ * of money" is legible from four feet without opening a tool.
+ *
+ * Renders nothing without a run artifact rather than printing zeroes: an unread
+ * run has no budget to report, and `$0.00/$0.00` would read as a broke run.
+ */
+export function CapStrip({ caps }: { caps: readonly EpicCapReading[] }) {
+  if (caps.length === 0) return null
+  return (
+    <div className="wall-run-caps">
+      {caps.map(cap => (
+        <span key={cap.label} data-over={cap.over || undefined} title={cap.remaining ? `${cap.remaining} left` : ''}>
+          {`${cap.label} ${cap.used}/${cap.limit}`}
+        </span>
+      ))}
     </div>
   )
 }

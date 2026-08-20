@@ -4719,6 +4719,12 @@ export interface EpicStartInput {
   target?: 'pr' | 'merged' | 'shipped'
   concurrency?: number
   maxGens?: number
+  /** Cumulative USD ceiling for the whole run. `0` disarms it. Honoured on a
+   *  RESUME as well as a fresh arm -- raising it is how a human says "keep
+   *  going" to a run that parked on budget. */
+  maxUsd?: number
+  /** Ceiling on minutes since the run's first permitted dispatch. `0` disarms. */
+  maxWallClockMinutes?: number
   /** Run a planning generation before anything dispatches. Defaults ON at the
    *  store. Ignored on a RESUME -- see `startEpicRun`. */
   plan?: boolean
@@ -4781,6 +4787,12 @@ export interface EpicRunPatchInput {
   status?: EpicRunStatus
   gen?: number
   dryGens?: number
+  /** Cumulative USD, folded by the executor each beat. STICKY -- see
+   *  `EpicRunMeta.spentUsd`; nothing may lower it. */
+  spentUsd?: number
+  /** When the wall clock started. Written once, by the first beat the run was
+   *  permitted to dispatch on. */
+  startedAt?: string
   concurrency?: number
   digest?: string
   /** Generation 0 has run. Only ever set TRUE, and only by the engine -- a run

@@ -788,6 +788,16 @@ export interface CostStore {
    */
   recordTurnFromCumulatives(params: CumulativeTurnInput): boolean
   queryTurns(filter: TurnFilter): { rows: TurnRecord[]; total: number }
+  /**
+   * Total USD across a set of conversations. The unattended engine's spend
+   * ledger: an epic run's cost is the sum over every conversation it spawned.
+   *
+   * A dedicated aggregate rather than `queryTurns` + a client-side sum, because
+   * the caller wants one number and `queryTurns` caps at 1000 rows -- a run with
+   * more turns than that would silently under-report its own spend, which for a
+   * cost CAP is the failure mode that matters.
+   */
+  sumCostByConversations(conversationIds: readonly string[]): number
   queryHourly(filter: HourlyFilter): HourlyRow[]
   querySummary(period: CostPeriod): CostSummary
   /**

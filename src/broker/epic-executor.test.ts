@@ -25,6 +25,9 @@ const RUN: EpicRunSnapshot = {
   target: 'merged',
   dryGens: 0,
   maxGens: 40,
+  maxUsd: 100,
+  maxWallClockMinutes: 480,
+  spentUsd: 0,
   concurrency: 3,
   plan: false,
   planned: true,
@@ -58,6 +61,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     settled: [],
     failedLegs: [],
     unspawnable: [],
+    convIds: [],
     maxGenSeen: 3,
     ...over,
   }
@@ -75,6 +79,21 @@ let spawns: Array<{ name: string; epic: Record<string, unknown> }>
 let leaseGranted: boolean
 let cards: ProjectTaskMeta[]
 let run: EpicRunSnapshot | null
+/** What the cost store would answer for this run's conversations. */
+let spendUsd: number
+/** The conversation ids the spend fold was actually asked about. */
+let spendAskedFor: readonly string[]
+let nowMs: number
+
+const NOW_0 = Date.parse('2026-08-21T00:00:00.000Z')
+
+/** Every `patch` op the beat sent, in order. */
+const patchOps = () => ops.filter(o => o.op === 'patch').map(o => o.patch as Record<string, unknown>)
+
+/** The patch that moved the run's LIFECYCLE, as opposed to its ledger. A beat
+ *  now writes what it spent before it acts, so "the first patch" is no longer
+ *  the same question as "the patch that parked it". */
+const statusPatch = () => patchOps().find(p => p.status !== undefined)
 
 const deps = () =>
   ({
@@ -85,7 +104,11 @@ const deps = () =>
     spawnContext: {},
     log: (line: string) => log.push(line),
     windowOpen: async () => true,
-    now: () => 1_700_000_000_000,
+    now: () => nowMs,
+    epicSpendUsd: (ids: readonly string[]) => {
+      spendAskedFor = ids
+      return spendUsd
+    },
   }) as unknown as BeatDeps
 
 beforeEach(() => {
@@ -96,6 +119,9 @@ beforeEach(() => {
   leaseGranted = true
   cards = []
   run = { ...RUN }
+  spendUsd = 0
+  spendAskedFor = []
+  nowMs = NOW_0
 
   configureEpicIo({
     // `baton` here is the WHOLE log, so folding it is the honest answer. The
@@ -357,7 +383,7 @@ describe('runEpicBeat', () => {
   test('all children terminal completes the run and RELEASES the lease', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'done', { epic: 'e1' })]
     await runEpicBeat(deps(), group())
-    expect(ops.find(o => o.op === 'patch')?.patch).toMatchObject({ status: 'complete' })
+    expect(statusPatch()).toMatchObject({ status: 'complete' })
     expect(ops.some(o => o.op === 'release')).toBe(true)
     expect(baton.some(e => e.kind === 'checkpoint')).toBe(true)
   })
@@ -366,7 +392,7 @@ describe('runEpicBeat', () => {
     run = { ...RUN, dryGens: 1 }
     cards = [card('e1', 'open', { tags: ['epic'] })]
     await runEpicBeat(deps(), group())
-    expect(ops.find(o => o.op === 'patch')?.patch).toMatchObject({ status: 'paused' })
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
     expect(baton.some(e => e.kind === 'checkpoint' && e.body.includes('PARKED'))).toBe(true)
   })
 
@@ -392,6 +418,110 @@ describe('runEpicBeat', () => {
   test('every beat logs one summary line naming the epic and generation', async () => {
     await runEpicBeat(deps(), group())
     expect(log.some(l => l.includes('[epic e1 gen 3] beat:'))).toBe(true)
+  })
+})
+
+/**
+ * THE RUN CAPS, PERFORMED.
+ *
+ * `planBeat` decides that a run is over budget; these are the tests that it
+ * actually STOPS -- the bar `b766b75e` set after `dryGens` was read every beat,
+ * reported in the overseer's briefing, promised by a comment, and never once
+ * written. A field that exists is not a brake.
+ */
+describe('the run caps stop the run', () => {
+  const ready = () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+  }
+
+  test('a run over its DOLLAR ceiling parks instead of dispatching', async () => {
+    ready()
+    run = { ...RUN, maxUsd: 25 }
+    spendUsd = 31.4
+    await runEpicBeat(deps(), group({ convIds: ['conv_a', 'conv_b'] }))
+    expect(spawns).toHaveLength(0)
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
+  })
+
+  test('and says so in the baton, with the figure and the ceiling', async () => {
+    ready()
+    run = { ...RUN, maxUsd: 25 }
+    spendUsd = 31.4
+    await runEpicBeat(deps(), group())
+    const checkpoint = baton.find(e => e.kind === 'checkpoint')
+    expect(checkpoint?.body).toContain('PARKED')
+    expect(checkpoint?.body).toContain('$31.40')
+    expect(checkpoint?.body).toContain('$25.00')
+  })
+
+  test('a run over its WALL-CLOCK ceiling parks instead of dispatching', async () => {
+    ready()
+    run = { ...RUN, maxWallClockMinutes: 60, startedAt: '2026-08-21T00:00:00.000Z' }
+    nowMs = NOW_0 + 61 * 60_000
+    await runEpicBeat(deps(), group())
+    expect(spawns).toHaveLength(0)
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
+    expect(baton.find(e => e.kind === 'checkpoint')?.body).toContain('60 minute')
+  })
+
+  test('the spend is folded over EVERY conversation the epic has had, not just the live ones', async () => {
+    await runEpicBeat(deps(), group({ convIds: ['conv_overseer', 'conv_dead', 'conv_live'] }))
+    expect(spendAskedFor).toEqual(['conv_overseer', 'conv_dead', 'conv_live'])
+  })
+
+  /**
+   * BEFORE THE ACTIONS, not after -- the rule the dry-generation counter
+   * established. A beat that dies mid-park must still have banked what it spent,
+   * or the ledger resets itself precisely when things are going wrong.
+   */
+  test('what the run spent is written BEFORE the park it triggered', async () => {
+    ready()
+    run = { ...RUN, maxUsd: 25 }
+    spendUsd = 31.4
+    await runEpicBeat(deps(), group())
+    const patches = patchOps()
+    expect(patches[0]).toMatchObject({ spentUsd: 31.4 })
+    expect(patches[1]).toMatchObject({ status: 'paused' })
+  })
+
+  /**
+   * STICKY. Turns are pruned on a retention window and the conversation registry
+   * forgets, so a fresh fold can come back SMALLER than what the run banked. A
+   * brake that garbage collection can release is not a brake.
+   */
+  test('a fold that comes back smaller does NOT lower the ledger', async () => {
+    run = { ...RUN, spentUsd: 40 }
+    spendUsd = 3
+    await runEpicBeat(deps(), group())
+    expect(patchOps().some(p => p.spentUsd !== undefined)).toBe(false)
+  })
+
+  test('and the cap is judged against the banked figure, not the shrunken fold', async () => {
+    ready()
+    run = { ...RUN, spentUsd: 40, maxUsd: 25 }
+    spendUsd = 3
+    await runEpicBeat(deps(), group())
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
+  })
+
+  /** ONE op for the whole bag. Two counters used to mean two round trips; the
+   *  seam exists so the third does not mean a third. */
+  test('the ledger is one patch op, however many fields moved', async () => {
+    spendUsd = 12
+    await runEpicBeat(deps(), group())
+    // An empty board makes this beat dry too, so all three ledger fields move at
+    // once -- and they cross as ONE op.
+    expect(patchOps()).toHaveLength(1)
+    expect(patchOps()[0]).toEqual({ dryGens: 1, spentUsd: 12, startedAt: '2026-08-21T00:00:00.000Z' })
+  })
+
+  /** The clock starts when the run may WORK, not when it was armed -- a window
+   *  run must not spend its budget waiting for the night. */
+  test('a shut window does not start the wall clock', async () => {
+    run = { ...RUN, cadence: 'window' }
+    const d = { ...deps(), windowOpen: async () => false } as BeatDeps
+    await runEpicBeat(d, group())
+    expect(patchOps().some(p => p.startedAt !== undefined)).toBe(false)
   })
 })
 
@@ -672,6 +802,6 @@ describe('a card the engine has given up on', () => {
     run = { ...RUN, dryGens: 1 }
     ops = []
     await runEpicBeat(deps(), gave_up())
-    expect(ops.find(o => o.op === 'patch')?.patch).toMatchObject({ status: 'paused' })
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
   })
 })

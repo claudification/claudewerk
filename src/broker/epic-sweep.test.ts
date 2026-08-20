@@ -308,6 +308,7 @@ describe('generationMismatch', () => {
     settled: [],
     failedLegs: [],
     unspawnable: [],
+    convIds: [],
     maxGenSeen: 5,
   }
 

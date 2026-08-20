@@ -8,6 +8,10 @@ function card(slug: string): ProjectTaskMeta {
   return { slug, status: 'open', title: slug, tags: [], refs: [], created: '', mtime: 0, bodyPreview: '' }
 }
 
+/** The wall clock every test below reads from, so `nowMs` is never a real clock. */
+const T0 = Date.parse('2026-08-21T00:00:00.000Z')
+const at = (minutes: number) => T0 + minutes * 60_000
+
 const RUN: EpicRunSnapshot = {
   epicId: 'e1',
   project: 'claude://s/p',
@@ -17,6 +21,9 @@ const RUN: EpicRunSnapshot = {
   target: 'merged',
   dryGens: 0,
   maxGens: 40,
+  maxUsd: 100,
+  maxWallClockMinutes: 480,
+  spentUsd: 0,
   concurrency: 3,
   plan: false,
   planned: true,
@@ -45,6 +52,8 @@ function beat(over: Partial<EpicBeatInput> = {}, plan: Partial<EpicPlan> = {}, r
     unacknowledged: [],
     windowOpen: true,
     boardFingerprint: '',
+    spentUsd: 0,
+    nowMs: T0,
     ...over,
   })
 }
@@ -213,7 +222,7 @@ describe('the planning generation', () => {
 describe('dryGens -- counting the generations that found nothing', () => {
   test('a dry generation asks for the counter to go up', () => {
     const out = beat({}, {}, { dryGens: 0 })
-    expect(out.dryGens).toBe(1)
+    expect(out.patch?.dryGens).toBe(1)
     expect(kinds(out)).toEqual(['wake-overseer'])
   })
 
@@ -232,14 +241,151 @@ describe('dryGens -- counting the generations that found nothing', () => {
    */
   test('a beat that dispatches CLEARS the streak', () => {
     const out = beat({}, { dispatch: [card('t1')] }, { dryGens: 1 })
-    expect(out.dryGens).toBe(0)
+    expect(out.patch?.dryGens).toBe(0)
   })
 
   test('a dispatching beat on an already-clear counter asks for no write at all', () => {
-    expect(beat({}, { dispatch: [card('t1')] }, { dryGens: 0 }).dryGens).toBeUndefined()
+    expect(beat({}, { dispatch: [card('t1')] }, { dryGens: 0 }).patch?.dryGens).toBeUndefined()
   })
 
   test('a beat that is merely WAITING on in-flight work is not dry', () => {
-    expect(beat({ inFlight: ['t1'] }, {}, { dryGens: 0 }).dryGens).toBeUndefined()
+    expect(beat({ inFlight: ['t1'] }, {}, { dryGens: 0 }).patch?.dryGens).toBeUndefined()
+  })
+})
+
+/**
+ * THE RUN CAPS. `maxGens` bounds how many times the OVERSEER THINKS and bounds
+ * nothing about what the seats underneath it burn: one generation with three
+ * implementers chewing an XL card for two hours costs more than thirty dry ones.
+ * On 2026-08-19, the day THE WALL II ran, this project billed $2,481 in one
+ * calendar day and no cap of any kind was involved in stopping it.
+ *
+ * So the acceptance bar is not "the field exists" -- it is that the run STOPS.
+ * These are the tests that were written before the caps were.
+ */
+describe('the run caps -- dollars and wall clock', () => {
+  const RUNNING = { startedAt: '2026-08-21T00:00:00.000Z' } as Partial<EpicRunSnapshot>
+
+  test('spend under the ceiling dispatches exactly as before', () => {
+    const b = beat({ spentUsd: 24.99 }, { dispatch: [card('t1')] }, { maxUsd: 25 })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('spend AT the ceiling parks the run before it dispatches anything', () => {
+    const b = beat({ spentUsd: 25 }, { dispatch: [card('t1')] }, { maxUsd: 25 })
+    expect(kinds(b)).toEqual(['park'])
+  })
+
+  test('the park says WHICH cap tripped and by how much -- never a silent stop', () => {
+    const b = beat({ spentUsd: 31.4 }, { dispatch: [card('t1')] }, { maxUsd: 25 })
+    const reason = (b.actions[0] as { reason: string }).reason
+    expect(reason).toContain('$31.40')
+    expect(reason).toContain('$25.00')
+    expect(b.note).toContain('spend ceiling')
+  })
+
+  test('wall clock under the ceiling dispatches exactly as before', () => {
+    const b = beat({ nowMs: at(59) }, { dispatch: [card('t1')] }, { ...RUNNING, maxWallClockMinutes: 60 })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('wall clock AT the ceiling parks the run', () => {
+    const b = beat({ nowMs: at(60) }, { dispatch: [card('t1')] }, { ...RUNNING, maxWallClockMinutes: 60 })
+    expect(kinds(b)).toEqual(['park'])
+    expect(b.actions[0]).toMatchObject({ reason: expect.stringContaining('60 minute') })
+    expect(b.note).toContain('wall clock')
+  })
+
+  /** The clock has not started, so there is nothing to be over. A run armed for
+   *  a night window sits here for hours before its first dispatch is allowed. */
+  test('a run whose clock has never started cannot trip the wall-clock cap', () => {
+    const b = beat({ nowMs: at(10_000) }, { dispatch: [card('t1')] }, { maxWallClockMinutes: 60 })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  /** An escape hatch that has to be TYPED. Absent is the default, not infinity. */
+  test.each(['maxUsd', 'maxWallClockMinutes'] as const)('%s: 0 disarms that one cap deliberately', field => {
+    const b = beat(
+      { spentUsd: 9_999, nowMs: at(10_000) },
+      { dispatch: [card('t1')] },
+      { ...RUNNING, maxUsd: 0, maxWallClockMinutes: 0, [field]: 0 },
+    )
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('a cap outranks an unacknowledged settle -- an over-budget run wakes nobody', () => {
+    const b = beat({ spentUsd: 99, unacknowledged: ['t1'] }, {}, { maxUsd: 25 })
+    expect(kinds(b)).toEqual(['park'])
+  })
+
+  test('a cap outranks the planning generation too', () => {
+    const b = beat({ spentUsd: 99, boardFingerprint: 'a' }, {}, { maxUsd: 25, plan: true, planned: false })
+    expect(kinds(b)).toEqual(['park'])
+  })
+
+  test('a terminal run is still touched by nothing, cap or no cap', () => {
+    const b = beat({ spentUsd: 99 }, { dispatch: [card('t1')] }, { maxUsd: 25, status: 'paused' })
+    expect(b.actions).toEqual([])
+    expect(b.patch).toBeUndefined()
+  })
+
+  /** Deterministic order when two ceilings are over at once: money first,
+   *  because money is the thing actually being lost. */
+  test('dollars are reported ahead of wall clock when both have tripped', () => {
+    const b = beat(
+      { spentUsd: 99, nowMs: at(600) },
+      {},
+      { ...RUNNING, maxUsd: 25, maxWallClockMinutes: 60, gen: 40, maxGens: 40 },
+    )
+    expect(b.note).toContain('spend ceiling')
+  })
+})
+
+/**
+ * THE LEDGER THE CAPS ARE READ FROM. Cumulative spend is folded by the executor
+ * and carried here, so this file stays pure and the executor stays the only
+ * writer -- the rule `b766b75e` established after `dryGens` was read every beat
+ * and never once written.
+ */
+describe('spentUsd -- sticky, and never cleared by a good beat', () => {
+  test('a fresh fold above the stored figure asks for the write', () => {
+    expect(beat({ spentUsd: 12.5 }, {}, { spentUsd: 0 }).patch?.spentUsd).toBe(12.5)
+  })
+
+  test('an unchanged figure asks for no write at all', () => {
+    expect(beat({ spentUsd: 12.5 }, {}, { spentUsd: 12.5 }).patch?.spentUsd).toBeUndefined()
+  })
+
+  /**
+   * THE DIFFERENCE FROM THE DRY STREAK, stated as a test so the next reader does
+   * not "fix" it. `dryGens` counts CONSECUTIVE empty generations and a productive
+   * beat clears it. Spend is cumulative: it never decreases and no beat, however
+   * productive, is allowed to zero it.
+   */
+  test('a beat that dispatches clears the dry streak and leaves the spend alone', () => {
+    const out = beat({ spentUsd: 12.5 }, { dispatch: [card('t1')] }, { dryGens: 1, spentUsd: 0 })
+    expect(out.patch).toMatchObject({ dryGens: 0, spentUsd: 12.5 })
+  })
+})
+
+/**
+ * WHEN THE CLOCK STARTS. Not when the run is armed: a `window` run armed at noon
+ * may not dispatch until the night window opens, and a clock started at arming
+ * would spend that whole wait burning a budget the run was never allowed to use.
+ * It starts on the first beat the run is actually permitted to work.
+ */
+describe('startedAt -- the wall clock starts when the run can work', () => {
+  test('the first beat that may dispatch stamps it', () => {
+    expect(beat({ nowMs: T0 }, { dispatch: [card('t1')] }).patch?.startedAt).toBe('2026-08-21T00:00:00.000Z')
+  })
+
+  test('a window run whose window is shut does NOT start the clock', () => {
+    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: 'window' })
+    expect(b.patch?.startedAt).toBeUndefined()
+  })
+
+  test('an already-stamped run is not re-stamped', () => {
+    const b = beat({ nowMs: at(5) }, {}, { startedAt: '2026-08-21T00:00:00.000Z' })
+    expect(b.patch?.startedAt).toBeUndefined()
   })
 })

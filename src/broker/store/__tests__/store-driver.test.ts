@@ -1076,6 +1076,42 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(rows[0].exactCost).toBe(true)
       })
 
+      /**
+       * THE EPIC RUN SPEND LEDGER. An unattended run's cost cap sums this over
+       * every conversation the run spawned, once per beat -- so the sum has to
+       * be exact, has to ignore everything else on the box, and must not silently
+       * truncate the way a paged `queryTurns` would.
+       */
+      describe('sumCostByConversations', () => {
+        it('sums only the conversations asked about', () => {
+          store.costs.recordTurn(baseTurn({ conversationId: 'a', costUsd: 1.25 }))
+          store.costs.recordTurn(baseTurn({ conversationId: 'b', costUsd: 2.5 }))
+          store.costs.recordTurn(baseTurn({ conversationId: 'elsewhere', costUsd: 900 }))
+          expect(store.costs.sumCostByConversations(['a', 'b'])).toBeCloseTo(3.75, 6)
+        })
+
+        it('adds up every turn of one conversation, not just its latest', () => {
+          store.costs.recordTurn(baseTurn({ timestamp: 1000, conversationId: 'a', costUsd: 1 }))
+          store.costs.recordTurn(baseTurn({ timestamp: 2000, conversationId: 'a', costUsd: 2 }))
+          expect(store.costs.sumCostByConversations(['a'])).toBeCloseTo(3, 6)
+        })
+
+        it('is 0 for an empty list and for conversations with no turns', () => {
+          store.costs.recordTurn(baseTurn({ conversationId: 'a', costUsd: 5 }))
+          expect(store.costs.sumCostByConversations([])).toBe(0)
+          expect(store.costs.sumCostByConversations(['nobody'])).toBe(0)
+        })
+
+        /** More ids than SQLite's 999-variable statement ceiling: an epic run
+         *  accumulates one conversation per seat, and a silent truncation here
+         *  would under-report the very runs that are going wrong. */
+        it('survives more conversations than one statement can bind', () => {
+          const ids = Array.from({ length: 1200 }, (_, i) => `c${i}`)
+          for (const id of ids) store.costs.recordTurn(baseTurn({ conversationId: id, costUsd: 0.01 }))
+          expect(store.costs.sumCostByConversations(ids)).toBeCloseTo(12, 6)
+        })
+      })
+
       it('queryTurns sorts by timestamp descending', () => {
         store.costs.recordTurn(baseTurn({ timestamp: 1000, conversationId: 'a' }))
         store.costs.recordTurn(baseTurn({ timestamp: 3000, conversationId: 'c' }))

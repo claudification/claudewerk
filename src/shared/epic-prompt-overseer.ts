@@ -18,6 +18,7 @@
  */
 
 import type { EpicPlan } from './epic-ready'
+import { formatEpicRunCaps } from './epic-run-caps'
 import type { EpicRun } from './epic-run-store'
 import type { EpicWakeReason } from './epic-run-types'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
@@ -123,6 +124,13 @@ function stopping(ctx: OverseerPromptCtx): string {
     `- PARKED: nothing is dispatchable and you cannot fix that by replanning. Generation ${ctx.run.gen} of`,
     `  ${ctx.run.maxGens}; ${ctx.run.dryGens} consecutive generation(s) have already found nothing to do.`,
     '  Two in a row parks the run -- say what would unblock it.',
+    '',
+    // The engine parks on whichever of these trips first, without asking. An
+    // overseer that cannot see its own remaining budget plans a five-generation
+    // integration it has the money for exactly none of.
+    `THE RUN'S BUDGET, which the ENGINE enforces without consulting you: ${formatEpicRunCaps(ctx.run, Date.now())}.`,
+    'Whichever ceiling trips first PARKS the run and records which one in the baton. Plan inside what is left --',
+    'if the work genuinely needs more, say so and let Jonas raise it; you cannot raise it yourself.',
     '',
     'Otherwise: finish your beat and STOP. The engine dispatches, the workers work, and the next settle wakes',
     'a fresh you. Do NOT sit and poll, do NOT implement a card yourself (you are the judge, not the doer), and',

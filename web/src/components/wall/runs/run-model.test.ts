@@ -8,9 +8,18 @@
 
 import type { EpicLogEntry } from '@shared/epic-run-types'
 import type { NightshiftTaskMeta } from '@shared/nightshift-types'
-import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
+import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
 import { describe, expect, it } from 'vitest'
-import { batonTail, beatTicks, idleSentence, NO_BUCKETS, nightshiftCounts, runBuckets, runStall } from './run-model'
+import {
+  batonTail,
+  beatTicks,
+  idleSentence,
+  NO_BUCKETS,
+  nightshiftCounts,
+  runBuckets,
+  runCaps,
+  runStall,
+} from './run-model'
 
 const NOW = Date.parse('2026-08-19T12:00:00.000Z')
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
@@ -205,5 +214,47 @@ describe('nightshift counts', () => {
       task('discarded'),
     ]
     expect(nightshiftCounts(tasks)).toEqual({ queued: 2, running: 2, settled: 6 })
+  })
+})
+
+/**
+ * THE HANDBRAKES ON THE ROW. `maxGens` used to be the only ceiling on this pane,
+ * so an expensive run and a cheap one looked identical right up to the invoice.
+ */
+describe('runCaps', () => {
+  const RUN: EpicRunSnapshot = {
+    epicId: 'epic-the-wall',
+    project: 'claude:///Users/j/remote-claude',
+    cadence: 'now',
+    status: 'running',
+    gen: 3,
+    target: 'merged',
+    dryGens: 0,
+    maxGens: 40,
+    maxUsd: 100,
+    maxWallClockMinutes: 480,
+    spentUsd: 12.5,
+    concurrency: 3,
+    plan: false,
+    planned: true,
+    created: '',
+    updated: '',
+    digest: '',
+  }
+
+  it('renders nothing without a run artifact -- an unread run has no budget to report', () => {
+    expect(runCaps(null, NOW)).toEqual([])
+  })
+
+  it('reports spend, wall clock and generations, money first', () => {
+    expect(runCaps(RUN, NOW).map(c => c.label)).toEqual(['spend', 'wall clock', 'generations'])
+  })
+
+  it('shows what is left of the budget', () => {
+    expect(runCaps(RUN, NOW)[0]).toMatchObject({ used: '$12.50', limit: '$100.00', remaining: '$87.50' })
+  })
+
+  it('flags the ceiling that stopped the run, so the row can shout about it', () => {
+    expect(runCaps({ ...RUN, spentUsd: 250 }, NOW)[0].over).toBe(true)
   })
 })

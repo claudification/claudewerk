@@ -33,6 +33,7 @@ function emptyGroup(epicId: string, project: string): EpicGroup {
     settled: [],
     failedLegs: [],
     unspawnable: [],
+    convIds: [],
     maxGenSeen: 0,
   }
 }

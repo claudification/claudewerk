@@ -83,6 +83,7 @@ interface SweepStore {
   getAllConversations: () => Conversation[]
   getActiveConversationCount: (id: string) => number
   hasAnyTranscript: (id: string) => boolean
+  sumConversationCostUsd: (ids: readonly string[]) => number
   getSentinel: SweepDeps['getSentinel']
   getSentinelByAlias: SweepDeps['getSentinelByAlias']
   addProjectListener: SweepDeps['addProjectListener']
@@ -104,6 +105,10 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
     // started -- and folding the two together cost a generation per sweep on
     // 2026-08-20. Durable-first so a broker restart cannot invent one.
     producedOutput: conv => s.hasAnyTranscript(conv.id),
+    // The spend cap's denominator. Durable-only (cost lives in `turns` and
+    // nowhere in memory), so a broker with no store driver reports 0 -- which
+    // reads as "no spend cap can trip" rather than "this run was free".
+    epicSpendUsd: ids => s.sumConversationCostUsd(ids),
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
     addProjectListener: s.addProjectListener,
@@ -222,6 +227,7 @@ export async function beatOneEpic(
       settled: [],
       failedLegs: [],
       unspawnable: [],
+      convIds: [],
       maxGenSeen: 0,
     }
     const outcome = await runEpicBeat(deps, group)

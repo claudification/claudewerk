@@ -38,6 +38,7 @@ const RUN: EpicRun = {
   status: 'running',
   gen: 6,
   dryGens: 0,
+  spentUsd: 0,
   planned: true,
   created: '2026-08-19T11:00:00.000Z',
   updated: '2026-08-19T11:23:50.000Z',

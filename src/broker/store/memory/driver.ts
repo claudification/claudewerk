@@ -958,6 +958,12 @@ function createCostStore(): CostStore {
       })
     },
 
+    /** Total USD over a set of conversations -- the epic run spend ledger. */
+    sumCostByConversations(conversationIds) {
+      const wanted = new Set(conversationIds)
+      return turns.reduce((sum, t) => (wanted.has(t.conversationId) ? sum + t.costUsd : sum), 0)
+    },
+
     recordTurnFromCumulatives(params: CumulativeTurnInput) {
       const prev = lastSnapshot.get(params.conversationId) ?? {
         inputTokens: 0,
