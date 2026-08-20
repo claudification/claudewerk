@@ -39,6 +39,14 @@ export function createProjectLinkRegistry(
 ): ProjectLinkRegistry {
   const projectLinks = new Set<string>()
   const projectBlocks = new Map<string, number>()
+  // PENDING-APPROVAL queue -- NOT the persisted one. Holds a first-contact message
+  // while the human decides ALLOW/BLOCK, keyed by sorted project pair. Volatile: a
+  // broker restart empties it and the sender is never told (the approval itself IS
+  // durable -- see src/broker/project-links.ts). The SQLite-backed queue is the
+  // separate `ctx.messageQueue` (src/broker/message-queue.ts), keyed by TARGET
+  // project, used only for the target-offline path. Conflating the two is a known
+  // trap; docs/inter-session.md has the table. Making this durable is an open
+  // decision -- card werk-link-pending-queue-volatile.
   const messageQueue = new Map<string, Array<Record<string, unknown>>>()
   // Conversation-pair links, keyed by sorted conv-id pair. In-memory cache; the
   // persisted source of truth lives in conversation-links.ts (ctx.convLinks).

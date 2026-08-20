@@ -12,10 +12,24 @@ All routing uses existing WS connections. Offline messages queued for reconnect 
 
 - First contact queues message, dashboard shows LINK approval banner (ALLOW/BLOCK)
 - Claude NEVER sees the permission request (security)
-- Block debounces 1 minute
-- Allow is permanent for broker lifetime (not persisted across restarts)
+- Block debounces 1 minute (in-memory only -- a DENY does not survive a broker restart)
+- Allow IS persisted across broker restarts (`scope_links` / the `project-links` KV row,
+  `src/broker/project-links.ts`); the send path re-reads it as the `persisted` authorization
+  layer and re-caches it into the in-memory registry
 - Links are bidirectional (approve A->B = approve B->A)
 - Either side can sever via X button in session info
+
+### Two different queues -- do not confuse them
+
+| | Pending-approval queue | Offline queue |
+|---|---|---|
+| Code | `queueProjectMessage` / `drainProjectMessages`, `src/broker/conversation-store/project-links.ts` | `ctx.messageQueue`, `src/broker/message-queue.ts` |
+| Holds | first contact waiting for the human to click ALLOW | a message for a target that is not connected |
+| Keyed by | sorted project **pair** | target project (`to_scope`) |
+| Backing | plain in-memory `Map` -- **lost on broker restart** | SQLite `message_queue`, 24h TTL, 100/target cap |
+
+The approval itself is durable; the message waiting on it is not. Whether that
+should change is an open decision -- see card `werk-link-pending-queue-volatile`.
 
 ## Message Format
 
