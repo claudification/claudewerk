@@ -1,6 +1,7 @@
 # bun 1.4.0 retest: the macOS `fs.watch` stale-filename defect is FIXED
 
-Measured 2026-08-21 on `studio` (darwin arm64, macOS 26.5.2), at `1fed88bb`.
+Measured 2026-08-21 on `studio` (darwin arm64, macOS 26.5.2), at `1fed88bb` and
+re-confirmed at `e239f32f` after the sibling card's contract-test fix merged.
 Card: `bun-fs-watch-stale-filename-retest-on-bun-14`.
 
 | | version | revision |
@@ -105,22 +106,34 @@ stage 1. The bad harness was deleted rather than committed. Recorded here becaus
 "1.4 makes case A worse" would have been a load-bearing wrong claim on the
 upgrade decision.
 
-## Full suite, 10 consecutive runs per version
+## Full suite, 16 consecutive runs per version, across two bases
 
-`bun run test` at `1fed88bb`, alternating versions. Both binaries support
+`bun run test`, alternating versions run for run. Both binaries support
 `--parallel` and `--no-orphans`, so both arms ran with the same flags.
+
+Measured at two bases because the sibling card's contract-test fix (explicit 12 s
+per-test timeouts + case-A instrumentation) merged to main midway through this
+card's work, and that changes how case A *presents*. It changed nothing about the
+result.
+
+| base | runs each | bun 1.3.14 | bun 1.4.0 |
+|---|---|---|---|
+| `1fed88bb` (before the sibling fix) | 10 | 1 red -- case **B** | 2 red -- case **A** x2 |
+| `e239f32f` (after it) | 6 | 1 red -- case **B** | 1 red -- case **A** |
+| **pooled** | **16** | **2 red, both case B** | **3 red, all case A, case B zero times** |
 
 | | bun 1.3.14 | bun 1.4.0 |
 |---|---|---|
-| red runs | **1 of 10** | **2 of 10** |
-| which test | case **B** (the stale filename) | case **A** twice, case B **zero** times |
-| anything else red | none | none |
+| anything else red in 7711 tests | none | none |
 | typical result | 7652 pass / 59 skip / 0 fail | 7652 pass / 59 skip / 0 fail |
 | wall clock | 20.22 s | 21.26 s |
+| `# Unhandled error between tests` at the new base | 0 | 0 |
 
-Nothing outside `fs-watch.contract.test.ts` behaved differently on 1.4.0 across
-10 full runs of 7711 tests. Case B did not go red once on 1.4.0; case A stayed
-exactly as flaky as it is on 1.3.14.
+Nothing outside `fs-watch.contract.test.ts` behaved differently on 1.4.0 across 16
+full runs of 7711 tests. Case B did not go red once on 1.4.0 in any of them; case A
+stayed exactly as flaky as it is on 1.3.14. The zero unhandled-error count at the
+new base is the sibling card's guillotine fix doing its job -- the phantom second
+report that used to accompany every one of these failures is gone on both runtimes.
 
 Contract directory alone, 5 consecutive runs on 1.4.0:
 `13 pass / 0 fail` every time.
