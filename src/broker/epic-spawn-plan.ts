@@ -20,6 +20,7 @@ import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { fnv1aHex } from '../shared/fnv1a'
 import { buildGuardPrompt } from '../shared/guard-prompt'
 import type { UnattendedPermissionConfig } from '../shared/unattended-permissions'
+import { worktreeBranch } from '../shared/worktree-path'
 
 /**
  * THE PERMISSION MODE, said out loud.
@@ -206,8 +207,34 @@ export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx)
   }
 }
 
-/** An IMPLEMENTER. Own worktree, own branch, muted. */
-export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef = 'main'): EpicSpawnPlan {
+/**
+ * A dependency card id -> the git branch its work is on.
+ *
+ * TWO transforms, and skipping either one names a branch that does not exist:
+ * `seatBranch` is what named the dependency's worktree (including the hash
+ * shortening a long card id gets), and `worktreeBranch` is the `worktree-`
+ * prefix `scripts/worktree-create.sh` puts on the branch it cuts. The seat plan
+ * carries the WORKTREE name, which is the un-prefixed half -- so a prompt that
+ * quoted `plan.worktree` at an implementer would hand it an unmergeable ref.
+ */
+function dependencyBranch(epicId: string, depCardId: string): string {
+  return worktreeBranch(seatBranch(epicId, depCardId))
+}
+
+/**
+ * An IMPLEMENTER. Own worktree, own branch, muted.
+ *
+ * `dependsOn` is the card's own `depends_on`, passed through so the prompt can
+ * order a base check. It is only ever data here: this function does not consult
+ * it, gate on it, or change the base ref because of it -- readiness stays exactly
+ * where it was (see epic-implementer-base-lacks-deps).
+ */
+export function planImplementerSpawn(
+  ctx: EpicSpawnCtx,
+  cardId: string,
+  baseRef = 'main',
+  dependsOn: readonly string[] = [],
+): EpicSpawnPlan {
   const branch = seatBranch(ctx.epicId, cardId)
   return {
     ...base(ctx, 'implementer', cardId, seatName(ctx.epicId, ctx.gen, cardId)),
@@ -219,6 +246,7 @@ export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef 
       cardId,
       branch,
       base: baseRef,
+      dependsOn: dependsOn.map(id => ({ id, branch: dependencyBranch(ctx.epicId, id) })),
     }),
   }
 }

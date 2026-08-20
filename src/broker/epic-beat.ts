@@ -22,7 +22,10 @@ import type { EpicRunSnapshot } from '../shared/protocol'
 /** What the caller should do. Order in the array is the order to do it in. */
 export type EpicAction =
   | { kind: 'wake-overseer'; expectGen: number; reason: string }
-  | { kind: 'dispatch'; cardId: string }
+  /** `dependsOn` rides along purely so the implementer prompt can order a base
+   *  check -- the dispatch DECISION already happened, in `epic-cards.ts`, from
+   *  card lanes. Nothing downstream re-reads it to gate anything. */
+  | { kind: 'dispatch'; cardId: string; dependsOn?: readonly string[] }
   | { kind: 'verify'; cardId: string }
   | { kind: 'park'; reason: string }
   | { kind: 'complete' }
@@ -197,7 +200,7 @@ function workBeat(input: EpicBeatInput): EpicBeat {
     return beat(`cadence=window and the window is closed; ${plan.dispatch.length} card(s) waiting`, actions)
   }
 
-  actions.push(...plan.dispatch.map(c => ({ kind: 'dispatch' as const, cardId: c.slug })))
+  actions.push(...plan.dispatch.map(c => ({ kind: 'dispatch' as const, cardId: c.slug, dependsOn: c.dependsOn ?? [] })))
 
   if (actions.length > 0) {
     return beat(
