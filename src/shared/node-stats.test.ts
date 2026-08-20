@@ -7,6 +7,7 @@ import {
   isNodeStatsStale,
   type MachineStats,
   NODE_STATS_INTERVAL_MS,
+  NODE_STATS_MAX_VOLUMES,
   NODE_STATS_STALE_AFTER_MS,
   type NodeStatsReport,
   type NodeStatsSender,
@@ -233,8 +234,94 @@ describe('dedupeMachineStatsByHost', () => {
   })
 })
 
+describe('machine.volumes -- additive, optional, and that is the whole versioning story', () => {
+  const volumes = [
+    { usedBytes: 1_666_000_000_000, totalBytes: 1_995_000_000_000, mount: '/' },
+    { usedBytes: 869_000_000_000, totalBytes: 8_001_000_000_000, mount: '/Volumes/Fint' },
+  ]
+
+  it('accepts a frame that carries per-volume disk', () => {
+    expect(validateNodeStats(frame({ machine: { ...MACHINE, volumes } })).ok).toBe(true)
+  })
+
+  // COMPATIBILITY, both directions, in two assertions. A sender built before the
+  // field omits it and stays valid (this test); a broker built before it ignores
+  // an unknown key, which is what "no version counter" buys.
+  it('accepts a frame from a sender that has never heard of volumes', () => {
+    const parsed = validateNodeStats(frame())
+    expect(parsed.ok).toBe(true)
+    expect('volumes' in MACHINE).toBe(false)
+  })
+
+  it('rejects a volume with no mount -- the mount IS the object key', () => {
+    const parsed = validateNodeStats(
+      frame({ machine: { ...MACHINE, volumes: [{ usedBytes: 1, totalBytes: 2, mount: '' }] } }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes('machine.volumes[0].mount'))).toBe(true)
+  })
+
+  it('rejects a volume whose used exceeds its total', () => {
+    const parsed = validateNodeStats(
+      frame({ machine: { ...MACHINE, volumes: [{ usedBytes: 9, totalBytes: 2, mount: '/' }] } }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes('machine.volumes[0]: usedBytes exceeds totalBytes'))).toBe(true)
+  })
+
+  it('rejects the SAME mount twice -- two readings, one series, one instant', () => {
+    // The store de-dups on (object, metric, ts) with INSERT OR IGNORE, so a
+    // duplicate would silently keep whichever landed first. A frame that cannot
+    // say which reading is the volume's is broken, not ambiguous.
+    const parsed = validateNodeStats(
+      frame({
+        machine: {
+          ...MACHINE,
+          volumes: [
+            { usedBytes: 1, totalBytes: 2, mount: '/' },
+            { usedBytes: 2, totalBytes: 2, mount: '/' },
+          ],
+        },
+      }),
+    )
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes("duplicate mount '/'"))).toBe(true)
+  })
+
+  it('refuses a mount table that would mint objects without bound', () => {
+    // Every entry becomes a permanent `stat_objects` row, so a sender with a
+    // thousand loopback mounts is refused rather than absorbed.
+    const many = Array.from({ length: NODE_STATS_MAX_VOLUMES + 1 }, (_, i) => ({
+      usedBytes: 1,
+      totalBytes: 2,
+      mount: `/mnt/loop${i}`,
+    }))
+    const parsed = validateNodeStats(frame({ machine: { ...MACHINE, volumes: many } }))
+    expect(parsed.ok).toBe(false)
+    if (parsed.ok) return
+    expect(parsed.errors.some(e => e.includes('machine.volumes: expected at most 24'))).toBe(true)
+  })
+
+  it('rejects a volumes key that is not a list at all', () => {
+    const parsed = validateNodeStats(
+      frame({ machine: { ...MACHINE, volumes: { '/': 90 } } as unknown as MachineStats }),
+    )
+    expect(parsed.ok).toBe(false)
+  })
+})
+
 describe('one contract, one utilization path', () => {
-  const contractSources = ['src/shared/node-stats.ts', 'src/shared/node-stats-sample.ts']
+  const contractSources = [
+    'src/shared/node-stats.ts',
+    'src/shared/node-stats-sample.ts',
+    // The collector split into three files; the rule covers all of it, or it
+    // covers whichever third the payload's next field happens to land in.
+    'src/shared/node-stats-disk.ts',
+    'src/shared/node-stats-volumes.ts',
+  ]
 
   // The original rule, RESTORED and sharpened (decision 2026-08-19): plan
   // windows ride `sentinel_usage_report` / ProfileUsageSnapshot, and a second

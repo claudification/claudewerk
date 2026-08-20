@@ -12,17 +12,10 @@
  * module stays runtime-free and safe for the web bundle to import.
  */
 
-import { execFileSync } from 'node:child_process'
-import { statfsSync } from 'node:fs'
 import { arch, cpus, freemem, hostname, loadavg, platform, totalmem, uptime } from 'node:os'
-import type {
-  MachineStats,
-  NodeIdentity,
-  NodeStatsReport,
-  NodeStatsSender,
-  SentinelNodeExtras,
-  UsedTotal,
-} from './node-stats'
+import type { MachineStats, NodeIdentity, NodeStatsReport, NodeStatsSender, SentinelNodeExtras } from './node-stats'
+import { readDisk } from './node-stats-disk'
+import { readVolumes } from './node-stats-volumes'
 
 /** Cumulative CPU jiffies across all cores, as `node:os` reports them. */
 export interface CpuTotals {
@@ -77,125 +70,15 @@ export function cpuPercentFromDelta(prev: CpuTotals, next: CpuTotals): number | 
   return Math.min(100, Math.max(0, Math.round(busy * 10) / 10))
 }
 
-/**
- * THE definition of `usedBytes`, and the only place it is computed.
- *
- * `total - available`, where available is what an UNPRIVILEGED writer can still
- * use: `statfs.bavail`, or df's `Available` column. The root-reserved blocks
- * therefore count as USED, because "space this agent can actually write" is the
- * number a disk meter should show -- one that says 5% free while every write
- * fails is a broken meter.
- *
- * df's own `Used` column (field 3) is the OTHER definition: it excludes the
- * reserve, so it reads low by ~5% of a default ext4 and by 38 GB on the APFS
- * volume this was caught on. The fallback used to take it, which made the one
- * node that needs the fallback -- the 30TB Synology -- read systematically low
- * against every other node on the wall. Never field 3.
- *
- * Null on a volume that reports no blocks at all: a pseudo-filesystem is not a
- * disk, and 0/0 renders as "unknown" rather than as an empty drive.
- */
-export function usedFromAvailable(totalBytes: number, availBytes: number): UsedTotal | null {
-  if (!Number.isFinite(totalBytes) || !Number.isFinite(availBytes) || totalBytes <= 0) return null
-  return { usedBytes: Math.max(0, totalBytes - availBytes), totalBytes }
-}
-
-/**
- * Parse `df -Pk <dir>` output into the used/total bytes for the volume, plus
- * the mount point df says it lives on.
- *
- * POSIX `-P` output is one header line and one data line per filesystem; the
- * blocks are 1 KiB. Long device names wrap in the non-`-P` form, which is
- * exactly why `-P` is not optional here. Returns null on anything unexpected --
- * a missing disk field is honest, a fabricated zero is not.
- *
- * `usedBytes` comes from fields 2 and 4 via `usedFromAvailable`, NOT from df's
- * field 3. The `mount` here is df's own answer, which is a strictly better fact
- * than the collector can otherwise get -- but it is NOT what ships on the wire;
- * see `readDisk` for why the contract field means the directory measured.
- */
-export function parseDfOutput(stdout: string): (UsedTotal & { mount: string }) | null {
-  const lines = stdout
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line.length > 0)
-  if (lines.length < 2) return null
-  const fields = lines[lines.length - 1].split(/\s+/)
-  // filesystem, 1024-blocks, used, available, capacity, mounted-on
-  if (fields.length < 6) return null
-  const volume = usedFromAvailable(Number(fields[1]) * 1024, Number(fields[3]) * 1024)
-  const mount = fields.slice(5).join(' ')
-  if (!volume || mount.length === 0) return null
-  return { ...volume, mount }
-}
-
-/**
- * Disk usage via `statfs(2)`. The FAST PATH: this runs every 5s on every node
- * forever, and forking `df` for it is ~17k process spawns per node per day to
- * read three numbers the kernel hands over in one syscall.
- *
- * `bavail` (free to an unprivileged user) rather than `bfree`: the reserved
- * blocks root can still write into are not space this agent can use. That is
- * `usedFromAvailable`, the one definition both readers share.
- *
- * Returns null when statfs cannot describe the volume -- see `readDiskViaDf`.
- *
- * Exported for the test that runs one volume through BOTH readers; production
- * goes through `readDisk`.
- */
-export function readDiskViaStatfs(dir: string): (UsedTotal & { mount: string }) | null {
-  try {
-    const fs = statfsSync(dir)
-    const blockSize = Number(fs.bsize)
-    const volume = usedFromAvailable(Number(fs.blocks) * blockSize, Number(fs.bavail) * blockSize)
-    return volume ? { ...volume, mount: dir } : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * The FALLBACK, for volumes `statfs` cannot describe.
- *
- * 32-bit `statfs` returns EOVERFLOW when a filesystem has more than 2^32
- * blocks, and a big NAS array crosses that easily: the Synology `/volume1` that
- * caught this has 7,492,117,464 of them, so the reporter shipped disk 0/0 for a
- * 30TB array (2026-08-19). `df` reads the same numbers through a wider
- * interface, so it answers where the syscall cannot.
- *
- * `node:child_process`, not `Bun.spawnSync`: `web/tsconfig.json` typechecks all
- * of `src/shared` with no Bun globals. The fork cost is fine HERE because this
- * only runs for volumes that failed the syscall, not on the common tick.
- *
- * Exported for the test that runs one volume through BOTH readers; production
- * goes through `readDisk`.
- */
-export function readDiskViaDf(dir: string): (UsedTotal & { mount: string }) | null {
-  try {
-    const stdout = execFileSync('df', ['-Pk', dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    const volume = parseDfOutput(stdout)
-    // df knows the real mount point and statfs cannot know it at all, so the
-    // honest common answer is the DIRECTORY that was measured. Reporting df's
-    // `/volume1` from the fallback while every statfs node reports the agent's
-    // working directory is the same bug as two `usedBytes` under one name.
-    return volume ? { ...volume, mount: dir } : null
-  } catch {
-    return null
-  }
-}
-
-/**
- * Syscall first, `df` when it cannot answer, and the ONE place `mount` is
- * stamped so no reader can drift into a second meaning of it.
- *
- * Never null: when neither reader can describe the volume this is a zeroed disk
- * at the directory asked about, which validates and renders as "unknown"
- * rather than blocking the whole frame over one missing field.
- */
-function readDisk(dir: string): UsedTotal & { mount: string } {
-  const volume = readDiskViaStatfs(dir) ?? readDiskViaDf(dir)
-  return { usedBytes: volume?.usedBytes ?? 0, totalBytes: volume?.totalBytes ?? 0, mount: dir }
-}
+// THE DISK READERS MOVED, and every consumer still imports them from here.
+// Only the four with callers outside `node-stats-disk.ts` are re-exported --
+// `readDisk` and `parseDfLine` are used by this file and by the volume collector
+// respectively, and a re-export nobody imports is dead vocabulary.
+// `node-stats-disk.ts` is a split for SIZE plus one structural reason: the
+// per-volume collector needs the same primitives, and a module both this file
+// and `node-stats-volumes.ts` import is the only way to have one definition of
+// `usedBytes` without a cycle. Same functions, same contract, one new file.
+export { parseDfOutput, readDiskViaDf, readDiskViaStatfs, usedFromAvailable } from './node-stats-disk'
 
 /** OS/arch label as the contract wants it: one string, e.g. `darwin/arm64`. */
 export function osArchLabel(): string {
@@ -234,6 +117,11 @@ export function createMachineSampler(dir: string = process.cwd()): MachineSample
       // the only figure available identically on every platform, so both
       // senders are wrong in exactly the same way rather than differently.
       const disk = readDisk(dir)
+      // Every mount, beside the one `disk` names -- and ABSENT, never `[]`, when
+      // the mount table could not be read at all. `readVolumes` forks nothing on
+      // the common tick; it re-reads a cached mount list through the same
+      // statfs-then-df reader `disk` just used.
+      const volumes = readVolumes()
       return {
         // OMITTED, not zeroed, when there was no window -- the key is absent from
         // the wire exactly as `sentinel` is on a reporter frame.
@@ -241,6 +129,7 @@ export function createMachineSampler(dir: string = process.cwd()): MachineSample
         load: { one, five, fifteen, cores: Math.max(1, cpus().length) },
         memory: { usedBytes: total - freemem(), totalBytes: total },
         disk,
+        ...(volumes.length > 0 ? { volumes } : {}),
       }
     },
   }

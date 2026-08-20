@@ -21,6 +21,7 @@
 import { type NodeStatsReport, type NodeStatsSender, validateNodeStats } from '../shared/node-stats'
 import { nodeStatsStore } from './node-stats-store'
 import { recordWallHostVitals } from './wall/host-vitals'
+import { recordWallVolumeStats } from './wall/volume-stats'
 
 /** Who the BROKER decided this sender is, resolved from the secret it presented.
  *  Never from the payload. */
@@ -96,6 +97,12 @@ export function ingestNodeStats(
   // sits HERE rather than in the WS transport so an HTTP-only node lands on the
   // wall too -- one contract, two transports, one body.
   recordWallHostVitals(report)
+  // ...and the per-VOLUME series rides the same accepted frame, for the same
+  // reasons. It is a separate call rather than something `recordWallHostVitals`
+  // does internally because it is a separate producer writing a separate object
+  // kind: the node's own disk number is unchanged by it, and a frame from a
+  // sender that predates `machine.volumes` files nothing here at all.
+  recordWallVolumeStats(report)
 
   deps.broadcast({ type: 'node_stats_update', report, receivedAt, machineOwner })
   return { ok: true, report, receivedAt, machineOwner }
@@ -110,6 +117,7 @@ function logSample(deps: NodeStatsIngestDeps, report: NodeStatsReport, machineOw
       `load=${machine.load.one.toFixed(2)}/${machine.load.cores} ` +
       `mem=${machine.memory.usedBytes}/${machine.memory.totalBytes} ` +
       `disk=${machine.disk.usedBytes}/${machine.disk.totalBytes}@${machine.disk.mount} ` +
+      `vols=${machine.volumes?.length ?? '-'} ` +
       `convs=${report.sentinel?.conversationCount ?? '-'} ` +
       `machineOwner=${machineOwner} nodesKnown=${nodeStatsStore.size()}`,
   )

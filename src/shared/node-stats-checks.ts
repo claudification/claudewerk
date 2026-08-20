@@ -70,7 +70,51 @@ export function checkDisk(value: unknown, errors: string[]): void {
   }
 }
 
-export function checkMachine(value: unknown, errors: string[]): void {
+/** One entry of `machine.volumes`. `seen` carries the mounts already accepted --
+ *  see `checkVolumes` for why a duplicate is an error rather than a shrug. */
+function checkVolume(entry: unknown, index: number, seen: Set<string>, errors: string[]): void {
+  const path = `machine.volumes[${index}]`
+  checkUsedTotal(entry, path, errors)
+  const mount = isRecord(entry) ? entry.mount : undefined
+  if (!nonEmptyString(mount)) {
+    errors.push(`${path}.mount: expected a non-empty string`)
+    return
+  }
+  if (seen.has(mount)) errors.push(`${path}.mount: duplicate mount '${mount}'`)
+  seen.add(mount)
+}
+
+/**
+ * The per-volume list. ABSENT IS LEGAL and is what every sender built before the
+ * field sent -- the key being missing is the compatibility story, so it is
+ * checked only when it is there.
+ *
+ * A DUPLICATE MOUNT IS REJECTED. `mount` is the identity the broker keys a stats
+ * object on, so two entries for one mount at one instant are two writes to one
+ * series at one timestamp: the store's `INSERT OR IGNORE` would silently keep
+ * whichever landed first. A frame that cannot say which reading is the volume's
+ * is a broken frame, not a rounding difference.
+ */
+function checkVolumes(value: unknown, max: number, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push('machine.volumes: expected an array, or absent')
+    return
+  }
+  if (value.length > max) {
+    errors.push(`machine.volumes: expected at most ${max} entries, got ${value.length}`)
+    return
+  }
+  const seen = new Set<string>()
+  for (const [index, entry] of value.entries()) checkVolume(entry, index, seen, errors)
+}
+
+/**
+ * `maxVolumes` is PASSED IN rather than imported. This module already imports a
+ * type from `node-stats.ts`, which erases at compile time; importing the
+ * constant instead would make that a real runtime cycle between the contract and
+ * its own checks. One parameter is cheaper than a cycle.
+ */
+export function checkMachine(value: unknown, maxVolumes: number, errors: string[]): void {
   if (!isRecord(value)) {
     errors.push('machine: expected an object')
     return
@@ -85,6 +129,7 @@ export function checkMachine(value: unknown, errors: string[]): void {
   checkLoad(value.load, errors)
   checkUsedTotal(value.memory, 'machine.memory', errors)
   checkDisk(value.disk, errors)
+  if (value.volumes !== undefined) checkVolumes(value.volumes, maxVolumes, errors)
 }
 
 /**
