@@ -39,8 +39,14 @@ function RefreshButton({ connectSeq }: { connectSeq: number }) {
 
 /** The dot + the word. The word matters: a colour alone is unreadable to a third
  *  of the people who might look at this, and unreadable at four feet to everyone
- *  once the dot is 7px. */
-export function WallLinkDot() {
+ *  once the dot is 7px.
+ *
+ *  `rewound` is W1's cursor, not the socket's, and it OVERRIDES the link colour
+ *  on purpose (`.wall-livedot[data-rewound]` is declared after every
+ *  `[data-link]` rule). A wall showing the past is not live no matter how
+ *  healthy the socket is, and the pulse is the thing a room reads as LIVE from
+ *  four metres away. */
+export function WallLinkDot({ rewound }: { rewound?: boolean }) {
   const connected = useConversationsStore(s => s.isConnected)
   const connectSeq = useConversationsStore(s => s.connectSeq)
   // Subscribes to the revive ledger, so a feed landing re-renders this.
@@ -49,7 +55,12 @@ export function WallLinkDot() {
 
   return (
     <span className="wall-link" title={view.why}>
-      <span className="wall-livedot" data-link={view.link} data-pulse={view.pulse || undefined} />
+      <span
+        className="wall-livedot"
+        data-link={view.link}
+        data-pulse={(!rewound && view.pulse) || undefined}
+        data-rewound={rewound || undefined}
+      />
       <span className="wall-link-label">{view.label}</span>
     </span>
   )

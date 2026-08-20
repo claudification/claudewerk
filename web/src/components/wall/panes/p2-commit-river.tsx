@@ -45,7 +45,10 @@ export default function CommitRiverPane() {
   const bands = useMemo(() => riverBands(rows), [rows])
 
   return (
-    <WallPane title="COMMIT RIVER" code="P2" grow count={`${matched}/${total}`} stale={stale}>
+    // `rewind="rows"`: a commit has a commit time, so rewinding is exactly "the
+    // river as it read then" -- the commits that had not landed yet are dropped
+    // by `useWallFilter`, never hidden by this pane.
+    <WallPane title="COMMIT RIVER" code="P2" grow count={`${matched}/${total}`} stale={stale} rewind="rows">
       {rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {loading ? 'reading the ledger' : total === 0 ? 'no commit in the ledger' : 'no commit matches the filter'}

@@ -15,7 +15,8 @@
  */
 
 import { NODE_STATS_STALE_AFTER_MS } from '@shared/node-stats'
-import type { WallHostVitals } from '@shared/wall'
+import { WALL_HOST_CPU_INTERVAL_MS, type WallHostVitals } from '@shared/wall'
+import { ringValueAtCursor } from './cursor'
 
 /** Under this, a meter is green. */
 const VITALS_WARN_AT = 55
@@ -68,6 +69,63 @@ export function hostVitalsRows(hosts: readonly WallHostVitals[], now: number): H
       return { ...h, ageMs, stale: ageMs > NODE_STATS_STALE_AFTER_MS, cpuHistory: h.cpuHistory ?? [] }
     })
     .sort((a, b) => Number(a.stale) - Number(b.stale) || a.alias.localeCompare(b.alias))
+}
+
+/**
+ * THE ROWS AS THEY READ AT A PAST OFFSET -- W1's contract for a pane with no
+ * per-row clock to filter on.
+ *
+ * ONE NUMBER SURVIVES A REWIND, AND IT IS CPU. `cpuHistory` is the only thing a
+ * node sends a history OF; ram, disk, load and the conversation count arrive as
+ * a single current reading and nothing anywhere remembers what they were forty
+ * minutes ago. So they go to `undefined`, which the meter already renders as
+ * `--` rather than as an authoritative 0%. Carrying the live number back would
+ * put today's disk under a `T-42m` header, which is the lie this whole card is
+ * built to prevent.
+ *
+ * A NODE WHOSE RING DOES NOT REACH THE CURSOR IS DROPPED, not blanked. The ring
+ * spans five minutes, the track spans three hours, so most of the track is past
+ * the end of it -- and "this node has no reading that old" is a fact the pane
+ * prints as a missing row plus its own empty line, not as a row of dashes that
+ * looks like a broken node.
+ *
+ * POSITIONS, NOT TIMESTAMPS. The ring carries no time axis (see `WallHostVitals`),
+ * so the lookup walks back at the producer's cadence from the row's OWN sample
+ * clock. A node that skipped slots compresses its gap, exactly as the broker's
+ * own rehydrate path documents; within the ring's five minutes that is at most a
+ * few slots of drift, and past it there is no reading to be wrong about.
+ */
+export function hostVitalsAtCursor(rows: readonly HostVitalsRow[], offsetMs: number, now: number): HostVitalsRow[] {
+  if (offsetMs <= 0) return [...rows]
+  const cursorAt = now - offsetMs
+  const at: HostVitalsRow[] = []
+
+  for (const row of rows) {
+    // How far back INTO THE RING the cursor sits. Negative means the cursor is
+    // after this node's last sample -- it had already gone quiet by then, so the
+    // reading at the cursor is that last sample and the row was stale already.
+    const backMs = Math.max(0, row.at - cursorAt)
+    const cpuPct = ringValueAtCursor(row.cpuHistory, backMs, WALL_HOST_CPU_INTERVAL_MS)
+    if (cpuPct === undefined) continue
+    // Slots back, from the same expression the lookup used -- computing it twice
+    // is how the sparkline ends up one sample away from the number beside it.
+    const slots = Math.round(backMs / WALL_HOST_CPU_INTERVAL_MS)
+    const ageAtCursor = Math.max(0, cursorAt - row.at)
+    at.push({
+      ...row,
+      cpuPct,
+      memPct: undefined,
+      diskPct: undefined,
+      load1: undefined,
+      conversations: undefined,
+      // The sparkline stops at the cursor too, so it draws the minutes that LED
+      // to the offset instead of minutes that had not happened yet.
+      cpuHistory: row.cpuHistory.slice(0, row.cpuHistory.length - slots),
+      ageMs: ageAtCursor,
+      stale: ageAtCursor > NODE_STATS_STALE_AFTER_MS,
+    })
+  }
+  return at.sort((a, b) => Number(a.stale) - Number(b.stale) || a.alias.localeCompare(b.alias))
 }
 
 /** Compact age, for the "last seen" a greyed row shows. */
