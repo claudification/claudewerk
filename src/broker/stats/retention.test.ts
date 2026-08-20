@@ -1,15 +1,21 @@
 /**
  * Retention. "Per-object-per-metric-per-second forever" is the failure mode a
  * narrow table invites, so the bound is exercised here rather than asserted in
- * prose: old rows COLLAPSE to 5-minute means, very old rows go, and running the
- * sweep twice changes nothing.
+ * prose: old rows COLLAPSE to 5-minute buckets, very old rows go, and running
+ * the sweep twice changes nothing.
+ *
+ * The collapse is NOT one aggregate. A gauge averages and a flow sums, so the
+ * last describe puts one of each inside a single bucket and sweeps once -- the
+ * ~28x under-report that averaging a `_count` produces is a silent, and after
+ * the sweep's DELETE an unrecoverable, wrong number.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { StatObjectRef } from '../../shared/stats'
+import type { StatMetric, StatObjectRef } from '../../shared/stats'
+import { STAT_FLOW_SUFFIX } from '../../shared/stats'
 import { readStatsByKind } from './read'
 import { STAT_BUCKET_MS, STAT_RAW_MS, STAT_RETENTION_MS, sweepStats } from './retention'
 import { closeStatsStore, flushStats, initStatsStore, recordStat } from './store'
@@ -38,6 +44,23 @@ function bucketStart(hoursAgo: number): number {
 
 function points() {
   return readStatsByKind('node', 'cpu_percent', 0)[0]?.points ?? []
+}
+
+/**
+ * A flow metric, built from the declared suffix rather than spelled literally,
+ * so this test breaks if the rule in `shared/stats.ts` ever moves.
+ *
+ * The cast is deliberate and temporary: the four real `_count` metrics land
+ * with `wall-stats-producer-token-usage`, which is a sibling branch on this
+ * epic. The retention rule is a property of the SUFFIX, not of any one metric,
+ * so it is testable -- and must be in place -- before the first producer of one
+ * exists. That ordering is the point of the card: the loss happens at the first
+ * sweep after a flow metric starts being written, reader or no reader.
+ */
+const FLOW = `tokens_in${STAT_FLOW_SUFFIX}` as StatMetric
+
+function flowPoints() {
+  return readStatsByKind('node', FLOW, 0)[0]?.points ?? []
 }
 
 describe('downsampling the tail', () => {
@@ -98,6 +121,62 @@ describe('downsampling the tail', () => {
     sweepStats(NOW)
     expect(points().map(p => p.value)).toEqual([5, 6])
     expect(points()[0]?.ts).toBe(Math.floor(stale / STAT_BUCKET_MS) * STAT_BUCKET_MS)
+  })
+})
+
+describe('a flow sums where a gauge averages', () => {
+  test('one sweep collapses both kinds in the same bucket, each its own way', () => {
+    const base = bucketStart(50)
+    // Same object, same 5-minute bucket, three readings of each metric. The
+    // gauge's three levels average to 20; the flow's three per-message deltas
+    // are a volume and total 600. Averaging the flow would file 200 -- the
+    // "typical message" -- and delete the rows that prove otherwise.
+    for (const [i, cpu] of [10, 20, 30].entries()) recordStat(node, 'cpu_percent', cpu, base + (i + 1) * 10_000)
+    for (const [i, tok] of [100, 200, 300].entries()) recordStat(node, FLOW, tok, base + (i + 1) * 10_000)
+    flushStats()
+
+    expect(sweepStats(NOW).collapsed).toBe(6)
+    expect(points()).toEqual([{ ts: base, value: 20 }])
+    expect(flowPoints()).toEqual([{ ts: base, value: 600 }])
+  })
+
+  test('a summed bucket is idempotent -- the aligned row is a singleton, so SUM(x) = x', () => {
+    // The property Done item 3 demanded be verified rather than assumed: SUM
+    // over an already-collapsed range is a no-op for the same reason AVG is,
+    // because the collapse left exactly ONE row per bucket to regroup. If the
+    // DELETE ever stopped clearing the raws, this doubles.
+    const base = bucketStart(50)
+    for (const [i, tok] of [100, 200, 300].entries()) recordStat(node, FLOW, tok, base + (i + 1) * 10_000)
+    flushStats()
+
+    sweepStats(NOW)
+    expect(flowPoints()).toEqual([{ ts: base, value: 600 }])
+    expect(sweepStats(NOW).collapsed).toBe(0)
+    expect(flowPoints()).toEqual([{ ts: base, value: 600 }])
+  })
+
+  test('a late raw folded into a summed bucket adds to the total rather than diluting it', () => {
+    // The docblock's late-arrival note, checked: for a flow the second fold is
+    // sum(total-so-far, late), which is simply the total. This is the one place
+    // SUM is strictly better behaved than AVG, not merely equally safe.
+    const base = bucketStart(50)
+    for (const [i, tok] of [100, 200, 300].entries()) recordStat(node, FLOW, tok, base + (i + 1) * 10_000)
+    flushStats()
+    sweepStats(NOW)
+
+    recordStat(node, FLOW, 100, base + 40_000)
+    flushStats()
+    sweepStats(NOW)
+    expect(flowPoints()).toEqual([{ ts: base, value: 700 }])
+  })
+
+  test('a flow inside the 48h window is untouched -- every message is still its own row', () => {
+    recordStat(node, FLOW, 100, NOW - 9_000)
+    recordStat(node, FLOW, 200, NOW - 8_000)
+    flushStats()
+
+    expect(sweepStats(NOW).collapsed).toBe(0)
+    expect(flowPoints().map(p => p.value)).toEqual([100, 200])
   })
 })
 

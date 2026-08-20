@@ -47,6 +47,35 @@ export type StatMetric =
   | 'plan_utilization_percent'
 
 /**
+ * THE SUFFIX THAT MAKES A METRIC A FLOW RATHER THAN A GAUGE, and therefore how
+ * `retention.ts` is allowed to collapse it into a 5-minute bucket.
+ *
+ * Two different kinds of number live in one narrow table and they do not
+ * summarise the same way:
+ *
+ *   GAUGE -> the arithmetic MEAN. A level read at an instant. `cpu_percent` at
+ *   3pm is 40%; the mean of the levels inside a window is a coarser, honest
+ *   version of the same quantity, in the same unit.
+ *
+ *   FLOW -> the SUM. A per-EVENT delta. `tokens_in_count` is what ONE assistant
+ *   message billed. The mean of the messages in a window is "the typical
+ *   message", which is a DIFFERENT statistic from "what the window cost":
+ *   averaging divides the volume by however many events the bucket held (~28 on
+ *   this fleet, up to 108 in a busy one), and the raws it was computed from are
+ *   deleted in the same transaction, so nothing can reconstruct it afterwards.
+ *   Worse, the error tracks how busy the fleet was, so the coarse tail would
+ *   claim the quietest hours were the most expensive.
+ *
+ * THE UNIT SUFFIX ALREADY CARRIES THE ANSWER, so this is a RULE, not a second
+ * list to keep in sync with the union above. `_count` counts things that
+ * HAPPENED and is a flow; every other declared unit (`_percent`, `_bytes`,
+ * `_ms`) names a level and is a gauge. That keeps "adding a stat is one string"
+ * true -- a new `_count` metric is summed the day it is declared, with nothing
+ * else to remember and nothing to forget.
+ */
+export const STAT_FLOW_SUFFIX = '_count'
+
+/**
  * The thing being measured.
  *
  * IDENTITY IS `(nodeId, kind, name)`, AND NONE OF THE THREE MAY BE A LABEL.
