@@ -1,24 +1,23 @@
 /**
- * The ring is GLOBAL and a viewer's grants are per-project, so the read path is
- * the one place a scoped guest could be handed the card titles of every board on
- * the box. That is what most of this file is about.
+ * Ingest only. The handler records and hands off; it must NOT put the moves on
+ * a panel-facing frame -- the ring is GLOBAL and a viewer's grants are
+ * per-project, so the wall channel owns that filter and this module owes it no
+ * second path. `broadcastScoped` staying at zero calls is the assertion that
+ * keeps the retired fan-out retired.
  */
 
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { CardMove } from '../../shared/protocol'
-import { cardLedgerSize, clearCardLedger, recordCardMoves } from '../card-ledger-ring'
+import type { WallFrame } from '../../shared/wall'
+import { cardLedgerSize, clearCardLedger } from '../card-ledger-ring'
 import { GuardError, type HandlerContext, type MessageData } from '../handler-context'
+import { wallHub } from '../wall'
 import { __testing } from './card-ledger'
 
-const { cardChanged, cardLedgerRequest } = __testing
+const { cardChanged } = __testing
 
 function move(id: string, project = 'claude://default/repo'): CardMove {
   return { id, project, title: id, from: 'open', to: 'done', ts: 1 }
-}
-
-/** The moves carried by a recorded frame -- reply or broadcast. */
-function movesOf(frame: Record<string, unknown> | undefined): CardMove[] {
-  return (frame?.moves ?? []) as CardMove[]
 }
 
 interface Recorder {
@@ -28,9 +27,10 @@ interface Recorder {
   logs: string[]
 }
 
-/** A context that records instead of sending. `readable` is the set of projects
- *  the caller has `chat:read` on; undefined = everything (the owner's panel). */
-function fakeCtx(readable?: Set<string>): Recorder {
+/** A context that records instead of sending. Both send seams are recorded even
+ *  though the handler must use neither -- an assertion that they stay empty is
+ *  only worth something if using them would have shown up here. */
+function fakeCtx(): Recorder {
   const replies: Record<string, unknown>[] = []
   const scoped: { msg: Record<string, unknown>; project: string }[] = []
   const logs: string[] = []
@@ -42,27 +42,29 @@ function fakeCtx(readable?: Set<string>): Recorder {
       debug: (m: string) => logs.push(m),
       error: (m: string) => logs.push(m),
     },
-    requirePermission: (_permission: string, project?: string) => {
-      if (readable && !readable.has(project ?? '')) throw new GuardError('Permission denied')
+    requirePermission: () => {
+      throw new GuardError('card-ledger ingest must never ask a permission question')
     },
   } as unknown as HandlerContext
   return { ctx, replies, scoped, logs }
 }
 
-describe('card_changed relay', () => {
+describe('card_changed ingest', () => {
   beforeEach(() => {
     clearCardLedger()
   })
 
-  it('records the moves and rebroadcasts them scoped to the project', () => {
+  it('records the moves and puts nothing on a panel-facing frame', () => {
     const r = fakeCtx()
 
     cardChanged(r.ctx, { type: 'card_changed', project: 'claude://default/repo', moves: [move('a')] } as MessageData)
 
     expect(cardLedgerSize()).toBe(1)
-    expect(r.scoped).toHaveLength(1)
-    expect(r.scoped[0]?.project).toBe('claude://default/repo')
-    expect(movesOf(r.scoped[0]?.msg)[0]?.id).toBe('a')
+    // The retired fan-out. THE WALL's channel carries these rows now and filters
+    // them per subscriber on flush; a second push path would be a second
+    // disclosure rule to keep in sync with it.
+    expect(r.scoped).toEqual([])
+    expect(r.replies).toEqual([])
   })
 
   it('logs every move with its id, its lanes and its source', () => {
@@ -91,45 +93,44 @@ describe('card_changed relay', () => {
   })
 })
 
-describe('card_ledger_request', () => {
+/**
+ * The one live consumer. Deleting the broadcast leaves `publishWallCardMoves` as
+ * the ONLY thing this handler hands its moves to, and nothing else in the suite
+ * covers that call -- the wall-channel integration test starts one level below
+ * it, at `publishWallCardMoves` itself. Without this, dropping that line too
+ * would have kept every test green and silently emptied the wall's card pane.
+ */
+describe('card_changed -> THE WALL', () => {
+  const frames: WallFrame[] = []
+  const socket = {
+    send: (data: string) => {
+      frames.push(JSON.parse(data) as WallFrame)
+      return 1
+    },
+  }
+
   beforeEach(() => {
+    clearCardLedger()
+    wallHub.reset()
+    frames.length = 0
+  })
+
+  afterEach(() => {
+    wallHub.reset()
     clearCardLedger()
   })
 
-  it('serves the ring newest first', () => {
-    recordCardMoves([move('old'), move('new')])
-    const r = fakeCtx()
+  it('hands the moves to the wall channel, which flushes them on the next frame', () => {
+    wallHub.subscribe(socket)
+    frames.length = 0
 
-    cardLedgerRequest(r.ctx, { type: 'card_ledger_request', requestId: 'r1' } as MessageData)
+    cardChanged(fakeCtx().ctx, {
+      type: 'card_changed',
+      project: 'claude://default/repo',
+      moves: [move('a'), move('b')],
+    } as MessageData)
+    wallHub.tick()
 
-    expect(r.replies[0]).toMatchObject({ type: 'card_ledger_result', requestId: 'r1', ok: true })
-    expect(movesOf(r.replies[0]).map(m => m.id)).toEqual(['new', 'old'])
-  })
-
-  it('withholds moves from projects the caller cannot read', () => {
-    recordCardMoves([move('mine', 'claude://default/mine'), move('theirs', 'claude://default/theirs')])
-    const r = fakeCtx(new Set(['claude://default/mine']))
-
-    cardLedgerRequest(r.ctx, { type: 'card_ledger_request', requestId: 'r1' } as MessageData)
-
-    expect(movesOf(r.replies[0]).map(m => m.id)).toEqual(['mine'])
-  })
-
-  it('honours a limit', () => {
-    recordCardMoves([move('a'), move('b'), move('c')])
-    const r = fakeCtx()
-
-    cardLedgerRequest(r.ctx, { type: 'card_ledger_request', requestId: 'r1', limit: 2 } as MessageData)
-
-    expect(movesOf(r.replies[0]).map(m => m.id)).toEqual(['c', 'b'])
-  })
-
-  it('ignores a junk limit instead of serving nothing', () => {
-    recordCardMoves([move('a')])
-    const r = fakeCtx()
-
-    cardLedgerRequest(r.ctx, { type: 'card_ledger_request', requestId: 'r1', limit: Number.NaN } as MessageData)
-
-    expect(movesOf(r.replies[0])).toHaveLength(1)
+    expect(frames.at(-1)?.cards?.map(c => c.id)).toEqual(['b', 'a'])
   })
 })
