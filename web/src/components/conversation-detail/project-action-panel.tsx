@@ -14,6 +14,7 @@ import { openSpawnDialog } from '../spawn-dialog-trigger'
 import { ProjectCanvasesSection } from './project-canvases-section'
 import { ProjectCommitsSection } from './project-commits-section'
 import { ProjectNightshiftCard } from './project-nightshift-card'
+import { ProjectPromisesSection } from './project-promises-section'
 import { ProjectReadmeSection } from './project-readme-section'
 import { ProjectRecapsSection } from './project-recaps-section'
 import { useProjectRecentEnded } from './use-project-recent-ended'
@@ -316,6 +317,11 @@ export function ProjectActionPanel({ projectUri }: { projectUri: string }) {
 
         {/* Recent recaps (last 3 days, finished only) */}
         <ProjectRecapsSection projectUri={projectUri} />
+
+        {/* PROMISE LEDGER -- what this board claims was built, and whether a
+            commit on main agrees. Above the commit ledger on purpose: the commits
+            are what happened, this is what was PROMISED and did not. */}
+        <ProjectPromisesSection projectUri={projectUri} />
 
         {/* Commit ledger -- every commit in this project, all worktrees + machines */}
         <ProjectCommitsSection projectUri={projectUri} />

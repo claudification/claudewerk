@@ -74,6 +74,7 @@
     "test:ci": "scripts/bun-test.sh --shard=\"${SHARD:-1/1}\"",
     "test:integration": "scripts/bun-test.sh src/broker/__tests__/integration/",
     "test:sqlite": "scripts/bun-test.sh src/broker/store/__tests__/ src/broker/__tests__/backup-fts.test.ts",
+    "test:web": "cd web && bun run test:run",
     "test:staging": "scripts/staging-test.sh",
     "test:staging:keep": "scripts/staging-test.sh --keep",
     "test:watch": "bun test --watch",

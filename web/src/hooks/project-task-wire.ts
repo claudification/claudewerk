@@ -39,7 +39,17 @@ export interface BoardOpParams {
   toStatus?: TaskStatus
 }
 
-export type BoardOp = 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete' | 'pinned'
+export type BoardOp =
+  | 'list'
+  | 'manifest'
+  | 'get'
+  | 'getBatch'
+  | 'create'
+  | 'update'
+  | 'move'
+  | 'delete'
+  | 'pinned'
+  | 'promises'
 
 /** Send a board op for a project and resolve on the matching result. */
 export function sendBoardOp(
