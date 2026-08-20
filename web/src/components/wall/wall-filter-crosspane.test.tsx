@@ -219,22 +219,6 @@ describe('the project chip round-trips from every pane that renders one', () => 
 })
 
 describe('a query that matches nothing leaves every pane visibly empty', () => {
-  /**
-   * S2 IS WRONG, AND THIS IS WHERE IT IS RECORDED.
-   *
-   * Every other pane distinguishes "no feed arrived" from "the filter took
-   * everything" and prints the right one. S2 renders `<WallPaneEmpty />` -- the
-   * stub body, the words `no feed yet` -- for BOTH, so a filtered-to-zero plan
-   * pane tells you the broker never spoke. Its header says `0/2` at the same
-   * time, so the pane contradicts itself on screen.
-   *
-   * It is not fixed here: this card writes tests, and a pane's own wiring is that
-   * pane's bug. Filed as `wall-plan-usage-empty-line` against
-   * `wall-plan-usage-series`. Pinned rather than skipped so that FIXING it turns
-   * this suite red and forces the carve-out out with it.
-   */
-  const S2_EMPTY_LINE_BUG = 'S2'
-
   /** Where each pane writes its "nothing matched" line. Every pane has one, and
    *  the point of naming them individually is that a pane which silently renders
    *  an empty box cannot be papered over by a loose selector. */
@@ -268,7 +252,7 @@ describe('a query that matches nothing leaves every pane visibly empty', () => {
     typeQuery('zzzznothingmatchesthis')
 
     const silent = WALL_PANE_CODES.filter(code => !EMPTY_LINE[code].test(pane(code)?.textContent ?? ''))
-    expect(silent).toEqual([S2_EMPTY_LINE_BUG])
+    expect(silent).toEqual([])
   })
 
   it('treats an unknown token as free text -- honestly empty, not blank', async () => {
@@ -283,7 +267,6 @@ describe('a query that matches nothing leaves every pane visibly empty', () => {
     expect(fullPanes()).toEqual([])
     for (const code of WALL_PANE_CODES) {
       expect(`${code}:${paneCount(code)?.matched}`).toBe(`${code}:0`)
-      if (code === S2_EMPTY_LINE_BUG) continue
       expect(`${code}:${EMPTY_LINE[code].test(pane(code)?.textContent ?? '')}`).toBe(`${code}:true`)
     }
   })

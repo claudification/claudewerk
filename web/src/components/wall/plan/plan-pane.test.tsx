@@ -139,6 +139,20 @@ describe('S2 plan usage', () => {
     rerender(<PlanUsagePane />)
     expect(document.querySelector('.wall-pane-count')?.textContent).toBe('2/2 · 5h')
   })
+
+  it('blames the FILTER when the filter emptied it, not the missing feed', () => {
+    feed([sample({ profile: 'a' }), sample({ profile: 'b' })])
+    const { rerender } = render(<PlanUsagePane />)
+
+    useWallFilterStore.getState().setRaw('zzzznothingmatchesthis')
+    rerender(<PlanUsagePane />)
+
+    // The header still says there are two lines. The body has to agree with it:
+    // "no feed yet" beside a `0/2` is the pane calling itself a liar.
+    expect(document.querySelector('.wall-pane-count')?.textContent).toBe('0/2 · 5h')
+    expect(screen.getByText('no profile matches the filter')).toBeTruthy()
+    expect(screen.queryByText('no feed yet')).toBeNull()
+  })
 })
 
 describe('S2 countdown across a DST boundary', () => {
