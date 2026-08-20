@@ -102,7 +102,16 @@ function serializeValue(val: unknown): string | null {
   return serializeScalar(String(val))
 }
 
-function serializeScalar(s: string): string {
+/**
+ * One frontmatter scalar, quoted only if it would not survive the round trip.
+ *
+ * Exported because `promise-ledger.ts` writes frontmatter by LINE SURGERY (a
+ * YAML round trip is what inverted portal2's ledger) and still has to emit a
+ * value this parser will read back unchanged. Two copies of the quoting rules
+ * would be two answers, and the one that drifted would write a card the reader
+ * silently mangles.
+ */
+export function serializeScalar(s: string): string {
   return needsQuoting(s) ? quote(s) : s
 }
 
