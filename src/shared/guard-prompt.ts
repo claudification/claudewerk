@@ -45,7 +45,7 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     '',
     'THE CARD (source of truth is its YAML frontmatter):',
     `  ${ctx.projectRoot}/${cardRelPath(ctx.cardId)}`,
-    'Read it FIRST. IF this board\'s gate was enabled when the worker moved the card to in-review, it',
+    "Read it FIRST. IF this board's gate was enabled when the worker moved the card to in-review, it",
     'machine-captured: evidence_branch, evidence_base, evidence_commits, evidence_diffstat, evidence_tests,',
     'evidence_worker. IF THOSE KEYS ARE ABSENT the gate was OFF -- nothing on this card is machine-backed,',
     "the worker's branch and base are claims you must derive from git yourself, and no check stopped the",

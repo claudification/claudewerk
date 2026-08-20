@@ -74,7 +74,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-describe('the gate measures the card\'s worktree, not the project root', () => {
+describe("the gate measures the card's worktree, not the project root", () => {
   test('root has nothing to show -- this is what the gate used to see', () => {
     const p = Bun.spawnSync(['git', '-C', root, 'rev-list', '--count', 'main..HEAD'], { stdout: 'pipe' })
     expect(new TextDecoder().decode(p.stdout).trim()).toBe('0')

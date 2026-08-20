@@ -47,7 +47,10 @@ export function parseWorktreeList(porcelain: string): WorktreeEntry[] {
     }
     const last = out[out.length - 1]
     if (last && line.startsWith('branch ')) {
-      last.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '')
+      last.branch = line
+        .slice('branch '.length)
+        .trim()
+        .replace(/^refs\/heads\//, '')
     }
   }
   return out
