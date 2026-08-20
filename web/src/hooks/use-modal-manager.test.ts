@@ -119,6 +119,36 @@ describe('modal manager', () => {
       expect(getDetachedWindow('debug-control')).toBeUndefined()
     })
 
+    /**
+     * "when I do clear/reload on main window, they stay open - which is
+     * impossible". It is: the popup's React tree, store and socket all live in
+     * the opener, so a reload leaves pixels with no program behind them and the
+     * fresh tab holds no handle to close them with.
+     */
+    it('closes every popup when the opener goes away', () => {
+      const s = useModalManagerStore.getState()
+      s.open(OPTS, { type: 'global' })
+      s.detach('debug-control')
+
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }))
+
+      expect(fakeWin.close).toHaveBeenCalled()
+      expect(getDetachedWindow('debug-control')).toBeUndefined()
+    })
+
+    /** A bfcache freeze is not a death -- the tab can come back with its heap
+     *  intact and the popups still wired to it. */
+    it('leaves them alone when the page is only frozen into the bfcache', () => {
+      const s = useModalManagerStore.getState()
+      s.open(OPTS, { type: 'global' })
+      s.detach('debug-control')
+
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+
+      expect(fakeWin.close).not.toHaveBeenCalled()
+      expect(getDetachedWindow('debug-control')).toBe(fakeWin)
+    })
+
     it('refuses to detach a blocking modal', () => {
       const s = useModalManagerStore.getState()
       s.open({ ...OPTS, id: 'rename', minimizable: false }, { type: 'conversation', id: 'conv_a' })

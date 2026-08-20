@@ -138,6 +138,30 @@ describe('wall plan series: thinning', () => {
   })
 })
 
+describe('wall plan series: the gap flag', () => {
+  it('carries gapBefore through the client fold untouched', () => {
+    const all = series()
+    foldPlanSamples(all, [sample({ at: T0 }), sample({ at: T0 + 90_000, gapBefore: true })], T0 + 90_000, {
+      minGapMs: 0,
+    })
+
+    expect(all.get('default')).toHaveLength(2)
+    expect(all.get('default')?.[1]?.gapBefore).toBe(true)
+    expect(flattenPlanSeries(all)[1]?.gapBefore).toBe(true)
+  })
+
+  it('never thins away a sample that declares a discontinuity', () => {
+    const all = series()
+    appendPlanSample(all, sample({ at: T0 }), T0)
+    // Same number, same state, well inside the min gap: thinned on every other
+    // day. Not this one -- this sample is the only thing carrying the break.
+    const kept = appendPlanSample(all, sample({ at: T0 + 5_000, gapBefore: true }), T0 + 5_000)
+
+    expect(kept).toBe(true)
+    expect(all.get('default')?.[1]?.gapBefore).toBe(true)
+  })
+})
+
 describe('wall plan series: flatten', () => {
   it('returns every sample oldest first across every series', () => {
     const all = series()

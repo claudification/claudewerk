@@ -174,6 +174,41 @@ async function spawnSeat(
   return out.conversationId
 }
 
+/**
+ * The generation the CAS is asked about. THE LEASE IS THE AUTHORITY.
+ *
+ * `action.expectGen` comes from the run file, and the run file's `gen` is a
+ * MIRROR -- the sentinel writes it when a lease is granted (epic-handlers.ts
+ * `lease`). A mirror can drift: `run.md` is a markdown artifact whose digest an
+ * overseer rewrites every generation, and rewriting the body with the
+ * frontmatter attached rewrites the counter too.
+ *
+ * When it drifts the CAS can never agree with itself again, because the wake
+ * quotes the run and `evaluateLease` compares against the card. That is not a
+ * theoretical hazard: on 2026-08-20 `epic-the-wall-ii` beat every 45s for hours
+ * on `stale wake: expected gen 12, epic is at gen 11`, spawning nothing, while
+ * every surface in the panel said RUNNING.
+ *
+ * Quoting the lease we just read keeps the race protection intact -- two beats
+ * reading the same lease still send the same generation and exactly one wins --
+ * and makes a drifted mirror self-heal, since a granted lease rewrites it.
+ */
+function casGen(
+  deps: BeatDeps,
+  group: EpicGroup,
+  run: EpicRunSnapshot,
+  expectGen: number,
+  holder?: EpicLease | null,
+): number {
+  const onBoard = holder?.gen
+  if (onBoard === undefined || onBoard === expectGen) return expectGen
+  deps.log(
+    `${tag(group.epicId, run.gen)} generation DRIFT: the run file says ${expectGen}, the lease on the card ` +
+      `says ${onBoard} -- quoting the lease, which is what the CAS compares against`,
+  )
+  return onBoard
+}
+
 /** Take the lease, then spawn the overseer. */
 async function wakeOverseer(
   deps: BeatDeps,
@@ -182,8 +217,9 @@ async function wakeOverseer(
   action: Extract<EpicAction, { kind: 'wake-overseer' }>,
   ctx: ActionContext,
 ): Promise<string | null> {
-  const convId = `pending-${group.epicId}-${action.expectGen + 1}`
-  const gen = await takeLease(deps, group, run, convId, action.expectGen, 'wake', ctx.holder)
+  const expectGen = casGen(deps, group, run, action.expectGen, ctx.holder)
+  const convId = `pending-${group.epicId}-${expectGen + 1}`
+  const gen = await takeLease(deps, group, run, convId, expectGen, 'wake', ctx.holder)
   if (gen === null) return null
 
   const spawned = await spawnSeat(
@@ -248,7 +284,9 @@ async function spawnPlanner(
   ctx: ActionContext,
 ): Promise<string | null> {
   const io = epicIo()
-  const gen = await takeLease(deps, group, run, `pending-${group.epicId}-planner`, run.gen, 'planner', ctx.holder)
+  // Same authority as the wake: the lease decides, the run file only mirrors.
+  const expectGen = casGen(deps, group, run, run.gen, ctx.holder)
+  const gen = await takeLease(deps, group, run, `pending-${group.epicId}-planner`, expectGen, 'planner', ctx.holder)
   if (gen === null) return null
 
   await io.sendEpicOp(deps, group.project, {

@@ -23,7 +23,7 @@
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
-import { type EpicBeat, planBeat } from './epic-beat'
+import { type EpicBeat, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
 import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
@@ -66,6 +66,29 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     })
   }
   const run = view.run
+
+  /**
+   * A TERMINAL RUN IS TOUCHED BY NOTHING -- checked HERE, before the first write.
+   *
+   * `guardBeat` has always refused to ACT on a paused run, but it is consulted
+   * after the acknowledgement pass below, and acknowledgement is a write. So a
+   * paused epic that still had conversations in the registry kept appending
+   * `completion` entries to its baton every 45 seconds, forever: on 2026-08-20
+   * `epic-the-wall` had been paused for hours and its three newest log entries
+   * were twenty seconds old. The pane was accused of lying about the age. The age
+   * was true; the writes should never have happened.
+   *
+   * The board read below is skipped with it -- a run nobody may act on does not
+   * need a sentinel round trip per tick either.
+   */
+  if (isInertRun(run.status)) {
+    return finish(deps, seats, run.gen, {
+      epicId: seats.epicId,
+      note: `run is ${run.status}; not touched`,
+      actions: 0,
+      spawned: [],
+    })
+  }
 
   const mismatch = generationMismatch(seats, run.gen)
   if (mismatch) deps.log(`${tag(seats.epicId, run.gen)} ${mismatch}`)

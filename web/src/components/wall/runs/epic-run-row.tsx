@@ -15,25 +15,17 @@
  * else on the row is allowed to be louder.
  */
 
+import type { RunVitalityView } from '@shared/epic-vitality'
 import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
+import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import { ProjectTag } from '../../project-tag'
 import { navigateFromWall } from '../wall-navigate'
 import { RunActions } from './run-actions'
 import { BatonTail, BeatPulse, BucketStrip, RunTag } from './run-bits'
-import {
-  batonTail,
-  beatTicks,
-  idleSentence,
-  isRunLive,
-  type LeaseState,
-  leaseState,
-  type RunStall,
-  runBuckets,
-  runStall,
-} from './run-model'
+import { batonTail, beatTicks, idleSentence, type RunStall, runBuckets, runStall, runView } from './run-model'
 import type { EpicRunRowData } from './use-unattended-runs'
 
 /**
@@ -49,12 +41,12 @@ import type { EpicRunRowData } from './use-unattended-runs'
  */
 function RunHead({
   row,
-  live,
+  view,
   run,
   beats,
 }: {
   row: EpicRunRowData
-  live: boolean
+  view: RunVitalityView
   run: EpicRunSnapshot | null
   beats: readonly EpicBeatRecord[]
 }) {
@@ -65,7 +57,7 @@ function RunHead({
 
   return (
     <div className="wall-run-head">
-      <RunTag armed={live} />
+      <RunTag view={view} />
       <button
         type="button"
         title={`Filter the whole wall to ${row.projectName}`}
@@ -106,15 +98,6 @@ function StallBanner({ stall }: { stall: RunStall }) {
   )
 }
 
-/** The lease, as one sentence. `stale` is the only one that raises its voice. */
-function leaseSentence(lease: LeaseState): string {
-  const age = lease.sinceMs === null ? 'unknown age' : `${formatDurationShort(lease.sinceMs)} ago`
-  if (lease.kind === 'never') return 'overseer has never woken'
-  if (lease.kind === 'released') return `overseer released the lease at gen ${lease.gen}`
-  if (lease.kind === 'stale') return `STALE LEASE -- ${lease.holder} has held gen ${lease.gen} since ${age}`
-  return `overseer ${lease.holder} woke ${age}`
-}
-
 /** THE ALARM. A run whose overseer never woke looks healthy on every other
  *  surface in this tree -- that is the 2026-08-18 failure -- so a stale lease
  *  takes the destructive tone and nothing else on the row is allowed to be
@@ -148,20 +131,23 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
   const { entry, project, epicId } = row
   const { data, fetchedAt, stale: readStale, refresh } = useOverseerInspect(project, epicId)
 
-  const live = isRunLive(entry)
+  const view = runView(entry)
   const stall = runStall(entry, nowMs)
   const inspect = data ?? null
   const run = inspect?.run ?? null
 
   return (
     <div className="wall-run" data-epic={epicId} data-stalled={stall.stalled || undefined}>
-      <RunHead row={row} live={live} run={run} beats={inspect?.beats ?? []} />
+      <RunHead row={row} view={view} run={run} beats={inspect?.beats ?? []} />
       <StallBanner stall={stall} />
+      {/* WHY the tag says what it says. The tag alone is what let three surfaces
+          each print a different confident word for the same run. */}
+      <div className="wall-run-why">{view.why}</div>
       <BucketStrip buckets={runBuckets(inspect)} />
       <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />
       <IdleWhy sentence={idleSentence(entry, inspect)} />
       <BatonTail entries={batonTail(inspect?.baton ?? [])} nowMs={nowMs} />
-      <RunActions project={project} epicId={epicId} run={run} live={live} onDone={refresh} />
+      <RunActions project={project} epicId={epicId} run={run} live={view.live} onDone={refresh} />
       <ReadAge stale={readStale} fetchedAt={fetchedAt} nowMs={nowMs} />
     </div>
   )

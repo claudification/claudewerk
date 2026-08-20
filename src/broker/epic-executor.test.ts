@@ -153,6 +153,21 @@ describe('runEpicBeat', () => {
     expect(spawns).toHaveLength(0)
   })
 
+  /**
+   * 2026-08-20, from the wall: `epic-the-wall` had been PAUSED for hours and its
+   * three newest baton entries were twenty seconds old. `guardBeat` refuses to
+   * ACT on a terminal run, but it is consulted after the acknowledgement pass --
+   * and acknowledgement is a write.
+   */
+  test.each(['paused', 'complete', 'aborted'] as const)('a %s run is not written to at all', async status => {
+    run = { ...RUN, status }
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(baton).toHaveLength(0)
+    expect(ops).toHaveLength(0)
+    expect(spawns).toHaveLength(0)
+    expect(out.note).toContain(`run is ${status}`)
+  })
+
   test('a settled card is ACKNOWLEDGED into the baton before anything else', async () => {
     const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(baton[0]).toMatchObject({ kind: 'completion', cardId: 't1', convId: 'broker' })
@@ -226,6 +241,63 @@ describe('runEpicBeat', () => {
     configureEpicIo({ dispatchSpawn: (async () => ({ ok: false, error: 'name in use' })) as never })
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(ops.filter(o => o.lease?.adopt)).toHaveLength(0)
+  })
+
+  /**
+   * THE 2026-08-20 DEADLOCK, in one test.
+   *
+   * `epic-the-wall-ii` beat every 45s for hours with `0 spawned`, logging
+   * `wake refused: stale wake: expected gen 12, epic is at gen 11`. The run file
+   * said gen 12; the lease on the card said 11. The wake quoted the RUN, the CAS
+   * compares against the CARD, and the two could never agree again -- so every
+   * settle woke nobody, forever, while the panel said RUNNING.
+   *
+   * The run file's `gen` is a MIRROR (the sentinel writes it when a lease is
+   * granted) and the mirror is hand-editable: an overseer rewriting `run.md`'s
+   * digest can rewrite its frontmatter with it. The lease is the only authority,
+   * so the wake must quote the lease it just read.
+   */
+  test('a run whose gen drifted ahead of the lease still wakes -- the CAS quotes the LEASE', async () => {
+    run = { ...RUN, gen: 12 }
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run,
+        baton,
+        acknowledgedCardIds: acknowledgedCardIds(baton),
+        lease: { convId: 'conv_dead', gen: 11, at: '' },
+      }),
+    })
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
+    expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(11)
+    expect(out.spawned).toHaveLength(1)
+  })
+
+  test('the drift between the run mirror and the lease is LOGGED, not silently absorbed', async () => {
+    run = { ...RUN, gen: 12 }
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run,
+        baton,
+        acknowledgedCardIds: acknowledgedCardIds(baton),
+        lease: { convId: 'conv_dead', gen: 11, at: '' },
+      }),
+    })
+    await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
+    expect(log.join('\n')).toContain('generation DRIFT')
+  })
+
+  test('with the run and the lease in agreement the wake quotes that generation unchanged', async () => {
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run,
+        baton,
+        acknowledgedCardIds: acknowledgedCardIds(baton),
+        lease: { convId: 'conv_dead', gen: 3, at: '' },
+      }),
+    })
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(3)
+    expect(log.join('\n')).not.toContain('generation DRIFT')
   })
 
   test('a REFUSED lease spawns nothing and is logged as normal, not as an error', async () => {

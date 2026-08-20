@@ -1,28 +1,16 @@
 /**
- * A7's arithmetic: the bucket mapping, stall detection, and the lease alarm.
+ * A7's arithmetic: the bucket mapping and stall detection.
  *
- * These are the three the card names, and all three are pure -- which is the
- * whole reason they live in `run-model.ts` rather than inside the row. A stall
- * that can only be tested by rendering a component and mocking a clock is a
- * stall nobody re-tests after the first regression.
+ * Both are pure, which is the whole reason they live in `run-model.ts` rather
+ * than inside the row. A stall that can only be tested by rendering a component
+ * and mocking a clock is a stall nobody re-tests after the first regression.
  */
 
-import type { EpicLease } from '@shared/epic-lease'
 import type { EpicLogEntry } from '@shared/epic-run-types'
 import type { NightshiftTaskMeta } from '@shared/nightshift-types'
 import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
 import { describe, expect, it } from 'vitest'
-import {
-  batonTail,
-  beatTicks,
-  idleSentence,
-  LEASE_STALE_MS,
-  leaseState,
-  NO_BUCKETS,
-  nightshiftCounts,
-  runBuckets,
-  runStall,
-} from './run-model'
+import { batonTail, beatTicks, idleSentence, NO_BUCKETS, nightshiftCounts, runBuckets, runStall } from './run-model'
 
 const NOW = Date.parse('2026-08-19T12:00:00.000Z')
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
@@ -137,11 +125,20 @@ describe('stall detection', () => {
     expect(runStall(entry(), NOW)).toEqual({ stalled: false, sinceMs: 20_000 })
   })
 
-  it('STALLS a live run that has never beaten -- the case the broker flag cannot see', () => {
-    // `epic-active.ts` computes stale as `lastBeatAt !== null && ...`, so an
-    // armed epic the sweep never picked up reports stale:false forever. That is
-    // the 2026-08-18 shape: looks fine, is not running.
-    expect(runStall(entry({ lastBeatAt: null }), NOW)).toEqual({ stalled: true, sinceMs: null })
+  /**
+   * `epic-active.ts` computes stale as `lastBeatAt !== null && ...`, so an epic
+   * the sweep never picked up reports stale:false forever -- the 2026-08-18
+   * shape, looks fine and is not running. The shared rule still catches it, but
+   * only when nothing is armed to pick it up: a run that IS armed and has not
+   * beaten yet is simply waiting for a sweep that comes every 45s, and shouting
+   * STALLED at it was a lie of its own.
+   */
+  it('STALLS a never-beaten run that nothing is armed to pick up', () => {
+    expect(runStall(entry({ lastBeatAt: null, armed: false }), NOW)).toEqual({ stalled: true, sinceMs: null })
+  })
+
+  it('leaves a never-beaten ARMED run alone -- its first beat is genuinely coming', () => {
+    expect(runStall(entry({ lastBeatAt: null, armed: true }), NOW)).toEqual({ stalled: false, sinceMs: null })
   })
 
   it('never calls a paused run stalled -- a paused run is SUPPOSED to be quiet', () => {
@@ -149,35 +146,14 @@ describe('stall detection', () => {
   })
 
   it('treats an unparseable beat stamp as never beaten rather than as now', () => {
-    expect(runStall(entry({ lastBeatAt: 'not a date' }), NOW)).toEqual({ stalled: true, sinceMs: null })
+    expect(runStall(entry({ lastBeatAt: 'not a date', armed: false }), NOW)).toEqual({
+      stalled: true,
+      sinceMs: null,
+    })
   })
 })
 
-describe('the overseer lease -- the alarm', () => {
-  const held = (over: Partial<EpicLease> = {}): EpicLease => ({
-    convId: 'abcdef1234',
-    gen: 4,
-    at: iso(30_000),
-    ...over,
-  })
-
-  it('reads a live, recent holder as healthy', () => {
-    expect(leaseState(held(), true, NOW)).toEqual({ kind: 'held', sinceMs: 30_000, holder: 'abcdef12', gen: 4 })
-  })
-
-  it('is STALE when the holder conversation is gone -- the 2026-08-18 failure', () => {
-    expect(leaseState(held(), false, NOW).kind).toBe('stale')
-  })
-
-  it('is STALE when a live holder has held it past the shared threshold', () => {
-    expect(leaseState(held({ at: iso(LEASE_STALE_MS + 1000) }), true, NOW).kind).toBe('stale')
-  })
-
-  it('separates NEVER RAN from RAN AND RELEASED -- different facts', () => {
-    expect(leaseState(null, true, NOW).kind).toBe('never')
-    expect(leaseState({ convId: '', gen: 7, at: '' }, true, NOW)).toMatchObject({ kind: 'released', gen: 7 })
-  })
-})
+// The lease alarm moved to `web/src/lib/epic-lease-view.test.ts` with its code.
 
 describe('the tails', () => {
   const log = (ts: string, body: string): EpicLogEntry => ({ ts, kind: 'dispatch', convId: 'c', body })

@@ -59,6 +59,9 @@ export default function CardLedgerPane() {
       title="CARD LEDGER"
       code="P3"
       maxHeight="32%"
+      // A card move IS a timestamped event, so the cursor reads exactly: the
+      // board as it stood. `useWallFilter` drops the moves that came later.
+      rewind="rows"
       count={`${matched}/${total}`}
       tabs={
         <div className="flex gap-[2px]">

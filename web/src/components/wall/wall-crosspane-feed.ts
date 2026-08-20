@@ -28,8 +28,15 @@ import { useOverseerActivityStore } from '@/hooks/use-overseer-activity'
 import { applyWallFrame } from '@/hooks/wall-frame-store'
 import type { Conversation } from '@/lib/types'
 
-/** The clock every age in the fixture is measured against. */
-const NOW = 1_700_000_000_000
+/**
+ * The clock every age in the fixture is measured against.
+ *
+ * EXPORTED for the time-cursor proof, which has to pin `Date.now()` to it. Every
+ * row here is dated relative to this instant, so a suite measuring ages against
+ * the real clock gets ages in YEARS -- under which every row is older than every
+ * offset, the rewind narrows nothing, and the proof passes by doing nothing.
+ */
+export const NOW = 1_700_000_000_000
 
 /** Two projects, one segment each so the display name IS the token a `@chip`
  *  writes into the box. */

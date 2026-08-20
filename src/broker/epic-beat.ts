@@ -88,6 +88,13 @@ function dispatchAllowed(run: EpicRunSnapshot, windowOpen: boolean): boolean {
  *  be revived by a late settle arriving from a worker nobody killed in time. */
 const INERT: readonly EpicRunSnapshot['status'][] = ['paused', 'complete', 'aborted']
 
+/** Is this run one the engine should touch AT ALL? Exported because the answer
+ *  has to be asked before the beat starts writing, not only when it decides --
+ *  see `runEpicBeat`. */
+export function isInertRun(status: EpicRunSnapshot['status']): boolean {
+  return INERT.includes(status)
+}
+
 /**
  * The planning generation, in three states -- owed, in flight, settled.
  *

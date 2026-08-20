@@ -9,11 +9,14 @@
  * by construction. The box therefore holds nothing -- it renders `raw` and it
  * writes `raw`, and every pane reads the same store through `useWallFilter`.
  *
- * KEYS. `/` focuses the box, `Esc` leaves it. Both are bound on the wall's OWN
- * document, in the CAPTURE phase, for the two reasons the ambient handler has:
- * detached, the wall lives in a second document whose events never reach the
- * opener; and Escape has to be taken before Radix's dismissable layer sees it,
- * or leaving the box would close the whole surface.
+ * KEYS. `/` focuses the box, `Esc` leaves it. Both ride `useWallHotkey`, which
+ * binds on the wall's OWN document in the CAPTURE phase for the two reasons the
+ * ambient handler has: detached, the wall lives in a second document whose
+ * events never reach the opener; and Escape has to be taken before Radix's
+ * dismissable layer sees it, or leaving the box would close the whole surface.
+ * That plumbing was copied verbatim into the W1 scrubber's `T` before it was
+ * lifted out -- two hand-written copies of "which window am I in" is one copy
+ * too many for something that fails by silently never firing.
  *
  * Escape is only ours WHILE THE BOX HAS FOCUS. Ambient mode uses the same key on
  * the same document, so the rule is: first Escape leaves the box, second leaves
@@ -22,12 +25,10 @@
  */
 
 import { Search } from 'lucide-react'
-import { useEffect, useRef } from 'react'
-import { useModalManagerStore } from '@/hooks/use-modal-manager'
+import { useRef } from 'react'
 import { useWallFilterStore } from '@/lib/wall/filter'
-import { usePopoutContainer } from '../popout/popout-container-context'
+import { useWallHotkey } from './use-wall-hotkey'
 import { isTypingTarget } from './wall-keys'
-import { WALL_MODAL } from './wall-state'
 
 /**
  * The grammar, on hover. The placeholder carries the four sigils a first-time
@@ -47,49 +48,28 @@ export function WallFilterBox() {
   const setRaw = useWallFilterStore(s => s.setRaw)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // WHICH DOCUMENT the box is in cannot be read off the node. Detaching MOVES
-  // the canvas by `appendChild` from a subtree this component does not re-render
-  // with, so `inputRef.current.ownerDocument` is still the opener's for as long
-  // as this component is concerned. The popout container is the value the
-  // surface hands down for exactly this reason -- it is the only honest answer
-  // to "which window am I being shown in".
-  const popout = usePopoutContainer()
-  const presentation = useModalManagerStore(s => s.records[WALL_MODAL.id]?.presentation)
-
-  useEffect(() => {
-    // Parked in the dock, the box is offscreen: `/` must not pull focus into a
-    // surface the user cannot see.
-    if (presentation !== 'inline' && presentation !== 'detached') return
-    const input = inputRef.current
-    if (!input) return
-    const doc = popout?.ownerDocument ?? input.ownerDocument
-
-    function onKeyDown(event: KeyboardEvent) {
-      const el = inputRef.current
-      if (!el) return
-      if (event.key === 'Escape') {
-        // Not our Escape unless the box has it. Ambient's own handler, and the
-        // dialog underneath, are both still entitled to this key.
-        if (el.ownerDocument.activeElement !== el) return
-        event.preventDefault()
-        // IMMEDIATE, not plain stopPropagation: the ambient handler is bound on
-        // the SAME node in the SAME phase, and stopPropagation does nothing to a
-        // co-listener. Ambient also declines a typing target, so this holds even
-        // if a re-bind ever puts the two in the other order.
-        event.stopImmediatePropagation()
-        el.blur()
-        return
-      }
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
-      // A `/` typed INTO a field is a slash, not a hotkey -- including this one.
-      if (isTypingTarget(event.target)) return
+  useWallHotkey(inputRef, event => {
+    const el = inputRef.current
+    if (!el) return
+    if (event.key === 'Escape') {
+      // Not our Escape unless the box has it. Ambient's own handler, and the
+      // dialog underneath, are both still entitled to this key.
+      if (el.ownerDocument.activeElement !== el) return
       event.preventDefault()
-      el.focus()
+      // IMMEDIATE, not plain stopPropagation: the ambient handler is bound on
+      // the SAME node in the SAME phase, and stopPropagation does nothing to a
+      // co-listener. Ambient also declines a typing target, so this holds even
+      // if a re-bind ever puts the two in the other order.
+      event.stopImmediatePropagation()
+      el.blur()
+      return
     }
-
-    doc.addEventListener('keydown', onKeyDown, true)
-    return () => doc.removeEventListener('keydown', onKeyDown, true)
-  }, [presentation, popout])
+    if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+    // A `/` typed INTO a field is a slash, not a hotkey -- including this one.
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    el.focus()
+  })
 
   return (
     <div className="wall-filter" title={GRAMMAR}>

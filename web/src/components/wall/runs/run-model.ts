@@ -16,12 +16,25 @@
 
 import type { EpicLease } from '@shared/epic-lease'
 import type { EpicLogEntry } from '@shared/epic-run-types'
+import { isVitallyLive, type RunVitalityView, runVitality } from '@shared/epic-vitality'
 import type { NightshiftTaskMeta, NightshiftTaskStatus } from '@shared/nightshift-types'
 import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult } from '@shared/protocol'
 
-/** A run in one of these is one the sweep is supposed to be beating. */
+/**
+ * A run the sweep is supposed to be beating, and WHAT it is actually doing.
+ *
+ * Both answers come from `runVitality` (src/shared/epic-vitality.ts) rather than
+ * from `entry.status`. The status field is an intent nothing writes back down,
+ * so `status === 'running'` rendered this pane's tag as ARMED on a run that had
+ * spawned nothing for hours -- the same lie the header badge and the overseer
+ * window were telling at the same moment, which is why the derivation is shared.
+ */
 export function isRunLive(entry: EpicActivityEntry): boolean {
-  return entry.status === 'armed' || entry.status === 'running'
+  return isVitallyLive(entry)
+}
+
+export function runView(entry: EpicActivityEntry): RunVitalityView {
+  return runVitality(entry)
 }
 
 // ---------------------------------------------------------------------------
@@ -80,69 +93,27 @@ export interface RunStall {
 }
 
 /**
- * `stale` is the BROKER's call (`epic-active.ts`, two sweep ticks) and is taken
- * verbatim so every surface agrees on when a run stops looking alive.
+ * STALLED is now `runVitality`'s call, so this pane, the header badge and the
+ * overseer window cannot disagree about when a run stopped moving.
  *
- * The one case it cannot cover is a live run that has NEVER beaten: the broker's
- * test is `lastBeatAt !== null && ...`, so an armed epic the sweep never picked
- * up reports `stale: false` forever. That is the 2026-08-18 shape exactly -- a
- * run that looks fine and is not running -- so it is stalled here.
+ * ONE RULE CHANGED IN THE MOVE, deliberately. This used to call any live run
+ * with no beat at all STALLED, to catch the 2026-08-18 shape -- an armed epic
+ * the sweep never picked up. But the sweep runs every 45s, so that also shouted
+ * STALLED at every healthy run for its first three quarters of a minute. The
+ * shared rule splits the two: never beaten AND not in the armed set is stalled
+ * (nothing will ever pick it up), never beaten while armed is ARMED (it is
+ * waiting for a beat that is genuinely coming).
+ *
+ * `sinceMs` is still computed here because the banner prints the age.
  */
 export function runStall(entry: EpicActivityEntry, nowMs: number): RunStall {
   const at = entry.lastBeatAt ? Date.parse(entry.lastBeatAt) : Number.NaN
   const sinceMs = Number.isFinite(at) ? Math.max(0, nowMs - at) : null
-  if (!isRunLive(entry)) return { stalled: false, sinceMs }
-  return { stalled: sinceMs === null || entry.stale, sinceMs }
+  return { stalled: runVitality(entry).vitality === 'stalled', sinceMs }
 }
 
-// ---------------------------------------------------------------------------
-// THE OVERSEER LEASE -- THE ALARM
-// ---------------------------------------------------------------------------
-
-/**
- * MIRRORS `LEASE_STALE_MS` in `src/shared/epic-lease.ts`, which cannot be
- * imported here: that module pulls `node:path` through `epic-paths.ts` and would
- * drag it into the browser bundle. Same number, same meaning -- a holder this old
- * is presumed dead however alive its conversation claims to be.
- */
-export const LEASE_STALE_MS = 10 * 60 * 1000
-
-export type LeaseKind =
-  /** The epic has never had an overseer. */
-  | 'never'
-  /** One woke and released the grip cleanly. */
-  | 'released'
-  /** Held by a conversation that is alive and recent. */
-  | 'held'
-  /** Held by something dead, or held far too long. THE alarm. */
-  | 'stale'
-
-export interface LeaseState {
-  kind: LeaseKind
-  /** How long the current holder has held it. */
-  sinceMs: number | null
-  /** Short form of the holding conversation id, for the sentence. */
-  holder: string
-  gen: number
-}
-
-export function leaseState(lease: EpicLease | null, overseerAlive: boolean, nowMs: number): LeaseState {
-  if (!lease) return { kind: 'never', sinceMs: null, holder: '', gen: 0 }
-
-  const taken = lease.at ? Date.parse(lease.at) : Number.NaN
-  const sinceMs = Number.isFinite(taken) ? Math.max(0, nowMs - taken) : null
-  const base = { sinceMs, holder: lease.convId.slice(0, 8), gen: lease.gen }
-
-  // Released is a FACT, not an absence: the generation counter survives a
-  // release, so an empty holder with a generation means it ran and let go.
-  if (!lease.convId) return { ...base, kind: 'released' }
-
-  // A holder whose conversation is gone is the 2026-08-18 failure verbatim: the
-  // run keeps its grip, the next wake's CAS keeps losing, and nothing says so.
-  const dead = !overseerAlive
-  const ancient = sinceMs === null || sinceMs > LEASE_STALE_MS
-  return { ...base, kind: dead || ancient ? 'stale' : 'held' }
-}
+// THE OVERSEER LEASE moved to `@/lib/epic-lease-view` -- the overseer window
+// needs the same sentence, and it could not import it from inside the wall.
 
 // ---------------------------------------------------------------------------
 // THE TAILS -- baton and beat pulse

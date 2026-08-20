@@ -21,6 +21,7 @@
  * afford it.
  */
 
+import { beatStale, isVitallyLive, STALE_BEAT_MS } from '../shared/epic-vitality'
 import type { EpicActivityEntry } from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { epicIo } from './epic-io'
@@ -31,12 +32,11 @@ import type { SweepDeps } from './epic-sweep-loop'
 export type { EpicActivityEntry }
 
 /**
- * Two sweep ticks. Past this the pip stops breathing, because a run whose last
- * beat is older than the interval that produces beats is not "running slowly",
- * it is stalled -- and a stalled engine that still animates is the exact lie
- * this whole surface exists to stop telling.
+ * Two sweep ticks, defined in `shared/epic-vitality.ts` and re-exported here so
+ * this module's callers keep one import. The number is shared because the
+ * control panel has to reach the same verdict from a beat ring it holds itself.
  */
-export const STALE_BEAT_MS = 90_000
+export { STALE_BEAT_MS }
 
 /** The last beat's wall clock, or null. The ring keeps newest LAST. */
 function lastBeat(project: string, epicId: string): string | null {
@@ -60,7 +60,7 @@ async function toEntry(deps: SweepDeps, group: EpicGroup, nowMs: number): Promis
     overseerAlive: group.overseerAlive,
     armed: listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
     lastBeatAt: at,
-    stale: at !== null && nowMs - Date.parse(at) > STALE_BEAT_MS,
+    stale: beatStale(at, nowMs),
   }
 }
 
@@ -94,8 +94,14 @@ export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.n
   return rows.sort((a, b) => a.project.localeCompare(b.project) || a.epicId.localeCompare(b.epicId))
 }
 
-/** Is this run one the badge should count? A paused or finished run stays
- *  visible in the window's rail but must not make the header breathe. */
+/**
+ * Is this run one the badge should count?
+ *
+ * DERIVED, not read off `status`: the field is an intent nothing writes back
+ * down, so it counted runs whose overseer was dead and whose seats had all
+ * ended. A paused or finished run stays visible in the window's rail and is
+ * simply not counted here.
+ */
 export function isCountedLive(entry: EpicActivityEntry): boolean {
-  return entry.status === 'armed' || entry.status === 'running'
+  return isVitallyLive(entry)
 }

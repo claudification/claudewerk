@@ -7,6 +7,7 @@
  * interesting (the same reasoning as the beat ring having no `forget`).
  */
 
+import { runVitality } from '@shared/epic-vitality'
 import type { EpicActivityEntry } from '@shared/protocol'
 import { isLiveRun, selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
 import { cn, haptic } from '@/lib/utils'
@@ -16,20 +17,21 @@ import { runKey, useOverseerSelection } from './overseer-state'
 /** What a rail row DISPLAYS, derived once. Same reasoning as `headFacts`: the
  *  row is not complicated, it just has a lot of optional numbers. */
 export function rowFacts(run: EpicActivityEntry) {
-  const live = isLiveRun(run)
+  const view = runVitality(run)
   return {
-    live,
+    live: view.live,
     pct: run.maxGens > 0 ? Math.min(100, Math.round((run.gen / run.maxGens) * 100)) : 0,
-    status: run.status ?? 'no run',
+    /** The DERIVED word, not `run.status` -- a rail that printed the raw field
+     *  said `running` on a run with no seat and no armed entry. */
+    status: view.label.toLowerCase(),
     gens: run.maxGens > 0 ? `gen ${run.gen}/${run.maxGens}` : `gen ${run.gen}`,
     flight: run.inFlight > 0 ? ` . ${run.inFlight} in flight` : '',
-    /** Only a LIVE run can look stalled -- a paused one is quiet on purpose. */
-    stalled: run.stale && live,
+    stalled: view.vitality === 'stalled',
   }
 }
 
 function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: boolean; onPick: () => void }) {
-  const { live, pct, status, gens, flight, stalled } = rowFacts(run)
+  const { live, pct, status, stalled } = rowFacts(run)
 
   return (
     <button
@@ -47,7 +49,7 @@ function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: bool
     >
       <div className={cn('text-[11px] truncate', live ? 'text-foreground' : 'text-fg-dim')}>{run.epicId}</div>
       <div className="text-meta text-fg-dim truncate mt-0.5">
-        {projectTail(run.project)} . {run.status ?? 'no run'} . gen {run.gen}
+        {projectTail(run.project)} . {status} . gen {run.gen}
         {run.maxGens > 0 && `/${run.maxGens}`}
         {run.inFlight > 0 && ` . ${run.inFlight} in flight`}
       </div>
@@ -57,7 +59,7 @@ function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: bool
           style={{ width: `${pct}%` }}
         />
       </div>
-      {run.stale && live && <div className="text-meta text-destructive mt-1">sweep quiet &gt;90s</div>}
+      {stalled && <div className="text-meta text-destructive mt-1">sweep quiet &gt;90s</div>}
     </button>
   )
 }

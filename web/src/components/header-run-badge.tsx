@@ -18,22 +18,25 @@
 import { useEffect } from 'react'
 import { openOverseer } from '@/components/overseer/overseer-state'
 import {
-  selectAllStale,
   selectLiveCount,
   selectMinGen,
   selectSeatCount,
+  selectWorkingCount,
+  selectWorstLabel,
   useOverseerActivityStore,
 } from '@/hooks/use-overseer-activity'
 import { cn, haptic } from '@/lib/utils'
 
-function Pip({ live, stale }: { live: boolean; stale: boolean }) {
+function Pip({ live, working }: { live: boolean; working: boolean }) {
   return (
     <span
       className={cn(
         'size-1.5 rounded-full shrink-0',
         live ? 'bg-[color:var(--epic-badge)]' : 'bg-muted-foreground/40',
-        // Breathing is a claim that the engine is moving. Only make it when true.
-        live && !stale && 'animate-[breathe_1.9s_ease-in-out_infinite]',
+        // Breathing is a claim that the engine is moving. Only make it when true
+        // -- and "moving" means a SEAT is working, not that a status field says
+        // `running` (the 2026-08-20 lie: beating every 45s, spawning nobody).
+        working && 'animate-[breathe_1.9s_ease-in-out_infinite]',
       )}
     />
   )
@@ -41,28 +44,39 @@ function Pip({ live, stale }: { live: boolean; stale: boolean }) {
 
 /** The tooltip, which is where the honest detail goes. Extracted because three
  *  nested conditionals inside a `title=` prop is unreadable in JSX. */
-function tooltip(runs: number, seats: number, stale: boolean): string {
-  if (runs === 0) return 'Nothing is running. Click to open the overseer and see recent runs.'
-  const s = (n: number) => (n === 1 ? '' : 's')
-  const head = `${runs} unattended run${s(runs)}, ${seats} seat${s(seats)} working`
-  return stale
-    ? `${head}. The sweep has gone quiet -- nothing has beaten in over 90s.`
-    : `${head}. Click to open the overseer.`
+function plural(n: number): string {
+  return n === 1 ? '' : 's'
 }
 
-function LiveLabel({ runs, seats, gen, stale }: { runs: number; seats: number; gen: number; stale: boolean }) {
+function tooltip(runs: number, seats: number, word: string): string {
+  if (runs === 0) return 'Nothing is running. Click to open the overseer and see recent runs.'
+  return (
+    `${runs} unattended run${plural(runs)} (${word.toLowerCase()}), ${seats} seat${plural(seats)} working. ` +
+    'Click to open the overseer.'
+  )
+}
+
+/** The one word that earns a colour. Everything else stays the badge's own ink:
+ *  a label that highlights every state highlights none of them. */
+const WORD_TONE: Record<string, string> = { STALLED: 'text-destructive', RUNNING: 'text-active' }
+
+/** `word` is the DERIVED state (RUNNING / IDLE / STALLED / ARMED), never the raw
+ *  status field. The seat count sits next to it so the claim is checkable at a
+ *  glance: "RUNNING . 0 seats" is a contradiction the badge must never print. */
+function LiveLabel({ runs, seats, gen, word }: { runs: number; seats: number; gen: number; word: string }) {
   return (
     <>
       <b className="font-bold">
-        {runs} RUN{runs === 1 ? '' : 'S'}
+        {runs} RUN{plural(runs).toUpperCase()}
       </b>
       <span className="text-fg-dim">.</span>
       <span>gen {gen}</span>
       <span className="text-fg-dim">.</span>
       <span>
-        {seats} seat{seats === 1 ? '' : 's'}
+        {seats} seat{plural(seats)}
       </span>
-      {stale && <span className="text-destructive ml-0.5">stalled</span>}
+      <span className="text-fg-dim">.</span>
+      <span className={WORD_TONE[word]}>{word.toLowerCase()}</span>
     </>
   )
 }
@@ -74,7 +88,8 @@ export function HeaderRunBadge() {
   const runs = useOverseerActivityStore(selectLiveCount)
   const seats = useOverseerActivityStore(selectSeatCount)
   const gen = useOverseerActivityStore(selectMinGen)
-  const stale = useOverseerActivityStore(selectAllStale)
+  const working = useOverseerActivityStore(selectWorkingCount)
+  const word = useOverseerActivityStore(selectWorstLabel)
   const prime = useOverseerActivityStore(s => s.prime)
 
   // ONE http read, on mount. A tab opened mid-run must not sit blank until the
@@ -92,7 +107,7 @@ export function HeaderRunBadge() {
         haptic('tap')
         openOverseer()
       }}
-      title={tooltip(runs, seats, stale)}
+      title={tooltip(runs, seats, word)}
       aria-label={live ? `${runs} runs live, open the overseer` : 'Open the overseer'}
       className={cn(
         'shrink-0 flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border transition-colors',
@@ -101,8 +116,8 @@ export function HeaderRunBadge() {
           : 'border-border text-fg-dim hover:text-muted-foreground hover:border-border',
       )}
     >
-      <Pip live={live} stale={stale} />
-      {live ? <LiveLabel runs={runs} seats={seats} gen={gen} stale={stale} /> : <span>NO RUNS</span>}
+      <Pip live={live} working={working > 0} />
+      {live ? <LiveLabel runs={runs} seats={seats} gen={gen} word={word} /> : <span>NO RUNS</span>}
     </button>
   )
 }
