@@ -49,7 +49,8 @@ import { STAT_RETENTION_MS, STAT_SWEEP_INTERVAL_MS } from './stats/retention'
  * whose disk is the standing alert.
  */
 export const CARD_MOVE_RETENTION_MS = STAT_RETENTION_MS
-export const CARD_MOVE_SWEEP_INTERVAL_MS = STAT_SWEEP_INTERVAL_MS
+/** Module-private: only `startCardLedger` below arms the timer with it. */
+const CARD_MOVE_SWEEP_INTERVAL_MS = STAT_SWEEP_INTERVAL_MS
 
 let db: ReturnType<typeof openWalDatabase> | null = null
 let insertMove: Statement | null = null

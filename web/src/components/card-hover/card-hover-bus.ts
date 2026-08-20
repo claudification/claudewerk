@@ -69,8 +69,10 @@ export function canHover(view: Window = window): boolean {
   return !view.matchMedia('(hover: none)').matches
 }
 
-/** Queue the panel for `anchor`. Re-hovering the open anchor is a no-op. */
-export function openHover(content: HoverContent, anchor: HTMLElement): void {
+/** Queue the panel for `anchor`. Re-hovering the open anchor is a no-op.
+ *  Module-private: the three `open*Hover` verbs below are the public surface.
+ *  Re-export it the day a caller outside this file needs the generic opener. */
+function openHover(content: HoverContent, anchor: HTMLElement): void {
   if (useCardHover.getState().anchor === anchor) return
   clearTimeout(openTimer)
   openTimer = setTimeout(() => useCardHover.getState().show(content, anchor), CARD_HOVER_DELAY_MS)

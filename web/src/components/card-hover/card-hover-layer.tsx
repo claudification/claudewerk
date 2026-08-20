@@ -32,7 +32,6 @@ function HoverBody({ content }: { content: HoverContent }) {
   return <HoverFactsPanel facts={content.facts} />
 }
 
-// fallow-ignore-next-line unused-export -- mounted through lazyModule(named(...)) in app.tsx
 export function CardHoverLayer() {
   const content = useCardHover(s => s.content)
   const anchor = useCardHover(s => s.anchor)
