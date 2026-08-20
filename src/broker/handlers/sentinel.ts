@@ -346,6 +346,49 @@ const launchLog: MessageHandler = (ctx, data) => {
   })
 }
 
+/** Everything the log needs to explain one dead spawn. */
+export interface SpawnFailedLogInput {
+  conversationId?: string
+  exitCode?: number | null
+  elapsedMs?: number
+  hookStage?: string
+  stderrTail: readonly string[]
+  preflightHints: readonly string[]
+}
+
+/**
+ * The broker log lines for a failed spawn: a greppable summary, then the
+ * EVIDENCE.
+ *
+ * THE 2026-08-20 INCIDENT. This used to emit the summary alone, with the tail
+ * reduced to `stderrTail=1` -- a count. The sentinel had already put the cause
+ * on the wire and the broker had already folded it into the broadcast `error`,
+ * so the one place a human actually looks (`docker compose logs broker`) was
+ * the only place the message did not appear. The line it swallowed was
+ * `ERR Error creating worktree: Invalid worktree name: must be 64 characters
+ * or fewer (got 73)`, and without it the failure was classified as "likely
+ * hook/config issue" and cost an entire epic generation to re-derive.
+ *
+ * Pure and exported so the shape is tested without a broker: the summary is a
+ * grep anchor other tooling matches on, and the tail must never be a count
+ * again.
+ */
+export function formatSpawnFailedLog(input: SpawnFailedLogInput): string[] {
+  const short = input.conversationId?.slice(0, 8)
+  const early = typeof input.elapsedMs === 'number' && input.elapsedMs < 5000
+  const lines = [
+    `Spawn FAILED: conv=${short}${input.hookStage ? ` [${input.hookStage}]` : ''} exit=${input.exitCode} ` +
+      `elapsed=${input.elapsedMs}ms${early ? ' (early failure - likely hook/config issue)' : ''}` +
+      `${input.preflightHints.length > 0 ? ` preflight=${input.preflightHints.length}` : ''}` +
+      `${input.stderrTail.length > 0 ? ` stderrTail=${input.stderrTail.length}` : ''}`,
+  ]
+  // One line per captured line, each carrying the conversation, so a tail from
+  // two spawns failing together stays attributable when the log interleaves.
+  for (const line of input.stderrTail) lines.push(`Spawn FAILED stderr: conv=${short} | ${line}`)
+  for (const hint of input.preflightHints) lines.push(`Spawn FAILED preflight: conv=${short} | ${hint}`)
+  return lines
+}
+
 const spawnFailed: MessageHandler = (ctx, data) => {
   const conversationId = data.conversationId as string
   const exitCode = data.exitCode as number | null | undefined
@@ -371,9 +414,16 @@ const spawnFailed: MessageHandler = (ctx, data) => {
       : `Spawn failed (exit ${exitCode})`)
   const errorMsg =
     preflightHints.length > 0 ? `${baseError}\nPre-flight had flagged: ${preflightHints.join(' | ')}` : baseError
-  ctx.log.info(
-    `Spawn FAILED: conv=${conversationId?.slice(0, 8)}${hookStage ? ` [${hookStage}]` : ''} exit=${exitCode} elapsed=${elapsedMs}ms${earlyFailure ? ' (early failure - likely hook/config issue)' : ''}${preflightHints.length > 0 ? ` preflight=${preflightHints.length}` : ''}${stderrTail.length > 0 ? ` stderrTail=${stderrTail.length}` : ''}`,
-  )
+  for (const line of formatSpawnFailedLog({
+    conversationId,
+    exitCode,
+    elapsedMs,
+    hookStage,
+    stderrTail,
+    preflightHints,
+  })) {
+    ctx.log.info(line)
+  }
 
   // Route through the job system so the launch monitor gets an immediate job_failed
   // instead of timing out after 30s with a generic error

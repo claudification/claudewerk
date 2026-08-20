@@ -26,6 +26,7 @@ function plan(over: Partial<EpicPlan> = {}): EpicPlan {
     questions: [],
     heldBack: [],
     waitingOnDeps: [],
+    unspawnable: [],
     complete: false,
     ...over,
   }
@@ -40,6 +41,8 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     overseerAlive: false,
     liveOverseers: [],
     settled: [],
+    failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 0,
     ...over,
   }

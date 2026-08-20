@@ -16,6 +16,8 @@
  * it. See `web/src/lib/cards/epic-color-vars.ts` for the CSS half.
  */
 
+import { fnv1a } from './fnv1a'
+
 /** Named hues a human can actually type into frontmatter. */
 export const EPIC_HUE_BY_NAME: Record<string, number> = {
   red: 25,
@@ -46,18 +48,9 @@ export const EPIC_HUE_SLOTS = 16
 /** Nudge off 0 so slot 0 is a warm red rather than the raw edge of the wheel. */
 const HUE_OFFSET = 12
 
-/** FNV-1a, 32-bit. Chosen because it is stable across runtimes and tiny --
- *  an epic must not change colour because the panel was rebuilt. */
-function fnv1a(input: string): number {
-  let hash = 0x811c9dc5
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash >>> 0
-}
-
-/** Which of the `EPIC_HUE_SLOTS` an id falls into. Exported for tests + docs. */
+/** Which of the `EPIC_HUE_SLOTS` an id falls into. Exported for tests + docs.
+ *  FNV-1a is the hash for the reason stated in `fnv1a.ts`: an epic must not
+ *  change colour because the panel was rebuilt. */
 export function epicHueSlot(epicId: string): number {
   return fnv1a(epicId) % EPIC_HUE_SLOTS
 }

@@ -146,7 +146,7 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
           baton_kinds: {
             type: 'string',
             description:
-              'get / inspect: comma-separated kinds to keep -- intent, dispatch, completion, verdict, blocked, merge, steering, checkpoint.',
+              'get / inspect: comma-separated kinds to keep -- intent, dispatch, dispatch-failed, completion, verdict, blocked, merge, steering, checkpoint.',
           },
           baton_card: { type: 'string', description: 'get / inspect: only baton entries about this card id.' },
         },

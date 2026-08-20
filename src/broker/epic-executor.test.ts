@@ -56,6 +56,8 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     overseerAlive: false,
     liveOverseers: [],
     settled: [],
+    failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 3,
     ...over,
   }
@@ -411,5 +413,119 @@ describe('runEpicBeat against the real sentinel seam', () => {
     const out = await runEpicBeat(deps(), group({ settled: [...SETTLED, 'brand-new'] }))
     expect(out.note).toContain('1 unacknowledged settle(s): brand-new')
     expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+  })
+})
+
+/**
+ * THE 2026-08-20 INCIDENT, end to end.
+ *
+ * A verifier for `t1` died at exit=1 in 1209ms without writing a transcript
+ * entry. The sweep called that a settle; the beat wrote a `completion` and woke
+ * a generation; the card sat at `in-review` with no verdict and no `## Guard
+ * Findings`, and every sweep after did the same thing again.
+ *
+ * These pin the shape of the repair: the leg is recorded as a FAILED LAUNCH,
+ * no overseer is woken for it, and the card gets a verifier that actually runs.
+ */
+describe('a leg that died without producing anything', () => {
+  const leg = { cardId: 't1', convId: 'conv_dead_verifier', role: 'verifier' as const, gen: 3 }
+
+  test('is recorded in the baton as dispatch-failed, not as a completion', async () => {
+    await runEpicBeat(deps(), group({ failedLegs: [leg] }))
+    const entry = baton.find(e => e.kind === 'dispatch-failed')
+    expect(entry).toMatchObject({ cardId: 't1', convId: 'conv_dead_verifier' })
+    expect(baton.some(e => e.kind === 'completion')).toBe(false)
+  })
+
+  test('says, in the baton, that no work was done -- a log.md reader can tell it apart', async () => {
+    await runEpicBeat(deps(), group({ failedLegs: [leg] }))
+    const body = baton.find(e => e.kind === 'dispatch-failed')?.body ?? ''
+    expect(body).toContain('ENDED WITHOUT PRODUCING ANYTHING')
+    expect(body).toContain('dispatchable again')
+    // and it points at where the cause actually is
+    expect(body).toContain('Spawn FAILED stderr: conv=conv_dea')
+  })
+
+  /**
+   * The board is the same one the incident had: `t1` sitting at `in-review`
+   * with its verifier dead. Before the fix the leg settled, `unacknowledged`
+   * was non-empty, and `guardBeat` returned a wake BEFORE `workBeat` ever got
+   * to compute a verify action -- so the card was re-verified never and
+   * re-considered forever.
+   */
+  test('does NOT wake an overseer -- it re-verifies, which is the generation the bug used to burn', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    await runEpicBeat(deps(), group({ failedLegs: [leg] }))
+    expect(spawns.some(s => s.epic.role === 'overseer')).toBe(false)
+    expect(ops.some(o => o.op === 'lease')).toBe(false)
+    expect(spawns[0].epic).toMatchObject({ role: 'verifier', cardId: 't1' })
+  })
+
+  /** The same board, with the leg reported as a SETTLE instead: the old path,
+   *  kept beside the new one so the difference is a diff and not a memory. */
+  test('a settle on the same board wakes the overseer and verifies nothing', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns[0].epic).toMatchObject({ role: 'overseer' })
+    expect(spawns.some(s => s.epic.role === 'verifier')).toBe(false)
+  })
+
+  test('is written ONCE -- a baton that already names the conversation is left alone', async () => {
+    baton = [{ ts: '', kind: 'dispatch-failed', convId: 'conv_dead_verifier', cardId: 't1', body: 'seen' }]
+    await runEpicBeat(deps(), group({ failedLegs: [leg] }))
+    expect(baton.filter(e => e.kind === 'dispatch-failed')).toHaveLength(1)
+  })
+
+  test('a RETRY that also dies gets its own entry -- twice unspawnable is not one bad night', async () => {
+    baton = [{ ts: '', kind: 'dispatch-failed', convId: 'conv_dead_verifier', cardId: 't1', body: 'seen' }]
+    await runEpicBeat(deps(), group({ failedLegs: [leg, { ...leg, convId: 'conv_dead_again', gen: 4 }] }))
+    expect(baton.filter(e => e.kind === 'dispatch-failed')).toHaveLength(2)
+  })
+
+  test('is logged, naming card, role and conversation', async () => {
+    await runEpicBeat(deps(), group({ failedLegs: [leg] }))
+    expect(log.join('\n')).toContain('1 failed launch(es): t1/verifier@conv_dea')
+  })
+})
+
+/**
+ * THE BOUND, performed. Gen 2 spent thirteen seats on one card; a fix that only
+ * stopped the false settle would have spent them a beat apart instead.
+ */
+describe('a card the engine has given up on', () => {
+  const legs = ['a', 'b', 'c'].map(s => ({ cardId: 't1', convId: `conv_dead_${s}`, role: 'verifier' as const, gen: 3 }))
+  const gave_up = () => group({ failedLegs: legs, unspawnable: ['t1'] })
+
+  test('gets NO further verifier, however long it sits in in-review', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    await runEpicBeat(deps(), gave_up())
+    expect(spawns.some(s => s.epic.role === 'verifier')).toBe(false)
+  })
+
+  test('gets NO further implementer either -- the launch is what fails, not the role', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+    await runEpicBeat(deps(), gave_up())
+    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+  })
+
+  test('becomes VISIBLE: the baton entry that trips the bound says the engine has stopped', async () => {
+    await runEpicBeat(deps(), gave_up())
+    const bodies = baton.filter(e => e.kind === 'dispatch-failed').map(e => e.body)
+    expect(bodies).toHaveLength(3)
+    expect(bodies.every(b => b.includes('WILL NOT BE DISPATCHED OR VERIFIED AGAIN'))).toBe(true)
+    expect(bodies.some(b => b.includes('an id too long for a worktree name'))).toBe(true)
+  })
+
+  test('and the run stops instead of idling: dry generation now, park on the next', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    const out = await runEpicBeat(deps(), gave_up())
+    expect(out.note).toContain('seats keep dying')
+    expect(ops.find(o => o.op === 'patch')?.patch).toMatchObject({ dryGens: 1 })
+
+    // Second beat, same state: the run PARKS rather than retrying forever.
+    run = { ...RUN, dryGens: 1 }
+    ops = []
+    await runEpicBeat(deps(), gave_up())
+    expect(ops.find(o => o.op === 'patch')?.patch).toMatchObject({ status: 'paused' })
   })
 })

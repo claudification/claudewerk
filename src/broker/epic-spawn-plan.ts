@@ -17,6 +17,7 @@ import { buildOverseerPrompt, type OverseerPromptCtx } from '../shared/epic-prom
 import { buildPlannerPrompt, type PlannerPromptCtx } from '../shared/epic-prompt-planner'
 import type { EpicLaunchTag, EpicRole } from '../shared/epic-run-types'
 import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
+import { fnv1aHex } from '../shared/fnv1a'
 import { buildGuardPrompt } from '../shared/guard-prompt'
 import type { UnattendedPermissionConfig } from '../shared/unattended-permissions'
 
@@ -107,6 +108,55 @@ function seatName(epicId: string, gen: number, cardId: string | undefined, prefi
   return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
 }
 
+/**
+ * Claude Code refuses a `--worktree` name over this and exits 1 in about a
+ * second, before anything reaches the transcript. THE 2026-08-20 INCIDENT: the
+ * verifier for `epic-engine-baton-window-relitigates-settles` asked for a
+ * 73-character branch and died with
+ * `ERR Error creating worktree: Invalid worktree name: must be 64 characters or
+ * fewer (got 73)` -- one line, in CC's headless log, which nothing forwarded.
+ *
+ * The conversation NAME has had a budget since the day names collided
+ * (`NAME_BUDGET`). The branch never did, and it is the LONGER of the two by
+ * construction: `verify-` plus the whole card id, untruncated.
+ */
+const BRANCH_BUDGET = 64
+
+/** Length of the hash kept when a branch has to be shortened. Long enough that
+ *  two sibling card ids sharing a 50-character prefix do not collide, short
+ *  enough that what survives of the card id is still readable. */
+const BRANCH_HASH_LEN = 7
+
+/** How much of the epic id survives a shortened branch. Only ever applied when
+ *  the branch overflows, so a normal epic id is untouched -- but without it a
+ *  long enough epic id eats the entire budget on its own and the cap becomes a
+ *  promise this function cannot keep. */
+const EPIC_SEGMENT_BUDGET = 24
+
+/**
+ * A seat's branch: `epic/<epicId>/[verify-]<cardId>`, shortened to fit
+ * `BRANCH_BUDGET` when it has to be.
+ *
+ * Two rules, and both are essential:
+ *
+ *   - DETERMINISTIC. The same card always resolves to the same branch, so a
+ *     re-dispatch after a bounce reuses its worktree instead of forking a
+ *     second one. No generation in here, unlike the conversation name.
+ *   - COLLIDING SIBLINGS STAY DISTINCT. Truncation alone would map
+ *     `...-relitigates-settles` and `...-relitigates-settled` onto one branch,
+ *     and two implementers would then write to the same tree -- the one thing
+ *     worktree isolation exists to prevent. The tail hash is over the FULL
+ *     original, so it differs wherever the ids do.
+ */
+function seatBranch(epicId: string, cardId: string, prefix = ''): string {
+  const full = `epic/${epicId}/${prefix}${cardId}`
+  if (full.length <= BRANCH_BUDGET) return full
+  const suffix = `-${fnv1aHex(full).slice(0, BRANCH_HASH_LEN)}`
+  const head = `epic/${epicId.slice(0, EPIC_SEGMENT_BUDGET)}/${prefix}`
+  const room = BRANCH_BUDGET - head.length - suffix.length
+  return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
+}
+
 function base(
   ctx: EpicSpawnCtx,
   role: EpicRole,
@@ -158,7 +208,7 @@ export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx)
 
 /** An IMPLEMENTER. Own worktree, own branch, muted. */
 export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef = 'main'): EpicSpawnPlan {
-  const branch = `epic/${ctx.epicId}/${cardId}`
+  const branch = seatBranch(ctx.epicId, cardId)
   return {
     ...base(ctx, 'implementer', cardId, seatName(ctx.epicId, ctx.gen, cardId)),
     worktree: branch,
@@ -182,7 +232,7 @@ export function planImplementerSpawn(ctx: EpicSpawnCtx, cardId: string, baseRef 
 export function planVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
   return {
     ...base(ctx, 'verifier', cardId, seatName(ctx.epicId, ctx.gen, cardId, 'verify ')),
-    worktree: `epic/${ctx.epicId}/verify-${cardId}`,
+    worktree: seatBranch(ctx.epicId, cardId, 'verify-'),
     prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId }),
   }
 }

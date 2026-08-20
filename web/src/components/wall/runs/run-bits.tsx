@@ -20,6 +20,9 @@ import type { BeatTick, RunBuckets } from './run-model'
 const BATON_TONE: Record<EpicLogKind, string> = {
   intent: 'var(--comment)',
   dispatch: 'var(--info)',
+  // A seat that never started. Red rather than the dispatch blue, because at
+  // four feet this must not read as work going out.
+  'dispatch-failed': 'var(--destructive)',
   completion: 'var(--success)',
   verdict: 'var(--success)',
   blocked: 'var(--destructive)',

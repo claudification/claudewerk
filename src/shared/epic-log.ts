@@ -24,6 +24,7 @@ const LOG_HEADER =
 const KINDS: readonly EpicLogKind[] = [
   'intent',
   'dispatch',
+  'dispatch-failed',
   'completion',
   'verdict',
   'blocked',

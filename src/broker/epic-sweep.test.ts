@@ -2,19 +2,27 @@ import { describe, expect, test } from 'bun:test'
 import { acknowledgedCardIds } from '../shared/epic-log'
 import type { EpicLaunchTag, EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
-import { generationMismatch, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
+import {
+  generationMismatch,
+  groupEpicConversations,
+  MAX_LAUNCH_ATTEMPTS,
+  unacknowledgedCards,
+  unacknowledgedFailedLegs,
+} from './epic-sweep'
 
 let n = 0
-function conv(tag: EpicLaunchTag | undefined, live: boolean): Conversation & { __live: boolean } {
+function conv(tag: EpicLaunchTag | undefined, live: boolean, output = true): Conversation & { __live: boolean } {
   n += 1
   return {
     id: `conv_${n}`,
     project: 'claude://s/p',
     ...(tag ? { launchConfig: { epic: tag } } : {}),
     __live: live,
+    __output: output,
   } as unknown as Conversation & { __live: boolean }
 }
 const isLive = (c: Conversation) => (c as unknown as { __live: boolean }).__live
+const producedOutput = (c: Conversation) => (c as unknown as { __output: boolean }).__output
 
 /** The tag only carries identity; liveness is the second arg to `conv()`. */
 const impl = (cardId: string, gen = 1): EpicLaunchTag & never =>
@@ -94,6 +102,141 @@ describe('groupEpicConversations', () => {
   })
 })
 
+/**
+ * THE 2026-08-20 INCIDENT, engine half.
+ *
+ * A verifier spawn died at `exit=1` after 1209ms -- before CC wrote a single
+ * transcript entry. Every backing conversation for the card was then dead, so
+ * the sweep folded it into `settled`, the beat wrote a `completion` entry
+ * saying the card had reached a terminal state, and woke a fresh overseer
+ * generation to consider a verdict that nobody had written. Every subsequent
+ * sweep did it again.
+ *
+ * A settle whose conversation produced zero output is not a settle. It is a
+ * failed launch, and the two are distinguishable from exactly one fact: whether
+ * anything came out.
+ */
+describe('a launch that produced nothing is not a completed leg', () => {
+  const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput).get('e1')
+
+  test('a dead conversation with ZERO output does not settle its card', () => {
+    const g = group([conv(verifier('t1'), false, false)])
+    expect(g?.settled).toEqual([])
+    expect(g?.inFlight).toEqual([])
+  })
+
+  test('the failed leg is reported by card, conversation and role -- enough for a baton entry', () => {
+    const c = conv(verifier('t1'), false, false)
+    expect(group([c])?.failedLegs).toEqual([{ cardId: 't1', convId: c.id, role: 'verifier', gen: 1 }])
+  })
+
+  test('a dead conversation that DID produce output settles, exactly as before', () => {
+    const g = group([conv(impl('t1'), false, true)])
+    expect(g?.settled).toEqual(['t1'])
+    expect(g?.failedLegs).toEqual([])
+  })
+
+  test('one silent death alongside one real run still settles -- the real leg did the work', () => {
+    const g = group([conv(impl('t1'), false, false), conv(impl('t1'), false, true)])
+    expect(g?.settled).toEqual(['t1'])
+    // Still reported: the dead silent leg happened, and the baton says so.
+    expect(g?.failedLegs).toHaveLength(1)
+  })
+
+  test('a LIVE conversation with no output YET is not a failed leg -- it is just young', () => {
+    const g = group([conv(impl('t1'), true, false)])
+    expect(g?.failedLegs).toEqual([])
+    expect(g?.inFlight).toEqual(['t1'])
+  })
+
+  test('an overseer that died silently is nobody’s card, and is not reported', () => {
+    expect(group([conv(overseer(), false, false)])?.failedLegs).toEqual([])
+  })
+
+  test('with no output predicate the old behaviour stands -- a dead leg settles', () => {
+    expect(groupEpicConversations([conv(impl('t1'), false, false)], isLive).get('e1')?.settled).toEqual(['t1'])
+  })
+})
+
+/**
+ * THE BOUND ON THE RETRY PATH.
+ *
+ * Leaving a failed launch dispatchable is right once per attempt and ruinous
+ * without a ceiling. Generation 2 of `epic-the-wall-ii` wrote THIRTEEN
+ * `dispatch` entries for one card; thirteen seats died; the log recorded
+ * thirteen dispatches and zero failures. A fix that only stopped the false
+ * settle would have turned that into thirteen retries a beat apart, forever.
+ */
+describe('a card whose seats keep dying stops being retried', () => {
+  const dead = (n: number) => Array.from({ length: n }, () => conv(verifier('t1'), false, false))
+  const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput).get('e1')
+
+  test('the bound is three attempts', () => {
+    expect(MAX_LAUNCH_ATTEMPTS).toBe(3)
+  })
+
+  test('two failures still leave the card retryable -- a transient death must not strand it', () => {
+    const g = group(dead(2))
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.failedLegs).toHaveLength(2)
+  })
+
+  test('the third failure marks it unspawnable', () => {
+    expect(group(dead(3))?.unspawnable).toEqual(['t1'])
+  })
+
+  test('and it never lands in settled -- being given up on is not being done', () => {
+    const g = group(dead(4))
+    expect(g?.settled).toEqual([])
+    expect(g?.inFlight).toEqual([])
+    expect(g?.unspawnable).toEqual(['t1'])
+  })
+
+  test('a card that eventually PRODUCED something is never unspawnable, however many seats died', () => {
+    const g = group([...dead(5), conv(verifier('t1'), false, true)])
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.settled).toEqual(['t1'])
+  })
+
+  test('a live retry outranks the bound -- do not give up on work that is running', () => {
+    const g = group([...dead(3), conv(verifier('t1'), true, false)])
+    expect(g?.unspawnable).toEqual([])
+    expect(g?.inFlight).toEqual(['t1'])
+  })
+
+  test('the bound is per card, not per epic', () => {
+    const g = group([...dead(3), conv(impl('t2'), false, false)])
+    expect(g?.unspawnable).toEqual(['t1'])
+  })
+})
+
+describe('unacknowledgedFailedLegs -- one baton entry per dead leg, not one per sweep', () => {
+  const leg = (convId: string, cardId = 't1') => ({ cardId, convId, role: 'verifier' as const, gen: 1 })
+  const failedEntry = (convId: string): EpicLogEntry => ({
+    ts: '',
+    kind: 'dispatch-failed',
+    convId,
+    cardId: 't1',
+    body: '',
+  })
+
+  test('a leg the baton has never seen is reported', () => {
+    expect(unacknowledgedFailedLegs([leg('c1')], [])).toEqual([leg('c1')])
+  })
+
+  test('a dispatch-failed entry for that CONVERSATION suppresses it', () => {
+    expect(unacknowledgedFailedLegs([leg('c1')], [failedEntry('c1')])).toEqual([])
+  })
+
+  test('an entry for a different conversation does not suppress it -- a retry can fail too', () => {
+    expect(unacknowledgedFailedLegs([leg('c2')], [failedEntry('c1')])).toEqual([leg('c2')])
+  })
+
+  test('a COMPLETION entry does not suppress it -- that is the confusion this exists to end', () => {
+    expect(unacknowledgedFailedLegs([leg('c1')], [entry('completion', 't1')])).toEqual([leg('c1')])
+  })
+})
+
 describe('acknowledgedCardIds -- which cards the log has ever settled', () => {
   test('a completion entry acknowledges its card', () => {
     expect(acknowledgedCardIds([entry('completion', 't1')])).toEqual(['t1'])
@@ -163,6 +306,8 @@ describe('generationMismatch', () => {
     overseerAlive: false,
     liveOverseers: [],
     settled: [],
+    failedLegs: [],
+    unspawnable: [],
     maxGenSeen: 5,
   }
 

@@ -32,6 +32,7 @@ const EMPTY_PLAN: EpicPlan = {
   questions: [],
   heldBack: [],
   waitingOnDeps: [],
+  unspawnable: [],
   complete: false,
 }
 
