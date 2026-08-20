@@ -72,13 +72,42 @@
 	letter-spacing: 0.08em;
 	font-variant-numeric: tabular-nums;
 }
+/* THE LINK INDICATOR. The dot carries the colour, the label carries the meaning:
+   a 7px circle is unreadable at four feet, which is the distance this wall is
+   designed to be read from, and unreadable at any distance to a third of people
+   if colour is the only channel. */
+.wall-link {
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	flex: 0 0 auto;
+}
+.wall-link-label {
+	font-size: 9px;
+	letter-spacing: 0.08em;
+	color: var(--comment);
+}
 .wall-livedot {
 	width: 7px;
 	height: 7px;
 	border-radius: 50%;
-	background: var(--success);
+	background: var(--comment);
 	align-self: center;
+}
+/* Only a wall that is genuinely current breathes. The animation used to be
+   unconditional, which is the whole complaint. */
+.wall-livedot[data-pulse] {
 	animation: wall-pulse 2s infinite;
+}
+.wall-livedot[data-link='live'] {
+	background: var(--success);
+}
+.wall-livedot[data-link='loading'],
+.wall-livedot[data-link='syncing'] {
+	background: var(--warning);
+}
+.wall-livedot[data-link='offline'] {
+	background: var(--destructive);
 }
 @keyframes wall-pulse {
 	0%,

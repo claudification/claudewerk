@@ -12,6 +12,7 @@
 import { WallClock } from './wall-clock'
 import { WallFilterBox } from './wall-filter-box'
 import { WallScrubSlot } from './wall-header-slots'
+import { WallLinkDot, WallRefresh } from './wall-link'
 import { useWallStore } from './wall-state'
 
 function AmbientButton({ ambient }: { ambient: boolean }) {
@@ -28,7 +29,7 @@ export function WallHeader({ ambient, onDetach }: { ambient: boolean; onDetach?:
   return (
     <header className="wall-header">
       <div className="wall-brand">
-        <span className="wall-livedot" />
+        <WallLinkDot />
         <b>THE WALL</b>
         <WallClock />
       </div>
@@ -37,6 +38,7 @@ export function WallHeader({ ambient, onDetach }: { ambient: boolean; onDetach?:
       <WallScrubSlot />
 
       <div className="wall-btns">
+        <WallRefresh />
         <button type="button" className="wall-btn wall-hide-ambient" disabled title="FUTURE: pick panes, save layouts">
           LAYOUT
         </button>

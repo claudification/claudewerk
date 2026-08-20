@@ -66,3 +66,14 @@ export function useWallRevive(feed: WallFeedId, reload: WallReload, everyMs?: nu
   useSyncExternalStore(subscribeRevive, reviveVersion, reviveVersion)
   return feedFreshness(feed, connectSeq)
 }
+
+/**
+ * Subscribe to the revive ledger WITHOUT holding a feed.
+ *
+ * The header's link dot reads every held feed's freshness but owns none of them,
+ * and a hold would be a lie the census reads: it counts panes that registered a
+ * feed, and the header is not a pane.
+ */
+export function useWallReviveVersion(): number {
+  return useSyncExternalStore(subscribeRevive, reviveVersion, reviveVersion)
+}

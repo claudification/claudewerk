@@ -45,3 +45,32 @@ export function closeDetachedWindow(id: string): void {
 export function forgetDetachedWindow(id: string): void {
   detachedWindows.delete(id)
 }
+
+/**
+ * THE OPENER'S LIFE IS THE POPUP'S LIFE.
+ *
+ * A detached surface is not a second app. Its React subtree, its store, its
+ * WebSocket and its whole reason for existing live in the OPENER's tab (see
+ * popout-window.tsx) -- so when the opener reloads, every popup still on screen
+ * becomes a corpse: pixels of a tree that no longer has a program behind it.
+ * Nothing updates, nothing responds, and the reloaded tab has no handle to any
+ * of them, so it cannot even offer to clean them up. Reported 2026-08-20: "when
+ * I do clear/reload on main window, they stay open - which is impossible".
+ *
+ * `pagehide` rather than `beforeunload`: it fires on reload, navigation and tab
+ * close, and it does not suppress the back/forward cache.
+ *
+ * `persisted` is the exception that matters. A bfcache freeze is not a death --
+ * the tab can come back with its heap intact, and the popups would still be
+ * wired to it. Killing them there would break the working case to tidy up after
+ * the broken one.
+ */
+function closeAllDetachedWindows(): void {
+  for (const id of [...detachedWindows.keys()]) closeDetachedWindow(id)
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', event => {
+    if (!event.persisted) closeAllDetachedWindows()
+  })
+}
