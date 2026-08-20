@@ -57,6 +57,16 @@ export type EpicLogKind =
   | 'merge' // the overseer integrated a branch
   | 'steering' // a Quest-Giver course correction
   | 'checkpoint' // the run stopped and handed the decision to Jonas
+  /**
+   * The engine wrote a fact down about a card -- today, the sha in its `closes:`,
+   * or the reason there is no honest one to write (epic-promise.ts).
+   *
+   * ITS OWN KIND rather than a second `completion`, and that is the point:
+   * `completion` is what `acknowledgedCardIds` folds, so a promise entry wearing
+   * that kind would acknowledge a settle nobody had acknowledged and rob the
+   * overseer of the one wake it exists for. A record acknowledges NOTHING.
+   */
+  | 'record'
 
 export interface EpicLogEntry {
   ts: string

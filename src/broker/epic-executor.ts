@@ -28,6 +28,7 @@ import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-act
 import { recordBeat } from './epic-beat-log'
 import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
 import { epicIo, tag } from './epic-io'
+import { recordSettledPromises } from './epic-promise'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
 
@@ -138,6 +139,15 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
   // or a card acknowledged under its old id would settle again under its new one.
   const pending = unacknowledgedCards(group.settled, renameAwareAcks(view.acknowledgedCardIds, renames))
   if (pending.length > 0) await acknowledge(deps, group, pending)
+
+  // THE PROMISE LEDGER, in the same region and for the same reason: a fact the
+  // engine learned and did not write down is a fact the next sweep rediscovers
+  // forever. A card that settled AND reached a terminal lane gets the sha that
+  // delivered it written into its `closes:` -- by the executor, never by the seat
+  // that did the work, which is the whole point of the ledger. Its own standing
+  // question rather than a rider on `pending`, because acknowledgement fires a
+  // lane too early: see epic-promise.ts. Never blocks, never throws.
+  await recordSettledPromises(deps, group, cards)
 
   // BEFORE the plan is computed, for `acknowledge`'s reason: a fact the baton
   // never records is a fact the next sweep rediscovers forever. A failed launch
