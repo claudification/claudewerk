@@ -152,3 +152,59 @@ describe("the gate measures the card's worktree, not the project root", () => {
     expect(readFileSync(cardPath(), 'utf8')).toBe(before)
   })
 })
+
+/**
+ * The per-card `gate:` override is the zero-blast-radius way to exercise the real
+ * Tier-1 + Tier-2 path (`resolveGateMode` checks it AHEAD of the project config),
+ * so this is where the full worker -> verifier handshake is proven end to end
+ * against a real repo, with no `.rclaude/project/gate.conf` anywhere.
+ */
+describe('the full worker -> verifier handshake, on a per-card `gate: full`', () => {
+  test('worker captures, an independent verifier approves, and the verdict lands on disk', () => {
+    writeCard(['gate: full'])
+
+    const captured = transition('in-review', { actingConversationId: 'conv_worker' })
+    expect(captured.outcome.mode).toBe('full')
+    expect(captured.outcome.decision).toBe('allow')
+    expect(captured.outcome.evidence.evidence_worker).toBe('conv_worker')
+
+    const approved = transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_guard' })
+    expect(approved.outcome.decision).toBe('allow')
+    expect(approved.outcome.evidence.verdict).toBe('APPROVED by conv_guard')
+
+    const card = readFileSync(cardPath(), 'utf8')
+    expect(card).toContain('verdict: APPROVED by conv_guard')
+    expect(card).toContain('evidence_worker: conv_worker')
+    expect(card).toContain('evidence_verified_at:')
+  })
+
+  test('the worker cannot approve its own card', () => {
+    writeCard(['gate: full'])
+    transition('in-review', { actingConversationId: 'conv_worker' })
+    const self = transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_worker' })
+    expect(self.outcome.decision).toBe('refuse')
+    expect(self.outcome.reason).toContain('self-approval refused')
+    expect(readFileSync(cardPath(), 'utf8')).not.toContain('verdict:')
+  })
+
+  test('a per-card override needs no project gate.conf -- the board stays off around it', () => {
+    writeCard(['gate: full'])
+    expect(existsSync(join(root, '.rclaude', 'project', 'gate.conf'))).toBe(false)
+    expect(transition('in-review').outcome.mode).toBe('full')
+
+    // The card next door, with no override, is still ungated.
+    const plain = join(root, '.rclaude', 'project', 'cards', 'plain.md')
+    writeFileSync(plain, '---\ntitle: T\nstatus: in-progress\n---\n\nbody\n', 'utf8')
+    const out = gateTransition({
+      dialogCwd: root,
+      cardId: 'plain',
+      cardPath: plain,
+      fromStatus: 'in-progress',
+      targetStatus: 'in-review',
+      actingConversationId: 'conv_worker',
+      nowMs: 0,
+    })
+    expect(out.outcome.mode).toBe('off')
+    expect(out.outcome.decision).toBe('skip')
+  })
+})
