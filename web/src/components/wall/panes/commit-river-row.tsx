@@ -21,12 +21,23 @@ import { CopyIconButton } from '../../ui/copy-icon-button'
 import { navigateFromWall } from '../wall-navigate'
 import { hoverCommitRow, leaveWallRow } from '../wall-row-hover'
 
-/** What the row promises the click will reach. The rich preview is the hover. */
-function rowTitle(row: RiverRow): string {
+/**
+ * The row's accessible name -- NOT a `title`.
+ *
+ * It was a `title`, and the browser rendered its own tooltip on top of the rich
+ * hover panel this row already opens: two overlapping descriptions of the same
+ * commit, the worse one on top, roughly a second after the good one. Reported
+ * 2026-08-20 with a screenshot of both at once.
+ *
+ * `aria-label` keeps every word of it for a screen reader, and for a keyboard
+ * user whom the pointer-gated hover never serves. Nothing is lost; the native
+ * tooltip is the only thing dropped, and the popover is strictly better than it.
+ */
+function rowLabel(row: RiverRow): string {
   const where = row.hasConversation
     ? `from ${row.conversationName ?? 'a conversation'}`
     : 'made at a terminal, outside any conversation'
-  return `${row.subject}\n${row.branch} · ${where} · click for the commit`
+  return `${row.subject} -- ${row.branch} · ${where} · click for the commit`
 }
 
 export function CommitRiverRow({ row }: { row: RiverRow }) {
@@ -45,7 +56,7 @@ export function CommitRiverRow({ row }: { row: RiverRow }) {
       tabIndex={0}
       className="wall-river-row group"
       data-hash={row.shortHash}
-      title={rowTitle(row)}
+      aria-label={rowLabel(row)}
       onClick={open}
       onMouseEnter={event => hoverCommitRow(row, event.currentTarget)}
       onMouseLeave={leaveWallRow}
