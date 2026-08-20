@@ -74,6 +74,26 @@ acquire_suite_lock() {
 
 acquire_suite_lock
 
+# --- reap what the suite leaks ------------------------------------------
+#
+# The wall-clock budget below kills the RUNNER, but a child the runner spawned
+# is already reparented to init by then and survives the kill -- so the budget
+# stops the hang without cleaning up what caused it. On 2026-08-20 a fixture
+# that leaks one plain and one detached child confirmed both outlive a normal
+# run; with --no-orphans both were reaped, detached included.
+#
+# Present since at least 1.3.14, so this is not gated on the 1.4 upgrade.
+#
+# Deliberately NOT set anywhere near the sentinel's agent-host spawn path: it
+# kills DETACHED descendants too, which is exactly the property that makes hosts
+# outlive a sentinel restart (HOST_DETACH_NOTE in src/sentinel/index.ts).
+ORPHAN_GUARD=()
+if bun test --help 2>&1 | grep -q -- '--no-orphans'; then
+  ORPHAN_GUARD=(--no-orphans)
+else
+  echo "bun-test.sh: this bun has no --no-orphans -- leaked children will survive the run" >&2
+fi
+
 # coreutils on macOS installs as `gtimeout` unless the gnubin path is active.
 # --foreground keeps bun attached to the terminal so its output still streams;
 # --kill-after upgrades to SIGKILL for a runner that ignores SIGTERM (which is
@@ -82,10 +102,10 @@ TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 
 if [[ -z "$TIMEOUT_BIN" ]]; then
   echo "bun-test.sh: no timeout binary found (install coreutils) -- running UNGUARDED" >&2
-  exec bun test "$@"
+  exec bun test "${ORPHAN_GUARD[@]}" "$@"
 fi
 
-"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" bun test "$@"
+"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" bun test "${ORPHAN_GUARD[@]}" "$@"
 status=$?
 
 if [[ $status -eq 124 || $status -eq 137 ]]; then
