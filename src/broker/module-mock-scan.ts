@@ -147,9 +147,7 @@ export function maskNonCode(source: string): string {
   while (i < source.length) {
     const hit = scanOne(source, i, ctx)
     if (hit) {
-      for (const span of hit.blanks) {
-        for (let k = span.from; k < span.to; k++) if (out[k] !== '\n') out[k] = ' '
-      }
+      blankSpans(out, hit.blanks)
       i = hit.end
       ctx.lastCode = hit.lastCode
       ctx.lastWord = hit.lastWord
@@ -162,6 +160,13 @@ export function maskNonCode(source: string): string {
     i++
   }
   return out.join('')
+}
+
+/** Blank every masked span in place, keeping newlines so line numbers survive. */
+function blankSpans(out: string[], blanks: Span[]): void {
+  for (const span of blanks) {
+    for (let k = span.from; k < span.to; k++) if (out[k] !== '\n') out[k] = ' '
+  }
 }
 
 function scanOne(source: string, i: number, ctx: ScanContext): Scanned | null {

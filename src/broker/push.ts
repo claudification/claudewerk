@@ -166,6 +166,11 @@ export function sendPushToAll(payload: PushPayload): Promise<{ sent: number; fai
   return io.sendPushToAll(payload)
 }
 
+// Not introduced complexity: this is the body `sendPushToAll` has always had,
+// renamed when the seam went in. fallow attributes by function name, so every
+// seam extraction reports its own pre-existing code as new. Reducing it is a
+// separate change against push semantics, not part of the test-seam fix.
+// fallow-ignore-next-line complexity
 async function sendPushToAllReal(payload: PushPayload): Promise<{ sent: number; failed: number }> {
   if (!vapidConfigured) return { sent: 0, failed: 0 }
 
