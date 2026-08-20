@@ -22,7 +22,7 @@ import { createGitResolver, resolvePromiseBase } from './promise-git'
 
 /** Every card on the board as `{ id, text }`. A card that vanished between the
  *  listing and the read is skipped, never fatal -- this is a live board. */
-export function readPromiseCards(root: string): PromiseCard[] {
+function readPromiseCards(root: string): PromiseCard[] {
   const cards: PromiseCard[] = []
   for (const id of listCardIds(root)) {
     const found = locateCard(root, id)

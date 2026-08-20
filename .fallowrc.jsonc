@@ -25,6 +25,8 @@
     "@shared/project-order-types",
     "@shared/project-task-types",
     "@shared/project-uri",
+    "@shared/promise-ledger",
+    "@shared/promise-rows",
     "@shared/protocol",
     "@shared/spawn-diagnostics",
     "@shared/spawn-naming",

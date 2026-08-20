@@ -61,12 +61,29 @@ export function resetPromiseLedgerCache(): void {
 }
 
 /**
- * Ask one project, unless an ask is already out or the last answer is fresh.
+ * What one `promises` reply means, given what we already held.
  *
  * A REFUSAL NEVER OVERWRITES A GOOD LEDGER. It is recorded beside the last one,
  * so a sentinel that goes away mid-session leaves the rows on screen with a
- * reason attached rather than silently emptying the loud table.
+ * reason attached rather than silently emptying the loud table. Pure and
+ * separate from the fetch so that rule is testable without a wire.
  */
+function entryFrom(
+  resp: { ok?: boolean; error?: unknown; promises?: unknown },
+  prev: LedgerEntry | undefined,
+  nowMs: number,
+): LedgerEntry {
+  if (resp.ok === false) {
+    return {
+      ledger: prev?.ledger ?? null,
+      error: String(resp.error ?? 'the sentinel refused the `promises` op'),
+      fetchedAt: nowMs,
+    }
+  }
+  return { ledger: (resp.promises as PromiseLedger | undefined) ?? null, error: null, fetchedAt: nowMs }
+}
+
+/** Ask one project, unless an ask is already out or the last answer is fresh. */
 async function fetchLedger(projectUri: string, nowMs: number, force: boolean): Promise<void> {
   if (inflight.has(projectUri)) return
   const prev = cache.get(projectUri)
@@ -74,17 +91,7 @@ async function fetchLedger(projectUri: string, nowMs: number, force: boolean): P
 
   inflight.add(projectUri)
   try {
-    const resp = await sendBoardOp(projectUri, 'promises')
-    if (resp.ok === false) {
-      const error = String(resp.error ?? 'the sentinel refused the `promises` op')
-      cache.set(projectUri, { ledger: prev?.ledger ?? null, error, fetchedAt: nowMs })
-    } else {
-      cache.set(projectUri, {
-        ledger: (resp.promises as PromiseLedger | undefined) ?? null,
-        error: null,
-        fetchedAt: nowMs,
-      })
-    }
+    cache.set(projectUri, entryFrom(await sendBoardOp(projectUri, 'promises'), prev, nowMs))
     notify()
   } catch {
     // Disconnected or timed out. Keep whatever we have and ask again next tick;
