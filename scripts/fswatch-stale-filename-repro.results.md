@@ -59,7 +59,19 @@ otherwise-quiet box too. A single quiet 300-iteration run returned 0/300, so tre
 one clean run as meaningless: budget >=300 iterations, ideally under arm B, before
 believing a bun version is fixed.
 
-Full-suite incidence at the observed rate: case B failed 1 of 10 runs.
+### Full-suite incidence
+
+13 `bun run test` runs total at `be099cac` (10 with case B instrumented, 3 on the pristine
+tree). The whole file was red in **3 of 13 runs (23%)**:
+
+| case | red runs | how it presented |
+|---|---|---|
+| A) close one, open another in same dir | **2 of 13** | died on the runner's 5s guillotine (5005.58ms, 5001.62ms) |
+| B) directory watch, /clear scenario | 1 of 13 | the stale-filename defect above |
+
+Case A is the *more* frequent flake and is the one still not understood -- see the
+incidental finding below. Everything else in the suite was stable at 7623-7624 pass /
+59 skip across all 13 runs.
 
 ## Consequences
 
@@ -82,7 +94,9 @@ declared budget, and the orphaned `waitFor` then rejects unowned. That is why on
 test reports as `1 fail` **and** `1 error` at `_helpers.ts:21` -- the error is an echo of
 the same failure, not a second defect.
 
-Case A of the same file also failed 1 of 10 runs, at 5005.58 ms, i.e. on that guillotine.
-It was **not** characterised: the wall fires before the assertion's own budget is spent,
-so the output cannot distinguish a real dropped event from a slow first stage. Tracked
-separately in card `werk-fs-watch-contract-test-timeout-guillotine`.
+Case A of the same file failed 2 of 13 runs, both times on that guillotine (5005.58 ms and
+5001.62 ms). It was **not** characterised, and deliberately so: it is outside this card's
+scope, and the wall fires before the assertion's own budget is spent, so the output cannot
+distinguish a real dropped event from a slow first stage. Since A is the more frequent of
+the two flakes, whoever picks this up should start there. Tracked separately in card
+`werk-fs-watch-contract-test-timeout-guillotine`.
