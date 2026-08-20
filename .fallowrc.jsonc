@@ -24,7 +24,9 @@
     "@shared/spawn-prompt",
     "@shared/spawn-schema",
     "@shared/task-modes",
-    "@shared/task-statuses"
+    "@shared/task-statuses",
+    "@shared/wall",
+    "@shared/ws-probe"
   ],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [
