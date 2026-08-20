@@ -11,7 +11,7 @@
  * `host` (`&studio`). Everything else in the grammar -- projects, cost, context
  * pressure, models -- is a per-conversation fact and a plan bucket is a per-
  * ACCOUNT one, so those axes are not declared and are therefore stripped from
- * the query before a row is looked at: typing `%>70` leaves this pane full.
+ * the query before a row is looked at: typing `%70` leaves this pane full.
  *
  * THE TIME CURSOR IS ANSWERED HERE, not by `useWallFilter`. This pane has no
  * per-row age -- a plan LINE is a whole series, and rewinding it means cutting

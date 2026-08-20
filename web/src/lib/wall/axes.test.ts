@@ -94,7 +94,7 @@ describe('restrictToAxes', () => {
 })
 
 describe('undeclared axes cannot empty a pane', () => {
-  // The card's headline case: `%>70` on a commit-river-shaped pane.
+  // The card's headline case: `%70` on a commit-river-shaped pane.
   const commits: WallRowFacets[] = [
     { title: 'fix(theme): one ::selection rule', project: 'remote-claude', tag: 'main' },
     { title: 'feat(sidebar): project colour', project: 'remote-claude', tag: 'main' },
