@@ -32,12 +32,9 @@ export function useWallChannel(): WallView {
   return useSyncExternalStore(subscribeWallStore, getWallView, getWallView)
 }
 
-/** Read the picture WITHOUT holding the subscription. For a surface that wants
- *  to render whatever last arrived (a preview tile) without keeping the broker
- *  awake on its own. */
-// The preview-tile reader. Its consumer is the ambient wall tile, which no
-// landed pane renders yet.
-// fallow-ignore-next-line unused-export
-export function useWallView(): WallView {
-  return useSyncExternalStore(subscribeWallStore, getWallView, getWallView)
-}
+// THERE IS NO READ-WITHOUT-SUBSCRIBING HOOK. There was one (`useWallView`),
+// written for an ambient preview tile that shipped without ever calling it, so
+// it sat here exported and unread. It is two lines -- the `useSyncExternalStore`
+// call above, minus the effect -- so a surface that genuinely wants the last
+// frame without keeping the broker awake should add it back TOGETHER WITH its
+// consumer, rather than find this one and inherit an untested seam.

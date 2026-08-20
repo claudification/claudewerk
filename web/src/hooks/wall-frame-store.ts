@@ -37,7 +37,7 @@ const EMPTY_FLEET: WallFleetCounters = {
 
 /** Card moves are deliberately absent: they live in `card-ledger-feed.ts`,
  *  which owned that state before the wall existed and still does. This store is
- *  their transport, not their home -- read them with `useCardLedger()`. */
+ *  their transport, not their home -- read them with `useLedgerRows()`. */
 export interface WallView {
   pulse: WallPulseRow[]
   commits: WallCommitRow[]
