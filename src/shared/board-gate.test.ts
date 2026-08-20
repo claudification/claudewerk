@@ -87,7 +87,12 @@ describe('evaluateGate — Tier-2 truth table', () => {
     expect(out.evidence.evidence_branch).toBe('feat/x')
     expect(out.evidence.evidence_commits).toBe(3)
     expect(out.evidence.evidence_tests).toBe('none')
-    expect(out.evidence.verdict).toBeUndefined() // tier2 never demands a verdict
+  })
+
+  it('an in-review capture is not an approval -- no verdict', () => {
+    const out = evaluateGate(input({ targetStatus: 'in-review' }), 'tier2')
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.verdict).toBeUndefined()
   })
 
   it('dirty tree -> refuse with precise reason', () => {
@@ -137,6 +142,41 @@ describe('evaluateGate — Tier-2 truth table', () => {
     const out = evaluateGate(input({ meta: { base: 'develop' } }), 'tier2')
     expect(out.decision).toBe('allow')
     expect(out.evidence.evidence_base).toBe('develop')
+  })
+})
+
+describe('evaluateGate — an approval always leaves a trace', () => {
+  it('tier2 RECORDS the verdict on done even though it cannot prove independence', () => {
+    const out = evaluateGate(input({ targetStatus: 'done', actingConversationId: 'conv_x' }), 'tier2')
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.verdict).toBe('APPROVED by conv_x')
+    expect(out.evidence.evidence_verified_at).toBe('1970-01-01T00:00:00.000Z')
+  })
+
+  it('tier2 does NOT enforce independence -- the worker may approve itself, and it shows', () => {
+    const out = evaluateGate(
+      input({
+        fromStatus: 'in-review',
+        targetStatus: 'done',
+        actingConversationId: 'conv_worker',
+        meta: { evidence_worker: 'conv_worker' },
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('allow')
+    // Same id on both keys is exactly how a reader spots an unproven approval.
+    expect(out.evidence.verdict).toBe('APPROVED by conv_worker')
+  })
+
+  it('a refused done stamps no verdict at all', () => {
+    const out = evaluateGate(input({ targetStatus: 'done', git: makeGit({ dirty: [' M a.ts'] }) }), 'tier2')
+    expect(out.decision).toBe('refuse')
+    expect(out.evidence.verdict).toBeUndefined()
+  })
+
+  it('gate off stamps nothing, verdict included', () => {
+    const out = evaluateGate(input({ targetStatus: 'done' }), 'off')
+    expect(out.evidence).toEqual({})
   })
 })
 
