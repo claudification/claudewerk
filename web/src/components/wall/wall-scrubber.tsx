@@ -14,10 +14,9 @@
  * those transitions and lose the cursor on the fourth.
  *
  * KEYS. `T` focuses the track and the arrow keys then step it, one minute per
- * press, LEFT INTO THE PAST. `T` is bound on the wall's OWN document in the
- * capture phase, the same two reasons the filter box has: detached, the wall
- * lives in a second document whose events never reach the opener, and a `T`
- * typed into the filter box is a letter.
+ * press, LEFT INTO THE PAST. `T` rides `useWallHotkey`, which is the plumbing
+ * the filter box's `/` already needed -- which document the wall is actually in,
+ * and whether it is on screen at all.
  *
  * THE ARROWS ARE HANDLED, not left to the native range. A native range steps by
  * `step` in its OWN direction, and its own direction is the track's -- so the
@@ -29,13 +28,11 @@
  * also firing.
  */
 
-import { useEffect, useRef } from 'react'
-import { useModalManagerStore } from '@/hooks/use-modal-manager'
-import { WALL_CURSOR_SPAN_MS, WALL_CURSOR_STEP_MS, useWallCursorStore } from '@/lib/wall/cursor-store'
+import { useRef } from 'react'
+import { useWallCursorStore, WALL_CURSOR_SPAN_MS, WALL_CURSOR_STEP_MS } from '@/lib/wall/cursor-store'
 import { useWallCursor } from '@/lib/wall/use-wall-cursor'
-import { usePopoutContainer } from '../popout/popout-container-context'
+import { useWallHotkey } from './use-wall-hotkey'
 import { isTypingTarget } from './wall-keys'
-import { WALL_MODAL } from './wall-state'
 
 /** Track positions, in minutes. `0` is the far left (three hours ago), `SPAN` is
  *  the far right (LIVE). */
@@ -57,30 +54,17 @@ export function WallScrubber() {
   const release = useWallCursorStore(s => s.release)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const popout = usePopoutContainer()
-  const presentation = useModalManagerStore(s => s.records[WALL_MODAL.id]?.presentation)
-
-  useEffect(() => {
-    // Parked in the dock the track is offscreen: `T` must not pull focus into a
-    // surface the user cannot see.
-    if (presentation !== 'inline' && presentation !== 'detached') return
-    const input = inputRef.current
-    if (!input) return
-    const doc = popout?.ownerDocument ?? input.ownerDocument
-
-    function onKeyDown(event: KeyboardEvent) {
-      const el = inputRef.current
-      if (!el) return
-      if (event.key !== 't' && event.key !== 'T') return
-      if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (isTypingTarget(event.target)) return
-      event.preventDefault()
-      el.focus()
-    }
-
-    doc.addEventListener('keydown', onKeyDown, true)
-    return () => doc.removeEventListener('keydown', onKeyDown, true)
-  }, [presentation, popout])
+  useWallHotkey(inputRef, event => {
+    const el = inputRef.current
+    if (!el) return
+    if (event.key !== 't' && event.key !== 'T') return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    // A `T` typed INTO a field is a letter, not a hotkey -- including into the
+    // filter box, which sits right beside this track in the header.
+    if (isTypingTarget(event.target)) return
+    event.preventDefault()
+    el.focus()
+  })
 
   return (
     <div

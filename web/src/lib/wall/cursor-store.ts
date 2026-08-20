@@ -27,7 +27,9 @@ export const WALL_CURSOR_SPAN_MS = 3 * 60 * 60 * 1000
  *  without moving the label. */
 export const WALL_CURSOR_STEP_MS = 60_000
 
-export interface WallCursorState {
+/** Not exported: every consumer reads the store, and a second name for its shape
+ *  is a second thing that can disagree with it. */
+interface WallCursorState {
   /** How far behind live the wall is showing, in ms. `0` IS LIVE -- the one
    *  value every pane treats as "no cursor at all". */
   offsetMs: number

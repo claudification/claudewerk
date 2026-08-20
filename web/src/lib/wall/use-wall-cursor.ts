@@ -14,8 +14,8 @@
  * the object is assembled here, so a render is driven by the field that changed.
  */
 
-import { useWallCursorStore } from './cursor-store'
 import { formatCursorOffset } from './cursor'
+import { useWallCursorStore } from './cursor-store'
 
 export interface WallCursor {
   /** ms behind live. `0` IS LIVE. */

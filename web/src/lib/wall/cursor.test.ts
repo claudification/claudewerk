@@ -10,7 +10,7 @@
 import { NODE_STATS_INTERVAL_MS } from '@shared/node-stats'
 import { describe, expect, it } from 'vitest'
 import { existedAtCursor, formatCursorOffset, ringValueAtCursor } from './cursor'
-import { hostVitalsAtCursor, type HostVitalsRow } from './host-vitals'
+import { type HostVitalsRow, hostVitalsAtCursor } from './host-vitals'
 
 const NOW = 1_700_000_000_000
 const MINUTE = 60_000

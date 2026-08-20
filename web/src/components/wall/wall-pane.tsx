@@ -9,8 +9,8 @@
  */
 
 import type { CSSProperties, ReactNode } from 'react'
-import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 import { cn } from '@/lib/utils'
+import { useWallCursor } from '@/lib/wall/use-wall-cursor'
 
 /**
  * WHAT THIS PANE CAN HONESTLY SHOW AT A PAST OFFSET.
@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils'
  * this card silently print live numbers under a `T-42m` header -- a lie by
  * omission, which is the one failure mode a rewind must not have.
  */
-export type WallRewind = 'rows' | 'series'
+type WallRewind = 'rows' | 'series'
 
 interface WallPaneProps {
   title: string
@@ -61,6 +61,43 @@ interface WallPaneProps {
   children: ReactNode
 }
 
+/** The head, split out because it is where every optional slot lives -- five of
+ *  them, each with its own condition, which is enough branching to be worth
+ *  reading on its own rather than inside the section's attributes. */
+function WallPaneHead({
+  title,
+  code,
+  count,
+  tabs,
+  copy,
+  stale,
+  blindLabel,
+}: Pick<WallPaneProps, 'title' | 'code' | 'count' | 'tabs' | 'copy' | 'stale'> & { blindLabel: string | null }) {
+  return (
+    <div className="wall-pane-head">
+      <h2 className="wall-pane-title">{title}</h2>
+      <span className="wall-pane-code">{code}</span>
+      {stale && (
+        <span className="wall-stale-mark" title="read before the last disconnect -- not current">
+          STALE
+        </span>
+      )}
+      <span className="flex-1" />
+      {/* The count is the pane's claim about what it is showing. Blind, it is
+          showing nothing, so printing a live `12/12` beside "no history at this
+          offset" would have the pane contradict itself on screen -- the offset
+          takes the slot instead. */}
+      {blindLabel === null ? (
+        count != null && <span className="wall-pane-count">{count}</span>
+      ) : (
+        <span className="wall-pane-count wall-blind-mark">{blindLabel}</span>
+      )}
+      {tabs}
+      {copy}
+    </div>
+  )
+}
+
 export function WallPane({
   title,
   code,
@@ -76,35 +113,27 @@ export function WallPane({
 }: WallPaneProps) {
   const style: CSSProperties | undefined = maxHeight ? { maxHeight } : undefined
   const { rewound, label } = useWallCursor()
-  const blind = rewound && rewind === undefined
+  const blindLabel = rewound && rewind === undefined ? label : null
   return (
     <section
       className={cn('wall-pane', grow && 'wall-pane-grow', hideInAmbient && 'wall-hide-ambient')}
       style={style}
       data-pane={code}
       data-stale={stale ? 'true' : undefined}
-      data-blind={blind ? 'true' : undefined}
+      data-blind={blindLabel === null ? undefined : 'true'}
       aria-label={title}
     >
-      <div className="wall-pane-head">
-        <h2 className="wall-pane-title">{title}</h2>
-        <span className="wall-pane-code">{code}</span>
-        {stale && (
-          <span className="wall-stale-mark" title="read before the last disconnect -- not current">
-            STALE
-          </span>
-        )}
-        <span className="flex-1" />
-        {/* The count is the pane's claim about what it is showing. Blind, it is
-            showing nothing, so printing a live `12/12` beside "no history at
-            this offset" would have the pane contradict itself on screen. */}
-        {count != null && !blind && <span className="wall-pane-count">{count}</span>}
-        {blind && <span className="wall-pane-count wall-blind-mark">{label}</span>}
-        {tabs}
-        {copy}
-      </div>
+      <WallPaneHead
+        title={title}
+        code={code}
+        count={count}
+        tabs={tabs}
+        copy={copy}
+        stale={stale}
+        blindLabel={blindLabel}
+      />
       <div className="wall-pane-body">
-        {blind ? <p className="wall-blind-line">no history at this offset</p> : children}
+        {blindLabel === null ? children : <p className="wall-blind-line">no history at this offset</p>}
       </div>
     </section>
   )
