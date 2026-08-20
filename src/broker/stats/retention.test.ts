@@ -15,7 +15,6 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { StatMetric, StatObjectRef } from '../../shared/stats'
-import { STAT_FLOW_SUFFIX } from '../../shared/stats'
 import { readStatsByKind } from './read'
 import { STAT_BUCKET_MS, STAT_RAW_MS, STAT_RETENTION_MS, sweepStats } from './retention'
 import { closeStatsStore, flushStats, initStatsStore, recordStat } from './store'
@@ -47,20 +46,25 @@ function points() {
 }
 
 /**
- * A flow metric, built from the declared suffix rather than spelled literally,
- * so this test breaks if the rule in `shared/stats.ts` ever moves.
+ * The two declared flow suffixes, each spelled as a REAL metric now that both
+ * have producers -- `tokens_in_count` (`wall-stats-producer-token-usage`, since
+ * merged) and `spend_usd` (`wall-stats-openrouter-spend`). The temporary cast
+ * that stood here while the first had no producer is gone with it.
  *
- * The cast is deliberate and temporary: the four real `_count` metrics land
- * with `wall-stats-producer-token-usage`, which is a sibling branch on this
- * epic. The retention rule is a property of the SUFFIX, not of any one metric,
- * so it is testable -- and must be in place -- before the first producer of one
- * exists. That ordering is the point of the card: the loss happens at the first
- * sweep after a flow metric starts being written, reader or no reader.
+ * They are checked separately on purpose. The rule is a property of the SUFFIX,
+ * so a second suffix that was declared but never bound into the SQL would leave
+ * `_count` passing and `_usd` silently averaging -- which is the whole failure
+ * this file exists to catch, one suffix later.
  */
-const FLOW = `tokens_in${STAT_FLOW_SUFFIX}` as StatMetric
+const FLOW: StatMetric = 'tokens_in_count'
+const USD: StatMetric = 'spend_usd'
 
 function flowPoints() {
   return readStatsByKind('node', FLOW, 0)[0]?.points ?? []
+}
+
+function usdPoints() {
+  return readStatsByKind('node', USD, 0)[0]?.points ?? []
 }
 
 describe('downsampling the tail', () => {
@@ -138,6 +142,25 @@ describe('a flow sums where a gauge averages', () => {
     expect(sweepStats(NOW).collapsed).toBe(6)
     expect(points()).toEqual([{ ts: base, value: 20 }])
     expect(flowPoints()).toEqual([{ ts: base, value: 600 }])
+  })
+
+  test('money sums too -- a `_usd` flow and a `_percent` gauge, same bucket, one sweep', () => {
+    const base = bucketStart(50)
+    // Three round-trips at three different costs, in one 5-minute bucket, while
+    // the box is also being metered. The bucket cost 10 cents; averaging would
+    // file 3.33 cents -- "the typical call" -- and delete the rows that prove
+    // what the window actually spent. `_usd` is only a flow because SPENDING is
+    // an event; a dollar-denominated LEVEL would have to average, which is the
+    // caveat written at the suffix declaration.
+    for (const [i, cpu] of [10, 20, 30].entries()) recordStat(node, 'cpu_percent', cpu, base + (i + 1) * 10_000)
+    for (const [i, usd] of [0.01, 0.02, 0.07].entries()) recordStat(node, USD, usd, base + (i + 1) * 10_000)
+    flushStats()
+
+    expect(sweepStats(NOW).collapsed).toBe(6)
+    expect(points()).toEqual([{ ts: base, value: 20 }])
+    expect(usdPoints()).toHaveLength(1)
+    expect(usdPoints()[0].ts).toBe(base)
+    expect(usdPoints()[0].value).toBeCloseTo(0.1, 10)
   })
 
   test('a summed bucket is idempotent -- the aligned row is a singleton, so SUM(x) = x', () => {

@@ -15,13 +15,13 @@
  *   age > 90d   deleted
  *
  * MEAN OR SUM IS NOT A PER-ROW CHOICE, it is a property of the METRIC, and it
- * is declared exactly once as `STAT_FLOW_SUFFIX` in `shared/stats.ts` -- next
+ * is declared exactly once as `STAT_FLOW_SUFFIXES` in `shared/stats.ts` -- next
  * to the metric names, because the unit suffix already answers it. A level
- * (`_percent`) averages; a per-event delta (`_count`) sums, because the mean of
- * the events in a window is "the typical event" rather than what the window
- * cost, and the raws are deleted in the same transaction that writes the
+ * (`_percent`) averages; a per-event delta (`_count`, `_usd`) sums, because the
+ * mean of the events in a window is "the typical event" rather than what the
+ * window cost, and the raws are deleted in the same transaction that writes the
  * bucket. Nothing here re-decides that per call site; the SQL below asks the
- * same question the constant defines.
+ * same question the constant defines, for however many suffixes it lists.
  *
  * A 12-node fleet at 3 metrics per 5s is ~620k raw rows in 48h, and the 90-day
  * coarse tail is ~930k -- about 60 MB of a table that would otherwise be 28
@@ -47,7 +47,7 @@
  * it against the bucket row's own timestamp.)
  */
 
-import { STAT_FLOW_SUFFIX } from '../../shared/stats'
+import { STAT_FLOW_SUFFIXES } from '../../shared/stats'
 import { statsDb } from './db'
 
 /** Rows younger than this are kept exactly as filed. */
@@ -63,6 +63,20 @@ export const STAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 /** How often the sweep runs. Cheap enough to run on boot, rare enough that it
  *  is never the reason a write blocks. */
 export const STAT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+/** `metric ENDS WITH one of the declared flow suffixes`, spelled in SQL. Built
+ *  once from the rule rather than typed out, so the statement below can never
+ *  list a different set of suffixes than `shared/stats.ts` declares. Parameters
+ *  carry the suffixes and their lengths; nothing user-supplied is interpolated
+ *  (the generated text is `$name` placeholders only). */
+const FLOW_PREDICATE = STAT_FLOW_SUFFIXES.map((_, i) => `substr(metric, -$flowLen${i}) = $flowSuffix${i}`).join(' OR ')
+
+const FLOW_BINDS: Record<string, string | number> = Object.fromEntries(
+  STAT_FLOW_SUFFIXES.flatMap((suffix, i) => [
+    [`flowLen${i}`, suffix.length],
+    [`flowSuffix${i}`, suffix],
+  ]),
+)
 
 export interface StatSweepResult {
   /** Raw rows folded into 5-minute buckets. */
@@ -102,11 +116,13 @@ export function sweepStats(now: number = Date.now()): StatSweepResult {
         // the CASE is decided once per bucket and a row can never fall into
         // both halves or neither -- which two WHERE-partitioned statements
         // would have to be trusted not to do. The predicate is `endsWith`
-        // spelled in SQL, reading the SAME constant the rule is declared as.
+        // spelled in SQL, reading the SAME constant the rule is declared as --
+        // one OR-ed test per declared suffix, generated, so adding a third
+        // suffix in `shared/stats.ts` needs nothing here.
         db.prepare(`
           INSERT OR REPLACE INTO stat_samples (object_id, metric, ts, value)
           SELECT object_id, metric, ts - (ts % $bucket) AS bucket,
-                 CASE WHEN substr(metric, -$flowLen) = $flowSuffix
+                 CASE WHEN ${FLOW_PREDICATE}
                       THEN SUM(value)
                       ELSE AVG(value) END
           FROM stat_samples
@@ -115,8 +131,7 @@ export function sweepStats(now: number = Date.now()): StatSweepResult {
         `).run({
           bucket: STAT_BUCKET_MS,
           rawCutoff,
-          flowLen: STAT_FLOW_SUFFIX.length,
-          flowSuffix: STAT_FLOW_SUFFIX,
+          ...FLOW_BINDS,
         })
         db.prepare('DELETE FROM stat_samples WHERE ts < $rawCutoff AND ts % $bucket != 0').run({
           rawCutoff,

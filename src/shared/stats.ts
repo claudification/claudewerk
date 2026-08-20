@@ -9,7 +9,7 @@
  * three; the table then holds the data and answers nothing. A union type makes
  * the typo a compile error and keeps "add a stat" at one line.
  *
- * THE UNIT IS IN THE NAME. `_percent`, `_bytes`, `_ms`, `_count`. `value` is a
+ * THE UNIT IS IN THE NAME. `_percent`, `_bytes`, `_ms`, `_count`, `_usd`. `value` is a
  * bare REAL, so the name is the only place the unit can live -- and a number
  * whose unit is a guess is a number nobody can render. The
  * `node-stats-disk-used-two-definitions` card exists because two code paths
@@ -23,9 +23,9 @@
 /**
  * A named thing that lives ON a node and can be measured.
  *
- * `node`, `profile`, `volume` and `conversation` are the four THE WALL produces
- * today. `process` is the obvious next one and is deliberately NOT pre-declared
- * -- see the note above.
+ * `node`, `profile`, `volume`, `conversation` and `feature` are the five THE
+ * WALL produces today. `process` is the obvious next one and is deliberately NOT
+ * pre-declared -- see the note above.
  *
  * A `volume` is named by its MOUNT PATH, and that is the rare case where the
  * human-readable string genuinely is identity: a mount path is what a volume is
@@ -35,8 +35,32 @@
  * A `conversation` lives on exactly one sentinel, so it hangs off a node like
  * the other three: `name` is the conversation id (stable identity) and `label`
  * is its title (mutable).
+ *
+ * A `feature` is the odd one and is the reason `STATS_BROKER_NODE_ID` exists
+ * below: a broker feature that spends money is not a thing sitting on a
+ * sentinel. It is filed against the broker's own pinned node id, which is
+ * honest -- the spend genuinely happens in the broker process -- and keeps
+ * `nodeId` non-optional for everyone else. `name` is the `feature` tag off the
+ * `ChatRequest`, a code-level constant rather than a mutable label, and there is
+ * no `label`: a feature has no display alias distinct from its key.
  */
-export type StatObjectKind = 'node' | 'profile' | 'volume' | 'conversation'
+export type StatObjectKind = 'node' | 'profile' | 'volume' | 'conversation' | 'feature'
+
+/**
+ * THE BROKER'S OWN node id, for objects that live in the broker process rather
+ * than on a reporting agent.
+ *
+ * A real `nodeId` is minted by an agent that reports node stats (see
+ * `node-stats.ts`) and the broker is not one, so there is no node to look up.
+ * Nor may one be derived from the environment: the broker runs in a container
+ * and the BOUNDARY covenant keeps it from reading identity off its host.
+ *
+ * So it is pinned here, next to the vocabulary it belongs to, for the same
+ * reason the metric names are pinned: a second spelling of this id (`'broker'`
+ * at one producer, `'the-broker'` at the next) forks a series in a way no query
+ * can put back together.
+ */
+export const STATS_BROKER_NODE_ID = 'broker'
 
 /** Every metric the broker records. Units are part of the name, always. */
 export type StatMetric =
@@ -65,11 +89,11 @@ export type StatMetric =
    *  (`state === 'ok'`) -- an unauthed or errored profile has no number, and
    *  filing its placeholder 0 would draw a line that says "idle". */
   | 'plan_utilization_percent'
-  /* THE FOUR BELOW ARE FLOW, NOT GAUGE. Each is a per-EVENT delta -- what ONE
-   * assistant message billed -- where every `_percent` above is a level read at
-   * an instant. That distinction is what `STAT_FLOW_SUFFIX` below encodes, and
-   * `retention.ts` reads it: these collapse with SUM, the gauges with AVG.
-   * Nothing reads the four yet. */
+  /* THE FOUR TOKEN METRICS BELOW ARE FLOW, NOT GAUGE. Each is a per-EVENT delta
+   * -- what ONE assistant message billed -- where every `_percent` above is a
+   * level read at an instant. That distinction is what `STAT_FLOW_SUFFIXES`
+   * below encodes, and `retention.ts` reads it: these collapse with SUM, the
+   * gauges with AVG. Nothing reads the four yet. */
   /** Uncached input tokens billed by ONE assistant message. Producer:
    *  `conversation-store/transcript-handlers/token-stats`. Disjoint from
    *  `cache_read_count` and `cache_write_count` -- the three sum to the
@@ -82,9 +106,19 @@ export type StatMetric =
   /** Prompt-cache WRITE tokens on ONE assistant message, 5m and 1h summed.
    *  The TTL split stays in `token_samples`; this is the coarser view. */
   | 'cache_write_count'
+  /** US dollars billed by ONE OpenRouter round-trip, filed against the `feature`
+   *  that spent them. Producer: `openrouter-spend-stats`, off the ONE sink every
+   *  broker LLM call funnels through. ALSO A FLOW -- see `_usd` below -- and the
+   *  reason the suffix rule takes a list rather than a single string.
+   *
+   *  SUCCESSFUL CALLS ONLY. A failed round-trip returns no usage body, so what
+   *  it cost the provider is unknowable here; filing 0 would be a claim rather
+   *  than a reading. `openrouter-spend.db` keeps the failure accounting (calls,
+   *  wall-clock burnt) and is not retired by this series. */
+  | 'spend_usd'
 
 /**
- * THE SUFFIX THAT MAKES A METRIC A FLOW RATHER THAN A GAUGE, and therefore how
+ * THE SUFFIXES THAT MAKE A METRIC A FLOW RATHER THAN A GAUGE, and therefore how
  * `retention.ts` is allowed to collapse it into a 5-minute bucket.
  *
  * Two different kinds of number live in one narrow table and they do not
@@ -105,12 +139,29 @@ export type StatMetric =
  *
  * THE UNIT SUFFIX ALREADY CARRIES THE ANSWER, so this is a RULE, not a second
  * list to keep in sync with the union above. `_count` counts things that
- * HAPPENED and is a flow; every other declared unit (`_percent`, `_bytes`,
- * `_ms`) names a level and is a gauge. That keeps "adding a stat is one string"
- * true -- a new `_count` metric is summed the day it is declared, with nothing
- * else to remember and nothing to forget.
+ * HAPPENED and `_usd` is money that was SPENT; both are flows. Every other
+ * declared unit (`_percent`, `_bytes`, `_ms`) names a level and is a gauge. That
+ * keeps "adding a stat is one string" true -- a new `_count` or `_usd` metric is
+ * summed the day it is declared, with nothing else to remember and nothing to
+ * forget.
+ *
+ * A LIST OF SUFFIXES, NOT A LIST OF METRICS. Two entries is still a rule about
+ * units; a per-metric lookup table would be the thing this design exists to
+ * avoid, because it is the thing someone forgets to update.
+ *
+ * `_usd` IS ONLY A FLOW BECAUSE SPENDING IS AN EVENT -- read this before
+ * declaring the next dollar-denominated metric. `spend_usd` is what ONE call
+ * cost, so summing a window gives what the window cost. A BALANCE, a PRICE, a
+ * LIMIT or a RATE denominated in dollars is a LEVEL: it is read at an instant,
+ * it must average, and under this rule a name ending `_usd` would be summed
+ * instead -- a credit balance of $40 held steady across a bucket would collapse
+ * to $1,120, and the raws proving otherwise are deleted in the same
+ * transaction. Do not reach for `_usd` for one of those. Give it a suffix that
+ * names the level (`balance_usd_gauge` is ugly; `credit_balance_dollars` is
+ * fine) or extend this rule deliberately -- do not let the collision happen by
+ * accident.
  */
-export const STAT_FLOW_SUFFIX = '_count'
+export const STAT_FLOW_SUFFIXES = ['_count', '_usd'] as const
 
 /**
  * The thing being measured.
