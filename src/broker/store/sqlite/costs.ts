@@ -9,6 +9,7 @@ import type {
   HourlyRow,
   ProfileBreakdownFilter,
   ProfileBreakdownRow,
+  TurnActivityRow,
   TurnFilter,
   TurnRecord,
 } from '../types'
@@ -376,6 +377,25 @@ export function createSqliteCostStore(db: Database): CostStore {
     }))
   }
 
+  /** The day-bucketing read. Index-ordered by timestamp so the caller can walk
+   *  it against a sorted day axis without re-sorting. */
+  function queryTurnActivity(from: number, to: number): TurnActivityRow[] {
+    const rows = queryAll(
+      db,
+      `SELECT timestamp,
+        (input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) as tokens,
+        cost_usd, exact_cost
+      FROM turns WHERE timestamp >= $from AND timestamp <= $to ORDER BY timestamp`,
+      { from, to },
+    ) as Array<Record<string, unknown>>
+    return rows.map(r => ({
+      timestamp: r.timestamp as number,
+      tokens: (r.tokens as number) || 0,
+      costUsd: (r.cost_usd as number) || 0,
+      exactCost: !!(r.exact_cost as number),
+    }))
+  }
+
   function querySummary(period: CostPeriod): CostSummary {
     const cutoff = Date.now() - periodToMs(period)
     const b = { cutoff }
@@ -464,6 +484,7 @@ export function createSqliteCostStore(db: Database): CostStore {
     queryHourly,
     querySummary,
     queryProfileBreakdown,
+    queryTurnActivity,
     pruneOlderThan,
   }
 }

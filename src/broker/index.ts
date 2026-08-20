@@ -43,6 +43,7 @@ import {
   touchConvLink,
 } from './conversation-links'
 import { createConversationStore } from './conversation-store'
+import { COST_RETENTION_MS } from './cost-retention'
 import { type ContextDeps, createContext } from './create-context'
 import { startAttentionImpulses, stopAttentionImpulses } from './desk/attention-impulse'
 import { closeDispatchAudit, initDispatchAudit } from './desk/audit'
@@ -519,7 +520,8 @@ async function main() {
   // Schedule cost data cleanup (30-day retention, runs daily). Token-flow
   // samples get a shorter 7-day window (disposable per-message time-series; the
   // longest widget view is 1d).
-  const COST_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+  // COST_RETENTION_MS is imported, not declared here: the activity-matrix
+  // endpoint reports the same window to the client as this sweep enforces.
   const TOKEN_SAMPLE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
   const pruneCostAndTokens = (label: string) => {
     const now = Date.now()
