@@ -94,6 +94,23 @@ else
   echo "bun-test.sh: this bun has no --no-orphans -- leaked children will survive the run" >&2
 fi
 
+# --- fan the suite across cores (bun >= 1.4) ----------------------------
+#
+# Measured 2026-08-20 on 601 files / 7453 tests, same 1.4 binary both arms:
+# sequential 74s, --parallel 20s, with identical pass/skip/fail AND identical
+# expect() counts -- so nothing is being silently skipped.
+#
+# Safe here specifically BECAUSE of the suite lock above: --parallel claims a
+# worker per core, which is the exact resource the lock is serialising. One
+# locked suite owning all cores is the intent; two would be the 2026-08-19
+# load-162 incident again.
+#
+#   TEST_NO_PARALLEL=1   force the old one-file-at-a-time behaviour
+PARALLEL=()
+if [[ -z "${TEST_NO_PARALLEL:-}" ]] && bun test --help 2>&1 | grep -q -- '--parallel'; then
+  PARALLEL=(--parallel)
+fi
+
 # coreutils on macOS installs as `gtimeout` unless the gnubin path is active.
 # --foreground keeps bun attached to the terminal so its output still streams;
 # --kill-after upgrades to SIGKILL for a runner that ignores SIGTERM (which is
@@ -102,10 +119,10 @@ TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
 
 if [[ -z "$TIMEOUT_BIN" ]]; then
   echo "bun-test.sh: no timeout binary found (install coreutils) -- running UNGUARDED" >&2
-  exec bun test "${ORPHAN_GUARD[@]}" "$@"
+  exec bun test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
 fi
 
-"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" bun test "${ORPHAN_GUARD[@]}" "$@"
+"$TIMEOUT_BIN" --foreground --kill-after=30s "$BUDGET" bun test "${ORPHAN_GUARD[@]}" "${PARALLEL[@]}" "$@"
 status=$?
 
 if [[ $status -eq 124 || $status -eq 137 ]]; then
