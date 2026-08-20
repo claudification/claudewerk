@@ -16,7 +16,6 @@
  * branch of it is exercised without a broker, a sentinel or a CC process.
  */
 
-import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { listArmedEpics } from './epic-registry'
 
@@ -166,16 +165,16 @@ export function groupEpicConversations(convs: readonly Conversation[], isLive: I
  * Settled cards the baton has never acknowledged. THE standing question the wake
  * is built on.
  *
- * A card is acknowledged by a `completion` or `verdict` entry naming it. Note
- * that a `dispatch` entry does NOT acknowledge anything -- it records that work
- * started, and treating it as an acknowledgement is exactly how a settle would
- * go unnoticed.
+ * Takes the ACKNOWLEDGED SET, not the baton. It used to take the baton and fold
+ * it here, which reads identically and is quietly wrong: the baton the beat
+ * holds is a 20-entry prompt tail, so this answered "acknowledged in the last 20
+ * entries" while claiming to answer "acknowledged, ever". `acknowledgedCardIds`
+ * (epic-log.ts) folds the whole log, sentinel-side, and the type change is the
+ * point -- the old signature made the wrong call the natural one to write.
  */
-const ACKNOWLEDGING_KINDS = new Set<EpicLogEntry['kind']>(['completion', 'verdict'])
-
-export function unacknowledgedCards(settled: readonly string[], baton: readonly EpicLogEntry[]): string[] {
-  const acknowledged = new Set(baton.filter(e => ACKNOWLEDGING_KINDS.has(e.kind) && e.cardId).map(e => e.cardId))
-  return settled.filter(cardId => !acknowledged.has(cardId))
+export function unacknowledgedCards(settled: readonly string[], acknowledged: readonly string[]): string[] {
+  const seen = new Set(acknowledged)
+  return settled.filter(cardId => !seen.has(cardId))
 }
 
 /**

@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { handleEpicOp } from '../sentinel/epic-handlers'
+import { acknowledgedCardIds, readEpicLog } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
+import { cardPath } from '../shared/project-paths'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
-import type { EpicResult, EpicRunSnapshot } from '../shared/protocol'
+import type { EpicBatonQuery, EpicResult, EpicRunSnapshot } from '../shared/protocol'
 import type { TaskStatus } from '../shared/task-statuses'
+import { toEpicRunView } from './epic-broker-rpc'
 import { type BeatDeps, runEpicBeat } from './epic-executor'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import type { EpicGroup } from './epic-sweep'
@@ -89,7 +96,15 @@ beforeEach(() => {
   run = { ...RUN }
 
   configureEpicIo({
-    fetchEpicRun: async () => ({ run, baton, lease: null, ...(run ? {} : { error: 'no run' }) }),
+    // `baton` here is the WHOLE log, so folding it is the honest answer. The
+    // seam tests below are the ones that exercise a truncated tail.
+    fetchEpicRun: async () => ({
+      run,
+      baton,
+      acknowledgedCardIds: acknowledgedCardIds(baton),
+      lease: null,
+      ...(run ? {} : { error: 'no run' }),
+    }),
     fetchBoardCards: async () => cards,
     appendBaton: async (_d, _p, _e, entry) => {
       baton.push({
@@ -188,7 +203,14 @@ describe('runEpicBeat', () => {
    * to answering the group-wide question.
    */
   test('the CAS is told about THE HOLDER named on the board, not about any overseer', async () => {
-    configureEpicIo({ fetchEpicRun: async () => ({ run, baton, lease: { convId: 'conv_holder', gen: 4, at: '' } }) })
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run,
+        baton,
+        acknowledgedCardIds: acknowledgedCardIds(baton),
+        lease: { convId: 'conv_holder', gen: 4, at: '' },
+      }),
+    })
     await runEpicBeat(deps(), group({ settled: ['t1'], liveOverseers: ['conv_someone_else'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
   })
@@ -296,5 +318,98 @@ describe('runEpicBeat', () => {
   test('every beat logs one summary line naming the epic and generation', async () => {
     await runEpicBeat(deps(), group())
     expect(log.some(l => l.includes('[epic e1 gen 3] beat:'))).toBe(true)
+  })
+})
+
+/**
+ * THE ACKNOWLEDGEMENT SEAM, end to end -- the bug that froze epic-the-wall for
+ * five generations (gens 23-28, 2026-08-19).
+ *
+ * The truncation happens BETWEEN the two halves: `unacknowledgedCards` is right,
+ * the sentinel's prompt-sized tail is right, and putting one into the other is
+ * what is wrong. So a double for `fetchEpicRun` cannot see it -- these tests run
+ * the REAL sentinel handler over a REAL log file through the REAL broker fold,
+ * and stub only the things that would spawn a process.
+ */
+describe('runEpicBeat against the real sentinel seam', () => {
+  const NOW = Date.parse('2026-08-19T19:52:00.000Z')
+  /** More settled cards than the sentinel's prompt-sized baton tail holds. */
+  const SETTLED = Array.from({ length: 25 }, (_, i) => `s${String(i + 1).padStart(2, '0')}`)
+  let root = ''
+
+  const sentinel = (op: 'get' | 'log_append', extra: Record<string, unknown> = {}) =>
+    handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'epic-seam-'))
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      'utf8',
+    )
+
+    // A run mid-flight: planning done, no overseer holding it.
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'start', epicId: 'e1', start: { plan: false } },
+      NOW,
+    )
+    handleEpicOp(
+      root,
+      {
+        type: 'epic_op',
+        requestId: 'r',
+        projectRoot: root,
+        op: 'patch',
+        epicId: 'e1',
+        patch: { gen: 3, status: 'running' },
+      },
+      NOW,
+    )
+
+    // Every settled card acknowledged, exactly as `acknowledge` writes it. All 25
+    // are in the log; only the last 20 are in the tail the beat is handed.
+    for (const cardId of SETTLED) {
+      sentinel('log_append', {
+        logAppend: { kind: 'completion', convId: 'broker', cardId, body: `Card \`${cardId}\` settled.` },
+      })
+    }
+
+    // The board as it stands: the epic, its 25 finished children, one awaiting a verdict.
+    cards = [
+      card('e1', 'open', { tags: ['epic'] }),
+      ...SETTLED.map(slug => card(slug, 'done', { epic: 'e1' })),
+      card('t1', 'in-review', { epic: 'e1' }),
+    ]
+
+    configureEpicIo({
+      fetchEpicRun: async (_d, _p, epicId, baton?: EpicBatonQuery) =>
+        toEpicRunView(sentinel('get', { ...(baton ? { baton } : {}) }) as EpicResult & { epicId: typeof epicId }),
+      appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
+    })
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  test('25 acknowledged settles do NOT re-wake the overseer -- the card gets its VERIFIER', async () => {
+    const out = await runEpicBeat(deps(), group({ settled: SETTLED }))
+    expect(spawns.map(s => s.epic.role)).toEqual(['verifier'])
+    expect(spawns[0].epic).toMatchObject({ cardId: 't1' })
+    expect(out.note).toContain('verifying 1')
+  })
+
+  test('and nothing is acknowledged a second time -- the baton gains no duplicate', async () => {
+    await runEpicBeat(deps(), group({ settled: SETTLED }))
+    const completions = readEpicLog(root, 'e1').filter(e => e.kind === 'completion')
+    expect(completions).toHaveLength(SETTLED.length)
+  })
+
+  test('a genuinely new settle still wakes the overseer', async () => {
+    const out = await runEpicBeat(deps(), group({ settled: [...SETTLED, 'brand-new'] }))
+    expect(out.note).toContain('1 unacknowledged settle(s): brand-new')
+    expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
   })
 })
