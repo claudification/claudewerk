@@ -11,7 +11,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { cardPath, createProjectTask, getProjectTask, listProjectTasks, updateProjectTask } from './project-store'
+import { pinnedEpicRows } from './pinned-epic-rows'
+import {
+  cardPath,
+  createProjectTask,
+  getProjectTask,
+  listProjectTasks,
+  setProjectTaskStatus,
+  updateProjectTask,
+} from './project-store'
 import { isWallPinned, WALL_PINNED_KEY } from './wall-pin'
 
 let root: string
@@ -64,6 +72,37 @@ describe('the wall pin', () => {
     updateProjectTask(root, id, { priority: 'high' })
 
     expect(getProjectTask(root, id)?.wallPinned).toBe(true)
+  })
+
+  /**
+   * A LANE MOVE MUST NOT EAT THE PIN. Moving a card is the ONE write that does
+   * not go through `updateProjectTask` -- `setProjectTaskStatus` rewrites the
+   * whole card off `raw.meta`. It spreads today, so this passes today; it is
+   * pinned here because the old store rebuilt cards from a fixed key list, and a
+   * pin silently vanishing on the next status change would present as "pinning
+   * does not persist" with nothing in any log.
+   */
+  test('the pin survives a status change', () => {
+    const id = makeEpic()
+    updateProjectTask(root, id, { wallPinned: true })
+    setProjectTaskStatus(root, id, 'in-progress', Date.now())
+
+    expect(getProjectTask(root, id)?.status).toBe('in-progress')
+    expect(getProjectTask(root, id)?.wallPinned).toBe(true)
+    expect(fileOf(id)).toContain(`${WALL_PINNED_KEY}: true`)
+  })
+
+  /** The wall reads pins through the SENTINEL's fold, not through the card
+   *  store, so the round trip is only proven once that fold returns the row. */
+  test('the sentinel fold returns the pinned epic and skips the unpinned one', () => {
+    const pinnedId = makeEpic()
+    const otherId = createProjectTask(root, { title: 'OTHER EPIC', body: '', tags: ['epic'] }, Date.now()).slug
+    updateProjectTask(root, pinnedId, { wallPinned: true })
+
+    const rows = pinnedEpicRows('claude:///tmp/proj', listProjectTasks(root))
+
+    expect(rows.map(r => r.epicId)).toEqual([pinnedId])
+    expect(rows.map(r => r.epicId)).not.toContain(otherId)
   })
 
   test('a hand-written card reads as pinned even though the parser hands back a string', () => {

@@ -19,6 +19,49 @@ import { sendBoardOp } from '@/hooks/use-project-tasks'
 import { cn, haptic } from '@/lib/utils'
 import { useAmbientProject } from './use-ambient-project'
 
+/**
+ * The three states this button has, each owning its own word, tooltip and skin.
+ *
+ * A DEAD BUTTON MUST SAY SO IN INK -- `dead` used to render the word `PIN` and
+ * explain itself only in a `title`, which is a hover, and there is no hover on
+ * the tablet this board is mostly read on. A click that could never work was
+ * indistinguishable from a pin that did not persist, which is what got reported
+ * on 2026-08-20.
+ */
+const FACES = {
+  dead: {
+    label: 'NO CARD',
+    title: 'This epic has no card of its own -- there is nothing to pin the key onto',
+    skin: 'border-border text-fg-dim cursor-not-allowed',
+  },
+  pinned: {
+    label: 'PINNED',
+    title: `Pinned to THE WALL (\`${WALL_PINNED_KEY}: true\` on this card). Click to stop watching it there.`,
+    skin: 'border-[color:var(--epic-edge)] bg-[color:var(--epic-tint)] text-[color:var(--epic-solid)]',
+  },
+  unpinned: {
+    label: 'PIN',
+    title: `Watch this epic on THE WALL: progress, and every card that is not closed. Writes \`${WALL_PINNED_KEY}\` onto the card, so it survives a restart and an agent can grep for it.`,
+    skin: 'border-border text-fg-muted hover:text-foreground hover:bg-muted/30',
+  },
+} as const
+
+/**
+ * DID THE CARD ACTUALLY TAKE THE PIN? A sentinel bundle older than A8 accepts
+ * the `update`, ignores `wallPinned`, and answers ok -- the button then showed
+ * PINNED over a card with nothing written on it, and the wall showed nothing,
+ * forever. So believe the card in the reply, not the `ok`.
+ *
+ * Unpinning DELETES the key, so a missing `wallPinned` on an unpin is success.
+ */
+function wroteThePin(reply: Record<string, unknown>, next: boolean): boolean {
+  if (!reply.ok) return false
+  const task = reply.task as { wallPinned?: boolean } | undefined
+  if (!task) return true
+  if (task.wallPinned === next) return true
+  return next === false && task.wallPinned === undefined
+}
+
 export function EpicPinButton({ rollup }: { rollup: EpicRollup }) {
   const project = useAmbientProject()
   const stored = rollup.card?.wallPinned === true
@@ -36,47 +79,31 @@ export function EpicPinButton({ rollup }: { rollup: EpicRollup }) {
   // reason), and pinning it would silently create nothing.
   const disabled = !project || !rollup.card
 
+  const face = FACES[disabled ? 'dead' : pinned ? 'pinned' : 'unpinned']
+
   return (
     <button
       type="button"
       disabled={disabled}
       aria-pressed={pinned}
-      title={
-        disabled
-          ? 'This epic has no card of its own -- there is nothing to pin the key onto'
-          : pinned
-            ? `Pinned to THE WALL (\`${WALL_PINNED_KEY}: true\` on this card). Click to stop watching it there.`
-            : `Watch this epic on THE WALL: progress, and every card that is not closed. Writes \`${WALL_PINNED_KEY}\` onto the card, so it survives a restart and an agent can grep for it.`
-      }
+      title={face.title}
       onClick={async () => {
         if (disabled) return
         haptic('tap')
         const next = !pinned
         setPending(next)
         const reply = await sendBoardOp(project, 'update', { slug: rollup.epicId, patch: { wallPinned: next } })
-        // A failed write must not leave the button lying about the card -- and
-        // neither must a write that SUCCEEDED WITHOUT APPLYING THE KEY. A
-        // sentinel bundle older than A8 accepts the `update`, ignores
-        // `wallPinned`, and answers ok: the button then showed PINNED over a
-        // card with nothing written on it, which is what "I just pinned an epic
-        // and the wall does not show it" looked like on 2026-08-20. Read the
-        // card back out of the reply and believe THAT.
-        const task = reply.task as { wallPinned?: boolean } | undefined
-        if (!reply.ok || (task && task.wallPinned !== next && !(next === false && task.wallPinned === undefined))) {
-          setPending(null)
-        }
+        // A write that failed -- or succeeded WITHOUT APPLYING THE KEY -- must
+        // not leave the button lying about the card. See `wroteThePin`.
+        if (!wroteThePin(reply, next)) setPending(null)
       }}
       className={cn(
         'shrink-0 flex items-center gap-1 px-2 py-1 text-[10px] font-mono border transition-colors',
-        disabled
-          ? 'border-border text-fg-dim cursor-not-allowed'
-          : pinned
-            ? 'border-[color:var(--epic-edge)] bg-[color:var(--epic-tint)] text-[color:var(--epic-solid)]'
-            : 'border-border text-fg-muted hover:text-foreground hover:bg-muted/30',
+        face.skin,
       )}
     >
-      {pinned ? <Pin className="size-2.5 fill-current" /> : <PinOff className="size-2.5" />}
-      {pinned ? 'PINNED' : 'PIN'}
+      {face === FACES.pinned ? <Pin className="size-2.5 fill-current" /> : <PinOff className="size-2.5" />}
+      {face.label}
     </button>
   )
 }
