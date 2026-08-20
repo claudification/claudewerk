@@ -97,6 +97,7 @@ describe('FleetSotuStats', () => {
       stalledProjects: 1,
       unmergedProjects: 0,
       filteredProjects: 2,
+      blocks: [],
     }
     render(<FleetSotuStats sotu={sotu} />)
     expect(screen.getByText(/3 CONTENDED/)).toBeTruthy()
@@ -116,6 +117,7 @@ describe('FleetSotuStats', () => {
       stalledProjects: 0,
       unmergedProjects: 0,
       filteredProjects: 0,
+      blocks: [],
     }
     const { container } = render(<FleetSotuStats sotu={sotu} />)
     expect(container.firstChild).toBeNull()

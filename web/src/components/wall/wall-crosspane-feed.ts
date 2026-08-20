@@ -117,6 +117,32 @@ function sheafProject(uri: string, label: string, cost: number, narrative: strin
   }
 }
 
+/** The fleet union, carrying the STATE-OF-THE-UNION ROSTER A4 renders. Both
+ *  fixture projects are chronicle-enabled, so both get a row -- the scoping of a
+ *  chronicle-OFF project is the broker's job and is proved at `fleet.test.ts`. */
+function sotuUnion(): unknown {
+  const row = (uri: string, narrative: string) => ({
+    projectUri: uri,
+    narrative,
+    generatedAt: NOW - 600_000,
+    alerts: [],
+    contended: 0,
+    unmerged: 0,
+  })
+  return {
+    projectsEnabled: 2,
+    projectsWithNarrative: 2,
+    alerts: [],
+    contended: 0,
+    atRiskProjects: 0,
+    unpushedProjects: 0,
+    stalledProjects: 0,
+    unmergedProjects: 0,
+    filteredProjects: 0,
+    blocks: [row(RC, 'the wall grew a filter bus'), row(ANVIL, 'the spec site learned to end in a slash')],
+  }
+}
+
 /** An hour bucket inside today, so `costSince(localMidnight)` sees the spend. */
 function thisHour(): string {
   const d = new Date(NOW)
@@ -163,6 +189,7 @@ function bodyFor(url: string): unknown {
         sheafProject(RC, RC_NAME, 12, 'the wall grew a filter bus'),
         sheafProject(ANVIL, ANVIL_NAME, 4, 'the spec site learned to end in a slash'),
       ],
+      sotu: sotuUnion(),
     }
   }
   return []

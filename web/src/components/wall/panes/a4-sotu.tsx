@@ -9,9 +9,16 @@
  * folds the SOTU narrative and the git fabric INTO that response, so this pane
  * opens no route of its own -- which is why A6 and A4 are one card.
  *
- * LIVE TEXT, NOT A SNAPSHOT: every sentence here is `project.sotu.narrative` as
- * the broker distilled it, stamped with its own age. Nothing in this file is
- * written at build time.
+ * LIVE TEXT, NOT A SNAPSHOT: every sentence here is the narrative as the broker
+ * distilled it, stamped with its own age. Nothing in this file is written at
+ * build time.
+ *
+ * SCOPED SERVER-SIDE: the rows are `response.sotu.blocks`, the roster the broker
+ * already narrowed to the projects this viewer may see AND whose chronicle is
+ * ON. Jonas, 2026-08-20: *"DO NOT SHOW projects that have chronicle off or
+ * disabled .. only show relevant information."* A chronicle-off project is not
+ * greyed here and not rendered as `no data` -- it is absent, and its name never
+ * reaches the roster this pane reads.
  *
  * DEVIATION FROM THE MOCKUP, stated as the epic requires: the mockup's git line
  * carries `disk 99%` and `WAL 10.1 GB` pills. Neither is in this feed -- disk is
@@ -36,10 +43,11 @@ const AXES: readonly WallAxis[] = ['text', 'project']
 /** Stable empty identity -- the filter memo keys on the array. */
 const NO_BLOCKS: readonly SotuBlock[] = []
 
-const QUIET: Record<NonNullable<SotuBlock['quiet']>, string> = {
-  'not-enabled': 'chronicle off for this project',
-  'not-distilled': 'chronicle on, nothing distilled yet',
-}
+/** The ONE way a project on the roster can still have nothing to say. A project
+ *  whose chronicle is OFF never reaches this pane -- the broker leaves it off
+ *  `sotu.blocks` entirely -- so "chronicle off for this project" is a line this
+ *  pane no longer has to render. */
+const NOT_DISTILLED = 'chronicle on, nothing distilled yet'
 
 /** The four ways this pane can have nothing to say, told apart. */
 function emptyLine(error: string | null, loaded: boolean, total: number): string {
@@ -73,7 +81,7 @@ function SotuBlockView({ block, now }: { block: SotuBlock; now: number }) {
       {block.narrative ? (
         <p className="wall-sotu-text">{block.narrative}</p>
       ) : (
-        <p className="wall-sotu-quiet">{block.quiet ? QUIET[block.quiet] : ''}</p>
+        <p className="wall-sotu-quiet">{NOT_DISTILLED}</p>
       )}
     </div>
   )

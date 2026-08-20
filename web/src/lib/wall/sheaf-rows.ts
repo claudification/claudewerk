@@ -11,7 +11,7 @@
  */
 
 import { type SheafSummary, summarizeSheaf } from '@shared/sheaf-summary'
-import type { GitAlert, SheafProjectSotu, SheafResponse } from '@shared/sheaf-types'
+import type { GitAlert, SheafResponse } from '@shared/sheaf-types'
 import type { ProjectLook } from '@/components/wall/use-project-look'
 
 export interface SheafRow extends ProjectLook {
@@ -71,13 +71,13 @@ export function sheafView(response: SheafResponse, look: (uri: string) => Projec
   }
 }
 
-/** One project's slice of the state of the union. */
+/** One project's slice of the state of the union: a server roster row, with the
+ *  project's look resolved onto it. */
 export interface SotuBlock extends ProjectLook {
   projectUri: string
-  /** The distilled chronicle. Absent = not enabled, or never distilled. */
+  /** The distilled chronicle. Absent = chronicle ON, nothing distilled yet -- a
+   *  chronicle-OFF project is not on the roster at all. */
   narrative?: string
-  /** Why there is no narrative, said out loud rather than rendered as silence. */
-  quiet?: 'not-enabled' | 'not-distilled'
   generatedAt?: number
   alerts: GitAlert[]
   contended: number
@@ -85,32 +85,28 @@ export interface SotuBlock extends ProjectLook {
   unmerged: number
 }
 
-function quietReason(sotu: SheafProjectSotu): SotuBlock['quiet'] {
-  if (sotu.narrative?.trim()) return undefined
-  return sotu.enabled ? 'not-distilled' : 'not-enabled'
-}
-
 /**
- * A block per project the viewer may SEE (`sotu` present). A project filtered out
- * server-side has no block at all -- that is the permission covenant, and the
- * count of what was hidden rides on the fleet union, not here.
+ * The state-of-the-union roster, looked up.
+ *
+ * THE SCOPE IS NOT DECIDED HERE. This reads `response.sotu.blocks`, which the
+ * broker already scoped twice: to the projects this viewer may SEE (the
+ * permission covenant) and to the projects whose chronicle is ON (Jonas: *"DO NOT
+ * SHOW projects that have chronicle off"*). Filtering `response.projects` in the
+ * browser would put the second gate on the wrong side of the wire -- the panel
+ * would be handed the hidden rows and trusted to drop them.
  */
 export function sotuBlocks(response: SheafResponse, look: (uri: string) => ProjectLook): SotuBlock[] {
   const out: SotuBlock[] = []
-  for (const p of response.projects) {
-    const sotu = p.sotu
-    if (!sotu) continue
-    const narrative = sotu.narrative?.trim()
-    const quiet = quietReason(sotu)
+  for (const b of response.sotu?.blocks ?? []) {
+    const narrative = b.narrative?.trim()
     out.push({
-      ...look(p.projectUri),
-      projectUri: p.projectUri,
+      ...look(b.projectUri),
+      projectUri: b.projectUri,
       ...(narrative ? { narrative } : {}),
-      ...(quiet ? { quiet } : {}),
-      ...(sotu.generatedAt ? { generatedAt: sotu.generatedAt } : {}),
-      alerts: sotu.alerts,
-      contended: sotu.contended,
-      unmerged: sotu.branches.reduce((sum, b) => sum + b.aheadOrigin, 0),
+      ...(b.generatedAt ? { generatedAt: b.generatedAt } : {}),
+      alerts: b.alerts,
+      contended: b.contended,
+      unmerged: b.unmerged,
     })
   }
   // A project with a chronicle outranks one with only alerts: the pane is called

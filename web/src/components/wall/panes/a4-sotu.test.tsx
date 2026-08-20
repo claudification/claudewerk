@@ -3,7 +3,10 @@
  *
  *  - the prose is LIVE -- it is whatever the route returned, with its own age
  *  - the alert pills map from the fleet union, zeroes dropped
- *  - a project the viewer cannot see contributes no block at all
+ *  - the pane renders the SERVER ROSTER (`sotu.blocks`), so a project the viewer
+ *    cannot see and a project whose chronicle is off both contribute no block --
+ *    a chronicle-off project is absent even though it is still on the response
+ *    for A6's sake
  *  - the shared filter bites, `{matched}/{total}` rides the count slot
  *  - one fetch serves this pane and A6, not two
  */
@@ -31,7 +34,12 @@ function project(label: string, sotu?: Record<string, unknown>): SheafProject {
   } as unknown as SheafProject
 }
 
-function response(projects: SheafProject[], fleet?: Partial<NonNullable<SheafResponse['sotu']>>): SheafResponse {
+/** One row of the state-of-the-union roster, as the broker scopes it. */
+function block(label: string, over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { projectUri: `claude:///Users/j/${label}`, alerts: [], contended: 0, unmerged: 0, ...over }
+}
+
+function response(projects: SheafProject[], fleet: Record<string, unknown> = {}): SheafResponse {
   return {
     windowH: 24,
     windowStart: 0,
@@ -45,23 +53,20 @@ function response(projects: SheafProject[], fleet?: Partial<NonNullable<SheafRes
       cost: { amount: 1, estimated: false },
     },
     projects,
-    ...(fleet
-      ? {
-          sotu: {
-            projectsEnabled: 1,
-            projectsWithNarrative: 1,
-            alerts: [],
-            contended: 0,
-            atRiskProjects: 0,
-            unpushedProjects: 0,
-            stalledProjects: 0,
-            unmergedProjects: 0,
-            filteredProjects: 0,
-            ...fleet,
-          },
-        }
-      : {}),
-  }
+    sotu: {
+      projectsEnabled: 1,
+      projectsWithNarrative: 1,
+      alerts: [],
+      contended: 0,
+      atRiskProjects: 0,
+      unpushedProjects: 0,
+      stalledProjects: 0,
+      unmergedProjects: 0,
+      filteredProjects: 0,
+      blocks: [],
+      ...fleet,
+    },
+  } as unknown as SheafResponse
 }
 
 function serve(body: SheafResponse): void {
@@ -71,6 +76,8 @@ function serve(body: SheafResponse): void {
 const countSlot = () => document.querySelector('.wall-pane-count')?.textContent ?? ''
 const pills = () => [...document.querySelectorAll('.wall-sotu-pill')].map(p => p.textContent)
 const blocks = () => [...document.querySelectorAll('.wall-sotu-block')].map(b => b.getAttribute('data-project-uri'))
+/** Everything the pane actually painted -- for "this name is nowhere" claims. */
+const wallText = () => document.body.innerHTML
 
 async function mount(): Promise<void> {
   render(<SotuPane />)
@@ -80,18 +87,29 @@ async function mount(): Promise<void> {
 beforeEach(() => {
   resetWallSheaf()
   useWallFilterStore.getState().clear()
+  // Three projects on the response, TWO on the roster: `off-project` has its
+  // chronicle switched off, so the broker leaves it off `sotu.blocks` while its
+  // project section stays put for A6.
   serve(
-    response([
-      project('remote-claude', {
-        enabled: true,
-        narrative: 'main is RED, two board tests fail on a clean checkout',
-        generatedAt: NOW - 9 * 60_000,
-        alerts: ['at-risk'],
-        contended: 2,
-        branches: [{ aheadOrigin: 4 }],
-      }),
-      project('gate-meet', { enabled: false, alerts: [], contended: 0, branches: [] }),
-    ]),
+    response(
+      [
+        project('remote-claude', { enabled: true, alerts: ['at-risk'], contended: 2, branches: [{ aheadOrigin: 4 }] }),
+        project('gate-meet', { enabled: true, alerts: [], contended: 0, branches: [] }),
+        project('off-project', { enabled: false, alerts: [], contended: 0, branches: [] }),
+      ],
+      {
+        blocks: [
+          block('remote-claude', {
+            narrative: 'main is RED, two board tests fail on a clean checkout',
+            generatedAt: NOW - 9 * 60_000,
+            alerts: ['at-risk'],
+            contended: 2,
+            unmerged: 4,
+          }),
+          block('gate-meet'),
+        ],
+      },
+    ),
   )
 })
 
@@ -115,14 +133,23 @@ describe('A4 state of the union', () => {
     expect(screen.getByText('4 unmerged')).toBeTruthy()
   })
 
-  it('says why a quiet project is quiet instead of rendering an empty block', async () => {
+  it('says why a chronicle-ON project is quiet instead of rendering an empty block', async () => {
     await mount()
-    expect(screen.getByText('chronicle off for this project')).toBeTruthy()
+    expect(screen.getByText('chronicle on, nothing distilled yet')).toBeTruthy()
+  })
+
+  it('leaves a chronicle-off project off the wall entirely, not greyed and not "no data"', async () => {
+    await mount()
+    // On the response for A6's sake, absent from A4: the broker scoped it out.
+    expect(blocks()).toEqual(['claude:///Users/j/remote-claude', 'claude:///Users/j/gate-meet'])
+    expect(screen.queryByText('off-project')).toBeNull()
+    expect(wallText()).not.toContain('off-project')
   })
 
   it('maps the fleet union to pills and drops the zeroes', async () => {
     serve(
-      response([project('p', { enabled: true, narrative: 'x', alerts: [], contended: 0, branches: [] })], {
+      response([project('p', { enabled: true, alerts: [], contended: 0, branches: [] })], {
+        blocks: [block('p', { narrative: 'x' })],
         atRiskProjects: 1,
         stalledProjects: 3,
         filteredProjects: 2,
@@ -134,10 +161,9 @@ describe('A4 state of the union', () => {
 
   it('gives a project the viewer cannot see no block at all', async () => {
     serve(
-      response([
-        project('visible', { enabled: true, narrative: 'x', alerts: [], contended: 0, branches: [] }),
-        project('hidden'),
-      ]),
+      response([project('visible', { enabled: true, alerts: [], contended: 0, branches: [] }), project('hidden')], {
+        blocks: [block('visible', { narrative: 'x' })],
+      }),
     )
     await mount()
     expect(blocks()).toEqual(['claude:///Users/j/visible'])
