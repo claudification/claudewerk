@@ -1,6 +1,6 @@
+import { formatDurationPrecise } from '@shared/format-duration'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { formatDuration } from './group-view-types'
 import type { TaskNotification } from './grouping'
 import { TimeStamp } from './timestamp'
 
@@ -27,7 +27,7 @@ export function TaskNotificationLine({
             {' / '}
             {n.usage.toolUses} tools
             {' / '}
-            {formatDuration(n.usage.durationMs)}
+            {formatDurationPrecise(n.usage.durationMs)}
           </span>
         )}
         {n.result && (
