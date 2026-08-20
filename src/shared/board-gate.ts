@@ -61,15 +61,17 @@ export function resolveGateMode(meta: Record<string, unknown>, projectConfigMode
 /**
  * Evaluate the gate for one transition. `skip` when the mode is off or the target
  * is not gated; otherwise Tier-2 always, plus Tier-1 for `full` + target `done`.
+ * Async because Tier-2 runs the card's `test_cmd` through an async `CmdRunner` --
+ * a sync runner froze the calling conversation's MCP host for the whole suite.
  * On `in-review` the acting conversation is stamped as the card's worker so a
  * later `done` can prove the approver is a different conversation.
  */
-export function evaluateGate(input: GateInput, mode: GateMode): GateOutcome {
+export async function evaluateGate(input: GateInput, mode: GateMode): Promise<GateOutcome> {
   if (mode === 'off' || !isGatedTarget(input.targetStatus)) {
     return { decision: 'skip', mode, checks: [], evidence: {} }
   }
 
-  const t2 = runTier2(input)
+  const t2 = await runTier2(input)
   const checks = [...t2.checks]
   const evidence = { ...t2.evidence }
   if (!t2.ok) {

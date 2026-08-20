@@ -80,10 +80,10 @@ describe("the gate measures the card's worktree, not the project root", () => {
     expect(new TextDecoder().decode(p.stdout).trim()).toBe('0')
   })
 
-  test('in-review under tier2 allows and stamps the WORKTREE branch + commits', () => {
+  test('in-review under tier2 allows and stamps the WORKTREE branch + commits', async () => {
     setGateMode('tier2')
     writeCard()
-    const { outcome, gitCwd, cwdNote } = transition('in-review')
+    const { outcome, gitCwd, cwdNote } = await transition('in-review')
 
     expect(cwdNote).toBe('worktree')
     expect(gitCwd).toContain(join('.claude', 'worktrees', 'epic', 'some-epic', CARD_ID))
@@ -94,41 +94,41 @@ describe("the gate measures the card's worktree, not the project root", () => {
     expect(outcome.evidence.evidence_worker).toBe('conv_worker')
   })
 
-  test('the evidence actually lands in the card frontmatter', () => {
+  test('the evidence actually lands in the card frontmatter', async () => {
     setGateMode('tier2')
     writeCard()
-    transition('in-review')
+    await transition('in-review')
     const card = readFileSync(cardPath(), 'utf8')
     expect(card).toContain(`evidence_branch: worktree-${CARD_ID}`)
     expect(card).toContain('evidence_commits: 1')
     expect(card).toContain('evidence_worker: conv_worker')
   })
 
-  test('test_cmd runs INSIDE the worktree, not the root', () => {
+  test('test_cmd runs INSIDE the worktree, not the root', async () => {
     setGateMode('tier2')
     writeCard(['test_cmd: test -f work.txt'])
-    const { outcome } = transition('in-review')
+    const { outcome } = await transition('in-review')
     expect(outcome.decision).toBe('allow')
     expect(outcome.evidence.evidence_tests).toBe('pass')
     // `work.txt` exists only in the worktree -- a root-run test_cmd would exit 1.
     expect(existsSync(join(root, 'work.txt'))).toBe(false)
   })
 
-  test('a dirty WORKTREE is refused even though the root is clean', () => {
+  test('a dirty WORKTREE is refused even though the root is clean', async () => {
     setGateMode('tier2')
     writeCard()
     writeFileSync(join(worktree, 'scratch.txt'), 'uncommitted\n', 'utf8')
-    const { outcome } = transition('in-review')
+    const { outcome } = await transition('in-review')
     expect(outcome.decision).toBe('refuse')
     expect(outcome.reason).toContain('tree dirty')
   })
 
-  test('no worktree for the card -> the project root, i.e. the old behaviour', () => {
+  test('no worktree for the card -> the project root, i.e. the old behaviour', async () => {
     setGateMode('tier2')
     mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
     const otherPath = join(root, '.rclaude', 'project', 'cards', 'other-card.md')
     writeFileSync(otherPath, '---\ntitle: T\nstatus: in-progress\n---\n\nbody\n', 'utf8')
-    const { gitCwd, cwdNote, outcome } = gateTransition({
+    const { gitCwd, cwdNote, outcome } = await gateTransition({
       dialogCwd: root,
       cardId: 'other-card',
       cardPath: otherPath,
@@ -143,10 +143,10 @@ describe("the gate measures the card's worktree, not the project root", () => {
     expect(outcome.reason).toContain('no commits since main')
   })
 
-  test('gate off -> skip, and nothing is written to the card', () => {
+  test('gate off -> skip, and nothing is written to the card', async () => {
     writeCard()
     const before = readFileSync(cardPath(), 'utf8')
-    const { outcome } = transition('in-review')
+    const { outcome } = await transition('in-review')
     expect(outcome.decision).toBe('skip')
     expect(outcome.mode).toBe('off')
     expect(readFileSync(cardPath(), 'utf8')).toBe(before)
@@ -160,15 +160,15 @@ describe("the gate measures the card's worktree, not the project root", () => {
  * against a real repo, with no `.rclaude/project/gate.conf` anywhere.
  */
 describe('the full worker -> verifier handshake, on a per-card `gate: full`', () => {
-  test('worker captures, an independent verifier approves, and the verdict lands on disk', () => {
+  test('worker captures, an independent verifier approves, and the verdict lands on disk', async () => {
     writeCard(['gate: full'])
 
-    const captured = transition('in-review', { actingConversationId: 'conv_worker' })
+    const captured = await transition('in-review', { actingConversationId: 'conv_worker' })
     expect(captured.outcome.mode).toBe('full')
     expect(captured.outcome.decision).toBe('allow')
     expect(captured.outcome.evidence.evidence_worker).toBe('conv_worker')
 
-    const approved = transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_guard' })
+    const approved = await transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_guard' })
     expect(approved.outcome.decision).toBe('allow')
     expect(approved.outcome.evidence.verdict).toBe('APPROVED by conv_guard')
 
@@ -178,24 +178,24 @@ describe('the full worker -> verifier handshake, on a per-card `gate: full`', ()
     expect(card).toContain('evidence_verified_at:')
   })
 
-  test('the worker cannot approve its own card', () => {
+  test('the worker cannot approve its own card', async () => {
     writeCard(['gate: full'])
-    transition('in-review', { actingConversationId: 'conv_worker' })
-    const self = transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_worker' })
+    await transition('in-review', { actingConversationId: 'conv_worker' })
+    const self = await transition('done', { fromStatus: 'in-review', actingConversationId: 'conv_worker' })
     expect(self.outcome.decision).toBe('refuse')
     expect(self.outcome.reason).toContain('self-approval refused')
     expect(readFileSync(cardPath(), 'utf8')).not.toContain('verdict:')
   })
 
-  test('a per-card override needs no project gate.conf -- the board stays off around it', () => {
+  test('a per-card override needs no project gate.conf -- the board stays off around it', async () => {
     writeCard(['gate: full'])
     expect(existsSync(join(root, '.rclaude', 'project', 'gate.conf'))).toBe(false)
-    expect(transition('in-review').outcome.mode).toBe('full')
+    expect((await transition('in-review')).outcome.mode).toBe('full')
 
     // The card next door, with no override, is still ungated.
     const plain = join(root, '.rclaude', 'project', 'cards', 'plain.md')
     writeFileSync(plain, '---\ntitle: T\nstatus: in-progress\n---\n\nbody\n', 'utf8')
-    const out = gateTransition({
+    const out = await gateTransition({
       dialogCwd: root,
       cardId: 'plain',
       cardPath: plain,

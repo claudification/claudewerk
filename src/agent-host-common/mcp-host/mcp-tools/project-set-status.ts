@@ -57,7 +57,7 @@ function gateOffNotice(gate: GateOutcome, targetStatus: TaskStatus): string {
  * So there is no lane scan to find it, no destination collision to dedup, and
  * no way for this call to rename a card out from under existing links.
  */
-export function handleProjectSetStatus(ctx: McpToolContext, params: Record<string, string>): ToolResult {
+export async function handleProjectSetStatus(ctx: McpToolContext, params: Record<string, string>): Promise<ToolResult> {
   const taskId = params.id
   const targetStatus = params.status as TaskStatus
   if (!taskId) return text('Error: id is required', true)
@@ -74,11 +74,13 @@ export function handleProjectSetStatus(ctx: McpToolContext, params: Record<strin
   // machine checks + independent verdict. Evidence is machine-captured here,
   // written into the card at its canonical path.
   const identity = ctx.getIdentity()
+  // Awaited, not blocking: the gate may run the card's `test_cmd` for minutes and
+  // the host has to keep serving this conversation's other tool calls meanwhile.
   const {
     outcome: gate,
     gitCwd,
     cwdNote,
-  } = gateTransition({
+  } = await gateTransition({
     dialogCwd,
     cardId: taskId,
     cardPath: locateCard(dialogCwd, taskId)?.abs ?? '',

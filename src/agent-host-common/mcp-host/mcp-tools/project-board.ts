@@ -61,7 +61,7 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
         required: ['id', 'status'],
       },
       async handle(params) {
-        return handleProjectSetStatus(ctx, params)
+        return await handleProjectSetStatus(ctx, params)
       },
     },
   }
