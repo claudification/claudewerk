@@ -19,7 +19,9 @@ const codes = (col: WallColumn): string[] => WALL_COLUMNS[col].map(e => e.code)
 
 describe('the wall pane order', () => {
   it('is the fixed v1 arrangement, column by column', () => {
-    expect(codes('a')).toEqual(['P1', 'A8', 'A7'])
+    // A9 APPENDED (werk-activity-matrix, 2026-08-21) -- the append this file's
+    // header says is fine. The three before it did not move.
+    expect(codes('a')).toEqual(['P1', 'A8', 'A7', 'A9'])
     expect(codes('b')).toEqual(['A1', 'P2', 'P3'])
     expect(codes('c')).toEqual(['A2', 'S2', 'S1', 'P4', 'A4', 'A6'])
   })

@@ -27,8 +27,9 @@ describe('the wall shell', () => {
     // "THE WALL" twice on purpose: the managed surface's title bar names it, and
     // so does the wall's own brand. Pin the one inside the body.
     expect(wallRoot().querySelector('.wall-brand b')?.textContent).toBe('THE WALL')
-    // Twelve stubs shipped with the registry; `wall-pane-pinned-epics` added A8.
-    expect(WALL_PANE_CODES).toHaveLength(13)
+    // Twelve stubs shipped with the registry; `wall-pane-pinned-epics` added A8
+    // and `werk-activity-matrix` added A9.
+    expect(WALL_PANE_CODES).toHaveLength(14)
     for (const code of WALL_PANE_CODES) expect(pane(code)).toBeTruthy()
     // Chrome, not just a mount: the pane says what it is and what to call it.
     expect(pane('P1')?.querySelector('.wall-pane-title')?.textContent).toBe('PULSE')

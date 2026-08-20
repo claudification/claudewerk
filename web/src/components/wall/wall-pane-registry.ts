@@ -46,6 +46,13 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
     // `wall-pane-pinned-epics` is the one pane card that also edits this file.
     { code: 'A8', feeds: ['pins'], load: () => import('./panes/a8-pinned') },
     { code: 'A7', feeds: ['runs'], load: () => import('./panes/a7-unattended-runs') },
+    // A9, like A8, was NOT one of the twelve stubs this registry shipped with --
+    // they are all consumed -- so `werk-activity-matrix` is the second pane card
+    // that also edits this file, and says so in its commit rather than slipping
+    // it in. Column A because it is the widest (5fr) and a year of weeks is the
+    // widest thing on the wall; last because it is the only pane here that is
+    // history rather than now.
+    { code: 'A9', feeds: ['activity'], load: () => import('./panes/a9-activity') },
   ],
   b: [
     { code: 'A1', feeds: [], load: () => import('./panes/a1-attention') },
