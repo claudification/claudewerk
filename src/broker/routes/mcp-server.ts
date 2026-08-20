@@ -311,10 +311,15 @@ export function createMcpServer(
           const orb = parseOrbTarget(t)
           if (orb.isOrb) {
             const res = relayToOrb(conversationStore, callerConversationId, message, orb.orbId)
+            // A drop caused by SCOPING reads identically to "nobody home" unless
+            // we say so -- and the agent should not be told nobody was there when
+            // panels were connected and simply not this line's audience.
             const note =
               res.subscribers > 0
                 ? `spoken to the orb (${res.subscribers} listening)`
-                : 'no orb is summoned right now -- nobody heard it'
+                : res.refused > 0
+                  ? `no orb of yours is connected -- the line was dropped (${res.refused} other panel(s) are not its audience)`
+                  : 'no orb is summoned right now -- nobody heard it'
             return { to: t, ok: res.ok, status: 'delivered' as const, note }
           }
           const target = conversations.find(c => c.id === t || c.title === t || c.agentName === t)

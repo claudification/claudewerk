@@ -876,7 +876,8 @@ function deliverToOne(
     const message = typeof data.message === 'string' ? data.message : ''
     const res = relayToOrb(ctx.conversations, fromConversation, message, orb.orbId)
     ctx.log.debug(
-      `[orb-sink] ${fromConversation.slice(0, 8)} -> ${toTarget} as "${res.sourceName}" (${res.subscribers} panel(s), link gate bypassed)`,
+      `[orb-sink] ${fromConversation.slice(0, 8)} -> ${toTarget} as "${res.sourceName}" ` +
+        `(${res.subscribers} panel(s) reached, ${res.refused} out of audience, link gate bypassed)`,
     )
     return { to: toTarget, ok: true, status: 'delivered' }
   }

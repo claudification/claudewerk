@@ -113,17 +113,21 @@ describe('deliverDispatcherReport (async impulse)', () => {
       speakToOrb: { orbId: 'k7p2qz' },
     })
 
-    const spoken: { body: string; orbId: string | null }[] = []
+    const spoken: { body: string; orbId: string | null; userId: string | null }[] = []
     const res = await deliverDispatcherReport(fakeStore, 'conv_voice', 'four pillow orders', {
       runImpulse: async () => fakeDecision('Found four pillow orders on Lazada'),
       broadcast: () => {},
-      speak: (_store, body, orbId) => spoken.push({ body, orbId }),
+      speak: (_store, body, orbId, userId) => spoken.push({ body, orbId, userId }),
     })
 
     expect(res.ok).toBe(true)
     expect(spoken).toHaveLength(1)
     expect(spoken[0].body).toContain('Found four pillow orders')
     expect(spoken[0].orbId).toBe('k7p2qz') // back to the SAME browser that asked
+    // ...and only to THAT USER's panels. The dispatcher is one per user, so an
+    // unaddressed spoken answer would put one operator's quest result on every
+    // connected socket (werk-orb-per-user-routing).
+    expect(spoken[0].userId).toBe('jonas4')
     expect(res.detail).toContain('spoken to orb')
   })
 
