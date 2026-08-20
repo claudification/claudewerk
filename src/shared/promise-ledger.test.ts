@@ -485,3 +485,137 @@ describe('appendCloses', () => {
     expect(parsePromiseBlock(r.text)?.closes).toEqual(['c0ffee11'])
   })
 })
+
+/**
+ * THE WRITERS MUST SPEAK THE CARD'S OWN LINE ENDING.
+ *
+ * The reader splits on `/\r?\n/`, so a CRLF card reads perfectly. Both writers
+ * used to split on `'\n'`, leaving a trailing `\r` on every line -- and in
+ * `spliceCloses` the head probe `/^\s+closes:\s*(.*)$/` then fails to match,
+ * because `.` DOES NOT MATCH `\r` in JS and `$` is not at that position. `head`
+ * fell back to `''`, an INLINE list was misread as an empty block-list key, and
+ * a `- ` item was spliced underneath it. The result: `refused: null`,
+ * `changed: true`, `added: ['c0ffee11']` -- and the sha absent on read-back.
+ *
+ * That is the exact failure class this module exists to prevent: a write that
+ * REPORTS SUCCESS AND LOSES THE DATA, with no refusal for the engine to log. It
+ * was also unbounded -- every retry appended another duplicate, because the sha
+ * never became visible to the idempotence check.
+ *
+ * The bar below is stronger than "it works": a CRLF write must be BYTE-FOR-BYTE
+ * the LF write with its endings swapped. Anything less is a shape we did not
+ * actually verify.
+ */
+describe('CRLF cards -- round-trip or refuse, never a silent mangle', () => {
+  const crlf = (s: string): string => s.replace(/\n/g, '\r\n')
+  /** True when every `\n` in the text is preceded by a `\r`. */
+  const uniformCrlf = (s: string): boolean => !/(?:^|[^\r])\n/.test(s)
+
+  const shapes: Array<{ name: string; promise: string[] }> = [
+    { name: 'no closes: key yet', promise: ['  agreed: 2026-08-21'] },
+    { name: 'an inline list', promise: ['  closes: [abc1234]'] },
+    { name: 'an empty inline list', promise: ['  closes: []'] },
+    { name: 'a bare single sha', promise: ['  closes: abc1234'] },
+    { name: 'a block list', promise: ['  closes:', '    - abc1234'] },
+    {
+      name: 'a block list past comments and blanks',
+      promise: ['  closes:', '    - abc1234', '    # landed together', '', '    - abc5678'],
+    },
+    {
+      name: 'a multi-line `asked:` block scalar',
+      promise: ['  agreed: 2026-08-21', '  asked: |', '    keep', '', '    this', '  closes: []'],
+    },
+  ]
+
+  for (const shape of shapes) {
+    it(`appendCloses matches the LF write byte-for-byte -- ${shape.name}`, () => {
+      const lf = card(shape.promise)
+      const commits = [{ sha: 'c0ffee11', subject: 'fix: the thing' }]
+
+      const a = appendCloses(lf, commits)
+      const b = appendCloses(crlf(lf), commits)
+
+      expect(b.refused).toBeNull()
+      expect(b.added).toEqual(a.added)
+      expect(b.skipped).toEqual(a.skipped)
+      expect(b.changed).toBe(a.changed)
+      // The whole claim in one line: same write, different endings.
+      expect(b.text).toBe(crlf(a.text))
+      expect(uniformCrlf(b.text)).toBe(true)
+      // And the sha the result CLAIMS to have added is actually readable back.
+      expect(parsePromiseBlock(b.text)?.closes).toEqual(parsePromiseBlock(a.text)?.closes)
+      expect(parsePromiseBlock(b.text)?.closes).toContain('c0ffee11')
+    })
+
+    it(`appendCloses is idempotent on CRLF -- ${shape.name}`, () => {
+      const commits = [{ sha: 'c0ffee11', subject: 'fix: the thing' }]
+      const once = appendCloses(crlf(card(shape.promise)), commits)
+      const twice = appendCloses(once.text, commits)
+
+      // Non-idempotence here is the unbounded half of the bug: an engine retry
+      // loop grew the card by one duplicate line per run, forever.
+      expect(twice.changed).toBe(false)
+      expect(twice.added).toEqual([])
+      expect(twice.skipped).toEqual(['c0ffee11'])
+      expect(twice.text).toBe(once.text)
+    })
+  }
+
+  it('appendCloses keeps a CRLF body byte-identical', () => {
+    const lf = card(['  closes: [abc1234]'])
+    const r = appendCloses(crlf(lf), [{ sha: 'c0ffee11' }])
+    expect(r.text.endsWith('---\r\n\r\nBody text.\r\n')).toBe(true)
+    expect(r.text.startsWith('---\r\ntitle: "A promise"\r\nstatus: open\r\npromise:\r\n')).toBe(true)
+  })
+
+  it('insertPromiseBlock splices a CRLF block into a CRLF card', () => {
+    const lf = '---\ntitle: x\nstatus: open\n---\n\nbody\n'
+    const seed = { agreed: '2026-08-21', conversation: 'werk', session: 'sess', asked: 'why' }
+
+    const a = insertPromiseBlock(lf, seed)
+    const b = insertPromiseBlock(crlf(lf), seed)
+
+    expect(b.refused).toBeNull()
+    expect(b.changed).toBe(true)
+    expect(b.text).toBe(crlf(a.text))
+    expect(uniformCrlf(b.text)).toBe(true)
+    expect(parsePromiseBlock(b.text)).toEqual(parsePromiseBlock(a.text))
+  })
+
+  it('insertPromiseBlock is still a no-op on a CRLF card that already has a block', () => {
+    const text = crlf(card(['  closes: []']))
+    expect(insertPromiseBlock(text, { agreed: '2026-08-21' })).toEqual({ text, changed: false, refused: null })
+  })
+
+  it('the two writers compose on a CRLF card, as the engine composes them', () => {
+    const bare = crlf('---\ntitle: x\nstatus: open\n---\n\nbody\n')
+    const inserted = insertPromiseBlock(bare, { agreed: '2026-08-21' })
+    const appended = appendCloses(inserted.text, [{ sha: 'c0ffee11', subject: 'feat: it' }])
+
+    expect(appended.refused).toBeNull()
+    expect(uniformCrlf(appended.text)).toBe(true)
+    expect(parsePromiseBlock(appended.text)?.closes).toEqual(['c0ffee11'])
+    expect(detectCardDefects(appended.text)).toEqual([])
+  })
+
+  it('REFUSES a mixed-ending card rather than normalising bytes it was not asked to touch', () => {
+    // A card half-CRLF and half-LF is either mid-edit or already damaged. Picking
+    // one ending for the whole file would rewrite lines this module never meant
+    // to touch -- exactly the re-serialisation the write side exists to avoid.
+    // "I could not do it" is the honest answer, and it is one the engine can log.
+    const mixed = '---\r\ntitle: x\r\nstatus: open\npromise:\r\n  closes: []\r\n---\r\n\r\nbody\r\n'
+    const reason = 'card mixes CRLF and LF line endings'
+
+    const a = appendCloses(mixed, [{ sha: 'c0ffee11' }])
+    expect(a.text).toBe(mixed)
+    expect(a.changed).toBe(false)
+    expect(a.added).toEqual([])
+    expect(a.refused).toBe(reason)
+
+    const noBlock = '---\r\ntitle: x\r\nstatus: open\n---\r\n\r\nbody\r\n'
+    const b = insertPromiseBlock(noBlock, { agreed: '2026-08-21' })
+    expect(b.text).toBe(noBlock)
+    expect(b.changed).toBe(false)
+    expect(b.refused).toBe(reason)
+  })
+})
