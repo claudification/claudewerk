@@ -135,7 +135,7 @@ export function stampMissingCreated(card: StampTarget, mode: RepairMode, deps: C
   // had. `card-no-frontmatter` already reports this one.
   if (!card.content.startsWith('---')) return []
 
-  const { meta, body } = parseFrontmatter(card.content)
+  const { meta, body, raw } = parseFrontmatter(card.content)
   if (alreadyDated(meta.created)) return []
 
   const stat = deps.stat(card.abs)
@@ -144,7 +144,7 @@ export function stampMissingCreated(card: StampTarget, mode: RepairMode, deps: C
 
   if (mode === 'write') {
     try {
-      deps.write(card.abs, serializeCard({ ...meta, created: stamp.iso }, body))
+      deps.write(card.abs, serializeCard({ ...meta, created: stamp.iso }, body, raw))
     } catch {
       // A stamp that did not land must not be reported as one. The card keeps
       // its mute `created:` and the next run will try again.

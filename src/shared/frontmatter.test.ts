@@ -84,6 +84,82 @@ describe('serializeFrontmatter quoting', () => {
   })
 })
 
+describe('nested blocks are captured verbatim, never flattened', () => {
+  const promise = ['promise:', '  agreed: 2026-08-21', '  asked: "the ask"', '  closes:', '    - 83bf55f0']
+  const text = ['---', 'title: A card', 'status: open', ...promise, 'test_cmd: bun test', '---', '', 'Body.', ''].join(
+    '\n',
+  )
+
+  it('captures the block whole, parent line included', () => {
+    expect(parseFrontmatter(text).raw).toEqual({ promise })
+  })
+
+  it('keeps every child OUT of meta -- the inversion that emptied `closes:`', () => {
+    // The old flat reader took a key as everything before the first `:` and
+    // ignored indentation, so `promise:` became an empty scalar and `agreed`,
+    // `asked` and `closes` became TOP-LEVEL keys. `closes:` came back "".
+    const { meta } = parseFrontmatter(text)
+    expect(meta).toEqual({ title: 'A card', status: 'open', test_cmd: 'bun test' })
+  })
+
+  it('re-emits the block byte-for-byte', () => {
+    const { meta, body, raw } = parseFrontmatter(text)
+    expect(serializeFrontmatter(meta, body, raw)).toContain(`${promise.join('\n')}\n`)
+  })
+
+  it('is idempotent -- writing twice produces identical bytes', () => {
+    const round = (t: string) => {
+      const { meta, body, raw } = parseFrontmatter(t)
+      return serializeFrontmatter(meta, body, raw)
+    }
+    const once = round(text)
+    expect(round(once)).toBe(once)
+  })
+
+  it('a caller that passes no blocks behaves exactly as before', () => {
+    const { meta, body } = parseFrontmatter(text)
+    expect(serializeFrontmatter(meta, body)).toBe(serializeFrontmatter(meta, body, {}))
+  })
+
+  it('an empty key with nothing indented under it stays an empty scalar', () => {
+    // `renamed_from:` alone is a real spelling on the board and MUST keep
+    // reading as '' -- capturing it would move a key out of `meta`.
+    const { meta, raw } = parseFrontmatter('---\ntitle: x\nrenamed_from:\nstatus: open\n---\nbody')
+    expect(meta.renamed_from).toBe('')
+    expect(raw).toEqual({})
+  })
+
+  it('a blank line inside a block does not end it', () => {
+    const lines = ['promise:', '  agreed: 2026-08-21', '', '  closes:', '    - abc1234']
+    const { raw } = parseFrontmatter(`---\ntitle: x\n${lines.join('\n')}\n---\nbody`)
+    expect(raw.promise).toEqual(lines)
+  })
+
+  it('a blank line AFTER a block is not swallowed into it', () => {
+    const { raw, meta } = parseFrontmatter('---\npromise:\n  closes: []\n\nstatus: open\n---\nbody')
+    expect(raw.promise).toEqual(['promise:', '  closes: []'])
+    expect(meta.status).toBe('open')
+  })
+
+  it('captures a block LIST, which the flat reader also read as ""', () => {
+    const { meta, raw } = parseFrontmatter('---\ntags:\n  - a\n  - b\n---\nbody')
+    expect(raw.tags).toEqual(['tags:', '  - a', '  - b'])
+    expect(meta.tags).toBeUndefined()
+  })
+
+  it('captures a block SCALAR, whose indented lines used to leak in as keys', () => {
+    // `note: |` + `  status: fake` injected a TOP-LEVEL `status` out of a body.
+    const { meta, raw } = parseFrontmatter('---\nnote: |\n  first: line\n  second\nstatus: open\n---\nbody')
+    expect(raw.note).toEqual(['note: |', '  first: line', '  second'])
+    expect(meta).toEqual({ status: 'open' })
+  })
+
+  it('captures more than one block, in file order', () => {
+    const { raw } = parseFrontmatter('---\na:\n  x: 1\nb:\n  y: 2\n---\nbody')
+    expect(Object.keys(raw)).toEqual(['a', 'b'])
+  })
+})
+
 describe('frontmatter round-trip', () => {
   // The half that actually protects the cards: strip on read WITHOUT quoting on
   // write would make the next card update emit `title: EPIC: Unify ...`, and the

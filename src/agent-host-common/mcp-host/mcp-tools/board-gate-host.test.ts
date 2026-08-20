@@ -19,8 +19,7 @@ afterEach(() => {
 function stamp(frontmatter: string[], evidence: Record<string, unknown>, body = 'the body'): string {
   const abs = join(dir, 'card.md')
   writeFileSync(abs, `---\n${frontmatter.join('\n')}\n---\n\n${body}\n`, 'utf8')
-  const parsed = parseFrontmatter(readFileSync(abs, 'utf8'))
-  writeGateEvidence(abs, parsed.meta, parsed.body, evidence)
+  writeGateEvidence(abs, parseFrontmatter(readFileSync(abs, 'utf8')), evidence)
   return readFileSync(abs, 'utf8')
 }
 
@@ -83,7 +82,21 @@ describe('the gate writes through serializeCard, not raw frontmatter', () => {
 
   test('an unwritable card never throws -- the stamp is best-effort, the move proceeds', () => {
     const missing = join(dir, 'no', 'such', 'card.md')
-    expect(() => writeGateEvidence(missing, { title: 'T' }, 'body', { evidence_tests: 'pass' })).not.toThrow()
+    expect(() =>
+      writeGateEvidence(missing, { meta: { title: 'T' }, body: 'body', raw: {} }, { evidence_tests: 'pass' }),
+    ).not.toThrow()
+  })
+
+  test('a nested `promise:` block survives the evidence stamp byte-for-byte', () => {
+    // The gate stamps evidence at the DONE move -- the one moment a card is most
+    // likely to be carrying a `closes:` list. Flattening it here would empty the
+    // ledger at exactly the transition it exists to audit.
+    const out = stamp(
+      ['title: T', 'status: in-review', 'promise:', '  agreed: 2026-08-21', '  closes:', '    - 83bf55f0'],
+      { evidence_worker: 'conv_1' },
+    )
+    expect(out).toContain('promise:\n  agreed: 2026-08-21\n  closes:\n    - 83bf55f0\n')
+    expect(out).toContain('evidence_worker: conv_1')
   })
 })
 

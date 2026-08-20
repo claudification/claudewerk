@@ -37,6 +37,6 @@ describe('renamed_from', () => {
 
   test('survives a round trip -- a rename is not undone by the next card write', () => {
     const raw = readRawCard('/nonexistent/card.md', '---\ntitle: A\nstatus: open\nrenamed_from: old\n---\n\nBody.\n')
-    expect(serializeCard(raw?.meta ?? {}, raw?.body ?? '')).toContain('renamed_from: old')
+    expect(serializeCard(raw?.meta ?? {}, raw?.body ?? '', raw?.raw ?? {})).toContain('renamed_from: old')
   })
 })
