@@ -1170,7 +1170,7 @@ function deliverToOne(
   return { to: toTarget, ok: true, status: 'queued', targetConversationId: toConversation }
 }
 
-const channelSend: MessageHandler = (ctx, data) => {
+export const channelSend: MessageHandler = (ctx, data) => {
   const fromConversation = ctx.ws.data.conversationId || (data.fromConversation as string)
   const rawTo = data.toConversation
   if (!fromConversation || rawTo === undefined || rawTo === null) return
@@ -1404,7 +1404,7 @@ const conversationViewed: MessageHandler = (ctx, data) => {
 
 // ─── Link management (dashboard actions) ───────────────────────────
 
-const channelLinkResponse: MessageHandler = (ctx, data) => {
+export const channelLinkResponse: MessageHandler = (ctx, data) => {
   const fromConversation = data.fromConversation as string
   const toConversation = data.toConversation as string
   if (!fromConversation || !toConversation) return
