@@ -15,8 +15,15 @@ import { commitTypeColor } from '@/lib/commits'
 import { cn } from '@/lib/utils'
 import { useCommitDetail } from './use-commit-detail'
 
-/** Enough to see the shape of the change; the detail surface has the rest. */
-const FILES_SHOWN = 8
+/**
+ * Enough to see the shape of the change; the detail surface has the rest.
+ *
+ * 14, up from 8, alongside the panel widening to 440 -- "more info!". The panel
+ * scrolls and the count is capped, so the ceiling is about how much is worth
+ * reading at a hover rather than about how much fits: eight files hid the shape
+ * of every commit that touched a feature rather than a file.
+ */
+const FILES_SHOWN = 14
 
 export function CommitHoverPanel({ hash }: { hash: string }) {
   const detail = useCommitDetail(hash)

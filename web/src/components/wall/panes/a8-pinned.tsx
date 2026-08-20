@@ -27,8 +27,21 @@ import { WallPane } from '../wall-pane'
  */
 const AXES = ['project', 'text'] as const
 
+/** A REFUSAL IS NOT AN EMPTY WATCHLIST. The commonest cause is a sentinel bundle
+ *  that predates the `pinned` op entirely -- it answers `ok: false`, and this pane
+ *  used to render that as "nothing pinned", which is how a pin that never landed
+ *  looked exactly like a pin nobody made. */
+function PinRefusal({ error }: { error: string }) {
+  return (
+    <p className="text-meta text-warning px-0.5 py-1">
+      cannot read pins -- {error}. If your sentinel predates A8 it does not know the `pinned` op:{' '}
+      <code>bun run build:packages</code> and restart it.
+    </p>
+  )
+}
+
 export default function PinnedEpicsPane() {
-  const { rows: pins, stale } = useWallPins()
+  const { rows: pins, stale, refused } = useWallPins()
   const { rows, matched, total } = useWallFilter(pins, AXES, row => ({
     project: row.projectName,
     title: row.epicTitle,
@@ -39,7 +52,9 @@ export default function PinnedEpicsPane() {
 
   return (
     <WallPane title="PINNED" code="A8" maxHeight="34%" count={`${matched}/${total} pinned`} stale={stale}>
-      {rows.length === 0 ? (
+      {refused && rows.length === 0 ? (
+        <PinRefusal error={refused} />
+      ) : rows.length === 0 ? (
         <p className="text-meta text-fg-faint px-0.5 py-1">
           {total === 0 ? 'nothing pinned -- pin an epic from the board to watch it here' : 'no pinned epic matches'}
         </p>

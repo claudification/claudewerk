@@ -24,7 +24,20 @@ import { closeCardHover, type HoverContent, useCardHover } from './card-hover-bu
 import { CardHoverPanel } from './card-hover-panel'
 import { HoverFactsPanel } from './hover-facts-panel'
 
-const PANEL_WIDTH = 320
+/**
+ * 440, up from 320.
+ *
+ * The panel's whole job is the fields the row could not afford -- a commit's
+ * full message and its file list, a card's body. At 320 the file paths that
+ * matter most (`web/src/components/wall/panes/...`) truncated to their least
+ * informative half, so the preview reproduced the row's problem at a larger
+ * size. Asked for directly on 2026-08-20: "can we make the popover a bit wider?
+ * more info!"
+ *
+ * `computeHoverCoords` already flips the panel to the other side of the anchor
+ * when it will not fit, so a wider panel costs nothing at the viewport edge.
+ */
+const PANEL_WIDTH = 440
 
 function HoverBody({ content }: { content: HoverContent }) {
   if (content.kind === 'card') return <CardHoverPanel cardRef={content.ref} />
