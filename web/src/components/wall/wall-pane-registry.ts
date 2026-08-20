@@ -65,7 +65,12 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
 /** A5 is not in a column -- it is the strip between the header and the grid. */
 export const NOW_BAR: WallPaneEntry = { code: 'A5', feeds: [], load: () => import('./panes/a5-now-bar') }
 
-export const WALL_PANE_ENTRIES: WallPaneEntry[] = [...Object.values(WALL_COLUMNS).flat(), NOW_BAR]
+/** Module-internal: the flat fold the two exported censuses below are built from.
+ *  Not exported until something outside this file actually reads it -- an export
+ *  with no consumer is the shape fallow's dead-code gate exists to catch. The
+ *  cross-pane proof is the likely first caller; re-export it there, with the test
+ *  that needs it. */
+const WALL_PANE_ENTRIES: WallPaneEntry[] = [...Object.values(WALL_COLUMNS).flat(), NOW_BAR]
 
 export const WALL_PANE_CODES: string[] = WALL_PANE_ENTRIES.map(e => e.code)
 
