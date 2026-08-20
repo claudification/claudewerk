@@ -138,4 +138,16 @@ describe('the pin-to-wall toggle', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(sendBoardOp).not.toHaveBeenCalled()
   })
+
+  /**
+   * A DEAD BUTTON SAYS SO IN INK, not in a `title`. The old one rendered `PIN`
+   * and hid its deadness in a hover, which does not exist on a tablet -- so a
+   * click that could never work was indistinguishable from a pin that did not
+   * persist, which is exactly what got reported on 2026-08-20.
+   */
+  it('names its own deadness on the face of the button, not only in the tooltip', () => {
+    render(<EpicPinButton rollup={{ ...rollup(), card: null }} />)
+
+    expect(screen.getByRole('button').textContent).toBe('NO CARD')
+  })
 })
