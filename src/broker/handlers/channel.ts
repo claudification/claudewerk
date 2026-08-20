@@ -1420,6 +1420,10 @@ export const channelLinkResponse: MessageHandler = (ctx, data) => {
   ctx.requirePermission('settings', toConv.project)
 
   if (data.action === 'approve') {
+    // Captured BEFORE linkProjects: 'unknown' means this approve answers a live
+    // channel_link_request, so a first-contact message SHOULD be waiting. Any other
+    // prior status means the pair was already authorized and an empty drain is normal.
+    const priorStatus = ctx.conversations.checkProjectLink(fromConversation, toConversation)
     ctx.conversations.linkProjects(fromConversation, toConversation)
     const fromConv = ctx.conversations.getConversation(fromConversation)
     const toConv = ctx.conversations.getConversation(toConversation)
@@ -1428,6 +1432,22 @@ export const channelLinkResponse: MessageHandler = (ctx, data) => {
     const targetWs = ctx.conversations.getConversationSocket(toConversation)
     if (targetWs) {
       for (const msg of queued) targetWs.send(JSON.stringify(msg))
+    }
+    // The loss this card exists for. An approve against a previously-unknown pair
+    // implies the human was looking at a banner, which implies a queued first-contact
+    // message -- so an empty drain means it was dropped, and the sender was told
+    // `status: 'queued'`. Never let that pass silently. Deliberately NOT a generic
+    // warn-on-empty: channelLinkGrant and the admin route drain speculatively, where
+    // empty is the normal case.
+    if (queued.length === 0 && priorStatus === 'unknown') {
+      const approver = ctx.caller?.id ?? (ctx.ws.data.isControlPanel ? 'control-panel' : 'unknown')
+      ctx.log.warn(
+        `[links] Approved ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)} ` +
+          `(${fromConv?.project ?? 'no-project'} <-> ${toConv?.project ?? 'no-project'}) but the pending-approval ` +
+          `queue was EMPTY -- the first-contact message that raised this banner is gone (broker restart before ` +
+          `approval, or it expired). The sender was told status:'queued' and will not be told otherwise. ` +
+          `approver=${approver}`,
+      )
     }
     ctx.log.debug(`Link approved + persisted: ${fromConversation.slice(0, 8)} <-> ${toConversation.slice(0, 8)}`)
   } else {

@@ -12,10 +12,37 @@ All routing uses existing WS connections. Offline messages queued for reconnect 
 
 - First contact queues message, dashboard shows LINK approval banner (ALLOW/BLOCK)
 - Claude NEVER sees the permission request (security)
-- Block debounces 1 minute
-- Allow is permanent for broker lifetime (not persisted across restarts)
+- Block debounces 1 minute (in-memory only -- a DENY does not survive a broker restart)
+- Allow IS persisted across broker restarts (`scope_links` / the `project-links` KV row,
+  `src/broker/project-links.ts`); the send path re-reads it as the `persisted` authorization
+  layer and re-caches it into the in-memory registry
 - Links are bidirectional (approve A->B = approve B->A)
 - Either side can sever via X button in session info
+
+### Two different queues -- do not confuse them
+
+| | Pending-approval queue | Offline queue |
+|---|---|---|
+| Code | `queueProjectMessage` / `drainProjectMessages`, `src/broker/conversation-store/project-links.ts` | `ctx.messageQueue`, `src/broker/message-queue.ts` |
+| Holds | first contact waiting for the human to click ALLOW | a message for a target that is not connected |
+| Keyed by | sorted project **pair** | target project (`to_scope`) |
+| Backing | SQLite `message_queue` under a `pending-link:<a>\|<b>` scope | SQLite `message_queue` under the target project URI |
+| Bounds | inherited: 24h TTL, 100 per pair | 24h TTL, 100 per target |
+
+Both live in the same table and are told apart by `to_scope`. Every ordinary reader
+keys on a project URI, so the target's own drain and the queue-size number the
+operator is shown can never reach a pending pair-key row -- **an unapproved message
+is not readable by the target until they approve it**. That is the guardrail, pinned
+by `src/broker/conversation-store/pending-link-scope.test.ts`.
+
+**Data at rest:** a first-contact body IS stored on disk before the human clicks
+ALLOW, bounded by the queue's 24h TTL. Ruled deliberate: the link approval authorizes
+DELIVERY, not storage, and the body already sits in the sender's own transcript on the
+same disk under the same trust boundary.
+
+A DENY remains in-memory with a 60-second TTL, by design -- approving is durable,
+refusing is a cool-off. See `blockProject` in
+`src/broker/conversation-store/project-links.ts`.
 
 ## Message Format
 
