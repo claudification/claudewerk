@@ -13,9 +13,10 @@
 
 import { statSync } from 'node:fs'
 import { makeBodyPreview } from './body-preview'
+import { foldCardBlockLists, parseCardFrontmatter } from './card-frontmatter'
 import { asCardValueList, normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
 import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
-import { parseFrontmatter, type RawBlocks, serializeFrontmatter } from './frontmatter'
+import { type RawBlocks, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
 import { TASK_STATUSES, type TaskStatus } from './task-statuses'
 import { isWallPinned } from './wall-pin'
@@ -55,7 +56,7 @@ export interface RawCard {
 /** Parse a card file. Returns null if it can't be read. */
 export function readRawCard(abs: string, content: string | null): RawCard | null {
   if (content === null) return null
-  const { meta, body, raw } = parseFrontmatter(content)
+  const { meta, body, raw } = parseCardFrontmatter(content)
   let mtime = 0
   try {
     mtime = statSync(abs).mtimeMs
@@ -115,15 +116,22 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
  * single exception to preserve-unknown-keys, and only because the two spellings
  * are the same fact: nothing is lost, it is just spelled once.
  *
- * `raw` is the card's nested blocks, straight off `readRawCard`/`parseFrontmatter`.
+ * `raw` is the card's nested blocks, straight off `readRawCard`/`parseCardFrontmatter`.
  * REQUIRED, unlike `serializeFrontmatter`'s optional third argument, and that is
  * the point: a card writer that forgets it drops a `promise:` block and empties
  * its `closes:`, so a delivered promise reads as never started. A doc comment
  * does not stop that; a compile error does. A caller building a card from
  * scratch passes `{}` and says so out loud.
+ *
+ * A block list under a list-typed key is FOLDED into the flat value on the way
+ * out (card-frontmatter.ts), so writing a card written that way by hand heals it
+ * to the inline `[a, b]` spelling every reader here understands. Done here and
+ * not only in the reader because a caller may hand-assemble `meta` + `raw`, and
+ * because this is the one door every card write goes through.
  */
 export function serializeCard(meta: Record<string, unknown>, body: string, raw: RawBlocks): string {
-  const normalized = normalizeLinkageMeta(meta)
+  const folded = foldCardBlockLists({ meta, raw })
+  const normalized = normalizeLinkageMeta(folded.meta)
   const ordered: Record<string, unknown> = {}
   for (const key of ORDERED_KEYS) {
     const val = normalized[key]
@@ -132,5 +140,5 @@ export function serializeCard(meta: Record<string, unknown>, body: string, raw: 
   for (const [key, val] of Object.entries(normalized)) {
     if (!(ORDERED_KEYS as readonly string[]).includes(key)) ordered[key] = val
   }
-  return serializeFrontmatter(ordered, body, raw)
+  return serializeFrontmatter(ordered, body, folded.raw)
 }

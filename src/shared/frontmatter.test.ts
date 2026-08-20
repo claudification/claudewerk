@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
+import { parseBlockSequence, parseFrontmatter, serializeFrontmatter } from './frontmatter'
 
 describe('parseFrontmatter quoting', () => {
   it('strips double quotes', () => {
@@ -157,6 +157,46 @@ describe('nested blocks are captured verbatim, never flattened', () => {
   it('captures more than one block, in file order', () => {
     const { raw } = parseFrontmatter('---\na:\n  x: 1\nb:\n  y: 2\n---\nbody')
     expect(Object.keys(raw)).toEqual(['a', 'b'])
+  })
+})
+
+describe('parseBlockSequence reads a captured block back, or refuses', () => {
+  const block = (text: string) => parseFrontmatter(`---\n${text}\n---\nbody`).raw
+
+  it('reads a plain sequence', () => {
+    expect(parseBlockSequence(block('refs:\n  - a\n  - b').refs)).toEqual(['a', 'b'])
+  })
+
+  it('unquotes items, because a colon in a value is why it was quoted', () => {
+    expect(parseBlockSequence(block('refs:\n  - "a: b"').refs)).toEqual(['a: b'])
+  })
+
+  it('takes any indent, as long as it is the same one throughout', () => {
+    expect(parseBlockSequence(block('refs:\n    - a\n    - b').refs)).toEqual(['a', 'b'])
+    expect(parseBlockSequence(block('refs:\n  - a\n    - b').refs)).toBeNull()
+  })
+
+  // Everything below stays a verbatim block: null is the answer that changes
+  // nothing, and guessing is a reader inventing a value the file does not carry.
+  it('refuses a mapping', () => {
+    expect(parseBlockSequence(block('promise:\n  closes: []').promise)).toBeNull()
+  })
+
+  it('refuses a sequence of mappings', () => {
+    expect(parseBlockSequence(block('refs:\n  - path: src/x.ts').refs)).toBeNull()
+    expect(parseBlockSequence(block('refs:\n  - trailing:').refs)).toBeNull()
+  })
+
+  it('refuses a nested sequence', () => {
+    expect(parseBlockSequence(block('refs:\n  - - a').refs)).toBeNull()
+  })
+
+  it('refuses a block scalar, whose lines may legitimately start with a dash', () => {
+    expect(parseBlockSequence(block('note: |\n  - not an item').note)).toBeNull()
+  })
+
+  it('refuses a blank line mid-sequence rather than skipping it', () => {
+    expect(parseBlockSequence(block('refs:\n  - a\n\n  - b').refs)).toBeNull()
   })
 })
 

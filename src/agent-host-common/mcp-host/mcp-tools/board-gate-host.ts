@@ -24,7 +24,8 @@ import {
   resolveGateMode,
 } from '../../../shared/board-gate'
 import { type GateCwd, parseWorktreeList, resolveGateCwd } from '../../../shared/board-gate-worktree'
-import { type Frontmatter, parseFrontmatter } from '../../../shared/frontmatter'
+import { parseCardFrontmatter } from '../../../shared/card-frontmatter'
+import type { Frontmatter } from '../../../shared/frontmatter'
 import { serializeCard } from '../../../shared/project-card-file'
 import type { TaskStatus } from '../../../shared/task-statuses'
 
@@ -166,7 +167,7 @@ export async function gateTransition(t: GateTransition): Promise<GateTransitionR
   } catch {
     /* card vanished between find + gate -- meta stays empty, gate resolves off/default */
   }
-  const card = parseFrontmatter(raw)
+  const card = parseCardFrontmatter(raw)
   const meta = card.meta
   const mode = resolveGateMode(meta, readProjectGateMode(t.dialogCwd))
   const willRun = mode !== 'off' && isGatedTarget(t.targetStatus)
