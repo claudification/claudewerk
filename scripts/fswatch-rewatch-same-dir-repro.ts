@@ -64,6 +64,13 @@ const LATE_BUDGET_MS = 25_000
  *
  *   SETTLE_MS=50 bun scripts/fswatch-rewatch-same-dir-repro.ts 600
  */
+// A repro harness is EVIDENCE, and evidence has to be runnable exactly as it was
+// when the measurement was taken -- `bun scripts/<one file>.ts 600`, no imports to
+// keep in sync, nothing a later refactor can silently change under it. So this
+// file and fswatch-stale-filename-repro.ts each carry their own sleep/waitFor and
+// their own arg parsing, on purpose. Sharing them would couple two independent
+// forensic artifacts to one helper.
+// fallow-ignore-next-line code-duplication
 const SETTLE_MS = Number(process.env.SETTLE_MS ?? 0)
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms))
@@ -95,6 +102,10 @@ interface Iteration {
   events: string[]
 }
 
+// CRAP 90 = cyclomatic 9 with zero coverage. Unit-testing the instrument that
+// measures a 3% platform flake would mean asserting against the very behaviour
+// under investigation; the results file is this function's evidence instead.
+// fallow-ignore-next-line complexity
 async function runIteration(): Promise<Iteration> {
   const dir = await mkdtemp(join(tmpdir(), 'bun-fswatch-rewatch-'))
   const started = performance.now()
@@ -160,6 +171,7 @@ async function runIteration(): Promise<Iteration> {
       secondLatencyMs: eventuallySaw ? Number((at() - wroteSecondAt).toFixed(1)) : -1,
       events,
     }
+    // fallow-ignore-next-line code-duplication
   } finally {
     for (const w of watchers) {
       try {
