@@ -86,6 +86,21 @@ export interface EpicPlanInput extends PlanCohortInput {
 export interface TaggedPlanInput extends PlanCohortInput {
   /** The tag a card must carry to be in the cohort. */
   tag: string
+  /**
+   * Card ids the CALLER has already refused, removed from the COHORT and from
+   * nowhere else.
+   *
+   * This exists so a caller never has to narrow `cards` to express "not this
+   * one". `cards` is the whole board because `doneCardIds` reads it -- filter a
+   * refused card out of the array and it stops counting as `done` for every
+   * OTHER card's `depends_on`, which is how the work-order scanner deadlocked
+   * its own steady state: dispatch a card, its seat settles, next tick the card
+   * is refused `already-run`, and everything depending on it is refused
+   * `waiting-on-deps` naming a dependency that is `done`. Forever.
+   *
+   * So: narrow the cohort here, never the board.
+   */
+  exclude?: ReadonlySet<string>
 }
 
 export interface EpicPlan {
@@ -163,11 +178,22 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
  * measured against the whole board rather than against the cohort: an authorised
  * card can perfectly well depend on a card nobody tagged, and a dependency
  * outside the cohort still has to be done before this one is ready.
+ *
+ * `exclude` narrows the COHORT only, for exactly that reason -- see its doc on
+ * `TaggedPlanInput`.
  */
 export function planTagged(input: TaggedPlanInput): EpicPlan {
   const doneIds = doneCardIds(input.cards)
-  const children = input.cards.filter(c => c.tags.includes(input.tag)).map(card => toEpicChild(card, doneIds))
-  return foldCohort({ rollup: null, children, emptyDetail: `no card carries \`${input.tag}\`` }, input)
+  const tagged = input.cards.filter(c => c.tags.includes(input.tag))
+  const children = tagged.filter(c => !input.exclude?.has(c.slug)).map(card => toEpicChild(card, doneIds))
+  return foldCohort({ rollup: null, children, emptyDetail: emptyTagDetail(input.tag, tagged.length) }, input)
+}
+
+/** Why a tag cohort is empty -- "nobody carries it" and "the caller refused all
+ *  of them" are different stories and a baton that conflates them is a lie. */
+function emptyTagDetail(tag: string, taggedCount: number): string {
+  if (taggedCount === 0) return `no card carries \`${tag}\``
+  return `all ${taggedCount} card(s) carrying \`${tag}\` were excluded from the cohort by the caller`
 }
 
 /** The zero plan -- a cohort that does not exist, said once. */

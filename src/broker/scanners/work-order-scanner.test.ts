@@ -261,6 +261,81 @@ describe('what it refuses, and by what name', () => {
   })
 })
 
+describe('an EARLY-REFUSED card is still `done` for everything that depends on it', () => {
+  /**
+   * THE STEADY-STATE DEADLOCK (B1). The three early refusals -- `epic-owned`,
+   * `live-conversation`, `already-run` -- used to be filtered out of the array
+   * handed to `planTagged`, which is also the array `doneCardIds` is computed
+   * from. So a refused card stopped counting as finished, and every `ready` card
+   * depending on it was refused `waiting-on-deps` naming a dependency that is
+   * `done` -- every tick, forever.
+   *
+   * `already-run` is what ARMS it in normal operation: dispatch a card, its seat
+   * settles, the card keeps its `ready` tag, and from the next tick onwards it is
+   * early-refused on every pass.
+   *
+   * Each test below has a `done` dependency behind one early refusal. The last
+   * one is the CONTROL: same board, nothing early-refused, and it already passed
+   * before the fix -- which is what makes the other three assertions real.
+   */
+  const dependent = () => [card('dep', 'done'), card('a', 'open', { dependsOn: ['dep'] })]
+
+  test('`already-run`: the settled dependency is done, so its dependent dispatches', async () => {
+    const report = await runScan(
+      workOrderScanner,
+      deps({ getCards: async () => dependent(), getAllConversations: () => [seat('dep')] }),
+    )
+    expect(buckets(report.refused)['already-run']).toEqual(['dep'])
+    expect(buckets(report.refused)['waiting-on-deps']).toBeUndefined()
+    expect(report.acted).toEqual(['a'])
+  })
+
+  test('`epic-owned`: an epic card that is done still satisfies a dependency here', async () => {
+    const report = await runScan(
+      workOrderScanner,
+      deps({
+        getCards: async () => [
+          card('dep', 'done', { tags: [READY_TAG], epic: 'e' }),
+          card('a', 'open', { dependsOn: ['dep'] }),
+        ],
+      }),
+    )
+    expect(buckets(report.refused)['epic-owned']).toEqual(['dep'])
+    expect(buckets(report.refused)['waiting-on-deps']).toBeUndefined()
+    expect(report.acted).toEqual(['a'])
+  })
+
+  test('`live-conversation`: a dependency with a live seat is skipped, not erased', async () => {
+    const report = await runScan(
+      workOrderScanner,
+      deps({ getCards: async () => dependent(), getAllConversations: () => [seat('dep')], isLive: () => true }),
+    )
+    expect(buckets(report.refused)['live-conversation']).toEqual(['dep'])
+    expect(buckets(report.refused)['waiting-on-deps']).toBeUndefined()
+    expect(report.acted).toEqual(['a'])
+  })
+
+  test('CONTROL -- the same board with nothing early-refused behaves identically', async () => {
+    const report = await runScan(workOrderScanner, deps({ getCards: async () => dependent() }))
+    expect(buckets(report.refused)['not-actionable']).toEqual(['dep'])
+    expect(buckets(report.refused)['waiting-on-deps']).toBeUndefined()
+    expect(report.acted).toEqual(['a'])
+  })
+
+  test('a dependency that is genuinely unfinished still holds its dependent back', async () => {
+    const report = await runScan(
+      workOrderScanner,
+      deps({
+        getCards: async () => [card('dep', 'open'), card('a', 'open', { dependsOn: ['dep'] })],
+        getAllConversations: () => [seat('dep')],
+      }),
+    )
+    expect(buckets(report.refused)['already-run']).toEqual(['dep'])
+    expect(buckets(report.refused)['waiting-on-deps']).toEqual(['a'])
+    expect(report.acted).toEqual([])
+  })
+})
+
 describe('the accounting -- no `ready` card is ever dropped', () => {
   test('every selected card is acted on or refused, across every bucket at once', async () => {
     const report = await runScan(

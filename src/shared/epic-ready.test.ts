@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { planEpic } from './epic-ready'
+import { planEpic, planTagged } from './epic-ready'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
@@ -181,5 +181,48 @@ describe('cards the engine has given up launching', () => {
     const cards = [EPIC, card('t1', 'open', { epic: 'e1' })]
     expect(planDead(cards, []).dispatch.map(c => c.slug)).toEqual(['t1'])
     expect(plan(cards).unspawnable).toEqual([])
+  })
+})
+
+describe('planTagged -- `exclude` narrows the COHORT, never the board', () => {
+  const tagged = (cards: ProjectTaskMeta[], exclude?: ReadonlySet<string>) =>
+    planTagged({ cards, tag: 'ready', concurrency: 3, inFlight: [], inVerify: [], exclude })
+
+  test('the cohort is the tag, and a dependency outside it still has to be done', () => {
+    const p = tagged([
+      card('dep', 'open', { tags: [] }),
+      card('a', 'open', { tags: ['ready'], dependsOn: ['dep'] }),
+      card('b', 'open', { tags: ['ready'] }),
+    ])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['b'])
+    expect(p.waitingOnDeps.map(w => w.card.slug)).toEqual(['a'])
+    expect(p.rollup).toBeNull()
+  })
+
+  test('an excluded card leaves the cohort', () => {
+    const p = tagged([card('a', 'open', { tags: ['ready'] }), card('b', 'open', { tags: ['ready'] })], new Set(['a']))
+    expect(p.dispatch.map(c => c.slug)).toEqual(['b'])
+    expect(p.waitingOnDeps).toEqual([])
+    expect(p.heldBack).toEqual([])
+  })
+
+  test('an excluded card is STILL `done` for everybody else -- the deadlock this exists to stop', () => {
+    const cards = [card('dep', 'done', { tags: ['ready'] }), card('a', 'open', { tags: ['ready'], dependsOn: ['dep'] })]
+    // The caller refusing `dep` must not make it stop counting as a finished
+    // dependency: filtering it out of `cards` would take it out of `doneCardIds`
+    // and strand `a` in `waitingOnDeps` against a card that is `done`.
+    const p = tagged(cards, new Set(['dep']))
+    expect(p.dispatch.map(c => c.slug)).toEqual(['a'])
+    expect(p.waitingOnDeps).toEqual([])
+  })
+
+  test('excluding every tagged card says so, rather than claiming nobody carries the tag', () => {
+    const p = tagged([card('a', 'open', { tags: ['ready'] })], new Set(['a']))
+    expect(p.dispatch).toEqual([])
+    expect(p.idleReason).toContain('excluded from the cohort')
+  })
+
+  test('an untagged board says nobody carries the tag', () => {
+    expect(tagged([card('a', 'open', { tags: [] })]).idleReason).toContain('no card carries')
   })
 })

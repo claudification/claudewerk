@@ -218,8 +218,15 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
   ]
   const refusedIds = new Set(refused.map(r => r.unit))
 
+  // THE WHOLE BOARD goes in, and the early refusals come out of the COHORT via
+  // `exclude`. Filtering them out of `cards` instead would also take them out of
+  // `doneCardIds`, so a card whose dependency was early-refused would be refused
+  // `waiting-on-deps` against a dependency that is `done` -- every tick, forever.
+  // That is this scanner's own steady state, armed by the `already-run` guard
+  // directly above.
   const plan = planTagged({
-    cards: cards.filter(c => !refusedIds.has(c.slug)),
+    cards,
+    exclude: refusedIds,
     tag: READY_TAG,
     concurrency: deps.concurrency,
     inFlight: group.inFlight,
