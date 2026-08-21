@@ -21,18 +21,30 @@
  * "first dispatch" is lossy, and re-arming is idempotent (`start` RESUMES).
  */
 
+import { projectIdentityKey } from '../shared/project-uri'
+
 export interface ArmedEpic {
+  /** The RAW URI the caller armed with, kept verbatim -- it is what gets passed
+   *  back out to the sweep and onward to the sentinel. Only the map KEY is
+   *  normalized; this is a comparison fix, not a storage change. */
   project: string
   epicId: string
 }
 
-/** `${project}\0${epicId}` -- a NUL join, since neither part can contain one. */
+/** `${projectIdentityKey(project)}\0${epicId}` -- a NUL join, since neither part
+ *  can contain one.
+ *
+ *  KEYED ON PROJECT IDENTITY, not on the raw string. `start` is reached from an
+ *  MCP call that types `claude:///path`, while the store and every canonical
+ *  writer say `claude://default/path`; a raw-string key made a run armed under
+ *  one spelling invisible to `isArmed`/`forgetArmedEpic` under the other, so
+ *  `epic_run action=list` reported no runs while `inspect` showed a live one. */
 type Key = string
 
 const armed = new Map<Key, ArmedEpic>()
 
 function key(project: string, epicId: string): Key {
-  return `${project}\0${epicId}`
+  return `${projectIdentityKey(project)}\0${epicId}`
 }
 
 /** Arming an epic. Called by the `start` op, idempotent. */
