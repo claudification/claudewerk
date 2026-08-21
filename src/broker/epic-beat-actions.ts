@@ -350,6 +350,9 @@ async function wakeOverseer(
       batonTail: ctx.batonTail,
       wake: action.reason,
       settled: ctx.settled.map(c => `${c} settled`),
+      // THE BEAT'S OWN CLOCK, so the elapsed minutes in the budget sentence are
+      // measured at the instant every other number in it was.
+      nowMs: deps.now(),
     }),
     'overseer',
   )
@@ -595,6 +598,27 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
   complete: (p, a: Extract<EpicAction, { kind: 'complete' }>) =>
     settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
 } as Record<EpicAction['kind'], Performer>
+
+/**
+ * THE ACTIONS THAT PUT THE RUN IN A PROMPT -- the two entries above that read
+ * `p.run` rather than only `p.ctx`.
+ *
+ * It is a list beside the table rather than a flag on the action because the
+ * caller's question is asked BEFORE any performer runs: `epic-executor.ts` has
+ * to know whether it owes a fresh read of `run.md` before it hands one over, and
+ * by the time a performer could answer, the stale object is already in the
+ * prompt.
+ *
+ * IF A THIRD PERFORMER STARTS RENDERING THE RUN, ADD ITS KIND HERE. Forgetting
+ * is not loud: the seat spawns fine and its prompt simply quotes a run from
+ * before this beat's write, which is the exact defect that cost this epic nine
+ * generations of wrong budget arithmetic.
+ */
+const RUN_RENDERING_ACTIONS: readonly EpicAction['kind'][] = ['wake-overseer', 'plan']
+
+export function rendersRunState(beat: EpicBeat): boolean {
+  return beat.actions.some(a => RUN_RENDERING_ACTIONS.includes(a.kind))
+}
 
 /**
  * Perform a beat's actions IN ORDER, collecting the conversations spawned.

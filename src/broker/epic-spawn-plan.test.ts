@@ -68,6 +68,7 @@ const PROMPT_CTX: OverseerPromptCtx = {
   batonTail: '_(empty)_',
   wake: 'card-settled',
   settled: ['t1 landed'],
+  nowMs: Date.parse('2026-08-21T00:00:00.000Z'),
 }
 
 const overseer = () => planOverseerSpawn(CTX, PROMPT_CTX)
@@ -335,6 +336,7 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
       batonTail: '_(empty)_',
       wake: 'card-settled',
       settled: [],
+      nowMs: PROMPT_CTX.nowMs,
     }).name
 
   test('two generations of the same card get different names', () => {

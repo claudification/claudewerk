@@ -60,6 +60,7 @@ const SEATS = [
       batonTail: '',
       wake: 'card-settled',
       settled: [],
+      nowMs: Date.parse('2026-08-19T11:23:50.000Z'),
     }),
   },
   {
