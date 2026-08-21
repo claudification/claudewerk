@@ -158,15 +158,9 @@ export function runStamps(run: { acknowledgedAt?: string; updated?: string } | n
 export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.now()): Promise<EpicActivityEntry[]> {
   // THE SAME FOLD THE SWEEP ACTS ON, both reapers included: a feed that still
   // counted a reaped seat as in flight would show a full ceiling for a slot the
-  // engine has already given back, and one without `overseerReaper` would print
+  // engine has already given back, and one without the overseer's would print
   // OVERSEER ALIVE about a conversation the engine has already replaced.
-  const groups = epicsToWatch(
-    deps.getAllConversations(),
-    deps.isLive,
-    deps.producedOutput,
-    deps.seatReaper,
-    deps.overseerReaper,
-  )
+  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.reapers)
   const reads = await Promise.all(groups.map(group => readRun(deps, group)))
   // THE SAME FOLD THE SWEEP ACTS ON. A feed that decided the queue differently
   // from the engine would be a rail that lies about the engine by construction --

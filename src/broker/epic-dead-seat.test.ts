@@ -23,9 +23,9 @@ import { type BeatDeps, runEpicBeat } from './epic-executor'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { resetPromiseMemory } from './epic-promise'
 import { resetArmedEpics } from './epic-registry'
-import { SEAT_SILENCE_MS, type SeatReaper } from './epic-seat-vitality'
 import { type EpicGroup, epicsToWatch } from './epic-sweep'
 import type { GitDirt } from './epic-types'
+import { NEVER_REAPED, type Reaper, SEAT_SILENCE_MS } from './epic-vitality'
 
 const PROJECT = 'claude://studio/proj'
 const EPIC = 'e1'
@@ -75,14 +75,18 @@ function seat(cardId: string, role: EpicLaunchTag['role'], id: string): Conversa
 }
 
 /** The rule as production wires it: no socket, and silent past the grace. */
-const REAPER: SeatReaper = c => (NOW - c.lastActivity > SEAT_SILENCE_MS ? { silentForMs: NOW - c.lastActivity } : null)
+const REAPER: Reaper = c => (NOW - c.lastActivity > SEAT_SILENCE_MS ? { silentForMs: NOW - c.lastActivity } : null)
 
 const alwaysLive = () => true
 const alwaysProduced = () => true
 
-function fold(convs: Conversation[], reaper?: SeatReaper): EpicGroup {
+/** The SEAT lane only -- this file is about a card's concurrency slot, and the
+ *  overseer's own grace is a different number for a different mistake. */
+function fold(convs: Conversation[], reaper?: Reaper): EpicGroup {
+  const reapers = { seat: reaper ?? NEVER_REAPED, overseer: NEVER_REAPED }
   return (
-    epicsToWatch(convs, alwaysLive, alwaysProduced, reaper).find(g => g.epicId === EPIC) ?? ({} as unknown as EpicGroup)
+    epicsToWatch(convs, alwaysLive, alwaysProduced, reapers).find(g => g.epicId === EPIC) ??
+    ({} as unknown as EpicGroup)
   )
 }
 

@@ -3,9 +3,7 @@ import { acknowledgedCardIds } from '../shared/epic-log'
 import type { EpicLaunchTag, EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
-import { buildOverseerReaper, OVERSEER_SILENCE_MS } from './epic-overseer-vitality'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
-import type { SeatReaper } from './epic-seat-vitality'
 import {
   epicsToWatch,
   generationMismatch,
@@ -16,6 +14,7 @@ import {
   unacknowledgedCards,
   unacknowledgedFailedLegs,
 } from './epic-sweep'
+import { buildOverseerReaper, NEVER_REAPED, OVERSEER_SILENCE_MS, type Reaper } from './epic-vitality'
 
 let n = 0
 function conv(tag: EpicLaunchTag | undefined, live: boolean, output = true): Conversation & { __live: boolean } {
@@ -125,7 +124,8 @@ describe('groupEpicConversations', () => {
  */
 describe('a seat that dies without its end being recorded is reaped', () => {
   /** Every seat here CLAIMS to be live -- that is the whole failure. */
-  const reaped: SeatReaper = c => (c.id === 'conv_dead' ? { silentForMs: 12 * 60_000 } : null)
+  const reapSeat: Reaper = c => (c.id === 'conv_dead' ? { silentForMs: 12 * 60_000 } : null)
+  const reaped = { seat: reapSeat, overseer: NEVER_REAPED }
   const named = (tag: EpicLaunchTag, id: string, output = true) =>
     // `status: 'idle'` is the shape the incident actually wore: the maintenance
     // pass demotes `active` -> `idle` on silence and stops there, so a seat whose
@@ -412,7 +412,7 @@ describe('unacknowledgedCards -- the standing question the wake is built on', ()
  * from the healthy case it exists to describe.
  *
  * The reaper is the second opinion. These tests drive the FOLD; the rule itself
- * is `epic-overseer-vitality.test.ts`.
+ * is `epic-vitality.test.ts`.
  */
 describe('an overseer whose end was never recorded is reaped', () => {
   const T0 = 1_700_000_000_000
@@ -432,7 +432,10 @@ describe('an overseer whose end was never recorded is reaped', () => {
   const reaperAt = (nowMs: number, socket = false) => buildOverseerReaper({ hasSocket: () => socket, now: () => nowMs })
 
   const fold = (conv: Conversation, nowMs: number, socket = false) =>
-    groupEpicConversations([conv], registryClaimsLive, undefined, undefined, reaperAt(nowMs, socket)).get('e1')
+    groupEpicConversations([conv], registryClaimsLive, undefined, {
+      seat: NEVER_REAPED,
+      overseer: reaperAt(nowMs, socket),
+    }).get('e1')
 
   test('a silent, socketless overseer stops holding `overseerAlive`', () => {
     const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
@@ -481,13 +484,10 @@ describe('an overseer whose end was never recorded is reaped', () => {
    *  the reaper. Reporting it here would wake a replacement for a supervisor that
    *  simply went home -- once per sweep, forever. */
   test('an overseer that ended cleanly is dead but NOT reported as abandoned', () => {
-    const group = groupEpicConversations(
-      [seat(T0)],
-      () => false,
-      undefined,
-      undefined,
-      reaperAt(T0 + OVERSEER_SILENCE_MS + 1),
-    ).get('e1')
+    const group = groupEpicConversations([seat(T0)], () => false, undefined, {
+      seat: NEVER_REAPED,
+      overseer: reaperAt(T0 + OVERSEER_SILENCE_MS + 1),
+    }).get('e1')
     expect(group?.overseerAlive).toBe(false)
     expect(group?.abandonedOverseers).toEqual([])
   })
@@ -498,24 +498,41 @@ describe('an overseer whose end was never recorded is reaped', () => {
     expect(group?.abandonedOverseers).toEqual([])
   })
 
-  /** A CARD seat is not this card's business: reaping one settles a card and
-   *  costs a concurrency slot, which is `epic-dead-seat-never-settles`. */
-  test('the reaper is asked of the overseer seat only', () => {
-    const implSeat = {
-      id: 'conv_impl',
-      project: 'claude://s/p',
-      status: 'idle',
-      lastActivity: T0,
-      launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 4 } },
-    } as unknown as Conversation
-    const group = groupEpicConversations(
-      [implSeat],
-      registryClaimsLive,
-      undefined,
-      undefined,
-      reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
-    ).get('e1')
+  const implSeat = {
+    id: 'conv_impl',
+    project: 'claude://s/p',
+    status: 'idle',
+    lastActivity: T0,
+    launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 4 } },
+  } as unknown as Conversation
+
+  /**
+   * THE TWO LANES DO NOT REACH EACH OTHER, and this is the pair of assertions
+   * that says so. The two reapers share a structural type, so nothing but the
+   * field name distinguishes them at a call site -- which is why the fold takes a
+   * named pair and why both directions are asserted here rather than one.
+   *
+   * Reaping the wrong lane is not a cosmetic slip in either direction: an
+   * overseer's fifteen-minute grace applied to a card seat strands a card, and a
+   * card seat's ten-minute grace applied to the overseer wakes a second
+   * supervisor five minutes early.
+   */
+  test('the OVERSEER reaper is never asked of a card seat', () => {
+    const group = groupEpicConversations([implSeat], registryClaimsLive, undefined, {
+      seat: NEVER_REAPED,
+      overseer: reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
+    }).get('e1')
     expect(group?.inFlight).toEqual(['t1'])
+    expect(group?.abandonedSeats).toEqual([])
+  })
+
+  test('and the SEAT reaper is never asked of the overseer', () => {
+    const group = groupEpicConversations([seat(T0)], registryClaimsLive, undefined, {
+      seat: reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
+      overseer: NEVER_REAPED,
+    }).get('e1')
+    expect(group?.overseerAlive).toBe(true)
+    expect(group?.abandonedOverseers).toEqual([])
   })
 })
 
