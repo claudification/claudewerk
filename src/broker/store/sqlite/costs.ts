@@ -307,17 +307,22 @@ export function createSqliteCostStore(db: Database): CostStore {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
     if (filter.groupBy === 'day') {
+      // Every attribution column is in the GROUP BY. It used to group by
+      // (day, account, model) alone and stamp the merged SUM(cost_usd) with
+      // MIN(project_uri) / MIN(sentinel_id) / MIN(profile) -- so a day's whole
+      // spend landed on whichever project sorted first and the rest of them
+      // vanished with no missing-data signal. Day rows now multiply by the
+      // project count, which is the honest shape and still far smaller than
+      // hourly.
       const rows = queryAll(
         db,
-        `SELECT substr(hour, 1, 10) as hour, account, model,
-        MIN(project_uri) as project_uri,
+        `SELECT substr(hour, 1, 10) as hour, account, model, project_uri,
         SUM(turn_count) as turn_count, SUM(input_tokens) as input_tokens,
         SUM(output_tokens) as output_tokens, SUM(cache_read_tokens) as cache_read_tokens,
         SUM(cache_write_tokens) as cache_write_tokens, SUM(cost_usd) as cost_usd,
-        COALESCE(MIN(sentinel_id), '') as sentinel_id,
-        COALESCE(MIN(profile), 'default') as profile
+        sentinel_id, profile
         FROM hourly_stats ${where}
-        GROUP BY substr(hour, 1, 10), account, model
+        GROUP BY substr(hour, 1, 10), account, model, project_uri, sentinel_id, profile
         ORDER BY hour`,
         binds,
       ) as Array<Record<string, unknown>>

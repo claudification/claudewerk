@@ -1056,7 +1056,10 @@ function createCostStore(): CostStore {
         const dayBuckets = new Map<string, HourlyRow>()
         for (const h of hourly) {
           const day = h.hour.slice(0, 10)
-          const key = `${day}\0${h.account}\0${h.model}`
+          // projectUri (and sentinel/profile, when a bucket ever carries them)
+          // belong in the key: keying on (day, account, model) alone merged
+          // every project's spend into one row and kept the first bucket's URI.
+          const key = `${day}\0${h.account}\0${h.model}\0${h.projectUri}\0${h.sentinelId ?? ''}\0${h.profile ?? ''}`
           const existing = dayBuckets.get(key)
           if (existing) {
             existing.turnCount += h.turnCount
