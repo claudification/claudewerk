@@ -432,7 +432,7 @@ describe('an overseer whose end was never recorded is reaped', () => {
   const reaperAt = (nowMs: number, socket = false) => buildOverseerReaper({ hasSocket: () => socket, now: () => nowMs })
 
   const fold = (conv: Conversation, nowMs: number, socket = false) =>
-    groupEpicConversations([conv], registryClaimsLive, undefined, reaperAt(nowMs, socket)).get('e1')
+    groupEpicConversations([conv], registryClaimsLive, undefined, undefined, reaperAt(nowMs, socket)).get('e1')
 
   test('a silent, socketless overseer stops holding `overseerAlive`', () => {
     const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
@@ -485,6 +485,7 @@ describe('an overseer whose end was never recorded is reaped', () => {
       [seat(T0)],
       () => false,
       undefined,
+      undefined,
       reaperAt(T0 + OVERSEER_SILENCE_MS + 1),
     ).get('e1')
     expect(group?.overseerAlive).toBe(false)
@@ -510,6 +511,7 @@ describe('an overseer whose end was never recorded is reaped', () => {
     const group = groupEpicConversations(
       [implSeat],
       registryClaimsLive,
+      undefined,
       undefined,
       reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
     ).get('e1')
