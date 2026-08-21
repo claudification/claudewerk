@@ -43,6 +43,7 @@
 
 import type { EpicCadence, EpicRunStatus } from '../shared/epic-run-types'
 import { gatedBy } from '../shared/epic-when'
+import { projectIdentityKey } from '../shared/project-uri'
 import type { EpicQueueReading, EpicRunSnapshot } from '../shared/protocol'
 
 /**
@@ -134,9 +135,20 @@ const FREE: QueueVerdict = { blocked: false, position: 0, total: 0, behind: [], 
  *  projects' epics never compete for the same runner. */
 export type ScopedQueueScope = QueueScope & { project: string }
 
-/** `${project}\0${epicId}` -- the same NUL join the armed registry uses. */
+/**
+ * `${projectIdentityKey(project)}\0${epicId}` -- the same NUL join the armed
+ * registry uses, over the same canonical project key.
+ *
+ * NORMALIZED, because a project URI has more than one true spelling
+ * (`claude:///path`, `claude://default/path`, and the pre-2026-04-25 quad-slash
+ * scar) and callers hand this fold whatever spelling their source carries. On a
+ * raw key one project with two spellings folds into TWO queues, each deciding
+ * the axis in ignorance of the other -- a queued scope taking a runner somebody
+ * is working in, and an ordinary scope never learning the runner is held. Both
+ * silent.
+ */
 function scopeKey(project: string, epicId: string): string {
-  return `${project}\0${epicId}`
+  return `${projectIdentityKey(project)}\0${epicId}`
 }
 
 /**
@@ -147,6 +159,13 @@ function scopeKey(project: string, epicId: string): string {
  * reach the same answer from the same scopes. A feed that grouped differently
  * would be a run rail that lies about the engine by construction, which is the
  * exact failure `epicsToWatch` is shared to prevent.
+ *
+ * AND THE BUCKET IS A PROJECT, NOT A STRING. Both the bucket key and the lookup
+ * key go through `scopeKey`, which normalizes -- so a caller feeding this fold
+ * the store's spelling and looking it up in the MCP caller's still lands in one
+ * queue. Normalizing HERE rather than at the call sites is deliberate: a
+ * comparator that lives at the seam cannot be forgotten by a fourth caller,
+ * which is precisely how the raw-equality defect this fixes reached three files.
  */
 export function planProjectQueues(
   scopes: readonly ScopedQueueScope[],
@@ -154,9 +173,10 @@ export function planProjectQueues(
 ): { verdict: (project: string, epicId: string) => QueueVerdict } {
   const byProject = new Map<string, ScopedQueueScope[]>()
   for (const scope of scopes) {
-    const list = byProject.get(scope.project) ?? []
+    const key = projectIdentityKey(scope.project)
+    const list = byProject.get(key) ?? []
     list.push(scope)
-    byProject.set(scope.project, list)
+    byProject.set(key, list)
   }
   const all = new Map<string, QueueVerdict>()
   for (const [project, list] of byProject) {

@@ -8,7 +8,13 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { QUEUE_PATIENCE_MS, type QueueScope, queueVerdicts } from './epic-queue'
+import {
+  planProjectQueues,
+  QUEUE_PATIENCE_MS,
+  type QueueScope,
+  queueVerdicts,
+  type ScopedQueueScope,
+} from './epic-queue'
 
 const T0 = Date.parse('2026-08-21T10:00:00.000Z')
 
@@ -108,6 +114,67 @@ describe('a queued epic that entered holds the runner exclusively', () => {
 
   it('does not block itself', () => {
     expect(verdict([holder], 'epic-project-runner').blocked).toBe(false)
+  })
+})
+
+/**
+ * THE BUCKET IS A PROJECT, NOT A STRING.
+ *
+ * A project URI has more than one true spelling -- the MCP caller's
+ * `claude:///path`, the conversation store's `claude://default/path`, and the
+ * pre-2026-04-25 quad-slash scar. If the fold buckets on the raw string, one
+ * project with two spellings becomes two queues, and each decides the axis in
+ * ignorance of the other: the queued scope takes a runner somebody else is
+ * working in, and the ordinary scope never learns the runner is held. Both
+ * directions fail silently, which is the shape of every other bug in this
+ * engine's history.
+ */
+describe('the queue is bucketed by project IDENTITY, not by spelling', () => {
+  const STORE = 'claude://default/Users/jonas/projects/remote-claude'
+  const CALLER = 'claude:///Users/jonas/projects/remote-claude'
+  const SCAR = 'claude:////Users/jonas/projects/remote-claude/'
+
+  const at = (project: string, over: Partial<QueueScope> & { epicId: string }): ScopedQueueScope => ({
+    ...scope(over),
+    project,
+  })
+
+  it('blocks a queued scope behind a busy one spelt differently', () => {
+    const busy = at(STORE, { epicId: 'epic-morning-report', status: 'running', started: true, busy: true })
+    const queued = at(CALLER, { epicId: 'epic-project-runner', when: ['queue'] })
+    const v = planProjectQueues([busy, queued], T0).verdict(CALLER, 'epic-project-runner')
+    expect(v.blocked).toBe(true)
+    expect(v.behind).toEqual(['epic-morning-report'])
+  })
+
+  it('holds an ordinary scope back from a holder spelt differently', () => {
+    const holder = at(CALLER, { epicId: 'epic-project-runner', when: ['queue'], status: 'running', started: true })
+    const ordinary = at(STORE, { epicId: 'epic-morning-report', status: 'running' })
+    const v = planProjectQueues([holder, ordinary], T0).verdict(STORE, 'epic-morning-report')
+    expect(v.blocked).toBe(true)
+    expect(v.heldBy).toBe('epic-project-runner')
+  })
+
+  it('answers a lookup in ANY spelling of the project, including the quad-slash scar', () => {
+    const busy = at(STORE, { epicId: 'epic-morning-report', status: 'running', started: true, busy: true })
+    const queued = at(CALLER, { epicId: 'epic-project-runner', when: ['queue'] })
+    const queues = planProjectQueues([busy, queued], T0)
+    for (const spelling of [STORE, CALLER, SCAR]) {
+      expect(queues.verdict(spelling, 'epic-project-runner').blocked).toBe(true)
+    }
+  })
+
+  it('still keeps two GENUINELY different projects out of each other queue', () => {
+    const busy = at(STORE, { epicId: 'epic-morning-report', status: 'running', started: true, busy: true })
+    const elsewhere = at('claude://default/Users/jonas/projects/other', {
+      epicId: 'epic-project-runner',
+      when: ['queue'],
+    })
+    const v = planProjectQueues([busy, elsewhere], T0).verdict(
+      'claude://default/Users/jonas/projects/other',
+      'epic-project-runner',
+    )
+    expect(v.blocked).toBe(false)
   })
 })
 
