@@ -15,6 +15,17 @@ import { dirname, join, resolve } from 'node:path'
 
 const HOOK = resolve(import.meta.dir, '..', '..', 'scripts', 'worktree-create.sh')
 
+/**
+ * Hang detector for a real `git` subprocess, NOT a perf budget.
+ *
+ * Each test here inits a scratch repo and runs the hook, which shells out to
+ * real `git worktree add`. The number only ever answered "did it finish". Under
+ * `bun test --parallel` on a loaded box these overshot bun's 5s default by under
+ * 200ms and turned the suite red for scheduler weather. 30s is deliberately
+ * generous: a raise to just above the observed number re-arms the same flake.
+ */
+const GIT_HANG_TIMEOUT_MS = 30_000
+
 function fresh(): string {
   const dir = mkdtempSync(join(tmpdir(), 'wtcreate-'))
   // Use real path -- macOS /var -> /private/var symlink trips `git worktree
@@ -54,7 +65,7 @@ describe('worktree-create.sh', () => {
     expect(r.stdout).toBe(`${repo}/.claude/worktrees/feat-a`)
     expect(existsSync(r.stdout)).toBe(true)
     expect(r.stderr).toContain("Preparing worktree (new branch 'worktree-feat-a')")
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('REUSE: re-running with same name + path is idempotent (exit 0, REUSE log)', () => {
     const repo = fresh()
@@ -66,7 +77,7 @@ describe('worktree-create.sh', () => {
     expect(second.stdout).toBe(first.stdout)
     expect(second.stderr).toContain('REUSE existing worktree')
     expect(second.stderr).toContain('feat-b')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('ATTACH: re-running after the worktree dir is removed reuses the branch', () => {
     const repo = fresh()
@@ -82,7 +93,7 @@ describe('worktree-create.sh', () => {
     expect(second.stdout).toBe(wtPath)
     expect(second.stderr).toContain('ATTACH existing branch worktree-feat-c')
     expect(existsSync(wtPath)).toBe(true)
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('ERROR: path already used by a different branch -> exit 1, no clobber', () => {
     const repo = fresh()
@@ -95,5 +106,5 @@ describe('worktree-create.sh', () => {
     expect(r.stderr).toContain('ERROR')
     expect(r.stderr).toContain("'worktree-other'")
     expect(r.stderr).toContain("'worktree-feat-d'")
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 })
