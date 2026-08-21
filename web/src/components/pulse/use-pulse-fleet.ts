@@ -14,6 +14,7 @@ import { isEmptyQuery, matchesPulseQuery, type PulseQuery, parsePulseQuery } fro
 import { isManaged, type ManagedInfo, managedInfo } from '@/lib/pulse/managed'
 import type { Conversation, ProjectSettings } from '@/lib/types'
 import { projectDisplayName } from '@/lib/utils'
+import { useWorkspaceIndex, type WorkspaceIndex } from '@/lib/workspace-index'
 import { useAttentionFlags } from './use-attention-flags'
 
 /** Bands that render as rows. `expired` is a collapsed count, never a band. */
@@ -44,6 +45,10 @@ export interface PulseRow {
   host?: string
   /** `:` axis — the model. */
   model?: string
+  /** `^` axis — every workspace this row's project sits in, resolved ONCE per
+   *  fleet build from the sidebar's project order. Empty is a real answer: a
+   *  project in no workspace answers to no `^` token. */
+  workspaces?: readonly string[]
   /** Machine-dispatched provenance (epic seat / nightshift), or undefined when
    *  a human started this. Drives the OVER chip and the default hide. */
   managedBy?: ManagedInfo
@@ -93,9 +98,11 @@ function toRow(
   band: PulseBand,
   now: number,
   flags: PulseAttentionFlags,
+  workspaces: WorkspaceIndex,
   ps?: ProjectSettings,
 ): PulseRow {
   const managedBy = managedInfo(c)
+  const project = projectDisplayName(c.project, ps?.label)
   return {
     managedBy,
     managed: managedBy !== undefined,
@@ -103,7 +110,8 @@ function toRow(
     conversation: c,
     band,
     title: c.title || c.name || c.summary || c.id.slice(0, 8),
-    project: projectDisplayName(c.project, ps?.label),
+    project,
+    workspaces: workspaces.byProject.get(project),
     projectIcon: ps?.icon,
     projectColor: ps?.color,
     action: pulseActionText(c, flags),
@@ -128,6 +136,10 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
 
   const projectSettings = useConversationsStore(s => s.projectSettings)
   const flagsFor = useAttentionFlags()
+  // `^eng` is in the grammar Pulse OWNS, so Pulse's own rows have to be able to
+  // answer it. Without this the sigil would parse here and match nothing, which
+  // reads as an empty fleet rather than as a filter nobody wired.
+  const workspaces = useWorkspaceIndex()
   const query = useMemo(() => parsePulseQuery(rawQuery), [rawQuery])
 
   return useMemo(() => {
@@ -148,7 +160,7 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       (byBand.get(band) ?? [])
         .slice()
         .sort((a, b) => compareInBand(band, a, b))
-        .map(c => toRow(c, band, now, flagsFor(c.id), projectSettings[projectIdentityKey(c.project)]))
+        .map(c => toRow(c, band, now, flagsFor(c.id), workspaces, projectSettings[projectIdentityKey(c.project)]))
         .filter(row => matchesPulseQuery(row, query))
 
     const groups = VISIBLE_BANDS.map(band => ({ band, rows: build(band) })).filter(g => g.rows.length > 0)
@@ -170,5 +182,5 @@ export function usePulseFleet(rawQuery: string, tickMs = 1_000): PulseFleet {
       query,
       isEmpty: isEmptyQuery(query),
     }
-  }, [conversations, flagsFor, projectSettings, query, now])
+  }, [conversations, flagsFor, projectSettings, query, now, workspaces])
 }

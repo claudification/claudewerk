@@ -1,5 +1,11 @@
-/**
- * @vitest-environment node
+/*
+ * jsdom, not node, and only since the `^workspace` axis landed. This suite is
+ * pure logic and node would still be the right environment for it -- but it
+ * reads the barrel ON PURPOSE (see the import below), the barrel now carries
+ * `useWallFilter`, and that hook has to reach the sidebar's project order to
+ * resolve workspace membership. The conversations store reads `localStorage` at
+ * MODULE scope, so importing the barrel under node throws before a single test
+ * runs. Nothing here touches the DOM; this line is import fallout, not intent.
  */
 import { describe, expect, it } from 'vitest'
 import { matchesPulseQuery, type PulseSearchable, parsePulseQuery } from '@/lib/pulse/filter'
@@ -47,7 +53,7 @@ describe('restrictToAxes', () => {
   })
 
   it('clears every undeclared axis', () => {
-    const q: WallQuery = parseWallQuery('epic @rc #wip ~30m $1 %70 &studio :opus ! +over')
+    const q: WallQuery = parseWallQuery('epic @rc #wip ~30m $1 %70 &studio :opus ^eng ! +over')
     const scoped = restrictToAxes(q, [])
     expect(scoped.text).toBe('')
     expect(scoped.bands).toBeNull()
@@ -58,12 +64,21 @@ describe('restrictToAxes', () => {
     expect(scoped.minContextPct).toBeNull()
     expect(scoped.host).toBeNull()
     expect(scoped.model).toBeNull()
+    expect(scoped.workspace).toBeNull()
     expect(scoped.onlyManaged).toBe(false)
   })
 
   it('clears the exclusion bucket with its axis', () => {
-    const q = parseWallQuery('-@anvil -#wip -&studio -:opus -noise')
-    expect(restrictToAxes(q, []).not).toEqual({ text: [], projects: [], tags: [], hosts: [], models: [], bands: [] })
+    const q = parseWallQuery('-@anvil -#wip -&studio -:opus -^eng -noise')
+    expect(restrictToAxes(q, []).not).toEqual({
+      text: [],
+      projects: [],
+      tags: [],
+      hosts: [],
+      models: [],
+      workspaces: [],
+      bands: [],
+    })
     expect(restrictToAxes(q, ['project']).not.projects).toEqual(['anvil'])
     expect(restrictToAxes(q, ['project']).not.tags).toEqual([])
   })
@@ -88,7 +103,7 @@ describe('restrictToAxes', () => {
   })
 
   it('passes the whole grammar through when every axis is declared', () => {
-    const q = parseWallQuery('epic @rc #wip ~30m $1 %70 &studio :opus')
+    const q = parseWallQuery('epic @rc #wip ~30m $1 %70 &studio :opus ^eng')
     expect(restrictToAxes(q, WALL_AXES)).toEqual(q)
   })
 })

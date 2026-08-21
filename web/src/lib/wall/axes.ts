@@ -43,6 +43,11 @@ export type WallAxis =
   | 'host'
   /** `:opus` */
   | 'model'
+  /** `^eng` -- the workspace tier ABOVE the project. A pane declares this
+   *  exactly when its rows carry a `project` facet, because that name is what
+   *  membership is resolved through; a pane with no project has nothing to
+   *  resolve and must stay full. */
+  | 'workspace'
   /** `+over` / `+only` -- machine-dispatched rows */
   | 'managed'
 
@@ -57,6 +62,7 @@ export const WALL_AXES: readonly WallAxis[] = [
   'context',
   'host',
   'model',
+  'workspace',
   'managed',
 ] as const
 
@@ -107,6 +113,10 @@ const CLEAR_AXIS: Record<WallAxis, (q: WallQuery) => void> = {
   model: q => {
     q.model = null
     q.not.models = []
+  },
+  workspace: q => {
+    q.workspace = null
+    q.not.workspaces = []
   },
   managed: q => {
     q.includeManaged = true

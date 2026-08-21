@@ -30,7 +30,18 @@ import { useStripMetrics } from '../use-strip-metrics'
 const WHOLE_FLEET = '+over'
 
 /** Every axis a conversation carries, minus `managed` -- see the file header. */
-const AXES: readonly WallAxis[] = ['text', 'band', 'project', 'tag', 'time', 'cost', 'context', 'host', 'model']
+const AXES: readonly WallAxis[] = [
+  'text',
+  'band',
+  'project',
+  'workspace',
+  'tag',
+  'time',
+  'cost',
+  'context',
+  'host',
+  'model',
+]
 
 function Segment({ seg }: { seg: NowSegment }) {
   return (

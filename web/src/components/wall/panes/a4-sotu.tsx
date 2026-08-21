@@ -26,7 +26,8 @@
  * publisher for a WAL size exists in the tree at all. The pills rendered here are
  * the ones the SOTU union actually produces.
  *
- * FILTER: `text` and `project`. A chronicle has no cost, no band and no host.
+ * FILTER: `text`, `project` and `workspace` (resolved from the project name). A
+ * chronicle has no cost, no band and no host.
  */
 
 import { useMemo } from 'react'
@@ -40,7 +41,7 @@ import { useWallSheafFeed, useWallSheafStore } from '../use-wall-sheaf'
 import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 
-const AXES: readonly WallAxis[] = ['text', 'project']
+const AXES: readonly WallAxis[] = ['text', 'project', 'workspace']
 
 /** Stable empty identity -- the filter memo keys on the array. */
 const NO_BLOCKS: readonly SotuBlock[] = []

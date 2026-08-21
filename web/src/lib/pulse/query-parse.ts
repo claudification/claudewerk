@@ -43,11 +43,12 @@ const BAND_SHORTHAND: Record<string, readonly PulseBand[]> = {
 }
 
 /** Scope sigils that take a string: sigil -> which PulseQuery field it fills. */
-const STRING_SIGIL: Record<string, 'project' | 'tag' | 'host' | 'model'> = {
+const STRING_SIGIL: Record<string, 'project' | 'tag' | 'host' | 'model' | 'workspace'> = {
   '@': 'project',
   '#': 'tag',
   '&': 'host',
   ':': 'model',
+  '^': 'workspace',
 }
 
 /** Numeric sigils that take a floor: sigil -> which PulseQuery field it fills. */
@@ -62,6 +63,7 @@ const EXCLUDE_BUCKET: Record<string, keyof Omit<PulseExclusions, 'text' | 'bands
   '#': 'tags',
   '&': 'hosts',
   ':': 'models',
+  '^': 'workspaces',
 }
 
 /** `-x` — route one negated token into the right exclusion bucket. */
@@ -134,7 +136,7 @@ function applyBand(q: PulseQuery, token: string): boolean {
   return true
 }
 
-/** `@proj` `#tag` `&host` `:model` — scope to a string. */
+/** `@proj` `#tag` `&host` `:model` `^workspace` — scope to a string. */
 function applyStringSigil(q: PulseQuery, token: string): boolean {
   const field = STRING_SIGIL[token[0]]
   const rest = token.slice(1)

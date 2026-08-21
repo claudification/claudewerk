@@ -33,7 +33,7 @@ import { WallPane } from '../wall-pane'
  * `$` and `%` are absent for the ordinary reason: a pending question has no
  * spend and no context pressure, so it must not blank the pane.
  */
-const AXES = ['text', 'band', 'project', 'tag', 'time', 'host', 'model'] as const
+const AXES = ['text', 'band', 'project', 'workspace', 'tag', 'time', 'host', 'model'] as const
 
 function Tier({
   label,

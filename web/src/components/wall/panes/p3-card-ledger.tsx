@@ -16,7 +16,8 @@
  * it runs BEFORE `useWallFilter` -- so `{matched}/{total}` keeps meaning "of what
  * this view holds, how much the query box left" with either tab up.
  *
- * FILTER: `text`, `@project` and `~time`, and nothing else. A card move has no
+ * FILTER: `text`, `@project`, `^workspace` (resolved from the project name) and
+ * `~time`, and nothing else. A card move has no
  * cost, no context pressure, no model and no host, and `managed` is deliberately
  * absent too -- a card moved BY an unattended run and a card moved by hand are
  * the same event to a ledger, and declaring the axis would let the grammar's
@@ -37,7 +38,7 @@ import { useCardLedgerViewStore } from './card-ledger-view'
 import { useCardVerdicts } from './use-card-verdicts'
 import { useLedgerRows } from './use-ledger-rows'
 
-const AXES: readonly WallAxis[] = ['text', 'project', 'time']
+const AXES: readonly WallAxis[] = ['text', 'project', 'workspace', 'time']
 
 /** Free text searches the title, the project and the card's own id and lanes --
  *  you look for a move by the card slug you remember as often as by its title. */

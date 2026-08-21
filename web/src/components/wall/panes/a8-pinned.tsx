@@ -22,12 +22,13 @@ import { useWallPins } from '../use-wall-pins'
 import { WallPane } from '../wall-pane'
 
 /**
- * PROJECT and TEXT, and nothing else. An axis this pane does not declare is
+ * PROJECT, its WORKSPACE, and TEXT, and nothing else. An axis this pane does not
+ * declare is
  * stripped from the query before a row is looked at, so `%80` or `:opus` leaves
  * the watchlist FULL rather than blank -- an epic has no context pressure and no
  * model, and a pane that went empty for one would be lying.
  */
-const AXES = ['project', 'text'] as const
+const AXES = ['project', 'workspace', 'text'] as const
 
 /** A REFUSAL IS NOT AN EMPTY WATCHLIST. The commonest cause is a sentinel bundle
  *  that predates the `pinned` op entirely -- it answers `ok: false`, and this pane
