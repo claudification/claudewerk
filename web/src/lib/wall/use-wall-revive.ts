@@ -26,11 +26,11 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import {
   acquireFeed,
-  ensureFeedPoll,
   feedFreshness,
   pullFeed,
   releaseFeed,
   reviveVersion,
+  setFeedPoll,
   subscribeRevive,
   type WallFeedId,
   type WallFreshness,
@@ -42,7 +42,8 @@ const currentSeq = (): number => useConversationsStore.getState().connectSeq
 /**
  * @param feed  the id this pane declares in `wall-pane-registry.ts`
  * @param reload  re-read the feed. `false` or a rejection = it did not land
- * @param everyMs  the feed's own refresh clock, when it has one
+ * @param everyMs  the feed's own refresh clock, when it has one. MAY CHANGE
+ *   between renders -- a new value re-arms the clock and pulls nothing.
  */
 export function useWallRevive(feed: WallFeedId, reload: WallReload, everyMs?: number): WallFreshness {
   const connectSeq = useConversationsStore(s => s.connectSeq)
@@ -53,15 +54,28 @@ export function useWallRevive(feed: WallFeedId, reload: WallReload, everyMs?: nu
   const reloadRef = useRef(reload)
   reloadRef.current = reload
 
+  // THE HOLD AND THE PULL. `everyMs` is deliberately NOT in these deps: this
+  // effect FETCHES, so anything listed here is a re-pull trigger, and a poll rate
+  // is not a reason to re-read. It used to be listed, which is why A2 could not
+  // hold a per-window clock -- one click across the 24h/3d boundary would fire
+  // the period change's own pull AND a second one from re-registering here.
   useEffect(() => {
     const first = acquireFeed(feed, () => reloadRef.current())
-    if (everyMs) ensureFeedPoll(feed, everyMs, currentSeq)
     // `first` FORCES the pull. A re-acquire from zero means the previous holders'
     // component state is gone with them, so "already pulled for this connection"
     // no longer describes anything that is on screen.
     void pullFeed(feed, connectSeq, first)
     return () => releaseFeed(feed)
-  }, [feed, connectSeq, everyMs])
+  }, [feed, connectSeq])
+
+  // THE CLOCK, on its own, because it does not fetch. `setFeedPoll` is a no-op at
+  // an unchanged rate, so this runs on every reconnect for free -- and it HAS to,
+  // because the release above drops the timer at zero holders and nothing else
+  // would put it back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: connectSeq is a RE-ARM key, not a value this effect reads -- the release above stops the timer at zero holders and this is what puts it back
+  useEffect(() => {
+    setFeedPoll(feed, everyMs, currentSeq)
+  }, [feed, everyMs, connectSeq])
 
   useSyncExternalStore(subscribeRevive, reviveVersion, reviveVersion)
   return feedFreshness(feed, connectSeq)
