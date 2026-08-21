@@ -10,15 +10,22 @@
  */
 
 import type { Conversation } from '../shared/protocol'
+import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
+import { forgetArmedEpic, listArmedEpics } from './epic-registry'
 import type { IsLive, ProducedOutput } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
-import { getProjectSettings } from './project-settings'
+import {
+  getAllProjectSettings,
+  getProjectSettings,
+  scannerEnabledForProject,
+  stampScannerRun,
+} from './project-settings'
 import { epicScanner, epicsToBeat } from './scanners/epic-scanner'
 import { runScan } from './scanners/scanner'
 import {
@@ -38,9 +45,39 @@ const SWEEP_MS = 45_000
 // one import, but the clock and the rule live in ONE place for both sweeps.
 export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './werk-engine-boot'
 
+/**
+ * THE PER-PROJECT OPT-IN, as three injected effects.
+ *
+ * The gate is the CALLER'S, which is why it is here and not in
+ * `scanners/epic-scanner.ts`: a scanner asked to run on a project runs, and a
+ * scanner that consults settings can no longer be tested without them.
+ *
+ * `enabled` and `projects` are not the same question and neither derives from the
+ * other. `enabled` takes whatever project string a conversation happens to carry
+ * and normalizes it (`projectIdentityKey`) before looking it up; `projects`
+ * enumerates the already-canonical keys of every project that ticked the box,
+ * including the ones with no epic conversations at all -- which is precisely the
+ * project whose "last ran" stamp is worth having.
+ */
+export interface ScannerOptIn {
+  /** Canonical URIs of every project with this scanner switched on. */
+  projects: () => string[]
+  /** May this (possibly non-canonical) project be swept? Default off. */
+  enabled: (project: string) => boolean
+  /** A pass just finished for this project. Epoch ms. */
+  stamp: (project: string, at: number) => void
+}
+
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
   isLive: IsLive
+  /**
+   * The `epics` scanner's per-project opt-in. ABSENT MEANS NO GATE -- the sweep
+   * runs everywhere, which is what every test in this file that builds deps by
+   * hand already means, same as `producedOutput` below. `buildSweepDeps` always
+   * installs the real one, so production is gated and off by default.
+   */
+  scannerOptIn?: ScannerOptIn
   /**
    * Did a conversation ever produce a transcript entry? The second half of the
    * settle question -- see `EpicGroup.settled`. Optional so the tests that build
@@ -80,6 +117,22 @@ const EPIC_CALLER: SpawnCallerContext = {
   callerProject: null,
 }
 
+/**
+ * The real gate: project settings, read live.
+ *
+ * A module-level constant rather than a per-call closure because it holds no
+ * state -- every method reads the settings store at the moment it is asked, which
+ * is what makes a toggle take effect on the next tick without a restart.
+ */
+const EPIC_OPT_IN: ScannerOptIn = {
+  projects: () =>
+    Object.entries(getAllProjectSettings())
+      .filter(([, s]) => scannerEnabled(s, 'epics'))
+      .map(([project]) => project),
+  enabled: project => scannerEnabledForProject(project, 'epics'),
+  stamp: (project, at) => stampScannerRun(project, 'epics', at),
+}
+
 /** The store shape the sweep needs. Structural, so tests pass a plain object. */
 interface SweepStore {
   getAllConversations: () => Conversation[]
@@ -111,6 +164,9 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
     // nowhere in memory), so a broker with no store driver reports 0 -- which
     // reads as "no spend cap can trip" rather than "this run was free".
     epicSpendUsd: ids => s.sumConversationCostUsd(ids),
+    // OFF BY DEFAULT for every project, and read fresh on every tick so ticking
+    // the box takes effect within one sweep rather than at the next restart.
+    scannerOptIn: EPIC_OPT_IN,
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
     addProjectListener: s.addProjectListener,
@@ -147,6 +203,45 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
 let sweeping = false
 
 /**
+ * Narrow the sweep to the projects that opted in, and SAY what that removed.
+ *
+ * Loud on purpose. The scanner contract's one rule is that a unit the engine
+ * looked at and did nothing about must never vanish quietly -- a gate that
+ * silently deleted half the board would be the very silent drop the contract
+ * exists to stop, just moved one layer up where `runScan`'s accounting cannot
+ * see it.
+ *
+ * TWO SOURCES, because `epicsToWatch` unions two. Conversations arrive through
+ * `deps` and are filtered here. Armed runs come from the module-level registry,
+ * which no dep reaches, so an epic armed BEFORE the box was unticked would slip
+ * straight past a conversation filter -- it is dropped from the registry instead.
+ * That is the caller undoing its own arm, and it is recoverable: `start` is
+ * idempotent and RESUMES (see epic-registry.ts), so re-enabling and re-running it
+ * picks the run back up.
+ */
+function gateSweep(deps: SweepDeps, optIn: ScannerOptIn): SweepDeps {
+  const skipped = new Set<string>()
+  const keep = (project: string): boolean => {
+    if (optIn.enabled(project)) return true
+    skipped.add(project)
+    return false
+  }
+  const convs = deps.getAllConversations().filter(c => keep(c.project))
+  for (const { project, epicId } of listArmedEpics()) {
+    if (keep(project)) continue
+    forgetArmedEpic(project, epicId)
+    deps.log(`[epic-sweep] dropped armed epic ${epicId} -- the "epics" scanner is off for ${project}`)
+  }
+  if (skipped.size > 0) {
+    deps.log(
+      `[epic-sweep] skipped ${skipped.size} project(s) with the "epics" scanner off: ${[...skipped].join(', ')} ` +
+        `-- tick it in Project Settings > Scanners`,
+    )
+  }
+  return { ...deps, getAllConversations: () => convs }
+}
+
+/**
  * One tick: a beat for every epic with conversations or an armed run.
  *
  * The PASS itself moved to `scanners/epic-scanner.ts` and runs through `runScan`,
@@ -170,13 +265,26 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
     return
   }
   sweeping = true
+  // THE OPT-IN IS CHECKED HERE, BY THE CALLER. A project that never ticked the
+  // "epics" box is swept by nothing, and the scanner is never told why -- it is
+  // simply handed a smaller board.
+  const optIn = deps.scannerOptIn
+  const scoped = optIn ? gateSweep(deps, optIn) : deps
   try {
     // `runScan` is self-catching, so the guard below is released either way --
     // but the try/finally stays, because a guard that depends on a callee never
     // throwing is a guard one refactor away from wedging the sweep forever.
-    await runScan(epicScanner, deps)
+    await runScan(epicScanner, scoped)
   } finally {
     sweeping = false
+  }
+  // The pass HAPPENED for every opted-in project, including the ones with no epic
+  // at all -- that is the whole value of the stamp. "Enabled, last ran never" then
+  // means the loop is dead rather than the board being quiet, which is the
+  // distinction nightshift (0 runs since June) could not make about itself.
+  if (optIn) {
+    const at = deps.now()
+    for (const project of optIn.projects()) optIn.stamp(project, at)
   }
   // AFTER the guard is released, and NOT skipped when there is nothing to beat.
   // An empty sweep is exactly when a run has just settled, and that is the tick
@@ -204,6 +312,16 @@ export async function beatOneEpic(
   epicId: string,
 ): Promise<{ ok: true; outcome: BeatOutcome } | { ok: false; error: string }> {
   if (sweeping) return { ok: false, error: 'a sweep is already running; try again in a moment' }
+  // REFUSED, not silently honoured. BEAT NOW runs the same dispatch the sweep
+  // does, so honouring it in an opted-out project would be a back door around the
+  // opt-in. Saying which box to tick is more use than either doing it anyway or
+  // pretending to.
+  if (deps.scannerOptIn && !deps.scannerOptIn.enabled(project)) {
+    return {
+      ok: false,
+      error: `the "epics" scanner is off for ${project} -- tick it in Project Settings > Scanners to let it run`,
+    }
+  }
   // Refused rather than honoured: inside the quarantine the conversation
   // registry is still filling, so a forced beat would dispatch a duplicate seat
   // for every card that already has one. Saying so is more use than doing it.
