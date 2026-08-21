@@ -29,6 +29,7 @@ function plan(over: Partial<EpicPlan> = {}): EpicPlan {
     unspawnable: [],
     needsRefine: [],
     exhausted: [],
+    alreadyRun: [],
     complete: false,
     ...over,
   }
