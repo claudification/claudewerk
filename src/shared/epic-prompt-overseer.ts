@@ -108,8 +108,14 @@ function theJob(ctx: OverseerPromptCtx): string {
     '   it. That is not hypothetical: it happened on 2026-08-20, 29 minutes after a rename.',
     '',
     '5. WRITE THE BATON. Append ONE `intent` entry saying what you decided and why, and rewrite the run',
-    '   digest (the body of run.md) so the next generation -- which will not have this conversation -- can',
-    '   pick up cold. Assume the reader knows nothing except the board and this file.',
+    `   digest -- the WHOLE of \`${ctx.projectRoot}/.rclaude/project/epics/${id}/digest.md\` -- so the next`,
+    '   generation, which will not have this conversation, can pick up cold. Assume the reader knows nothing',
+    '   except the board and that file.',
+    '',
+    "   `run.md` beside it is MACHINE-OWNED: it is the engine's run state and editing it deadlocks the run.",
+    '   Its frontmatter carries the generation counter the lease is compared against, so a rewrite that carries',
+    '   the frontmatter along desynchronises the run permanently -- it beats forever, spawns nothing, and reads',
+    '   as RUNNING on every surface. That happened on 2026-08-20 and cost hours. Write `digest.md`. Never `run.md`.',
   ].join('\n')
 }
 

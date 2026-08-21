@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
-import { epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
-import { isOutOfGenerations, patchEpicRun, readEpicRun, startEpicRun } from './epic-run-store'
+import { epicDigestFile, epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
+import { isOutOfGenerations, patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
 
 const T0 = Date.parse('2026-08-17T10:00:00.000Z')
 let root = ''
@@ -182,6 +182,116 @@ describe('the run artifact', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
     patchEpicRun(root, 'e1', { digest: 'Two cards left; both waiting on the schema card.' }, T0 + 1)
     expect(readEpicRun(root, 'e1')?.digest).toContain('schema card')
+  })
+
+  /**
+   * THE DIGEST LIVES IN ITS OWN FILE, and this block is the whole reason:
+   *
+   * `run.md` used to carry engine scalars in its frontmatter AND the overseer's
+   * prose in its body, and the overseer prompt ordered a rewrite of the second
+   * every generation. There is no verb for "rewrite only the body", so the only
+   * mechanism available was writing the whole file -- and the whole file carries
+   * `gen`. On 2026-08-20 `epic-the-wall-ii` did exactly that: the card said
+   * `overseer_gen: 11`, `run.md` said `gen: 12`, the wake quoted the run and the
+   * CAS compared the card, and the run beat every 45s for hours spawning nothing
+   * while every panel surface said RUNNING.
+   *
+   * Splitting the two files makes that class impossible rather than unlikely:
+   * the writer of the prose no longer has the scalars in its hands.
+   */
+  describe('the digest lives beside the run, not inside it', () => {
+    /** A run in the shape every artifact on disk had before the split: the prose
+     *  in `run.md`'s body, no `digest.md` anywhere. */
+    function writeLegacyRun(epicId: string): void {
+      startEpicRun(root, { epicId, project: 'p' }, T0)
+      rmSync(epicDigestFile(root, epicId))
+      const file = epicRunFile(root, epicId)
+      writeFileSync(file, readFileSync(file, 'utf8').replace(RUN_FILE_BANNER, 'legacy prose from gen 7'), 'utf8')
+    }
+
+    /** The RED one. An agent rewriting the digest by hand must not be able to
+     *  touch a field the engine compares -- there is no frontmatter to catch. */
+    test('rewriting the digest by hand cannot move the generation counter', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { gen: 11 }, T0 + 1)
+
+      writeFileSync(epicDigestFile(root, 'e1'), '## Board at the start of generation 12\n\nprose, 900 lines of it\n')
+
+      const run = readEpicRun(root, 'e1')
+      expect(run?.gen).toBe(11)
+      expect(run?.digest).toContain('generation 12')
+    })
+
+    test('a fresh run.md carries frontmatter and no digest prose', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { digest: 'Two cards left; both waiting on the schema card.' }, T0 + 1)
+
+      const runFile = readFileSync(epicRunFile(root, 'e1'), 'utf8')
+      expect(runFile).toContain('gen: 0')
+      expect(runFile).not.toContain('schema card')
+      expect(runFile).toContain(RUN_FILE_BANNER)
+      expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toContain('schema card')
+    })
+
+    /** Every run armed before this split keeps its digest in `run.md`'s body and
+     *  has no `digest.md` at all. It has to read exactly as it always did. */
+    test('a run whose digest is still in run.md reads through the fallback', () => {
+      writeLegacyRun('e1')
+      // Sanity: the fixture really is the old shape -- frontmatter, then prose.
+      expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).toContain('legacy prose')
+
+      expect(readEpicRun(root, 'e1')?.digest).toBe('legacy prose from gen 7')
+    })
+
+    /** ...and the first write MIGRATES it, rather than dropping it on the floor.
+     *  `writeRun` no longer serialises the body, so a legacy digest that was not
+     *  carried across would be destroyed by the next `gen` bump. */
+    test('the first write moves a legacy digest into its own file', () => {
+      writeLegacyRun('e1')
+
+      patchEpicRun(root, 'e1', { gen: 8 }, T0 + 1)
+
+      expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toContain('legacy prose from gen 7')
+      expect(readEpicRun(root, 'e1')).toMatchObject({ gen: 8, digest: 'legacy prose from gen 7' })
+    })
+
+    /**
+     * THE CLOBBER WINDOW, closed. The engine patches a run by read-merge-write,
+     * so an overseer that rewrote `digest.md` between the read and the write
+     * would have its prose written back stale -- the same collision in the other
+     * direction. A patch that does not name `digest` therefore does not touch
+     * the digest file at all.
+     */
+    test('a patch that does not name the digest leaves the digest file alone', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      const current = readEpicRun(root, 'e1')
+
+      writeFileSync(epicDigestFile(root, 'e1'), 'written by the overseer mid-beat\n')
+      patchEpicRun(root, 'e1', { gen: current!.gen + 1 }, T0 + 1)
+
+      expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toBe('written by the overseer mid-beat\n')
+    })
+
+    /** A resume must not reset the prose either -- same argument as `gen`. */
+    test('re-arming keeps the digest the last generation wrote', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { digest: 'three cards left', status: 'paused' }, T0 + 1)
+
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 2)
+
+      expect(readEpicRun(root, 'e1')?.digest).toBe('three cards left')
+    })
+
+    /** A deleted digest file falls back to `run.md`'s body -- which now says only
+     *  "machine-owned". That banner is not a digest and must never read as one. */
+    test('the machine-owned banner never reads back as a digest', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { digest: 'something' }, T0 + 1)
+      rmSync(epicDigestFile(root, 'e1'))
+
+      expect(readEpicRun(root, 'e1')?.digest).not.toContain(RUN_FILE_BANNER)
+      expect(readEpicRun(root, 'e1')?.digest).toContain('No digest yet')
+    })
   })
 
   test('the generation ceiling is the runaway backstop', () => {

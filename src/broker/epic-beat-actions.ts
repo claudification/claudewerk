@@ -179,9 +179,12 @@ async function spawnSeat(
  *
  * `action.expectGen` comes from the run file, and the run file's `gen` is a
  * MIRROR -- the sentinel writes it when a lease is granted (epic-handlers.ts
- * `lease`). A mirror can drift: `run.md` is a markdown artifact whose digest an
- * overseer rewrites every generation, and rewriting the body with the
- * frontmatter attached rewrites the counter too.
+ * `lease`). A mirror can drift: `run.md` is a hand-editable markdown artifact,
+ * and it USED TO carry the digest an overseer rewrites every generation, so a
+ * rewrite of the body carried the frontmatter -- and the counter -- along with
+ * it. The digest now lives in `digest.md` (epic-run-store.ts), which closes that
+ * particular door; the CAS still trusts the lease over the mirror, because a
+ * hand-edited run file is not the only way a mirror can go stale.
  *
  * When it drifts the CAS can never agree with itself again, because the wake
  * quotes the run and `evaluateLease` compares against the card. That is not a

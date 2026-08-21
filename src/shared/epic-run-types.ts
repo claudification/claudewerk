@@ -246,7 +246,9 @@ export interface EpicRunMeta {
  * exactly the drift that makes a field silently stop crossing the seam.
  */
 export interface EpicRunFull extends EpicRunMeta {
-  /** The overseer's running account of where the epic stands (run.md's body). */
+  /** The overseer's running account of where the epic stands. Its own file --
+   *  `digest.md`, never `run.md`'s body: an agent ordered to rewrite prose must
+   *  not have the engine's scalars in the same file. See `epic-run-store.ts`. */
   digest: string
 }
 

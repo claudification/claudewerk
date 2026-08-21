@@ -2,8 +2,15 @@
  * Epic run tree layout -- where an epic's run state and baton live:
  *
  *   <project>/.rclaude/project/epics/<epicId>/
- *     run.md    run frontmatter (EpicRunMeta) + a prose digest body
- *     log.md    the append-only baton
+ *     run.md     run frontmatter (EpicRunMeta), machine-owned, NOTHING else
+ *     digest.md  the overseer's prose account of where the epic stands
+ *     log.md     the append-only baton
+ *
+ * THE DIGEST IS A SEPARATE FILE ON PURPOSE. It used to be `run.md`'s body, which
+ * put the one artifact an AGENT is ordered to rewrite every generation in the
+ * same file as the scalars the ENGINE compares -- and there is no verb for
+ * "rewrite only the body", so the only mechanism available was writing the whole
+ * file. See `epic-run-store.ts` for the run this cost hours of deadlock.
  *
  * Deliberately a SIBLING of `quests/`, not a reuse of it: a quest is selected by
  * petname and carries its own acceptance contracts, an epic is selected by the
@@ -59,6 +66,17 @@ export function deletedEpicDir(root: string, epicId: string, nowMs: number): str
 
 export function epicRunFile(root: string, epicId: string): string {
   return join(epicDir(root, epicId), 'run.md')
+}
+
+/**
+ * The overseer's digest. A SIBLING of `run.md`, never a section of it.
+ *
+ * The whole point of the separation is that an agent can be handed this path and
+ * be unable to reach a single field the engine reads -- so nothing here ever
+ * grows frontmatter, and no engine scalar is ever mirrored into it.
+ */
+export function epicDigestFile(root: string, epicId: string): string {
+  return join(epicDir(root, epicId), 'digest.md')
 }
 
 export function epicLogFile(root: string, epicId: string): string {
