@@ -11,6 +11,7 @@ import { describe, expect, test } from 'bun:test'
 import { validateOrder } from './order'
 import { composeOrderCaps, internalOrderCaller } from './order-caps'
 import { REFINER, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
+import { taskMode } from './task-modes'
 
 describe('REFINER@1, the artifact', () => {
   test('is a legal order@1 -- the repo does not exempt its own orders from the validator', () => {
@@ -42,6 +43,23 @@ describe('REFINER@1, the artifact', () => {
     expect(text.toLowerCase()).toContain('remove')
     expect(text).toContain("Do NOT change the card's status")
     expect(text).toContain('do NOT start implementing')
+  })
+
+  /**
+   * A refiner reached from the LAUNCH modal runs `TASK_MODES.refine.single`; one
+   * reached from this seat runs `REFINER.instructions`. A hint only one of them
+   * asks for is a hint that appears or vanishes depending on which door the
+   * refine came through, which is the drift `task-modes.ts` exists to record.
+   */
+  test('BOTH copies of the refine prose ask for a `model:` suggestion', () => {
+    const refine = taskMode('refine')
+    for (const text of [REFINER.instructions, refine.single, refine.instructions]) {
+      expect(text).toContain('model:')
+    }
+  })
+
+  test('the seat prose says the hint is a hint -- an order may clamp it', () => {
+    expect(REFINER.instructions).toContain('clamp')
   })
 
   test('is reachable by id, and an unknown id is absent rather than an error', () => {

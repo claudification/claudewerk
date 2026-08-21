@@ -135,6 +135,25 @@ describe('what it dispatches', () => {
     expect(report.acted).toEqual(['a'])
     expect(dispatched[0]?.plan.epic.gen).toBe(1)
   })
+
+  /**
+   * THE CARD'S `model:` HINT REACHES THE SEAT. `IMPLEMENTER@1` sets no model cap
+   * today, so the clamp has nothing to narrow against and the hint is the
+   * choice -- which is what makes this the interesting half of the pair: the
+   * refine scanner proves the clamp bites, this one proves it does not bite when
+   * there is no cap to bite with.
+   */
+  test("a card's `model:` hint becomes the seat's model", async () => {
+    await runScan(workOrderScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
+
+    expect(dispatched[0]?.plan.model).toBe('opus')
+  })
+
+  test('a card with no hint leaves the seat on the project default, exactly as before', async () => {
+    await runScan(workOrderScanner, deps({ getCards: async () => [card('a')] }))
+
+    expect(dispatched[0]?.plan.model).toBeUndefined()
+  })
 })
 
 describe('what it refuses, and by what name', () => {

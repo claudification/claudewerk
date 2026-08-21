@@ -43,6 +43,7 @@
  * per-project opt-in and the last-run stamp (scanner-opt-in).
  */
 
+import { clampCardModel } from '../../shared/card-model'
 import { cardRelPath } from '../../shared/card-path'
 import { epicBucket } from '../../shared/epic-cards'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
@@ -207,7 +208,16 @@ type SeatCompilation = { ok: true; request: SpawnRequest } | { ok: false; reason
  */
 function compileSeat(deps: RefineDeps, card: ProjectTaskMeta): SeatCompilation {
   const gen = attemptsFor(deps, card.slug)
+  // THE CARD'S HINT, CLAMPED BEFORE IT IS OFFERED. `composeOrderCaps` treats
+  // `model` as a SELECTION field -- an explicit base wins outright -- which is
+  // right for a human at a spawn dialog and wrong for a card: handing the raw
+  // hint in would let a card asking for `opus` buy a tier `REFINER@1` capped at
+  // Haiku. What goes in below is already a narrowing, so the composition's rule
+  // and this one agree instead of racing.
+  const model = clampCardModel(card.model, REFINER_ORDER.caps.model)
+  if (model.note) deps.log(`[refine] ${card.slug}: ${model.note}`)
   const base: SpawnRequest = {
+    ...(model.model ? { model: model.model as SpawnRequest['model'] } : {}),
     cwd: deps.project,
     prompt: buildRefinerPrompt(deps.projectRoot, card.slug),
     headless: true,

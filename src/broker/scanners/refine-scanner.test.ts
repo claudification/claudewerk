@@ -163,6 +163,43 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER.reservation)
   })
 
+  /**
+   * THE MODEL HINT IS A HINT, AND THE ORDER STILL WINS.
+   *
+   * `composeOrderCaps` treats `model` as a SELECTION field where an explicit
+   * base wins outright -- which is right for a human at a spawn dialog and would
+   * be a hole here: a card would buy itself a tier its seat's order refused. The
+   * clamp runs before the composition ever sees the value.
+   */
+  test('a `model: opus` card dispatched by REFINER@1 still runs on Haiku', async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
+
+    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+  })
+
+  test('a clamp is LOGGED -- a silent downgrade is the failure this exists to avoid', async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
+
+    expect(log.some(line => line.includes('opus') && line.includes(String(REFINER.order.caps.model)))).toBe(true)
+  })
+
+  test('a hint AT the cap survives, and says nothing about it', async () => {
+    await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a', 'open', { model: REFINER.order.caps.model })] }),
+    )
+
+    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+    expect(log.some(line => line.includes('running on'))).toBe(false)
+  })
+
+  test('a card with no hint dispatches exactly as it always did', async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
+
+    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+    expect(log.some(line => line.includes('running on'))).toBe(false)
+  })
+
   test('a re-tagged card dispatches under the next attempt number, so the name is new', async () => {
     // A settled seat normally refuses the card (`already-run`); one that produced
     // nothing does not settle it, so this is the retry path in the shared fold.

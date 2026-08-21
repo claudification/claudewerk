@@ -56,6 +56,8 @@ For each task:
 3. Add missing tags and set appropriate priority
 4. Break down large tasks into smaller, actionable sub-tasks
 5. Identify dependencies between tasks
+6. Set \`model:\` on each card to the model that work actually needs (\`haiku\`,
+   \`sonnet\`, \`opus\`, \`fable\`), with a one-line reason in the body
 
 Edit the card files themselves. Do NOT change any card's status, and do NOT
 start implementing the work.`,
@@ -65,6 +67,11 @@ start implementing the work.`,
 3. Add missing tags and set an appropriate priority
 4. Break it into smaller, actionable sub-tasks if it is too large
 5. Note any dependencies on other cards
+6. Set \`model:\` to the model this work actually needs (\`haiku\`, \`sonnet\`,
+   \`opus\`, \`fable\`) and say WHY in one line in the body -- you have just read the
+   card and the code it points at, so you are the one who knows whether this is a
+   rename-three-symbols job or a design job. It is a HINT: a seat's own order may
+   clamp it down, never up.
 
 Edit the card file itself. Do NOT change the card's status, and do NOT start
 implementing the work.`,

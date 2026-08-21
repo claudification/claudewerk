@@ -43,6 +43,11 @@ export const REFINER_ORDER_ID = 'REFINER@1'
  *
  * Derived from `TASK_MODES`' `refine.single` so the two do not drift while both
  * exist; the additions are the tag removal and the explicit no-status clause.
+ *
+ * THE MODEL SUGGESTION (step 7) IS IN BOTH COPIES, and it has to be: a refiner
+ * reached from the LAUNCH modal runs `TASK_MODES.refine.single`, one reached
+ * from this seat runs the block below, and a hint only one of them asks for is a
+ * hint that appears or vanishes depending on which door the refine came through.
  */
 export const REFINER_INSTRUCTIONS = `REFINE this card -- do not implement it.
 1. Read the card file for full context, and the code it points at
@@ -52,6 +57,12 @@ export const REFINER_INSTRUCTIONS = `REFINE this card -- do not implement it.
 5. Note any dependencies on other cards
 6. REMOVE the \`needs-refine\` tag from the card's \`tags:\` line -- the tag is the
    queue, and a card you refined but left tagged comes back to you forever
+7. Set \`model:\` to the model this work actually needs (\`haiku\`, \`sonnet\`,
+   \`opus\`, \`fable\`) and say WHY in one line in the body. You have just read the
+   card and the code it points at, so you are the one who knows whether this is a
+   rename-three-symbols job or a design job -- that judgement is thrown away
+   unless you write it down. It is a HINT: a seat's own order may clamp it down,
+   never up.
 
 Edit the card file itself. Do NOT change the card's status (you cannot -- the
 status verb is denied to this seat), and do NOT start implementing the work.`

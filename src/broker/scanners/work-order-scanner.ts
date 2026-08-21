@@ -26,6 +26,8 @@
  * consults settings is a scanner you cannot test without them.
  */
 
+import { clampCardModel } from '../../shared/card-model'
+import { EPIC_ORDERS } from '../../shared/epic-orders'
 import { type EpicPlan, planTagged } from '../../shared/epic-ready'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import { type EpicSpawnCtx, type EpicSpawnPlan, planImplementerSpawn } from '../epic-spawn-plan'
@@ -142,14 +144,26 @@ function attemptsFor(deps: WorkOrderDeps, cardId: string): number {
     .filter(c => c.launchConfig?.epic?.epicId === WORK_ORDER_EPIC_ID && c.launchConfig.epic.cardId === cardId).length
 }
 
-/** Compile the seat and hand it over. Its own function so `scanWorkOrders` reads
- *  as select -> refuse -> dispatch and nothing else. */
+/**
+ * Compile the seat and hand it over. Its own function so `scanWorkOrders` reads
+ * as select -> refuse -> dispatch and nothing else.
+ *
+ * THE CARD'S `model:` HINT IS SPENT HERE, and it is clamped against
+ * `IMPLEMENTER@1`'s own cap on the way past. That order sets no model today, so
+ * the hint passes through untouched and a card with no hint changes nothing --
+ * but the clamp is in the path from the first day rather than added the day an
+ * order first caps a seat, because "the order still wins" is not a property you
+ * can retrofit onto dispatches that already happened.
+ */
 async function dispatchCard(deps: WorkOrderDeps, card: ProjectTaskMeta): Promise<boolean> {
+  const model = clampCardModel(card.model, EPIC_ORDERS.implementer.caps.model)
+  if (model.note) deps.log(`[work-orders] ${card.slug}: ${model.note}`)
   const plan = planImplementerSpawn(
     { ...deps.spawnCtx, epicId: WORK_ORDER_EPIC_ID, gen: attemptsFor(deps, card.slug) },
     card.slug,
     'main',
     card.dependsOn ?? [],
+    model.model,
   )
   return deps.dispatch(plan, card.slug)
 }
