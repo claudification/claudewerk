@@ -187,6 +187,87 @@ function isDenyFloorEntry(entry: unknown, command: string): boolean {
   return entry.hooks.some(hook => isPlainObject(hook) && hook.command === command)
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value)
+}
+
+/** Either the field's value, or the reason it is a shape the floor cannot fold into. */
+type FieldRead<T> = { ok: true; value: T | undefined } | { ok: false; reason: string }
+
+/**
+ * Read one optional field out of an opaque bag. ABSENT AND `null` ARE BOTH FINE --
+ * `settingsInline` is `Record<string, unknown>` by schema, so a key a human never
+ * wrote and a key they wrote as `null` mean the same thing to the floor: nothing to
+ * preserve. Present-but-wrong-shape is the only failure, and it carries the caller's
+ * reason rather than a generated one so the four refusal strings stay verbatim.
+ */
+function readOptionalField<T>(
+  bag: Record<string, unknown>,
+  key: string,
+  isValid: (value: unknown) => value is T,
+  reason: string,
+): FieldRead<T> {
+  const value = bag[key]
+  if (value === undefined || value === null) return { ok: true, value: undefined }
+  if (!isValid(value)) return { ok: false, reason }
+  return { ok: true, value }
+}
+
+/** The four things the fold needs out of an existing fragment, all optional. */
+interface InlineShape {
+  permissions: Record<string, unknown> | undefined
+  deny: string[] | undefined
+  hooks: Record<string, unknown> | undefined
+  preToolUse: unknown[] | undefined
+}
+
+/**
+ * SHAPE VALIDATION, THE WHOLE OF IT, IN ONE PLACE. `applyDenyFloor` needs four
+ * fields out of an opaque bag and every one of them can be absent, `null`, or the
+ * wrong type outright; that check was most of the function and none of its point.
+ * The order of the four reads is the order of the refusal reasons -- a fragment
+ * wrong in two places reports the outermost one first.
+ */
+function validateInlineShape(
+  settings: Record<string, unknown>,
+): { ok: true; shape: InlineShape } | { ok: false; reason: string } {
+  const permissions = readOptionalField(
+    settings,
+    'permissions',
+    isPlainObject,
+    'settingsInline.permissions is not an object',
+  )
+  if (!permissions.ok) return permissions
+
+  const deny = readOptionalField(
+    permissions.value ?? {},
+    'deny',
+    isStringArray,
+    'settingsInline.permissions.deny is not an array of strings',
+  )
+  if (!deny.ok) return deny
+
+  const hooks = readOptionalField(settings, 'hooks', isPlainObject, 'settingsInline.hooks is not an object')
+  if (!hooks.ok) return hooks
+
+  const preToolUse = readOptionalField(
+    hooks.value ?? {},
+    'PreToolUse',
+    isUnknownArray,
+    'settingsInline.hooks.PreToolUse is not an array',
+  )
+  if (!preToolUse.ok) return preToolUse
+
+  return {
+    ok: true,
+    shape: { permissions: permissions.value, deny: deny.value, hooks: hooks.value, preToolUse: preToolUse.value },
+  }
+}
+
 /**
  * THE FLOOR, FOLDED INTO A FRAGMENT SOMEBODY ELSE WROTE.
  *
@@ -225,31 +306,15 @@ export function applyDenyFloor(settings: Record<string, unknown> | undefined): D
     }
   }
 
-  const permissions = settings.permissions
-  if (permissions !== undefined && permissions !== null && !isPlainObject(permissions)) {
-    return { ok: false, reason: 'settingsInline.permissions is not an object' }
-  }
-  const existingDeny = isPlainObject(permissions) ? permissions.deny : undefined
-  if (existingDeny !== undefined && existingDeny !== null) {
-    if (!Array.isArray(existingDeny) || existingDeny.some(rule => typeof rule !== 'string')) {
-      return { ok: false, reason: 'settingsInline.permissions.deny is not an array of strings' }
-    }
-  }
-
-  const hooks = settings.hooks
-  if (hooks !== undefined && hooks !== null && !isPlainObject(hooks)) {
-    return { ok: false, reason: 'settingsInline.hooks is not an object' }
-  }
-  const preToolUse = isPlainObject(hooks) ? hooks.PreToolUse : undefined
-  if (preToolUse !== undefined && preToolUse !== null && !Array.isArray(preToolUse)) {
-    return { ok: false, reason: 'settingsInline.hooks.PreToolUse is not an array' }
-  }
+  const checked = validateInlineShape(settings)
+  if (!checked.ok) return checked
+  const { permissions, deny: existingDeny, hooks, preToolUse } = checked.shape
 
   // The caller's own rules stay at the head of the list: the floor is appended
   // to what a human wrote, it does not reorder it.
-  const deny = uniq([...((existingDeny as string[] | undefined | null) ?? []), ...DENY_FLOOR_RULES])
+  const deny = uniq([...(existingDeny ?? []), ...DENY_FLOOR_RULES])
   const guard = denyFloorHookCommand()
-  const entries = (preToolUse as unknown[] | undefined | null) ?? []
+  const entries = preToolUse ?? []
   const nextPreToolUse = entries.some(entry => isDenyFloorEntry(entry, guard))
     ? entries
     : [...entries, denyFloorHookEntry()]
@@ -258,8 +323,8 @@ export function applyDenyFloor(settings: Record<string, unknown> | undefined): D
     ok: true,
     settings: {
       ...settings,
-      permissions: { ...(isPlainObject(permissions) ? permissions : {}), deny },
-      hooks: { ...(isPlainObject(hooks) ? hooks : {}), PreToolUse: nextPreToolUse },
+      permissions: { ...(permissions ?? {}), deny },
+      hooks: { ...(hooks ?? {}), PreToolUse: nextPreToolUse },
     },
   }
 }

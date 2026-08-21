@@ -58,12 +58,12 @@ export type SeatAdmission = { admit: true } | { admit: false; reason: string }
  * modal, so rewording it would make every stored row disagree with every new
  * one about the same event.
  */
-export function ceilingReason(maxInFlight: number): string {
+function ceilingReason(maxInFlight: number): string {
   return `scheduler at its concurrency ceiling (${maxInFlight})`
 }
 
 /** The reservation's refusal text -- names the order, because that is the fix. */
-export function reservationReason(orderId: string, reservation: number, maxInFlight: number): string {
+function reservationReason(orderId: string, reservation: number, maxInFlight: number): string {
   return `order ${orderId} holds its reserved ${reservation} of ${maxInFlight} scheduler slots`
 }
 
