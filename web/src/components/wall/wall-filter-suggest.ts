@@ -16,8 +16,9 @@
 
 import { fuzzyScore } from '../input-editor/autocomplete-shared'
 
-/** The sigils that scope to a NAME, and therefore have real values to offer. */
-export const SUGGEST_SIGILS = ['@', '#', '&', ':', '^'] as const
+/** The sigils that scope to a NAME, and therefore have real values to offer.
+ *  Module-private: callers want the TYPE and the label map, never the array. */
+const SUGGEST_SIGILS = ['@', '#', '&', ':', '^'] as const
 
 export type SuggestSigil = (typeof SUGGEST_SIGILS)[number]
 
@@ -98,6 +99,26 @@ export function rankSuggestions(needle: string, values: readonly string[], limit
  */
 export function suggestToken(value: string): string {
   return value.trim().replace(/\s+/g, '-')
+}
+
+/** What a key does to an open list. `null` means the key is not ours and must
+ *  reach the input untouched -- which is most of them, including every letter. */
+export type SuggestKeyAction = { move: number } | { accept: true } | null
+
+/**
+ * Arrow moves, Tab and Enter accept.
+ *
+ * Tab because that is what a shell completes with, Enter because this box has no
+ * submit for it to steal. Both wrap, so holding one arrow walks the list rather
+ * than sticking at an end.
+ */
+export function suggestKeyAction(key: string, index: number, count: number): SuggestKeyAction {
+  if (count < 1) return null
+  const at = Math.min(Math.max(index, 0), count - 1)
+  if (key === 'ArrowDown') return { move: (at + 1) % count }
+  if (key === 'ArrowUp') return { move: (at + count - 1) % count }
+  if (key === 'Tab' || key === 'Enter') return { accept: true }
+  return null
 }
 
 /** The box after accepting `value`, and where the caret lands. A trailing space

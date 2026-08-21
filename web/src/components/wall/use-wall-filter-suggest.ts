@@ -19,7 +19,13 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useWallFilterValues } from './use-wall-filter-values'
-import { activeSuggestToken, applySuggestion, rankSuggestions, type SuggestSigil } from './wall-filter-suggest'
+import {
+  activeSuggestToken,
+  applySuggestion,
+  rankSuggestions,
+  type SuggestSigil,
+  suggestKeyAction,
+} from './wall-filter-suggest'
 
 export interface WallFilterSuggest {
   /** The live sigil, or null when the caret is not inside a completable token. */
@@ -40,6 +46,23 @@ export interface WallFilterSuggest {
   dismiss: () => boolean
 }
 
+/**
+ * WHAT TO SHOW: the token the caret is in, and the values ranked for it.
+ *
+ * Separated from the keyboard half below because it is the half that talks to
+ * the fleet -- it is where every store subscription in this feature lives, and
+ * keeping it whole means the key handling has no reason to know a store exists.
+ * Returns a null token when the list is closed, so nothing downstream has to
+ * re-derive "is it open".
+ */
+function useSuggestList(raw: string, caret: number, dismissedAt: string | null) {
+  const found = useMemo(() => activeSuggestToken(raw, caret), [raw, caret])
+  const token = found !== null && dismissedAt !== raw ? found : null
+  const values = useWallFilterValues(token?.sigil ?? null)
+  const ranked = useMemo(() => (token ? rankSuggestions(token.needle, values) : []), [token, values])
+  return { token, ranked }
+}
+
 export function useWallFilterSuggest(
   raw: string,
   setRaw: (raw: string) => void,
@@ -50,13 +73,7 @@ export function useWallFilterSuggest(
   /** The exact box text Escape was pressed against. Any edit revives the list. */
   const [dismissedAt, setDismissedAt] = useState<string | null>(null)
 
-  const token = useMemo(() => activeSuggestToken(raw, caret), [raw, caret])
-  const open = token !== null && dismissedAt !== raw
-  const values = useWallFilterValues(open ? token.sigil : null)
-  const ranked = useMemo(
-    () => (open && token ? rankSuggestions(token.needle, values) : []),
-    [open, token, values],
-  )
+  const { token, ranked } = useSuggestList(raw, caret, dismissedAt)
 
   // Clamped rather than reset-on-change: a stale index from a longer list would
   // otherwise accept a value the user cannot see.
@@ -98,22 +115,11 @@ export function useWallFilterSuggest(
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>): boolean => {
-      if (!ranked.length) return false
-      if (event.key === 'ArrowDown') {
-        setSelected(i => (Math.min(i, ranked.length - 1) + 1) % ranked.length)
-        return true
-      }
-      if (event.key === 'ArrowUp') {
-        setSelected(i => (Math.min(i, ranked.length - 1) + ranked.length - 1) % ranked.length)
-        return true
-      }
-      // Tab and Enter both accept. Tab because that is what a shell completes
-      // with; Enter because the box has no submit to steal it from.
-      if (event.key === 'Tab' || event.key === 'Enter') {
-        accept(ranked[index])
-        return true
-      }
-      return false
+      const action = suggestKeyAction(event.key, index, ranked.length)
+      if (!action) return false
+      if ('accept' in action) accept(ranked[index])
+      else setSelected(action.move)
+      return true
     },
     [ranked, index, accept],
   )

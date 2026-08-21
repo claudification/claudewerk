@@ -23,8 +23,8 @@
  * matched.
  */
 
-import { projectIdentityKey } from '@shared/project-uri'
 import type { ProjectOrder } from '@shared/project-order-types'
+import { projectIdentityKey } from '@shared/project-uri'
 import { useMemo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { projectDisplayName } from '@/lib/utils'
@@ -38,7 +38,9 @@ export interface WorkspaceIndex {
   names: readonly string[]
 }
 
-export const EMPTY_WORKSPACE_INDEX: WorkspaceIndex = { byProject: new Map(), names: [] }
+/** One shared "nothing filed anywhere" answer, so an order-less fleet does not
+ *  allocate a fresh map per render and bust every `useWallFilter` memo. */
+const EMPTY_WORKSPACE_INDEX: WorkspaceIndex = { byProject: new Map(), names: [] }
 
 /**
  * Fold a project order into the index. Pure, so the wall's proof can seed a
@@ -81,8 +83,6 @@ export function useWorkspaceIndex(): WorkspaceIndex {
     // hand-rolled partial state, and a fleet with no sidebar order is the same
     // answer as a fleet with no workspaces -- nothing to scope by.
     if (!order) return EMPTY_WORKSPACE_INDEX
-    return buildWorkspaceIndex(order, uri =>
-      projectDisplayName(uri, projectSettings?.[projectIdentityKey(uri)]?.label),
-    )
+    return buildWorkspaceIndex(order, uri => projectDisplayName(uri, projectSettings?.[projectIdentityKey(uri)]?.label))
   }, [order, projectSettings])
 }

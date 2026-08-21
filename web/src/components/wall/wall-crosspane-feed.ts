@@ -51,6 +51,37 @@ export const ANVIL_NAME = 'anvil-md'
 const RC_HOST = 'studio'
 const ANVIL_HOST = 'thai'
 
+/**
+ * THE WORKSPACE SPLIT, and it is deliberately lopsided.
+ *
+ * RC sits in BOTH workspaces and ANVIL in NEITHER, which is the pair the
+ * `^workspace` axis has to get right: membership is many-to-many, so a project
+ * has to answer to every workspace holding it, and "in no workspace" has to be a
+ * real answer rather than a wildcard. A one-project-one-workspace fixture would
+ * pass with either rule.
+ */
+export const ENG_WS = 'Engineering'
+export const CLIENT_WS = 'Client Work'
+
+function projectOrder(): unknown {
+  return {
+    tree: [
+      { id: RC, type: 'project' },
+      { id: ANVIL, type: 'project' },
+    ],
+    workspaces: [
+      { id: 'ws-eng', name: ENG_WS },
+      { id: 'ws-client', name: CLIENT_WS },
+    ],
+    workspaceTrees: {
+      // RC is reached through a GROUP in one of them, flat in the other: a
+      // project buried in a group is still in the workspace.
+      'ws-eng': [{ id: 'grp-shipped', type: 'group', name: 'shipped', children: [{ id: RC, type: 'project' }] }],
+      'ws-client': [{ id: RC, type: 'project' }],
+    },
+  }
+}
+
 function conversation(id: string, project: string, host: string, over: Partial<Conversation> = {}): Conversation {
   return {
     id,
@@ -298,6 +329,7 @@ export function seedTheWall(): void {
     pendingAskQuestions: [],
     pendingDialogs: {},
     projectSettings: {},
+    projectOrder: projectOrder(),
     connectSeq: 1,
   } as never)
 

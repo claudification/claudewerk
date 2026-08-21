@@ -20,7 +20,7 @@
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
-import { ANVIL_NAME, activeRuns, pinsFor, RC_NAME, seedTheWall } from './wall-crosspane-feed'
+import { ANVIL_NAME, activeRuns, CLIENT_WS, ENG_WS, pinsFor, RC_NAME, seedTheWall } from './wall-crosspane-feed'
 import { WALL_PANE_CODES } from './wall-pane-registry'
 import { installWallTestHooks, openTheWall, pane } from './wall-test-utils'
 
@@ -113,6 +113,14 @@ const AXIS_TABLE: { axis: string; token: string; declaredBy: string[] }[] = [
   { axis: 'context', token: '%99', declaredBy: ['P1', 'A5'] },
   { axis: 'host', token: '&nowhere', declaredBy: ['P1', 'P2', 'A1', 'A5', 'S1', 'S2'] },
   { axis: 'model', token: ':haiku', declaredBy: ['P1', 'A1', 'A5'] },
+  // `^workspace` is declared by EXACTLY the panes that declare `project`, and
+  // that is not a coincidence: membership is resolved THROUGH the project name,
+  // so a pane with no project facet has nothing to resolve and must stay full.
+  {
+    axis: 'workspace',
+    token: '^nowhere',
+    declaredBy: ['P1', 'P2', 'P3', 'A1', 'A2', 'A4', 'A5', 'A6', 'A7', 'A8'],
+  },
   { axis: 'managed', token: '+only', declaredBy: ['P1'] },
 ]
 
@@ -162,6 +170,60 @@ describe('an axis a pane never declared leaves that pane FULL', () => {
       expect(declaredBy.some(code => !fullPanes().includes(code))).toBe(true)
     })
   }
+})
+
+describe('`^workspace` scopes the wall through a tier no row carries', () => {
+  /** The panes that resolve a workspace -- exactly the ones with a project. */
+  const RESOLVERS = ['P1', 'P2', 'P3', 'A1', 'A2', 'A4', 'A5', 'A6', 'A7', 'A8']
+
+  /** RC is in BOTH workspaces, ANVIL in NEITHER (see `wall-crosspane-feed`). */
+  const asToken = (name: string) => `^${name.replace(/\s+/g, '-')}`
+
+  /** Panes carrying a project dot -- the ones that can be checked row by row. */
+  const chip = (code: string, name: string) => pane(code)?.querySelector(`[data-project="${name}"]`) ?? null
+  const chipPanes = () => RESOLVERS.filter(code => chip(code, RC_NAME) !== null || chip(code, ANVIL_NAME) !== null)
+
+  it('keeps a project that is in TWO workspaces, from either one of them', async () => {
+    await openTheFullWall()
+    const sources = chipPanes()
+    expect(sources.length).toBeGreaterThan(1)
+
+    for (const ws of [ENG_WS, CLIENT_WS]) {
+      typeQuery(asToken(ws))
+      // The SAME answer from both, because membership is a SET and RC is in
+      // both. A `^` that resolved to "the" workspace of a project could only
+      // ever be right about one of these two.
+      for (const code of sources) {
+        expect(`${ws}/${code}/rc`).toBe(chip(code, RC_NAME) ? `${ws}/${code}/rc` : `${ws}/${code}/MISSING`)
+        expect(`${ws}/${code}/anvil`).toBe(chip(code, ANVIL_NAME) ? `${ws}/${code}/STILL THERE` : `${ws}/${code}/anvil`)
+      }
+    }
+  })
+
+  it('drops a project that is in NO workspace, rather than treating absent as any', async () => {
+    await openTheFullWall()
+    // ANVIL is filed nowhere. There is no workspace token that can keep it, and
+    // "in no workspace" must never read as a wildcard.
+    typeQuery(`${asToken(ENG_WS)} @${ANVIL_NAME}`)
+    for (const code of RESOLVERS) expect(`${code}:${paneCount(code)?.matched}`).toBe(`${code}:0`)
+  })
+
+  it('leaves every pane FULL for a workspace nobody is in', async () => {
+    await openTheFullWall()
+    typeQuery('^someday')
+    for (const code of RESOLVERS) expect(`${code}:${paneCount(code)?.matched}`).toBe(`${code}:0`)
+    // ...and the four with no project to resolve through are untouched, which is
+    // the same guarantee the axis table makes for the other nine axes.
+    expect(fullPanes()).toEqual(WALL_PANE_CODES.filter(code => !RESOLVERS.includes(code)))
+  })
+
+  it('excludes with `-^`, same as every other axis', async () => {
+    await openTheFullWall()
+    typeQuery(`-${asToken(ENG_WS)}`)
+    // RC is excluded; ANVIL, in no workspace at all, is untouched by it.
+    expect(pane('A6')?.querySelector(`[data-project="${RC_NAME}"]`)).toBeNull()
+    expect(pane('A6')?.querySelector(`[data-project="${ANVIL_NAME}"]`)).toBeTruthy()
+  })
 })
 
 describe('the project chip round-trips from every pane that renders one', () => {
