@@ -47,7 +47,12 @@ describe('the registry replaces the copies it was built from', () => {
   })
 
   test('and everything added since is APPENDED, never interleaved', () => {
-    expect([...ORDERED_CARD_KEYS].slice(ORDERED_KEYS_BEFORE.length)).toEqual(['renamed_from'])
+    expect([...ORDERED_CARD_KEYS].slice(ORDERED_KEYS_BEFORE.length)).toEqual([
+      'renamed_from',
+      'archived_reason',
+      'archived_by',
+      'delete_at',
+    ])
   })
 
   test('every linkage verb appears exactly once, derived and not restated', () => {

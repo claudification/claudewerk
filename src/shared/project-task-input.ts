@@ -33,6 +33,20 @@ export interface ProjectTaskInput {
   blockedBy?: string[]
   /** Cards worth reading alongside this one. Serialized as `relates_to`. */
   relatesTo?: string[]
+  /** Why an archived card was archived: `done`, `cold`, or
+   *  `duplicate-of:<card-id>`. Serialized as `archived_reason`. Only meaningful
+   *  with `status: 'archived'` -- project-doctor-lifecycle.ts says so out loud
+   *  rather than rejecting it, because the two keys arrive in one patch and a
+   *  writer that enforced the pair would make un-archiving impossible. */
+  archivedReason?: string
+  /** Who archived it -- a report id (`report-2026-08-22`) or another actor.
+   *  Serialized as `archived_by`. Without it the archive is an unattributed
+   *  mutation, which is the whole thing the on-card record exists to prevent. */
+  archivedBy?: string
+  /** ISO 8601 date after which the card MAY be deleted. Serialized as
+   *  `delete_at`. A MARKER, never an instruction: nothing in this codebase
+   *  deletes on it (epic-morning-report F18 -- removal is a human act). */
+  deleteAt?: string
   /** Watchlist this epic onto THE WALL. `false` REMOVES the key rather than
    *  writing `wall_pinned: false` -- an unpinned card should read exactly like a
    *  card that was never pinned, so grepping the board for the key answers

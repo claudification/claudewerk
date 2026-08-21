@@ -19,6 +19,7 @@
 import { parseCardFrontmatter } from './card-frontmatter'
 import { CARDS_DIR, canonicalizeCardPath } from './card-path'
 import { checkCard } from './project-doctor-cards'
+import { checkLifecycleKeys, duplicateTargetOf } from './project-doctor-lifecycle'
 import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
 import type { DoctorFinding } from './project-doctor-types'
@@ -53,10 +54,34 @@ export function cardWriteTarget(toolName: string, filePath: string): CardWriteTa
 }
 
 export interface CardWriteChecks {
-  /** Card contents as just written; null if it could not be read back. */
+  /** Card contents as just written; null if it could not be read back. Also the
+   *  reader for OTHER cards on the board: `duplicate-of:` is a pointer, and a
+   *  chain of them can only be walked by reading each card it passes through. */
   readFile: (root: string, id: string) => string | null
   /** Every card id on that board -- for spotting links that land nowhere. */
   listIds: (root: string) => string[]
+  /** Wall clock at write time. Injected rather than read from `Date.now()` so
+   *  "is this `delete_at` in the future" is testable without freezing time. */
+  now?: () => number
+}
+
+/**
+ * The board as the lifecycle pass needs to see it, built from the same two
+ * readers everything else here uses. `duplicateTarget` re-reads a card per step
+ * of a chain, which is at most a handful of small files on a write that carries
+ * a `duplicate-of:` -- and zero on every other write, because nothing calls it.
+ */
+function lifecycleBoard(target: CardWriteTarget, io: CardWriteChecks, ids: ReadonlySet<string>) {
+  return {
+    has: (id: string) => ids.has(id),
+    duplicateTarget: (id: string) => {
+      const content = io.readFile(target.root, id)
+      if (content === null) return null
+      const reason = parseCardFrontmatter(content).meta.archived_reason
+      return duplicateTargetOf(reason) || null
+    },
+    writtenAt: (io.now ?? Date.now)(),
+  }
 }
 
 /**
@@ -82,11 +107,16 @@ export function checkWrittenCard(target: CardWriteTarget, io: CardWriteChecks): 
   if (content !== null) {
     const { meta, body } = parseCardFrontmatter(content)
     const refs = Array.isArray(meta.refs) ? meta.refs.map(String) : []
+    const ids = new Set(io.listIds(target.root))
     // A mistyped linkage verb is the one thing on a card that is completely
     // invisible afterwards -- it parses, it persists, and nothing reads it. This
     // is the only moment somebody is still looking at the key they just typed.
     findings.push(...checkLinkageKeys({ id: target.id, meta }))
-    findings.push(...checkLinks({ id: target.id, body, refs }, new Set(io.listIds(target.root))))
+    findings.push(...checkLinks({ id: target.id, body, refs }, ids))
+    // THE ONE MOMENT the lifecycle keys can be checked against the clock: "in
+    // the future" is a fact about when the value was written, and this is the
+    // write. See project-doctor-lifecycle.ts.
+    findings.push(...checkLifecycleKeys({ id: target.id, meta }, lifecycleBoard(target, io, ids)))
   }
 
   return findings.filter(f => f.severity !== 'info')

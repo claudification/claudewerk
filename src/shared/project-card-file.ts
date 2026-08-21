@@ -35,6 +35,14 @@ function undefinedIfEmpty(list: string[]): string[] | undefined {
   return list.length > 0 ? list : undefined
 }
 
+/** A scalar frontmatter value as a string, or undefined when it says nothing.
+ *  A list where a scalar belongs is MUTE (card-schema-validate.ts) -- projecting
+ *  `a,b` from it would invent a value the doctor is busy reporting as absent. */
+function undefinedIfBlank(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  return v.trim() === '' ? undefined : v
+}
+
 function asPriority(v: unknown): Priority | undefined {
   return (CARD_PRIORITIES as readonly string[]).includes(String(v)) ? (String(v) as Priority) : undefined
 }
@@ -100,6 +108,13 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     // get. Scalar or list, both work: the one card carrying it today writes a
     // bare id, and a card renamed twice needs to keep both.
     renamedFrom: undefinedIfEmpty(asCardValueList(raw.meta.renamed_from)),
+    // The lifecycle keys ride through as written. NOT validated here: a card
+    // whose `archived_reason` points at a card that no longer exists still has
+    // to project, or the board loses the very record the key exists to keep.
+    // project-doctor-lifecycle.ts reports it instead.
+    archivedReason: undefinedIfBlank(raw.meta.archived_reason),
+    archivedBy: undefinedIfBlank(raw.meta.archived_by),
+    deleteAt: undefinedIfBlank(raw.meta.delete_at),
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,

@@ -14,7 +14,31 @@ backups/
 archives/
 src/shared/version.ts
 NOTES.md
+# --- .rclaude/ : the project board is TRACKED, everything else is not --------
+# The board (`.rclaude/project/`) is the only durable copy there is. The broker
+# backup covers the broker's own cacheDir and structurally cannot reach into a
+# project tree (CWD IS INFORMATIONAL, lint:boundary Rule 4), so git IS the
+# backup. See docs/backup.md.
+#
+# Order matters, and so does `*`. Git never descends into an excluded
+# DIRECTORY, so `.rclaude/` + a nested `!project/` re-include is a no-op that
+# fails silently -- that was the live bug until 2026-08-21. Exclude the
+# CONTENTS instead, then negate.
+#
+# Guarded both directions by src/shared/board-gitignore.test.ts. Over-correcting
+# here stages `.rclaude/settings/` -- 687 MB, measured.
+#
+# any .rclaude/ anywhere (worktrees, nested projects) stays fully ignored ...
 .rclaude/
+# ... except the one at the repo root, whose contents we then filter by hand
+!/.rclaude/
+/.rclaude/*
+!/.rclaude/project/
+!/.rclaude/rclaude.json
+# machine-local snapshot from the lane-folder -> frontmatter migration; the
+# board tooling already treats this prefix as not-a-card (project-doctor-layout)
+/.rclaude/project/.upgrade-backup-*/
+# -----------------------------------------------------------------------------
 .nightshift/
 .launchfile/
 .env.local

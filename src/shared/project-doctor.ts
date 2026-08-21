@@ -33,6 +33,7 @@ import { checkCard } from './project-doctor-cards'
 import { fsStampDeps, type RepairMode, stampMissingCreated } from './project-doctor-created'
 import { checkEpics, type EpicCardView } from './project-doctor-epics'
 import { checkLayout } from './project-doctor-layout'
+import { checkLifecycleKeys, duplicateTargetOf, type LifecycleBoard } from './project-doctor-lifecycle'
 import { checkLinkageKeys } from './project-doctor-linkage'
 import { checkLinks } from './project-doctor-links'
 import { fsShapeRepairDeps, repairCardShape } from './project-doctor-shape'
@@ -80,7 +81,7 @@ function loadCards(root: string, legacyIds: Set<string>): LoadedCard[] {
   }))
 }
 
-function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>): DoctorFinding[] {
+function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>, board: LifecycleBoard): DoctorFinding[] {
   const findings = checkCard({ id: card.id, content: card.raw, laneStatus: card.laneStatus })
   if (card.raw === null) return findings
   const { meta, body } = parseCardFrontmatter(card.raw)
@@ -89,7 +90,28 @@ function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>): Docto
     ...findings,
     ...checkLinkageKeys({ id: card.id, meta }),
     ...checkLinks({ id: card.id, body, refs }, existingIds),
+    ...checkLifecycleKeys({ id: card.id, meta }, board),
   ]
+}
+
+/**
+ * The lifecycle pass's view of the board: which ids exist, and where each
+ * card's `duplicate-of:` points. Resolved ONCE, off the cards already in
+ * memory, so walking a chain costs a map lookup per step rather than a read.
+ *
+ * NO CLOCK, deliberately: `writtenAt` is absent, which switches off the
+ * "already elapsed" check. An elapsed `delete_at` is the normal state of a
+ * marker awaiting a human, and the sweep already proposes those --
+ * see project-doctor-lifecycle.ts.
+ */
+function lifecycleBoard(cards: LoadedCard[], existingIds: ReadonlySet<string>): LifecycleBoard {
+  const targets = new Map<string, string>()
+  for (const card of cards) {
+    if (card.raw === null) continue
+    const target = duplicateTargetOf(parseCardFrontmatter(card.raw).meta.archived_reason)
+    if (target) targets.set(card.id, target)
+  }
+  return { has: id => existingIds.has(id), duplicateTarget: id => targets.get(id) ?? null }
 }
 
 /**
@@ -168,7 +190,10 @@ export function runProjectDoctor(root: string, opts: DoctorOptions = {}): Doctor
 
   // Repair BEFORE checking, so nothing is reported that has just been fixed.
   const findings: DoctorFinding[] = repairPass(cards, opts.repair ?? 'off')
-  for (const card of cards) findings.push(...cardFindings(card, existingIds))
+  // AFTER the repair pass, which may have rewritten a card's frontmatter -- the
+  // duplicate chain has to be read off the cards as they now are.
+  const lifecycle = lifecycleBoard(cards, existingIds)
+  for (const card of cards) findings.push(...cardFindings(card, existingIds, lifecycle))
   findings.push(...checkEpics(epicViews(cards)))
   findings.push(...checkLayout(root, legacy.length))
 

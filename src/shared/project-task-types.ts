@@ -51,6 +51,18 @@ export interface ProjectTaskMeta {
    *  a baton acknowledgement) still resolves to the card after a rename. See
    *  `epic-card-rename.ts`. Stored as `renamed_from:`. */
   renamedFrom?: string[]
+  /** Why this card was archived: `done`, `cold`, or `duplicate-of:<card-id>`.
+   *  The FIRST of the three record tiers (epic-morning-report D7) and the only
+   *  one that is not purgeable -- the report markdown and the audit DB both go
+   *  away, so "what happened to this card" has to be answerable from the card.
+   *  Stored as `archived_reason:`. */
+  archivedReason?: string
+  /** The actor that archived it, e.g. `report-2026-08-22`. Stored as
+   *  `archived_by:`; absent alongside a reason is an unattributed mutation. */
+  archivedBy?: string
+  /** ISO 8601 date after which the card MAY be deleted. A MARKER a human acts
+   *  on: nothing deletes on it (F18). Stored as `delete_at:`. */
+  deleteAt?: string
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number
