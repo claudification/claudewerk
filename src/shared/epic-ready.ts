@@ -663,11 +663,7 @@ function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates
 function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
   const inFlight = new Set(input.inFlight)
   const dead = new Set(input.unspawnable ?? [])
-  const { verify, questions, unspawnable, needsRefine } = attentionLanes(
-    cohort.children,
-    new Set(input.inVerify),
-    dead,
-  )
+  const { verify, questions, unspawnable, needsRefine } = attentionLanes(cohort.children, new Set(input.inVerify), dead)
   const { ready, waitingOnDeps, exhausted, alreadyRun } = triageDispatchLane(cohort.children, {
     inFlight,
     dead,

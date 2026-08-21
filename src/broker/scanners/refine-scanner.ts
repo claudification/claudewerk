@@ -265,13 +265,63 @@ function refineGroup(deps: RefineDeps): ReturnType<typeof emptyGroup> {
 }
 
 /**
+ * EVERY WAY A SELECTED CARD IS REFUSED BEFORE THE CEILING, MOST SPECIFIC FIRST
+ * -- first rule that claims the card wins, and everything below it is skipped.
+ *
+ * A table rather than an if-chain, matching `WITHHOLD_RULES` in `epic-ready.ts`
+ * and `IDLE_RULES` beside it: THE ORDER IS THE DESIGN, and a table makes that
+ * order something you can read, reorder and test rather than something you
+ * reconstruct by tracing branches. `lint:patterns` enforces it as a covenant
+ * ("no-long-if-chain"), which is how this one got written down.
+ *
+ * CEILING-FREE ON PURPOSE. A card refused by any rule here never reaches the
+ * ceiling, so it never consumes a slot another card could have used.
+ */
+const REFUSAL_RULES: ReadonlyArray<{
+  claims: (card: ProjectTaskMeta, liveness: RefineLiveness) => boolean
+  bucket: RefineBucket
+  detail: (card: ProjectTaskMeta) => string
+}> = [
+  {
+    // A REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
+    // the only lanes where that is true; moving the spec out from under a live
+    // implementer, or rewriting a card whose work already shipped, is worse than
+    // leaving the tag on. Terminal cards land here too -- a tag left on a `done`
+    // card is history, not a queue entry.
+    claims: card => epicBucket(card.status) !== 'notStarted',
+    bucket: 'not-actionable',
+    detail: card =>
+      `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a refiner rewrites a card nobody is building yet`,
+  },
+  {
+    claims: (card, liveness) => liveness.live.has(card.slug),
+    bucket: 'live-conversation',
+    detail: () => 'a refiner is already working it',
+  },
+  {
+    claims: (card, liveness) => liveness.dead.has(card.slug),
+    bucket: 'unspawnable',
+    detail: () => 'refiner seats keep dying before producing anything; not retried',
+  },
+  {
+    // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
+    // forever. A refiner that ran and finished leaves the tag on only if it
+    // failed to reach step 6 of its instructions -- and dispatching a second
+    // one, and a third, every tick, is the treadmill. The card stays tagged and
+    // visible with a reason instead; re-tagging it (or fixing whatever stopped
+    // the drain) re-authorises it, by a decision somebody made, never the clock.
+    claims: (card, liveness) => liveness.settled.has(card.slug),
+    bucket: 'already-run',
+    detail: () => 'a refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
+  },
+]
+
+/**
  * WHICH SELECTED CARDS A REFINER MAY BE SENT TO, and a named bucket for every
  * one of the rest.
  *
- * Its own function because the ORDER of these four refusals is the design, and
- * a reader checking that order should not have to scroll past a ceiling and a
- * dispatch loop to see it. Ceiling-free on purpose: a card refused here never
- * reaches the ceiling, so it never consumes a slot another card could have used.
+ * The one place that walks {@link REFUSAL_RULES}. Everything a reader has to
+ * audit is in the table; this is the loop that applies it.
  */
 function triageSelected(
   selected: readonly ProjectTaskMeta[],
@@ -280,40 +330,9 @@ function triageSelected(
   const refused: Refusal<RefineBucket>[] = []
   const candidates: ProjectTaskMeta[] = []
   for (const card of selected) {
-    // A REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
-    // the only lanes where that is true; moving the spec out from under a live
-    // implementer, or rewriting a card whose work already shipped, is worse than
-    // leaving the tag on. Terminal cards land here too -- a tag left on a `done`
-    // card is history, not a queue entry.
-    if (epicBucket(card.status) !== 'notStarted') {
-      refused.push({
-        unit: card.slug,
-        bucket: 'not-actionable',
-        detail: `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a refiner rewrites a card nobody is building yet`,
-      })
-    } else if (liveness.live.has(card.slug)) {
-      refused.push({ unit: card.slug, bucket: 'live-conversation', detail: 'a refiner is already working it' })
-    } else if (liveness.dead.has(card.slug)) {
-      refused.push({
-        unit: card.slug,
-        bucket: 'unspawnable',
-        detail: 'refiner seats keep dying before producing anything; not retried',
-      })
-    } else if (liveness.settled.has(card.slug)) {
-      // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
-      // forever. A refiner that ran and finished leaves the tag on only if it
-      // failed to reach step 6 of its instructions -- and dispatching a second
-      // one, and a third, every tick, is the treadmill. The card stays tagged and
-      // visible with a reason instead; re-tagging it (or fixing whatever stopped
-      // the drain) re-authorises it, by a decision somebody made, never the clock.
-      refused.push({
-        unit: card.slug,
-        bucket: 'already-run',
-        detail: 'a refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
-      })
-    } else {
-      candidates.push(card)
-    }
+    const rule = REFUSAL_RULES.find(r => r.claims(card, liveness))
+    if (rule) refused.push({ unit: card.slug, bucket: rule.bucket, detail: rule.detail(card) })
+    else candidates.push(card)
   }
   return { candidates, refused }
 }
