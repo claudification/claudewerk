@@ -2,7 +2,9 @@
  * Tests for /api/stats/openrouter -- the by-feature OpenRouter spend read.
  *
  * Spend is admin-only, exactly like its neighbours in this router. The window
- * options stop at 30d because that is the store's retention bound.
+ * options stop at 30d because that is the store's retention bound, and reach down
+ * to 1h because THE WALL's period control has to ask this split and the Anthropic
+ * split the same question (`wall-stats-default-window`).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
@@ -12,7 +14,12 @@ import { join } from 'node:path'
 import { Hono } from 'hono'
 import { setRclaudeSecret } from '../../auth-routes'
 import { type ConversationStore, createConversationStore } from '../../conversation-store'
-import { closeOpenRouterSpendStore, initOpenRouterSpendStore, recordSpend } from '../../openrouter-spend-store'
+import {
+  closeOpenRouterSpendStore,
+  initOpenRouterSpendStore,
+  recordSpend,
+  SPEND_PERIODS,
+} from '../../openrouter-spend-store'
 import { createMemoryDriver } from '../../store/memory/driver'
 import type { StoreDriver } from '../../store/types'
 import { createRouteHelpers, type RouteHelpers } from '../shared'
@@ -82,6 +89,52 @@ describe('GET /api/stats/openrouter', () => {
   it('rejects a period the retention bound cannot honour', async () => {
     const res = await app.request('/api/stats/openrouter?period=90d', { headers: authHeaders() })
     expect(res.status).toBe(400)
+  })
+
+  it('answers every window THE WALL can select', async () => {
+    for (const period of SPEND_PERIODS) {
+      const res = await app.request(`/api/stats/openrouter?period=${period}`, { headers: authHeaders() })
+      expect(res.status).toBe(200)
+      expect(((await res.json()) as RollupBody).period).toBe(period)
+    }
+  })
+
+  it('rejects `1m` -- the wall calls it that, this store calls it 30d, and one name wins', async () => {
+    const res = await app.request('/api/stats/openrouter?period=1m', { headers: authHeaders() })
+    expect(res.status).toBe(400)
+  })
+
+  it('narrows what it counts as the window shrinks', async () => {
+    spend('desk-agent', 'anthropic/claude-haiku-4-5', 0.25)
+    // Two days old: inside 7d, outside 1h.
+    recordSpend(
+      {
+        feature: 'recap-period',
+        model: 'anthropic/claude-haiku-4-5',
+        ms: 300,
+        ok: true,
+        usage: {
+          inputTokens: 10,
+          outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          costUsd: 4,
+          costSource: 'openrouter',
+        },
+      },
+      Date.now() - 2 * 24 * 60 * 60 * 1000,
+    )
+
+    const wide = (await (
+      await app.request('/api/stats/openrouter?period=7d', { headers: authHeaders() })
+    ).json()) as RollupBody
+    expect(wide.byFeature.map(g => g.key).sort()).toEqual(['desk-agent', 'recap-period'])
+
+    const narrow = (await (
+      await app.request('/api/stats/openrouter?period=1h', { headers: authHeaders() })
+    ).json()) as RollupBody
+    expect(narrow.byFeature.map(g => g.key)).toEqual(['desk-agent'])
+    expect(narrow.totals.costUsd).toBeCloseTo(0.25)
   })
 
   it('returns empty rollups when nothing was spent', async () => {

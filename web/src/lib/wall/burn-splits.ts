@@ -44,6 +44,26 @@ function hourKeyMs(hour: string): number {
   return Date.parse(hour)
 }
 
+/**
+ * The start of the hour bucket `ms` falls in.
+ *
+ * IT MIRRORS THE STORE'S `toHourKey` DELIBERATELY (`store/sqlite/costs.ts`),
+ * down to using `setMinutes(0, 0, 0)` rather than dividing by an hour: the store
+ * writes bucket keys with that function and the route floors `?from=` with it
+ * too, so a window boundary computed any other way would disagree with the rows
+ * it is filtering in half-hour timezones.
+ *
+ * Every window on this pane is snapped through here, which is what makes `1h`
+ * mean the last COMPLETE hour instead of an empty split: `hourly_stats` never
+ * holds the hour in progress, so an unsnapped `now - 1h` would land mid-bucket
+ * and exclude the only bucket there was.
+ */
+export function startOfHour(ms: number): number {
+  const d = new Date(ms)
+  d.setMinutes(0, 0, 0)
+  return d.getTime()
+}
+
 /** Local midnight for `now` -- the boundary "today" actually means to a human
  *  reading the wall, not UTC's. */
 export function startOfLocalDay(now: number): number {

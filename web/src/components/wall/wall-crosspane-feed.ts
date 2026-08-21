@@ -151,9 +151,19 @@ function sotuUnion(): unknown {
   }
 }
 
-/** An hour bucket inside today, so `costSince(localMidnight)` sees the spend. */
+/**
+ * An hour bucket inside today, so `costSince(localMidnight)` sees the spend.
+ *
+ * READ AT CALL TIME, and off the LIVE clock rather than off `NOW` -- the one
+ * fixture row that is not `NOW`-relative. A2's window is measured against the
+ * wall clock (`period-store`, `burnHourlyFrom`), so a bucket pinned to a 2023
+ * constant falls outside every period the pane can select and the split renders
+ * empty in any suite that does not pin `Date.now()`. The time-cursor proof, which
+ * DOES pin it to `NOW`, gets exactly the old behaviour from this line: there,
+ * `Date.now()` IS `NOW`.
+ */
 function thisHour(): string {
-  const d = new Date(NOW)
+  const d = new Date(Date.now())
   d.setMinutes(0, 0, 0)
   return d.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }

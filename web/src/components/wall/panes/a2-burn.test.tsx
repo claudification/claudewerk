@@ -7,16 +7,20 @@
  *  - the filter is the shared one: declared axes bite, undeclared axes leave the
  *    pane FULL, `{matched}/{total}` rides the count slot, and the project chip
  *    goes through the store's action
+ *  - the period control re-scopes BOTH splits and neither tile
+ *    (`wall-stats-default-window`)
  */
 
 import { projectIdentityKey } from '@shared/project-uri'
 import type { WallFrame } from '@shared/wall'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { applyWallFrame, resetWallFrames } from '@/hooks/wall-frame-store'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
+import { resetWallPeriod, useWallPeriodStore, type WallPeriod } from '@/lib/wall/period-store'
+import { resetWallRevive } from '@/lib/wall/revive-store'
 import BurnPane from './a2-burn'
 
 const RC = 'claude://default/Users/j/projects/remote-claude'
@@ -24,7 +28,13 @@ const ANVIL = 'claude://default/Users/j/projects/anvil'
 
 /** An hour key inside today, so `costSince(localMidnight)` sees it. */
 function thisHour(): string {
-  const d = new Date()
+  return hoursAgo(0)
+}
+
+/** The start of the bucket `n` whole hours back, keyed the way the cost store
+ *  writes them. `0` is the hour in progress. */
+function hoursAgo(n: number): string {
+  const d = new Date(Date.now() - n * 60 * 60_000)
   d.setMinutes(0, 0, 0)
   return d.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
@@ -47,6 +57,20 @@ interface FeedOverrides {
   openrouter?: unknown
   /** Routes whose fetch should 403, the way an admin-only route does. */
   forbid?: string[]
+}
+
+/** Every URL the pane has asked for, newest last. */
+function fetched(): string[] {
+  return (globalThis.fetch as unknown as Mock).mock.calls.map(c => String(c[0]))
+}
+
+/** The most recent ask for a given route. */
+function lastFetch(route: string): string {
+  return (
+    fetched()
+      .filter(u => u.includes(route))
+      .at(-1) ?? ''
+  )
 }
 
 function stubFeeds(over: FeedOverrides = {}) {
@@ -87,6 +111,11 @@ function projectRows(): string[] {
 
 beforeEach(() => {
   resetWallFrames()
+  // Module-scope, all three -- a period or a pull ledger left over from the
+  // previous test is exactly the drift these stores exist to prevent.
+  resetWallRevive()
+  localStorage.clear()
+  resetWallPeriod()
   useWallFilterStore.getState().clear()
   useConversationsStore.setState({
     // Labels come from the panel's own project settings, exactly as P1 resolves
@@ -234,6 +263,114 @@ describe('A2 burn -- the shared filter', () => {
     // Clicking the same project again clears the scope -- the store's toggle, not
     // a second implementation of it in this pane.
     fireEvent.click(screen.getByText('anvil').closest('button') as Element)
+    expect(useWallFilterStore.getState().raw).toBe('')
+  })
+})
+
+describe('A2 burn -- the period control', () => {
+  /** Click a period tab and wait for the re-read it forces. */
+  async function pick(period: WallPeriod) {
+    fireEvent.click(screen.getByRole('button', { name: period.toUpperCase() }))
+    await waitFor(() => expect(lastFetch('/openrouter')).toContain(`period=${period === '1m' ? '30d' : period}`))
+    await waitFor(() => expect(document.querySelectorAll('.wall-burn-split')).toHaveLength(2))
+  }
+
+  function tileValues(): Array<string | null> {
+    return [...document.querySelectorAll('.wall-burn-tile-val')].map(e => e.textContent)
+  }
+
+  it('offers exactly the six windows, with 24h up', async () => {
+    await mount()
+    const tabs = [...document.querySelectorAll('[aria-label="stats period"] button')]
+    expect(tabs.map(t => t.textContent)).toEqual(['1H', '6H', '24H', '3D', '7D', '1M'])
+    expect(tabs.find(t => t.getAttribute('aria-pressed') === 'true')?.textContent).toBe('24H')
+  })
+
+  it('re-asks BOTH splits at the new window -- one period, two feeds', async () => {
+    await mount()
+    expect(lastFetch('/openrouter')).toContain('period=24h')
+
+    await pick('7d')
+    expect(lastFetch('/openrouter')).toContain('period=7d')
+    // The hourly route takes a `from`, not a period: 7d back, snapped to the hour.
+    const from = Number(new URL(lastFetch('/hourly'), 'http://x').searchParams.get('from'))
+    expect(Date.now() - from).toBeGreaterThanOrEqual(7 * 24 * 60 * 60_000 - 60 * 60_000)
+    expect(Date.now() - from).toBeLessThan(8 * 24 * 60 * 60_000)
+  })
+
+  it('asks the OpenRouter store for 30d when the wall says 1m -- one window, one name', async () => {
+    await mount()
+    await pick('1m')
+    expect(lastFetch('/openrouter')).toContain('period=30d')
+    expect(lastFetch('/openrouter')).not.toContain('period=1m')
+  })
+
+  it('narrows the project split to the window, and says 1h is the last COMPLETE hour', async () => {
+    // $7 billed two hours ago: inside 24h, outside 1h.
+    await mount({ hourly: [...HOURLY, { hour: hoursAgo(2), projectUri: ANVIL, costUsd: 7 }] })
+    expect(splitTotals()[0]).toBe('$26.00')
+
+    await pick('1h')
+    expect(splitTotals()[0]).toBe('$19.00')
+    expect(screen.getByText('(last complete hour)')).toBeTruthy()
+  })
+
+  it('drops the caveat again on a window where the bucket grain does not hide anything', async () => {
+    await mount()
+    await pick('1h')
+    expect(screen.getByText('(last complete hour)')).toBeTruthy()
+    await pick('6h')
+    expect(screen.queryByText('(last complete hour)')).toBeNull()
+  })
+
+  it('leaves TODAY and 30D alone -- they are anchors, not views of the period', async () => {
+    await mount({ hourly: [...HOURLY, { hour: hoursAgo(2), projectUri: ANVIL, costUsd: 7 }] })
+    const before = tileValues()
+
+    await pick('1h')
+    // The project split just lost the two-hour-old $7; the tiles did not.
+    expect(splitTotals()[0]).toBe('$19.00')
+    expect(tileValues()).toEqual(before)
+    // And the cap is still measured against the 30d total it is defined over.
+    expect(lastFetch('/summary')).toContain('period=30d')
+  })
+
+  it('keeps the two splits separate under every period -- still never summed', async () => {
+    await mount()
+    for (const period of ['1h', '6h', '3d', '7d', '1m'] as WallPeriod[]) {
+      await pick(period)
+      const [projects, openrouter] = splitTotals()
+      expect(projects).toBe('$19.00')
+      expect(openrouter).toBe('$5.00')
+      // $24 is the number this pane must never produce, at any window.
+      expect(screen.queryByText('$24.00')).toBeNull()
+    }
+  })
+
+  it('carries the window into the count slot and the empty line', async () => {
+    await mount({ hourly: [] })
+    expect(countSlot()).toBe('0/0 · 24h')
+    expect(screen.getByText('nothing billed in 24h')).toBeTruthy()
+
+    await pick('3d')
+    expect(countSlot()).toBe('0/0 · 3d')
+    expect(screen.getByText('nothing billed in 3d')).toBeTruthy()
+  })
+
+  it('is ONE store, so the pick survives a remount -- the wall being popped out', async () => {
+    const view = await mount()
+    await pick('7d')
+    view.unmount()
+
+    await mount()
+    expect(useWallPeriodStore.getState().period).toBe('7d')
+    expect(lastFetch('/openrouter')).toContain('period=7d')
+  })
+
+  it('persists the pick for the NEXT load, unlike the filter and the cursor', async () => {
+    await mount()
+    await pick('6h')
+    expect(localStorage.getItem('claudewerk.wallPeriod.v1')).toBe('6h')
     expect(useWallFilterStore.getState().raw).toBe('')
   })
 })

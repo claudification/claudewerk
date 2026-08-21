@@ -17,6 +17,15 @@ interface BurnBarsProps {
   /** Window this split covers, e.g. `24h`. Rendered next to the title so two
    *  splits with different windows can never be read as one. */
   window: string
+  /**
+   * What the window label does NOT say on its own, printed beside it.
+   *
+   * Present only when the period's name and the period's coverage differ -- the
+   * project split's `1h` is the last COMPLETE hour, because hourly buckets
+   * exclude the hour in progress. A tooltip would have hidden that from the
+   * three-metre read this whole wall is built for, so it is words on screen.
+   */
+  note?: string
   split: BurnSplit
   /** What to show when there are no bars. The caller knows WHY there are none. */
   empty: string
@@ -27,12 +36,13 @@ interface BurnBarsProps {
   tag?: (bar: BurnBar) => ReactNode
 }
 
-export function BurnBars({ title, window, split, empty, onPick, tag }: BurnBarsProps) {
+export function BurnBars({ title, window, note, split, empty, onPick, tag }: BurnBarsProps) {
   return (
     <section className="wall-burn-split">
       <header className="wall-burn-split-head">
         <b>{title}</b>
         <span className="wall-burn-split-window">{window}</span>
+        {note && <span className="wall-burn-split-note">{note}</span>}
         <span className="flex-1" />
         <span className="wall-burn-split-total">{formatUsd(split.total)}</span>
       </header>
