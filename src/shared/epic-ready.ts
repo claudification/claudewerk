@@ -26,7 +26,14 @@
  * drift the scanner fabric exists to end (scanner-work-orders).
  */
 
-import { buildEpicIndex, childrenComplete, doneCardIds, type EpicChild, type EpicRollup, toEpicChild } from './epic-cards'
+import {
+  buildEpicIndex,
+  childrenComplete,
+  doneCardIds,
+  type EpicChild,
+  type EpicRollup,
+  toEpicChild,
+} from './epic-cards'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 
