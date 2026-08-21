@@ -138,6 +138,7 @@ export interface HandlerContext {
   /** Contextual logger -- auto-prefixes with session/agent host info */
   log: {
     info(msg: string): void
+    warn(msg: string): void
     error(msg: string, err?: unknown): void
     debug(msg: string): void
   }

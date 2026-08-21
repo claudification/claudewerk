@@ -87,6 +87,18 @@ test('origin is agent only when a conversation id came with the commit', () => {
   expect(normalizeCommit(payload(), 1).origin).toBe('human')
 })
 
+test('a git backfill is origin UNKNOWN, never human', () => {
+  // THE REGRESSION THIS FILE EXISTS FOR. A backfilled commit carries no
+  // conversation id for the same reason a human commit does not, and reading
+  // that absence the same way would relabel roughly twenty thousand agent
+  // commits as Jonas's own work in the one pane that filters on this field.
+  expect(normalizeCommit(payload({ backfill: true }), 1).origin).toBe('unknown')
+  // The flag wins even if a conversation id somehow rides along: a walk of
+  // `git log` cannot have observed one, so its presence would be a caller bug,
+  // and inventing attribution is worse than admitting the gap.
+  expect(normalizeCommit(payload({ backfill: true, conversationId: 'conv-1' }), 1).origin).toBe('unknown')
+})
+
 // ─── store ────────────────────────────────────────────────────────────
 
 test('records a commit and finds it by hash prefix', () => {

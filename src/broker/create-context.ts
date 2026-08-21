@@ -122,6 +122,9 @@ export function createContext(ws: ServerWebSocket<WsData>, deps: ContextDeps): H
       info(msg) {
         console.log(`${prefix} ${msg}`)
       },
+      warn(msg) {
+        console.warn(`${prefix} ${msg}`)
+      },
       error(msg, err?) {
         console.error(`${prefix} ${msg}`, err instanceof Error ? err.message : err || '')
       },

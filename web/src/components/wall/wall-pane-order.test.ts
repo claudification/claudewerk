@@ -21,11 +21,9 @@ describe('the wall pane order', () => {
   it('is the fixed v1 arrangement, column by column', () => {
     expect(codes('a')).toEqual(['P1', 'A8', 'A7'])
     expect(codes('b')).toEqual(['A1', 'P2', 'P3'])
-    // A9 APPENDED (werk-activity-matrix, 2026-08-21) -- the append this file's
-    // header says is fine. The six before it did not move, and it went to C
-    // rather than to the wider A because C is the column that scrolls; see the
-    // registry for why that is the deciding property and not the width.
-    expect(codes('c')).toEqual(['A2', 'S2', 'S1', 'P4', 'A4', 'A6', 'A9'])
+    // A9 landed APPENDED, then MOVED up over the sheaf pair on Jonas's word
+    // (2026-08-21) -- the third override of column C, asserted on its own below.
+    expect(codes('c')).toEqual(['A2', 'S2', 'S1', 'P4', 'A9', 'A4', 'A6'])
   })
 
   it('keeps FLEET and HOST VITALS above the SHEAF (Jonas, 2026-08-20)', () => {
@@ -41,5 +39,13 @@ describe('the wall pane order', () => {
     // the second line of column C that disagrees with the approved comp.
     const c = codes('c')
     expect(c.indexOf('A4')).toBeLessThan(c.indexOf('A6'))
+  })
+
+  it('leaves SOTU and the SHEAF as the bottom two of column C (Jonas, 2026-08-21)', () => {
+    // "put this above state of the union? so SOTU and SHEAF are the bottom two
+    // in that column" -- stated as a property of the FOOT of C rather than as
+    // A9's index, because that is what he asked for: the next pane to land in C
+    // must go above the pair, not under it, and appending would break this.
+    expect(codes('c').slice(-2)).toEqual(['A4', 'A6'])
   })
 })

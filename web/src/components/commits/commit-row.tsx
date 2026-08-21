@@ -5,10 +5,23 @@
  */
 
 import { useState } from 'react'
-import { type CommitRow, commitAge } from '@/lib/commits'
+import { type CommitOrigin, type CommitRow, commitAge } from '@/lib/commits'
 import { haptic } from '@/lib/utils'
 import { CommitSummaryLine } from './commit-summary-line'
 import { CommitTranscriptLinkRow } from './commit-transcript-link'
+
+/**
+ * `unknown` MUST NOT look like `human`. Both are "no conversation id", and until
+ * the git backfill landed they were the same row; now one is a measurement and
+ * the other is an admission that nobody was watching. Left at the same tone they
+ * would be visually identical, which is the whole thing the third value exists to
+ * prevent -- so it gets its own, and it is deliberately the quietest of the three.
+ */
+const ORIGIN_TONE: Record<CommitOrigin, string> = {
+  agent: 'text-accent/70',
+  human: '',
+  unknown: 'text-fg-muted/60 italic',
+}
 
 export function CommitRowItem({ commit, showProject }: { commit: CommitRow; showProject?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -28,7 +41,7 @@ export function CommitRowItem({ commit, showProject }: { commit: CommitRow; show
           trailing={<span className="text-[10px] text-fg-muted shrink-0">{commitAge(commit.committedAt)}</span>}
         />
         <div className="flex items-center gap-2 text-[9px] font-mono text-fg-dim uppercase tracking-wide">
-          <span className={commit.origin === 'agent' ? 'text-accent/70' : ''}>{commit.origin}</span>
+          <span className={ORIGIN_TONE[commit.origin] ?? ''}>{commit.origin}</span>
           <span>{commit.branch}</span>
           <span>
             {commit.fileCount} file{commit.fileCount === 1 ? '' : 's'}

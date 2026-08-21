@@ -236,6 +236,52 @@ test('a human commit broadcasts the row but no count (it has no conversation)', 
   expect(got('owner-counts', 'commit_count')).toBe(false)
 })
 
+// ─── Backfill: history, not news ──────────────────────────────────────
+
+test('a backfilled commit lands as origin unknown and announces NOTHING', async () => {
+  await ingest({ ...PAYLOAD, backfill: true })
+
+  // The row is there and readable...
+  const body = await readJson<ListBody>(makeApp().request('/api/commits'))
+  expect(body.commits).toHaveLength(1)
+  expect(body.commits[0].origin).toBe('unknown')
+
+  // ...and nobody was told it just happened. A `git log` walk inserts tens of
+  // thousands of commits from last year in one run; announcing them would fill
+  // the COMMIT RIVER with 2025 as though it were the last two minutes.
+  expect(got('owner-full', 'commit_recorded')).toBe(false)
+  expect(got('owner-counts', 'project_commit_stats')).toBe(false)
+})
+
+test('a backfill still moves the project total, it just does not shout about it', async () => {
+  await ingest({ ...PAYLOAD, backfill: true })
+  // The commit really is in that project's history, so the cumulative count
+  // must say so -- only the broadcast is suppressed, not the bump.
+  expect(getProjectCommitStats(REPO).total).toBe(1)
+})
+
+test('a backfill never overwrites the attribution a live hook already recorded', async () => {
+  // The overlap is unavoidable: the walk covers days the hook was already
+  // watching. `ON CONFLICT DO NOTHING` is what makes that safe, and this is the
+  // assertion that says so out loud.
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1' })
+  const second = await readJson<IngestBody>(ingest({ ...PAYLOAD, backfill: true }))
+
+  expect(second.duplicate).toBe(true)
+  const body = await readJson<ListBody>(makeApp().request('/api/commits'))
+  expect(body.commits[0].origin).toBe('agent')
+  expect(body.commits[0].conversationId).toBe('conv-1')
+})
+
+test('origin=unknown is filterable, so "what did the backfill bring in" is answerable', async () => {
+  await ingest({ ...PAYLOAD, conversationId: 'conv-1' })
+  await ingest({ ...PAYLOAD, hash: 'c'.repeat(40), backfill: true })
+
+  const only = await readJson<ListBody>(makeApp().request('/api/commits?origin=unknown'))
+  expect(only.commits).toHaveLength(1)
+  expect(only.commits[0].hash).toBe('c'.repeat(40))
+})
+
 // ─── Disclosure oracles ───────────────────────────────────────────────
 
 test('total counts only what the caller may see, not the whole ledger', async () => {

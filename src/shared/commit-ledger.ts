@@ -47,10 +47,36 @@ export interface CommitIngestPayload {
    *  available to a post-commit hook. */
   reflogAction?: string
   committedAt?: number
+  /**
+   * This payload came from a `git log` WALK, not from a live post-commit hook.
+   *
+   * It states a FACT about where the payload came from, and the broker derives
+   * the classification from it -- which is the rule `categorize.ts` already
+   * runs on. Without it a backfilled commit has no `conversationId`, and
+   * `classifyOrigin` would read that absence as "a human typed this", relabelling
+   * every agent commit in the walk as Jonas's own work.
+   *
+   * It also suppresses the ingest broadcasts. A backfill is HISTORY, not news:
+   * fourteen thousand `commit_recorded` frames would fill the COMMIT RIVER with
+   * commits from last year as though they had just landed.
+   */
+  backfill?: boolean
 }
 
 export type CommitKind = 'normal' | 'merge' | 'revert' | 'initial' | 'amend' | 'rebase'
-export type CommitOrigin = 'agent' | 'human'
+/**
+ * Who made the commit -- and `unknown` is the one that matters.
+ *
+ * The ledger learns about a commit two ways. A live post-commit hook knows which
+ * conversation it ran inside, so `agent` and `human` are both a MEASUREMENT. A
+ * `git log` backfill knows neither: the commit predates the hook, and nothing on
+ * disk records whether an agent or a person authored it.
+ *
+ * Folding that third case into `human` is the exact failure the activity grid's
+ * three cell states exist to prevent, one layer down -- "we do not know" is not
+ * "a person did it". So it gets its own value, and the filter can ask for it.
+ */
+export type CommitOrigin = 'agent' | 'human' | 'unknown'
 
 export interface CommitRow {
   id: number

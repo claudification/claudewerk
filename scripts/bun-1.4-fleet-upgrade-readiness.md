@@ -203,6 +203,52 @@ and step 3 is a sample of one. If the answer is "no unattended runtime change on
 this box, full stop", that is a coherent position and the pin mechanism becomes
 the work item.
 
+## WHAT ACTUALLY HAPPENED -- 2026-08-21, the move was made
+
+Jonas took the recommendation and upgraded. Global bun on `studio` is now **1.4.0**. What
+follows is the post-move verification, measured after the fact, not predicted.
+
+**The rolling upgrade is real, exactly as described above.** At the moment of the first new
+spawn: **50 hosts on 1.3.14, 1 on 1.4.0**. Running hosts kept the inode they booted with.
+A mixed fleet is therefore the steady state until the old hosts drain -- not a transient.
+
+**Step 3 was done, and it is the first time it has ever been done.** A throwaway canary
+conversation was spawned, booted on 1.4.0, ran a Bash tool, reached the MCP channel and wrote
+its transcript to disk:
+
+```
+CANARY bun=1.4.0 mcp=ok conv=714454ac-139d-4293-b87b-447eb847b372
+```
+
+That closes the "no agent host has been booted end-to-end on 1.4.0" gap this document opened.
+Suite at the same base, on the real global bun with no override: **7705 pass / 59 skip /
+0 fail**, 617 files, 24.43s.
+
+### The one thing that went wrong: step 4 was not honoured
+
+This document says, in bold, *"Do not run `brew cleanup` after upgrading."* It ran anyway --
+`/opt/homebrew/Cellar/` contains **only 1.4.0**. The one-second rollback this document's
+entire risk argument rests on **did not exist** by the time anyone looked.
+
+The 50 running hosts were never in danger: their executable is an unlinked-but-open inode, so
+they keep working. But those bytes are unrecoverable once each process exits, and there was no
+1.3.14 on disk to relink to.
+
+Restored by re-fetching the official 1.3.14 darwin-aarch64 release:
+
+```
+~/.cache/bun-rollback/bun-1.3.14/bun          # reports 1.3.14
+ln -sfn ~/.cache/bun-rollback/bun-1.3.14/bun /opt/homebrew/bin/bun    # the undo, now
+```
+
+Note the undo is no longer a *relative* symlink into the Cellar, so `brew` will happily
+overwrite it on the next `bun` operation. Anyone relying on it should check it still points
+where they think.
+
+**Lesson for the next runtime move:** the rollback path is a precondition to verify AFTER the
+upgrade, not a property to assume from before it. Check `ls /opt/homebrew/Cellar/bun/` first,
+before spawning anything on the new runtime.
+
 ## The decision that is left
 
 `brew trust` + `brew upgrade` mutate a shared box outside git, with 54 live bun

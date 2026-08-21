@@ -9,7 +9,7 @@ import type { CommitRow } from '@shared/commit-ledger'
 import { fetchJsonTimed } from '@/lib/net-timing'
 import { appendShareParam } from '@/lib/share-mode'
 
-export type { CommitRow } from '@shared/commit-ledger'
+export type { CommitOrigin, CommitRow } from '@shared/commit-ledger'
 
 export interface CommitListParams {
   conversationId?: string

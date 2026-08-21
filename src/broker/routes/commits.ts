@@ -7,7 +7,7 @@
  */
 
 import { Hono } from 'hono'
-import type { CommitIngestPayload, CommitQuery, CommitRow } from '../../shared/commit-ledger'
+import type { CommitIngestPayload, CommitOrigin, CommitQuery, CommitRow } from '../../shared/commit-ledger'
 import { findTranscriptAnchor } from '../commit-ledger/anchor'
 import { countVisibleCommits, ledgerStats, queryCommits } from '../commit-ledger/query'
 import { redactCommitsForShareGuest } from '../commit-ledger/redact'
@@ -18,15 +18,25 @@ import { decorateFeed, nextCursor, parseCursor } from './commits-feed'
 import { hasIngestAuth, ingestCommit } from './commits-ingest'
 import type { RouteHelpers } from './shared'
 
+/** The set is the validator: an unrecognised `?origin=` is dropped rather than
+ *  passed through, and `unknown` (the git backfill) joined it by being added
+ *  here and nowhere else -- "show me only what the backfill brought in" is the
+ *  question a viewer asks the moment the ledger stops being only what the hook
+ *  saw. */
+const ORIGINS = new Set<CommitOrigin>(['agent', 'human', 'unknown'])
+
+function parseOrigin(raw: string | null): CommitOrigin | undefined {
+  return raw !== null && ORIGINS.has(raw as CommitOrigin) ? (raw as CommitOrigin) : undefined
+}
+
 function parseListQuery(url: URL): CommitQuery {
   const projectUris = url.searchParams.getAll('project').filter(Boolean)
-  const origin = url.searchParams.get('origin')
   return {
     conversationId: url.searchParams.get('conversation') ?? undefined,
     projectUris: projectUris.length > 0 ? projectUris : undefined,
     text: url.searchParams.get('q') ?? undefined,
     path: url.searchParams.get('path') ?? undefined,
-    origin: origin === 'agent' || origin === 'human' ? origin : undefined,
+    origin: parseOrigin(url.searchParams.get('origin')),
     includeSuperseded: url.searchParams.get('includeSuperseded') === '1',
     limit: Number(url.searchParams.get('limit')) || undefined,
     offset: Number(url.searchParams.get('offset')) || undefined,
