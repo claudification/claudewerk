@@ -660,3 +660,92 @@ describe('a ROUGH card is not ready -- the `needsRefine` precondition', () => {
     expect(p.needsRefine.map(c => c.slug)).toEqual(['a'])
   })
 })
+
+/**
+ * THE SORT KEY (`epic-ready-slice-has-no-sort-key`).
+ *
+ * `ready.slice(0, slots)` had no sort key at all: the order was whatever order
+ * the board happened to be enumerated in, and the ONLY thing that ever perturbed
+ * it was `buildEpicIndex`'s bucket-then-priority sort -- which cannot settle a
+ * tie between two `high` cards, and a tie between two `high` cards is exactly
+ * what happened. `epic-digest-shares-run-frontmatter`, the head of a six-card
+ * chain, was held back on four consecutive generations while
+ * `runner-run-delete-verb` -- a leaf that blocks nothing, filed a day later and
+ * therefore FIRST in an mtime-descending board read -- took the only free seat.
+ *
+ * These assert the fold end to end. The key itself is tested on its own in
+ * `epic-ready-order.test.ts`.
+ */
+describe('dispatch order', () => {
+  /** The head of a chain, plus the six cards that transitively wait on it. */
+  const chain = (extra: Partial<ProjectTaskMeta> = {}) => [
+    card('head', 'open', { epic: 'e1', priority: 'high', ...extra }),
+    card('gen', 'open', { epic: 'e1', dependsOn: ['head'] }),
+    card('lease', 'open', { epic: 'e1', dependsOn: ['gen'] }),
+    card('atomic', 'open', { epic: 'e1', dependsOn: ['gen'] }),
+    card('extend', 'open', { epic: 'e1', dependsOn: ['gen'] }),
+    card('caps', 'open', { epic: 'e1', dependsOn: ['gen'] }),
+    card('runstate', 'open', { epic: 'e1', dependsOn: ['lease', 'atomic', 'extend', 'caps'] }),
+  ]
+
+  /** The leaf is FIRST in board order, which is what an mtime-descending read of
+   *  a board where the leaf was filed later actually looks like. Same priority on
+   *  both, so priority cannot settle it -- that is the whole point. */
+  const leafFirst = (extra: Partial<ProjectTaskMeta> = {}) => [
+    EPIC,
+    card('leaf', 'open', { epic: 'e1', priority: 'high' }),
+    ...chain(extra),
+  ]
+
+  test('the head of the critical path beats a leaf that blocks nothing', () => {
+    expect(plan(leafFirst(), 1).dispatch.map(c => c.slug)).toEqual(['head'])
+  })
+
+  test('heldBack is the complement under the SAME order, so the pane explains the choice', () => {
+    const p = plan(leafFirst(), 1)
+    expect(p.heldBack.map(c => c.slug)).toEqual(['leaf'])
+  })
+
+  /**
+   * DO NOT MAKE IT PRIORITY-ONLY. A `high` leaf still blocks nothing; the DAG is
+   * the primary key and the human's `priority:` is the tiebreak underneath it.
+   */
+  test('a high-priority leaf does NOT jump the low-priority head of the path', () => {
+    expect(plan(leafFirst({ priority: 'low' }), 1).dispatch.map(c => c.slug)).toEqual(['head'])
+  })
+
+  test('priority still settles two cards that unblock nothing', () => {
+    const p = plan(
+      [EPIC, card('lo', 'open', { epic: 'e1', priority: 'low' }), card('hi', 'open', { epic: 'e1', priority: 'high' })],
+      1,
+    )
+    expect(p.dispatch.map(c => c.slug)).toEqual(['hi'])
+  })
+
+  test('older work does not starve behind newer work of equal rank', () => {
+    const p = plan(
+      [
+        EPIC,
+        card('newer', 'open', { epic: 'e1', created: '2026-08-20T00:00:00.000Z' }),
+        card('older', 'open', { epic: 'e1', created: '2026-08-01T00:00:00.000Z' }),
+      ],
+      1,
+    )
+    expect(p.dispatch.map(c => c.slug)).toEqual(['older'])
+  })
+
+  test('the tag selector is ordered by the same key -- readiness means one thing', () => {
+    const p = planTagged({
+      cards: [
+        card('leaf', 'open', { tags: ['ready'] }),
+        card('head', 'open', { tags: ['ready'] }),
+        card('waiter', 'open', { dependsOn: ['head'] }),
+      ],
+      tag: 'ready',
+      concurrency: 1,
+      inFlight: [],
+      inVerify: [],
+    })
+    expect(p.dispatch.map(c => c.slug)).toEqual(['head'])
+  })
+})
