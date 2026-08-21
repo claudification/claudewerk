@@ -40,7 +40,14 @@ beforeEach(() => {
   run = null
   resetArmedEpics()
   configureEpicIo({
-    fetchEpicRun: async () => ({ run, baton: [], acknowledgedCardIds: [], lease: null, error: 'no run in this test' }),
+    fetchEpicRun: async () => ({
+      run,
+      baton: [],
+      acknowledgedCardIds: [],
+      dispatchCounts: {},
+      lease: null,
+      error: 'no run in this test',
+    }),
     fetchBoardCards: async () => [],
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async () => ({ type: 'epic_result', requestId: 'r', op: 'get', ok: true }) as EpicResult,
@@ -96,7 +103,7 @@ describe('the named refusals', () => {
     configureEpicIo({
       fetchEpicRun: async (_d, project) => {
         if (project === 'claude://s/e1') throw new Error('sentinel exploded')
-        return { run: null, baton: [], acknowledgedCardIds: [], lease: null }
+        return { run: null, baton: [], acknowledgedCardIds: [], dispatchCounts: {}, lease: null }
       },
     })
     const report = await runScan(epicScanner, deps())

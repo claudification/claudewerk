@@ -27,6 +27,8 @@ function plan(over: Partial<EpicPlan> = {}): EpicPlan {
     heldBack: [],
     waitingOnDeps: [],
     unspawnable: [],
+    needsRefine: [],
+    exhausted: [],
     complete: false,
     ...over,
   }
