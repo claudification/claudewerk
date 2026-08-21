@@ -186,14 +186,16 @@ async function inspectQueue(
   const groups = groupEpicConversations(convs, deps.isLive)
   const others = projectPeers(groups, project, epicId)
   const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
-  // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. `planProjectQueues`
-  // buckets scopes by raw `project` string and the verdict below is looked up
-  // under the caller's spelling, so a peer carrying the store's spelling lands
-  // in a bucket the lookup never reaches -- which reads as NO QUEUE LINE AT ALL,
-  // the same lie one layer over from the peer filter. Every scope here is
-  // already known to be this project (that is what `projectPeers` decided), so
-  // stamping them all with one spelling states that fact rather than re-deriving
-  // it inside the fold.
+  // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. Every scope here is
+  // already known to be this project -- that is what `projectPeers` decided --
+  // so stamping them all with one spelling states that fact here rather than
+  // leaving the fold to re-derive it.
+  //
+  // NOT A WORKAROUND ANY MORE. `planProjectQueues` now buckets and looks up on
+  // `projectIdentityKey`, so a peer carrying the store's spelling would reach
+  // the caller's lookup on its own (`epic-queue-fold-buckets-projects-by-raw-string`).
+  // The stamp stays because it is true and cheap, not because the fold cannot be
+  // trusted with two spellings -- it can.
   const scopes = [
     toQueueScope(groups.get(epicId) ?? emptyGroup(epicId, project), run),
     ...others.map((peer, i) => toQueueScope(peer, runs[i] ?? null)),
