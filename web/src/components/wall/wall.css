@@ -1107,16 +1107,30 @@
 	margin-top: 4px;
 	font-size: 10px;
 }
+/* ONE ROW = ONE LINE. The body is agent prose measured in thousands of
+   characters; without the nowrap + ellipsis it wraps until it owns the pane. */
+.wall-run-baton > div {
+	display: flex;
+	gap: 6px;
+	min-width: 0;
+	white-space: nowrap;
+}
 .wall-run-baton-kind {
-	display: inline-block;
+	flex: none;
 	width: 74px;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .wall-run-baton-age {
-	display: inline-block;
+	flex: none;
 	width: 34px;
 	color: var(--comment);
 }
 .wall-run-baton-body {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
 	color: var(--fg-muted);
 }
 .wall-run-acts {

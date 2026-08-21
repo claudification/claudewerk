@@ -6,20 +6,10 @@
  * and mocking a clock is a stall nobody re-tests after the first regression.
  */
 
-import type { EpicLogEntry } from '@shared/epic-run-types'
 import type { NightshiftTaskMeta } from '@shared/nightshift-types'
-import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
+import type { EpicActivityEntry, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
 import { describe, expect, it } from 'vitest'
-import {
-  batonTail,
-  beatTicks,
-  idleSentence,
-  NO_BUCKETS,
-  nightshiftCounts,
-  runBuckets,
-  runCaps,
-  runStall,
-} from './run-model'
+import { idleSentence, NO_BUCKETS, nightshiftCounts, runBuckets, runCaps, runStall } from './run-model'
 
 const NOW = Date.parse('2026-08-19T12:00:00.000Z')
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
@@ -164,30 +154,8 @@ describe('stall detection', () => {
 
 // The lease alarm moved to `web/src/lib/epic-lease-view.test.ts` with its code.
 
-describe('the tails', () => {
-  const log = (ts: string, body: string): EpicLogEntry => ({ ts, kind: 'dispatch', convId: 'c', body })
-
-  it('shows the baton NEWEST FIRST from an oldest-first log', () => {
-    const baton = [log(iso(300_000), 'old'), log(iso(200_000), 'mid'), log(iso(100_000), 'new')]
-    expect(batonTail(baton, 2).map(e => e.body)).toEqual(['new', 'mid'])
-  })
-
-  it('keeps beats OLDEST-LEFT and marks the ones that did nothing', () => {
-    const beat = (n: number, actions: number): EpicBeatRecord => ({
-      at: iso(n),
-      gen: 1,
-      epicId: 'e',
-      project: 'p',
-      note: '',
-      actions,
-      spawned: [],
-    })
-    expect(beatTicks([beat(300, 0), beat(200, 2), beat(100, 0)], 2)).toEqual([
-      { at: iso(200), did: true },
-      { at: iso(100), did: false },
-    ])
-  })
-})
+// THE TAILS -- baton + beat pulse -- are tested in `run-tails.test.ts`, beside
+// the code they moved to.
 
 describe('nightshift counts', () => {
   const task = (status: NightshiftTaskMeta['status']): NightshiftTaskMeta => ({
@@ -246,8 +214,12 @@ describe('runCaps', () => {
     expect(runCaps(null, NOW)).toEqual([])
   })
 
-  it('reports spend, wall clock and generations, money first', () => {
-    expect(runCaps(RUN, NOW).map(c => c.label)).toEqual(['spend', 'wall clock', 'generations'])
+  it('reports spend and wall clock, money first -- the head already prints the generation', () => {
+    expect(runCaps(RUN, NOW).map(c => c.label)).toEqual(['spend', 'wall clock'])
+  })
+
+  it('brings the generation cap back when it is the ceiling that stopped the run', () => {
+    expect(runCaps({ ...RUN, gen: 40 }, NOW).map(c => c.label)).toEqual(['spend', 'wall clock', 'generations'])
   })
 
   it('shows what is left of the budget', () => {
