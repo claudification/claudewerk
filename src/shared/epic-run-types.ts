@@ -15,15 +15,23 @@
  *                  Jonas anything. Singleton per epic, one generation per beat.
  *
  * CADENCE IS A MODE, NOT AN ENGINE. `now` runs the epic immediately and reports
- * when it is done; `window` defers dispatch to the project's nightshift window.
- * Same orchestrator, same caps, same guardians -- one field decides when a ready
- * card is allowed to leave the queue.
+ * when it is done; `window` defers dispatch to the project's nightshift window;
+ * `queue` waits until no other epic in the project is running. Same orchestrator,
+ * same caps, same guardians -- one field decides when a ready card is allowed to
+ * leave the queue.
  */
 
 import type { ConversationRole } from './conversation-role'
 
-/** When a ready card is allowed to dispatch. */
-export type EpicCadence = 'now' | 'window'
+/**
+ * One gate on the `when` axis -- a PER-BEAT dispatch predicate, not an arm-time
+ * choice. `now` is the absence of a gate; `window` defers to the project's night
+ * window; `queue` defers until no other epic in the project holds the runner.
+ *
+ * The axis is spelled `when` on the verb surface and `cadence` in storage. Its
+ * codec, and the reason for the two names, live in `epic-when.ts`.
+ */
+export type EpicCadence = 'now' | 'window' | 'queue'
 
 /** Lifecycle of the RUN (distinct from the epic card's board lane). */
 export type EpicRunStatus = 'armed' | 'running' | 'paused' | 'complete' | 'aborted'
@@ -88,7 +96,16 @@ export interface EpicRunMeta {
   epicId: string
   /** Project URI. Informational to the broker; the sentinel owns URI<->path. */
   project: string
-  cadence: EpicCadence
+  /**
+   * THE `when` AXIS: every gate this run must pass before a ready card may
+   * dispatch, ALL of which must pass on the same beat.
+   *
+   * A LIST because the gates genuinely compose -- "not before Tuesday AND not
+   * while another epic runs" is an obvious ask, and answering it with three
+   * separate verbs would mean three reason strings, three countdowns and three
+   * places to look when a run goes quiet. See `epic-when.ts`.
+   */
+  cadence: EpicCadence[]
   status: EpicRunStatus
   /** Monotonic overseer generation. Every wake increments it exactly once. */
   gen: number
@@ -216,7 +233,7 @@ export interface EpicRunFull extends EpicRunMeta {
  * does not spend its budget waiting for the window.
  */
 export const EPIC_RUN_DEFAULTS = {
-  cadence: 'now' as EpicCadence,
+  cadence: ['now'] as EpicCadence[],
   target: 'merged' as const,
   maxGens: 40,
   maxUsd: 100,

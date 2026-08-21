@@ -13,11 +13,20 @@
  */
 
 import { planEpic } from '../shared/epic-ready'
+import { gatedBy } from '../shared/epic-when'
 import { isSameProject } from '../shared/project-uri'
-import type { Conversation, EpicBatonQuery, EpicInspectResult, EpicRunListEntry } from '../shared/protocol'
+import type {
+  Conversation,
+  EpicBatonQuery,
+  EpicInspectResult,
+  EpicQueueReading,
+  EpicRunListEntry,
+  EpicRunSnapshot,
+} from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { fetchBoardCards, fetchEpicRun } from './epic-broker-rpc'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
+import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
 import { isArmed, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
@@ -56,6 +65,7 @@ export async function inspectEpic(
   const view = await fetchEpicRun(deps, project, epicId, opts.baton)
   const convs = deps.getAllConversations()
   const group = groupFor(convs, deps, project, epicId)
+  const queue = await inspectQueue(deps, project, epicId, convs, view.run)
   const cards = await fetchBoardCards(deps, project)
   const plan = planEpic({
     cards,
@@ -94,7 +104,69 @@ export async function inspectEpic(
     }),
     beats: recentBeats(project, epicId, opts.beats ?? 10),
     baton: view.baton,
+    ...(queue ? { queue } : {}),
     ...(view.error ? { error: view.error } : {}),
+  }
+}
+
+/**
+ * THE QUEUE AXIS, FOR AN INSPECT -- the one answer this read cannot get from the
+ * epic it was asked about.
+ *
+ * "Queued, position 2 of 3, behind `epic-morning-report`" needs every OTHER run
+ * in the project, so this is the only place an inspect reads outside its own
+ * epic. It therefore does so ONLY FOR A QUEUED RUN: an inspect is fetched per
+ * visible row on the wall, and paying N-1 sentinel reads on every row of every
+ * refresh to tell an ordinary epic it is not queued would make the pane's most
+ * expensive read more expensive for everyone, to say nothing.
+ *
+ * The other direction -- an ordinary epic that a queued one is HOLDING -- is
+ * reported by the beat note it already logs and by the run rail, whose feed reads
+ * every run in the project anyway (`epic-active.ts`). It is not lost, it is just
+ * not worth an inspect's round trips.
+ */
+async function inspectQueue(
+  deps: SweepDeps,
+  project: string,
+  epicId: string,
+  convs: readonly Conversation[],
+  run: EpicRunSnapshot | null,
+): Promise<EpicQueueReading | undefined> {
+  if (!gatedBy(run?.cadence, 'queue')) return undefined
+
+  const groups = groupEpicConversations(convs, deps.isLive)
+  const others = projectPeers(groups, project, epicId)
+  const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
+  const scopes = [
+    toQueueScope(groups.get(epicId) ?? emptyGroup(epicId, project), run),
+    ...others.map((peer, i) => toQueueScope(peer, runs[i] ?? null)),
+  ]
+  return toQueueReading(planProjectQueues(scopes, deps.now()).verdict(project, epicId))
+}
+
+/**
+ * Every OTHER epic in this project the broker can see -- the same union
+ * `epicsToBeat` walks (conversation-derived groups PLUS the armed set), because
+ * a freshly armed epic has no conversations and is exactly the one that might be
+ * about to take the runner.
+ */
+function projectPeers(groups: Map<string, EpicGroup>, project: string, epicId: string): EpicGroup[] {
+  const peers = new Map<string, EpicGroup>()
+  for (const [id, group] of groups) if (group.project === project && id !== epicId) peers.set(id, group)
+  for (const armed of listArmedEpics()) {
+    const fresh = armed.project === project && armed.epicId !== epicId && !peers.has(armed.epicId)
+    if (fresh) peers.set(armed.epicId, emptyGroup(armed.epicId, project))
+  }
+  return [...peers.values()]
+}
+
+/** A peer's run, or nothing. An inspect must never fail because a NEIGHBOUR's
+ *  artifact could not be read -- the queue line degrades, the read does not. */
+async function peerRun(deps: SweepDeps, project: string, epicId: string): Promise<EpicRunSnapshot | null> {
+  try {
+    return (await fetchEpicRun(deps, project, epicId, { limit: 1 })).run ?? null
+  } catch {
+    return null
   }
 }
 

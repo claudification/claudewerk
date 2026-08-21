@@ -11,12 +11,20 @@
  * rather than on the defaults.
  */
 
+import type { EpicCadence } from '@shared/epic-run-types'
+import { parseWhen } from '@shared/epic-when'
 import { useMemo, useState } from 'react'
 import type { EpicRunState, StartEpicOptions } from '@/lib/epic-run-api'
 
 export interface RunSettings {
   options: StartEpicOptions
-  setCadence: (v: StartEpicOptions['cadence']) => void
+  /**
+   * Picking a gate REPLACES the axis rather than adding to it, because the
+   * control is three exclusive buttons. Leaving it alone keeps whatever the run
+   * was armed with -- including a multi-gate axis this dialog cannot express --
+   * so a RESUME never silently un-queues a queued run.
+   */
+  setCadence: (v: EpicCadence) => void
   setTarget: (v: StartEpicOptions['target']) => void
   setConcurrency: (v: number) => void
   setPlan: (v: boolean) => void
@@ -27,7 +35,10 @@ export interface RunSettings {
 }
 
 export function useRunSettings(existing: EpicRunState | null): RunSettings {
-  const [cadence, setCadence] = useState<StartEpicOptions['cadence']>(existing?.cadence ?? 'now')
+  // PARSED, not indexed: a broker talking to an older sentinel can hand back
+  // `cadence` as the bare string this field used to be, and `.join` on a string
+  // is a crashed dialog rather than a wrong label.
+  const [cadence, setGates] = useState<EpicCadence[]>(parseWhen(existing?.cadence))
   const [target, setTarget] = useState<StartEpicOptions['target']>(existing?.target ?? 'merged')
   const [concurrency, setConcurrency] = useState(existing?.concurrency ?? 3)
   const [plan, setPlan] = useState(true)
@@ -38,5 +49,5 @@ export function useRunSettings(existing: EpicRunState | null): RunSettings {
     () => ({ cadence, target, concurrency, plan: planApplies && plan }),
     [cadence, target, concurrency, plan, planApplies],
   )
-  return { options, setCadence, setTarget, setConcurrency, setPlan, planApplies }
+  return { options, setCadence: gate => setGates([gate]), setTarget, setConcurrency, setPlan, planApplies }
 }

@@ -37,7 +37,9 @@ async function pause({ project, epicId }: VerbContext): Promise<string> {
  */
 export function resumeOptions(run: EpicRunSnapshot | null) {
   return {
-    cadence: run?.cadence ?? 'now',
+    // The run's gates, verbatim: a resume must not quietly drop `queue` (or any
+    // future gate the panel does not know about) off an axis it is not editing.
+    cadence: run?.cadence ?? ['now'],
     target: run?.target ?? 'merged',
     concurrency: run?.concurrency ?? 3,
     maxGens: run?.maxGens,

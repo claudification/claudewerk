@@ -27,7 +27,7 @@ import {
   scannerEnabledForProject,
   stampScannerRun,
 } from './project-settings'
-import { epicScanner, epicsToBeat } from './scanners/epic-scanner'
+import { epicScanner, epicsToBeat, planBeatContexts } from './scanners/epic-scanner'
 import { runScan } from './scanners/scanner'
 import {
   markEngineBoot as markBoot,
@@ -315,8 +315,21 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
  * group's lanes are observable from no other seam.
  */
 export function resolveBeatGroup(deps: SweepDeps, project: string, epicId: string): EpicGroup {
+  return pickBeatGroup(epicsToBeat(deps), project, epicId)
+}
+
+/**
+ * The same choice, over a roster the caller has ALREADY enumerated.
+ *
+ * `beatOneEpic` needs that roster anyway -- the queue gate is answered over this
+ * epic's project peers -- and enumerating twice would describe two different
+ * instants. That is not merely wasteful: the peer list is tested for membership
+ * by REFERENCE, so a group resolved from a second enumeration would never be
+ * found in the first one's peers and would be appended as a duplicate scope.
+ */
+function pickBeatGroup(watched: readonly EpicGroup[], project: string, epicId: string): EpicGroup {
   return (
-    epicsToBeat(deps).find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? {
+    watched.find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? {
       epicId,
       project,
       inFlight: [],
@@ -376,7 +389,25 @@ export async function beatOneEpic(
   }
   sweeping = true
   try {
-    const outcome = await runEpicBeat(deps, resolveBeatGroup(deps, project, epicId))
+    const watched = epicsToBeat(deps)
+    const group = pickBeatGroup(watched, project, epicId)
+    // THE SAME QUEUE THE SWEEP WOULD SEE, computed over this epic's PROJECT
+    // PEERS. A forced beat changes WHEN, never WHETHER -- so it honours the
+    // queue gate exactly as it honours the window one. Beating a queued epic by
+    // hand while another holds the runner would be the back door the gate exists
+    // to close, and the beat says which epic is holding rather than going quiet.
+    //
+    // Peers match on project IDENTITY for the same reason the group does: the
+    // caller's `claude:///path` against the store's `claude://default/path`
+    // would find no peers at all, and an empty peer set answers "nothing else is
+    // running" for a project where something is.
+    const peers = watched.filter(g => isSameProject(g.project, project))
+    const plan = await planBeatContexts(deps, peers.includes(group) ? peers : [...peers, group])
+    // An unreadable run is reported as the failure it is, rather than beaten
+    // against a view nobody could fetch.
+    const unreadable = plan.failure(group)
+    if (unreadable) return { ok: false, error: unreadable }
+    const outcome = await runEpicBeat(deps, group, plan.context(group))
     // BEAT NOW exists because a human is watching and does not want to wait 45s
     // for the tick. Making them then wait 45s to SEE what it did would give back
     // exactly what the verb was for.

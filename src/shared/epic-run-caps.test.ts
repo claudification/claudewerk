@@ -8,7 +8,7 @@ const at = (minutes: number) => T0 + minutes * 60_000
 const RUN: EpicRunMeta = {
   epicId: 'e1',
   project: 'claude://s/p',
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 3,
   target: 'merged',

@@ -7,6 +7,7 @@
 import type { EpicLease } from '../shared/epic-lease'
 import { acknowledgedCardIds, dispatchCountsByCard } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
+import { parseWhen } from '../shared/epic-when'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type {
   EpicBatonQuery,
@@ -144,6 +145,23 @@ export interface EpicRunView {
   error?: string
 }
 
+/**
+ * THE `when` AXIS, NORMALISED AT THE SEAM -- version skew, not a default.
+ *
+ * Broker and sentinel ship separately, and a sentinel running the older bundle
+ * reads `cadence` through a scalar `pick()`: its `get` answers with a bare
+ * string, which is what this field was for the whole life of the feature. Every
+ * broker reader downstream expects the list, and the one that would notice last
+ * is the control panel, where `.join` on a string is a crash rather than a wrong
+ * answer.
+ *
+ * So the shape is fixed HERE, at the one place a sentinel reply becomes a broker
+ * fact, instead of at each of the five places that read it.
+ */
+export function normalizeWhen(run: EpicRunSnapshot | null): EpicRunSnapshot | null {
+  return run ? { ...run, cadence: parseWhen(run.cadence) } : null
+}
+
 const EMPTY_VIEW = (error: string): EpicRunView => ({
   run: null,
   baton: [],
@@ -170,7 +188,7 @@ export function toEpicRunView(res: EpicResult): EpicRunView {
   if (!res.ok) return EMPTY_VIEW(res.error ?? 'epic get failed')
   const baton = res.baton ?? []
   return {
-    run: res.run ?? null,
+    run: normalizeWhen(res.run ?? null),
     baton,
     acknowledgedCardIds: res.acknowledgedCardIds ?? acknowledgedCardIds(baton),
     // Same skew rule, same direction of error: an old sentinel makes the ceiling

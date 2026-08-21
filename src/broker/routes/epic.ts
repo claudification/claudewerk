@@ -20,7 +20,7 @@ import { Hono } from 'hono'
 import type { EpicBatonQuery, EpicOpKind } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { listActiveEpicRuns } from '../epic-active'
-import { sendEpicOp } from '../epic-broker-rpc'
+import { normalizeWhen, sendEpicOp } from '../epic-broker-rpc'
 import { forgetArmedEpic, noteArmedEpic } from '../epic-registry'
 import { buildSweepDeps } from '../epic-sweep-loop'
 import type { Permission } from '../permissions'
@@ -192,7 +192,16 @@ async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady):
   // reflected. `void` deliberately: the reply must not block on a broadcast.
   if (PUBLISHING_OPS.has(body.op)) void buildSweepDeps(store).publishActivity?.()
   return {
-    body: { ok: true, run: result.run ?? null, baton: result.baton ?? [], lease: result.currentLease ?? null },
+    body: {
+      ok: true,
+      // The SAME normalisation `toEpicRunView` applies, for the same version-skew
+      // reason: an older sentinel answers with `cadence` as a bare string, and
+      // this is the reply the control panel reads directly rather than through
+      // the beat's view. See `normalizeWhen`.
+      run: normalizeWhen(result.run ?? null),
+      baton: result.baton ?? [],
+      lease: result.currentLease ?? null,
+    },
   }
 }
 

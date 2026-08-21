@@ -14,6 +14,7 @@
  */
 
 import type { RunVitalityView } from '@shared/epic-vitality'
+import { formatWhen } from '@shared/epic-when'
 import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { formatDurationShort } from '@/lib/status-style'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
@@ -47,7 +48,7 @@ function RunProgress({
   return (
     <span className="wall-run-gen">
       {`gen ${gen}${maxGens > 0 ? `/${maxGens}` : ''}`}
-      {run?.cadence ? ` · ${run.cadence}` : ''}
+      {run?.cadence?.length ? ` · ${formatWhen(run.cadence)}` : ''}
       {!stall.stalled && stall.sinceMs !== null ? ` · beat ${formatDurationShort(stall.sinceMs)}` : ''}
     </span>
   )

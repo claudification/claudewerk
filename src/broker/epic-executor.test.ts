@@ -24,7 +24,7 @@ const PROJECT = 'claude://studio/proj'
 const RUN: EpicRunSnapshot = {
   epicId: 'e1',
   project: PROJECT,
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 3,
   target: 'merged',
@@ -489,7 +489,7 @@ describe('runEpicBeat', () => {
   })
 
   test('cadence=window with a closed window holds dispatch but still verifies', async () => {
-    run = { ...RUN, cadence: 'window' }
+    run = { ...RUN, cadence: ['window'] }
     cards = [
       card('e1', 'open', { tags: ['epic'] }),
       card('t1', 'open', { epic: 'e1' }),
@@ -603,7 +603,7 @@ describe('the run caps stop the run', () => {
   /** The clock starts when the run may WORK, not when it was armed -- a window
    *  run must not spend its budget waiting for the night. */
   test('a shut window does not start the wall clock', async () => {
-    run = { ...RUN, cadence: 'window' }
+    run = { ...RUN, cadence: ['window'] }
     const d = { ...deps(), windowOpen: async () => false } as BeatDeps
     await runEpicBeat(d, group())
     expect(patchOps().some(p => p.startedAt !== undefined)).toBe(false)

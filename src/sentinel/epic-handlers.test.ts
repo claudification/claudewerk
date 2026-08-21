@@ -58,7 +58,7 @@ describe('handleEpicOp', () => {
     expect(op('start', { start: { cadence: 'window', concurrency: 2 } }).ok).toBe(true)
     const got = op('get')
     expect(got.run?.status).toBe('armed')
-    expect(got.run?.cadence).toBe('window')
+    expect(got.run?.cadence).toEqual(['window'])
     expect(got.run?.concurrency).toBe(2)
     expect(got.baton).toEqual([])
   })

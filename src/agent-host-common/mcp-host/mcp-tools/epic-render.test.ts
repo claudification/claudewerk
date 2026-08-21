@@ -11,7 +11,7 @@ import { type EpicRunPayload, renderEpic } from './epic-render'
 const RUN: EpicRunSnapshot = {
   epicId: 'e1',
   project: 'claude://s/p',
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 7,
   target: 'merged',
