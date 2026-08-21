@@ -17,8 +17,14 @@ const RUN_TRIGGERS = ['cron', 'manual', 'catchup'] as const
  * empty `conv=` would be a run row claiming something that did not happen --
  * the exact class of confident-but-untrue record the morning report exists to
  * stop. Two words, because they are two events.
+ *
+ * `armed` is the same rule again, for the same reason. An `epic-start` schedule
+ * ARMS a run and launches nothing: the dispatching is the epic engine's beat,
+ * minutes or hours later, and may never happen at all if the run's own `when`
+ * gate never opens. A row saying `spawned` would promise work that this fire did
+ * not do.
  */
-const RUN_OUTCOMES = ['spawned', 'swept', 'skipped_overlap', 'skipped_disabled', 'error', 'missed'] as const
+const RUN_OUTCOMES = ['spawned', 'swept', 'armed', 'skipped_overlap', 'skipped_disabled', 'error', 'missed'] as const
 export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 export type RunOutcome = (typeof RUN_OUTCOMES)[number]
 

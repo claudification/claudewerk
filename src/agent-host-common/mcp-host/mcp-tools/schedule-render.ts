@@ -12,7 +12,7 @@ import { describeWhen } from '../../../shared/describe-when'
 import { formatRelative } from '../../../shared/format-when'
 import { nextFireAt } from '../../../shared/schedule-next-fire'
 import type { ScheduledRun } from '../../../shared/scheduled-run'
-import type { ScheduledTask } from '../../../shared/scheduled-task'
+import { type ScheduledTask, scheduleAction } from '../../../shared/scheduled-task'
 
 /** The next fire as an absolute wall clock in the schedule's OWN zone, plus how far off. */
 function nextFireLine(task: ScheduledTask, now = Date.now()): string {
@@ -31,9 +31,38 @@ function nextFireLine(task: ScheduledTask, now = Date.now()): string {
   return `next run  ${wall} (${task.tz}), ${formatRelative(at, now)}`
 }
 
+/**
+ * WHAT this schedule fires, in one line.
+ *
+ * Printed for every schedule including the plain spawns, because "what" is the
+ * question an agent that did not create this schedule asks first, and an action
+ * that is settable but never shown is an action nobody can check they got right.
+ * The epic line carries the ARM's own gate too -- `when` there is a different
+ * axis from the schedule's clock, and seeing both is the whole point.
+ */
+function whatLine(task: ScheduledTask): string {
+  const action = scheduleAction(task)
+  const epic = task.epic
+  if (action !== 'epic-start' || !epic) return `what      ${action}`
+  // Named the way the TOOL takes them, not the way the record stores them, so
+  // what an agent reads back is what it would type to change one.
+  const knobs = Object.entries({
+    when: epic.when,
+    target: epic.target,
+    concurrency: epic.concurrency,
+    max_gens: epic.maxGens,
+    max_usd: epic.maxUsd,
+    max_wall_clock_minutes: epic.maxWallClockMinutes,
+  })
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}=${value}`)
+  return `what      epic-start ${epic.epicId}${knobs.length ? ` (${knobs.join(' ')})` : ''}`
+}
+
 export function renderSchedule(task: ScheduledTask, now = Date.now()): string {
   const lines = [
     `${task.id}  "${task.name}"${task.enabled ? '' : '  [DISABLED]'}`,
+    whatLine(task),
     `when      ${describeWhen(task, now)}`,
     nextFireLine(task, now),
     `project   ${task.projectUri}`,

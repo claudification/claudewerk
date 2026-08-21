@@ -62,6 +62,34 @@ function whereFields(ctx: McpToolContext, p: Params): { projectUri: string; cwd:
   return { projectUri, cwd }
 }
 
+/** A numeric param off the wire, or undefined -- MCP sends numbers as strings. */
+function num(v: string | undefined): number | undefined {
+  return v === undefined || v === '' ? undefined : Number(v)
+}
+
+/**
+ * The `epic-start` payload, or nothing.
+ *
+ * Built whenever the caller named an `epic_id`, INDEPENDENTLY of `action`, so a
+ * caller who filled in the epic and forgot the action gets the server's refusal
+ * ("epic is only meaningful for action \"epic-start\"") rather than a schedule
+ * that silently arms nothing every Saturday for a year.
+ */
+function epicFields(p: Params): Record<string, unknown> | undefined {
+  if (!p.epic_id) return undefined
+  return {
+    epicId: p.epic_id,
+    ...given({
+      when: p.when,
+      target: p.target,
+      concurrency: num(p.concurrency),
+      maxGens: num(p.max_gens),
+      maxUsd: num(p.max_usd),
+      maxWallClockMinutes: num(p.max_wall_clock_minutes),
+    }),
+  }
+}
+
 /** Run policy, defaulted exactly the way the control panel defaults it. */
 function policyFields(p: Params): Record<string, unknown> {
   return {
@@ -80,11 +108,20 @@ export function createBody(ctx: McpToolContext, p: Params): Record<string, unkno
 
   return {
     name: p.name,
-    prompt: p.prompt,
     ...where,
     tz: p.tz || hostTimeZone(),
     ...when.when,
-    ...given({ sentinel: p.sentinel, maxRuns: p.maxRuns ? Number(p.maxRuns) : undefined }),
+    // `prompt` and `action` go through `given` because ABSENT and EMPTY are
+    // different answers to the server's per-action rule: an `action=board-sweep`
+    // carrying `prompt: ''` would be refused as a spawn with an empty prompt if
+    // the key travelled, and an absent `action` is what every legacy schedule has.
+    ...given({
+      prompt: p.prompt,
+      action: p.action,
+      epic: epicFields(p),
+      sentinel: p.sentinel,
+      maxRuns: num(p.maxRuns),
+    }),
     ...policyFields(p),
     spawn: { ...DEFAULT_SCHEDULE_SPAWN, ...given({ model: p.model }) },
   }
@@ -94,6 +131,7 @@ export function createBody(ctx: McpToolContext, p: Params): Record<string, unkno
 const PATCHABLE = [
   'name',
   'prompt',
+  'action',
   'cron',
   'runAt',
   'tz',
@@ -110,13 +148,38 @@ const COERCE: Record<string, (v: string) => unknown> = {
   enabled: v => String(v) === 'true',
 }
 
-/** ONLY the keys actually supplied, so an omitted field is left alone rather
- *  than reset to a default by the merge on the other side. */
+/**
+ * ONLY the keys actually supplied, so an omitted field is left alone rather
+ * than reset to a default by the merge on the other side.
+ *
+ * The `epic` block obeys the same rule one level down: the knobs the caller sent
+ * are merged onto the ones already stored (`patchSchedule`), so raising a
+ * ceiling costs one parameter and does not silently drop the epic id beside it.
+ * Which is also how `epic_run action=start` behaves -- one knob changes one knob.
+ */
 export function patchBody(p: Params): Record<string, unknown> {
   const patch: Record<string, unknown> = {}
   for (const key of PATCHABLE) {
     if (p[key] === undefined) continue
     patch[key] = COERCE[key] ? COERCE[key](p[key]) : p[key]
   }
+  const epic = epicPatchFields(p)
+  if (epic) patch.epic = epic
   return patch
+}
+
+/** The epic knobs a patch carries. Unlike `epicFields`, `epic_id` is NOT
+ *  required: a patch that only raises `max_usd` is the common case, and the id
+ *  it belongs to is already stored. */
+function epicPatchFields(p: Params): Record<string, unknown> | undefined {
+  const fields = given({
+    ...(p.epic_id ? { epicId: p.epic_id } : {}),
+    when: p.when,
+    target: p.target,
+    concurrency: num(p.concurrency),
+    maxGens: num(p.max_gens),
+    maxUsd: num(p.max_usd),
+    maxWallClockMinutes: num(p.max_wall_clock_minutes),
+  })
+  return Object.keys(fields).length > 0 ? fields : undefined
 }

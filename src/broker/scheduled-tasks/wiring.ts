@@ -19,6 +19,7 @@ import { getUser } from '../auth'
 import { publishBoardReport } from '../board-report-feed'
 import { callBoard } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
+import { armEpicRun, epicsScannerRefusal } from '../epic-arm'
 import { getGlobalSettings } from '../global-settings'
 import { getLaunchProfilesRaw } from '../launch-profiles/storage'
 import { hasPermissionAnyCwd } from '../permissions'
@@ -30,6 +31,7 @@ import { werkLiveness } from '../werk-liveness'
 import { dispatchBoardSweep } from './board-sweep-dispatch'
 import { broadcastScheduledRun, broadcastScheduledTasks } from './broadcast'
 import { type ScheduledTaskEngine, startScheduledTaskEngine } from './engine'
+import { dispatchEpicStart } from './epic-start-dispatch'
 
 /**
  * The scheduler's identity at the permission gate. `trusted`, never `benevolent`:
@@ -114,6 +116,19 @@ export function wireScheduledTasks(store: StoreDriver, conversationStore: Conver
       }),
 
     /**
+     * ARMING AN EPIC ON A CLOCK. The dispatch goes through `armEpicRun` -- the
+     * same function the RUN button and the `epic_run` tool reach -- because an
+     * arm is more than the sentinel op: it registers the run in the armed set
+     * the sweep reads, clears any tombstone on it, and pushes the badge. A
+     * second arm path that forwarded the op alone would leave a run armed on
+     * disk and invisible to the sweep forever.
+     */
+    startEpicRun: task =>
+      dispatchEpicStart(task, {
+        arm: (project, epicId, start) => armEpicRun(conversationStore, { project, epicId, start }),
+      }),
+
+    /**
      * THE SCANNER FABRIC'S OWN OPT-IN, off by default for every project. Not a
      * flag of this feature's own: `morning-report` is one of the five ids in
      * `scanner-ids.ts`, the settings panel already renders its checkbox, and a
@@ -121,6 +136,11 @@ export function wireScheduledTasks(store: StoreDriver, conversationStore: Conver
      * wrong. THE CALLER CHECKS, NOT THE SCANNER.
      */
     morningReportEnabled: projectUri => scannerEnabledForProject(projectUri, 'morning-report'),
+
+    /** The same fabric, the `epics` box -- asked through the arm's own refusal so
+     *  the schedule and the RUN button cannot disagree about the wording or the
+     *  default. See `FireDeps.epicsScannerRefusal` for why it is asked twice. */
+    epicsScannerRefusal,
 
     notify(message) {
       if (!isPushConfigured()) return

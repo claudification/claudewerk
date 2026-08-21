@@ -19,14 +19,13 @@
  */
 
 import { Hono } from 'hono'
-import type { EpicBatonQuery, EpicOpKind } from '../../shared/protocol'
+import type { EpicBatonQuery, EpicOpKind, EpicResult } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { listActiveEpicRuns } from '../epic-active'
+import { armEpicRun, trackEpicOp } from '../epic-arm'
 import { normalizeWhen, sendEpicOp } from '../epic-broker-rpc'
-import { forgetArmedEpic, forgetDeletedEpic, noteArmedEpic } from '../epic-registry'
 import { buildSweepDeps } from '../epic-sweep-loop'
 import type { Permission } from '../permissions'
-import { scannerEnabledForProject } from '../project-settings'
 import { type ActionInput, BROKER_ACTIONS, BROKER_WRITE_ACTIONS } from './epic-actions'
 import { readJsonBody } from './json-body'
 
@@ -73,8 +72,10 @@ const WRITE_OPS = new Set<string>(['start', 'patch', 'log_append', 'lease', 'rel
 const PUBLIC_OPS = new Set<string>(['start', 'get', 'pause', 'abort', 'clear'])
 
 /** Ops that change whether a run is live, and so must reach the badge NOW
- *  rather than on the next sweep tick. `get` is a read and changes nothing. */
-const PUBLISHING_OPS = new Set<string>(['start', 'pause', 'abort', 'clear'])
+ *  rather than on the next sweep tick. `get` is a read and changes nothing.
+ *  `start` is not here because it never reaches this check: it publishes inside
+ *  `armEpicRun`, where every other caller that arms a run gets it too. */
+const PUBLISHING_OPS = new Set<string>(['pause', 'abort', 'clear'])
 
 export interface EpicRouteHelpers {
   httpHasPermission: (req: Request, permission: Permission, project: string, conversationId?: string) => boolean
@@ -90,15 +91,13 @@ function isWrite(op: string): boolean {
 }
 
 /**
- * The three gates, together: is this action drivable from outside, may this
- * caller drive it, and -- for `start` alone -- has this project opted in to being
- * swept at all? Returns the refusal or null.
+ * The two gates: is this action drivable from outside, and may this caller drive
+ * it? Returns the refusal or null.
  *
- * THE OPT-IN CHECK IS HERE BECAUSE ARMING IS THE OTHER CALLER. The sweep drops an
- * armed run in an opted-out project (epic-sweep-loop.ts), so without this a
- * `start` would report success and then sit `armed` forever with nothing coming
- * to beat it -- the silent hang, told at the one moment a human could have fixed
- * it in two clicks.
+ * The THIRD gate an arm has -- the "epics" scanner opt-in -- deliberately does
+ * NOT live here any more. It is a rule about arming rather than about this
+ * route, and a schedule can arm too, so it moved next to the arm itself
+ * (`epic-arm.ts`). Order is unchanged: this runs first, the arm second.
  */
 function refuse(
   body: EpicHttpBodyReady,
@@ -112,40 +111,8 @@ function refuse(
   if (!helpers.httpHasPermission(req, permission, body.project)) {
     return { error: `Forbidden: ${permission} permission required`, status: 403 }
   }
-  if (body.op === 'start' && !scannerEnabledForProject(body.project, 'epics')) {
-    return {
-      error:
-        `the "epics" scanner is off for ${body.project}, so an armed run would never be swept -- ` +
-        `tick it in Project Settings > Scanners first`,
-      status: 400,
-    }
-  }
   return null
 }
-
-/**
- * Keep the sweep's armed-epic set in step with what just happened.
- *
- * Called ONLY after a successful op: registering an epic whose sentinel refused
- * the write would leave the sweep beating on a run that does not exist. Arming
- * is what lets the sweep find an epic before it has any conversations -- see
- * epic-registry.ts for the chicken-and-egg this closes.
- */
-function trackRun(body: EpicHttpBodyReady): void {
-  if (body.op === 'start') {
-    noteArmedEpic(body.project, body.epicId)
-    // ARMING UN-DELETES. A `start` writes a fresh `run.md`, so the epic has a
-    // real run again -- leaving its tombstone in place would keep that new run
-    // off the wall, the badge and `list` while it was genuinely running, which
-    // is the invisibility the whole tail section exists to prevent.
-    forgetDeletedEpic(body.project, body.epicId)
-  } else if (body.op === 'pause' || body.op === 'abort') forgetArmedEpic(body.project, body.epicId)
-}
-
-/** Exposed for tests: the one piece here that encodes POLICY rather than
- *  plumbing, and the only one a router test cannot reach -- it runs after a
- *  successful sentinel op, and a test has no sentinel to succeed against. */
-export const __testing = { trackRun }
 
 function toActionInput(body: EpicHttpBodyReady): ActionInput {
   return {
@@ -194,16 +161,8 @@ function toSentinelOp(body: EpicHttpBodyReady): Parameters<typeof sendEpicOp>[2]
   }
 }
 
-/** A SENTINEL op: forwarded, because the run artifact is a file. */
-async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
-  const result = await sendEpicOp(store, body.project, toSentinelOp(body))
-  if (!result.ok) return { body: { ok: false, error: result.error ?? 'epic op failed' }, status: 502 }
-
-  trackRun(body)
-  // Arming, pausing and aborting are the three moments a human is definitely
-  // looking at the badge, so they do not wait for the next 45s tick to be
-  // reflected. `void` deliberately: the reply must not block on a broadcast.
-  if (PUBLISHING_OPS.has(body.op)) void buildSweepDeps(store).publishActivity?.()
+/** The one reply shape every sentinel op answers with. */
+function opReply(result: EpicResult): Reply {
   return {
     body: {
       ok: true,
@@ -216,6 +175,46 @@ async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady):
       lease: result.currentLease ?? null,
     },
   }
+}
+
+/**
+ * `start` -- handed WHOLE to `armEpicRun`, never re-implemented here.
+ *
+ * The opt-in refusal, the sentinel write, the armed-set bookkeeping and the
+ * badge broadcast are one indivisible act, and a schedule arms runs through the
+ * very same function. See `epic-arm.ts` for what an arm that skipped any of it
+ * would leave behind.
+ *
+ * `baton` and `reason` are NOT forwarded, unlike `toSentinelOp` -- and nothing
+ * is lost. In `src/sentinel/epic-handlers.ts`, `msg.baton` is read by `get`
+ * alone and `msg.reason` by `abort` and `delete` alone; a `start` reads
+ * neither, so the old path was sending two fields into a handler that never
+ * looked at them.
+ */
+async function runArm(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
+  const armed = await armEpicRun(store, {
+    project: body.project,
+    epicId: body.epicId,
+    ...(body.start ? { start: body.start } : {}),
+  })
+  if (!armed.ok) return { body: { ok: false, error: armed.error }, status: armed.status }
+  return opReply(armed.result)
+}
+
+/** A SENTINEL op: forwarded, because the run artifact is a file. */
+async function runSentinelOp(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
+  if (body.op === 'start') return runArm(store, body)
+
+  const result = await sendEpicOp(store, body.project, toSentinelOp(body))
+  if (!result.ok) return { body: { ok: false, error: result.error ?? 'epic op failed' }, status: 502 }
+
+  trackEpicOp(body)
+  // Pausing and aborting are two of the three moments a human is definitely
+  // looking at the badge, so they do not wait for the next 45s tick to be
+  // reflected (the third is arming, which publishes inside `armEpicRun`).
+  // `void` deliberately: the reply must not block on a broadcast.
+  if (PUBLISHING_OPS.has(body.op)) void buildSweepDeps(store).publishActivity?.()
+  return opReply(result)
 }
 
 export function createEpicRouter(conversationStore: ConversationStore, helpers: EpicRouteHelpers): Hono {

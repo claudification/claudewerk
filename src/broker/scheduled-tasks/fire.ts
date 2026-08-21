@@ -16,7 +16,7 @@ import { composeSeatPrompt, type Order } from '../../shared/order'
 import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
 import { seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
-import { isSpawnSchedule, type ScheduledTask } from '../../shared/scheduled-task'
+import { type ScheduledTask, scheduleAction } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { applyDenyFloor, buildUnattendedSettings } from '../../shared/unattended-permissions'
 import { nextFailureState } from './policy'
@@ -67,11 +67,32 @@ export interface FireDeps {
    */
   runBoardSweep?(task: ScheduledTask): Promise<DispatchOutcome>
   /**
+   * Arm the epic run an `epic-start` schedule names.
+   *
+   * OPTIONAL for the same reason as `runBoardSweep`, and absent means the same
+   * thing: a FAILED fire with a reason, never a silent no-op. A schedule that
+   * reports success and arms nothing is indistinguishable from one that works,
+   * right up until the morning nobody's epic ran.
+   */
+  startEpicRun?(task: ScheduledTask): Promise<DispatchOutcome>
+  /**
    * Is the morning report opted in for this project? OFF BY DEFAULT: absent, or
    * returning false, refuses the fire. A sweep that switched itself on would be
    * an unattended agent re-filing cards in a repo nobody opted in.
    */
   morningReportEnabled?(projectUri: string): boolean
+  /**
+   * The SAME question for an `epic-start`: is the "epics" scanner ticked for
+   * this project? Answers with the refusal text or null, because the wording is
+   * the value -- it names the box and where to tick it.
+   *
+   * Asked HERE as well as inside the arm, deliberately. The arm has to refuse
+   * (the route arms too, and a human deserves the refusal at the click), but a
+   * schedule that learned it only from the arm would count five refusals as five
+   * dispatch failures and disarm itself over a box somebody unticked on purpose.
+   * `skipped_disabled` is a schedule correctly declining to run.
+   */
+  epicsScannerRefusal?(projectUri: string): string | null
   notify?(message: string): void
   now(): number
 }
@@ -252,21 +273,39 @@ export function applyOrderToRequest(request: SpawnRequest, order: Order | undefi
 /**
  * WHAT this fire actually does, resolved before a slot is claimed.
  *
- * Two actions, one fire path. Everything around this -- the owner re-check, the
- * overlap rule, seat admission, the run row, the failure backoff -- is shared
- * because those are rules about firing unattended work, and none of them is a
- * rule about spawning. Only the middle differs, so only the middle branches.
+ * Three actions, one fire path. Everything around this -- the owner re-check,
+ * the overlap rule, seat admission, the run row, the failure backoff -- is
+ * shared because those are rules about firing unattended work, and none of them
+ * is a rule about spawning. Only the middle differs, so only the middle branches.
  */
 type FirePlan = { ok: true; run: () => Promise<DispatchOutcome>; outcome: RunOutcome } | { ok: false; reason: string }
 
-function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: Order | undefined): FirePlan {
-  if (!isSpawnSchedule(task)) {
-    // A `board-sweep` with no runner is a FAILED fire with a reason, never a
-    // quiet success -- see `FireDeps.runBoardSweep`.
+/**
+ * The two actions that launch NO conversation, or null when this one spawns.
+ *
+ * Each needs a runner wired, and a missing one is a FAILED fire with a reason
+ * rather than a quiet success -- see `FireDeps.runBoardSweep` and
+ * `FireDeps.startEpicRun`. Neither builds a `SpawnRequest`, which is why they
+ * resolve here, before the whole spawn half of `planFire`.
+ */
+function planNonSpawn(task: ScheduledTask, deps: FireDeps): FirePlan | null {
+  const action = scheduleAction(task)
+  if (action === 'board-sweep') {
     const run = deps.runBoardSweep
     if (!run) return { ok: false, reason: 'this broker has no board-sweep runner wired' }
     return { ok: true, run: () => run(task), outcome: 'swept' }
   }
+  if (action === 'epic-start') {
+    const run = deps.startEpicRun
+    if (!run) return { ok: false, reason: 'this broker has no epic-start runner wired' }
+    return { ok: true, run: () => run(task), outcome: 'armed' }
+  }
+  return null
+}
+
+function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: Order | undefined): FirePlan {
+  const nonSpawn = planNonSpawn(task, deps)
+  if (nonSpawn) return nonSpawn
 
   const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
   const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt, order), order)
@@ -279,7 +318,7 @@ function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: O
   // The floor goes on last and applies to every SPAWNING fire, order or no
   // order. It lives in this branch rather than in `fireSchedule` because it
   // takes a `SpawnRequest`, and the other branch never builds one -- see the
-  // `isSpawnSchedule` arm above and the note on `FloorApplication` below.
+  // non-spawning arms above and the note on `FloorApplication` below.
   const floored = applyDenyFloorToRequest(applied.request)
   if (!floored.ok) return { ok: false, reason: floored.reason }
   return { ok: true, run: () => deps.dispatch(floored.request), outcome: 'spawned' }
@@ -306,14 +345,18 @@ type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false; reaso
  * SPAWNS, rather than inherited from whichever builder a seat happened to go
  * through.
  *
- * A `board-sweep` FIRE GETS NO FLOOR, AND IS NOT EXEMPT -- there is nothing to
- * apply one to. That branch launches no conversation and builds no
- * `SpawnRequest`: it sends one board op to the sentinel that owns the project
- * and returns a `DispatchOutcome`. This function has no argument to take. The
- * unattended work still happens beside the files, gated per project by
- * `FireDeps.morningReportEnabled` and by the sentinel's own op allowlist --
- * a different gate, in a different process, on a thing that is not a spawn.
- * If a future action ever DOES build a request, it goes through this floor.
+ * A `board-sweep` OR `epic-start` FIRE GETS NO FLOOR, AND IS NOT EXEMPT -- there
+ * is nothing to apply one to. Neither branch launches a conversation or builds a
+ * `SpawnRequest`: one sends a board op to the sentinel that owns the project and
+ * the other arms an epic run, and both return a `DispatchOutcome`. This function
+ * has no argument to take. The unattended work still happens beside the files,
+ * gated per project by the scanner boxes (`FireDeps.morningReportEnabled`,
+ * `FireDeps.epicsScannerRefusal`) and by the sentinel's own op allowlist -- a
+ * different gate, in a different process, on a thing that is not a spawn. (The
+ * seats an epic run later dispatches are built by the epic engine, which today
+ * applies no floor of its own -- an arm through a schedule inherits exactly the
+ * permissions an arm through the RUN button gets, no more.) If a future action
+ * ever builds a request HERE, it goes through this floor.
  *
  * APPLIED AFTER THE ORDER, ON PURPOSE. The floor is a union and a union is
  * commutative, so going last cannot undo an order's rules -- and it keeps this
@@ -344,6 +387,23 @@ function applyDenyFloorToRequest(request: SpawnRequest): FloorApplication {
     return { ok: false, reason: `cannot apply the unattended deny-floor -- ${floored.reason}` }
   }
   return { ok: true, request: { ...request, settingsInline: floored.settings } }
+}
+
+/**
+ * The scanner-fabric opt-out that applies to THIS action, as the sentence a
+ * human reads in the run history -- or null when nothing is opting out.
+ *
+ * A `spawn` has no scanner behind it and is never gated here. The other two each
+ * ride a box in Project Settings > Scanners, and each box is asked through the
+ * predicate that owns it rather than through a second spelling of the default.
+ */
+function scannerOptOut(task: ScheduledTask, deps: FireDeps): string | null {
+  const action = scheduleAction(task)
+  if (action === 'board-sweep' && !deps.morningReportEnabled?.(task.projectUri)) {
+    return `the morning report is not enabled for ${task.projectUri}`
+  }
+  if (action === 'epic-start') return deps.epicsScannerRefusal?.(task.projectUri) ?? null
+  return null
 }
 
 /** The still-running conversation from this schedule's most recent spawn, if any. */
@@ -433,12 +493,8 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
   // stop being swept. `skipped_disabled` rather than `error` on purpose -- an
   // opted-out project is a schedule correctly declining to run, and counting
   // that as a dispatch failure would disarm it after five quiet mornings.
-  if (!isSpawnSchedule(task) && !deps.morningReportEnabled?.(task.projectUri)) {
-    return finish(task, deps, opts, firedAt, {
-      outcome: 'skipped_disabled',
-      error: `the morning report is not enabled for ${task.projectUri}`,
-    })
-  }
+  const optedOut = scannerOptOut(task, deps)
+  if (optedOut) return finish(task, deps, opts, firedAt, { outcome: 'skipped_disabled', error: optedOut })
 
   if (task.overlap === 'skip') {
     const live = liveConversationFor(task, deps)

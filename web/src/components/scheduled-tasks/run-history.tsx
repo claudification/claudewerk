@@ -20,6 +20,9 @@ const OUTCOME_STYLE: Record<RunOutcome, { label: string; className: string }> = 
   // Distinct from `spawned` because it IS distinct: a board sweep runs an op and
   // launches no conversation, so the row has no conversation to open.
   swept: { label: 'swept', className: 'text-primary' },
+  // Same distinction again: an epic-start schedule arms a run and launches
+  // nothing -- the engine's beat does the dispatching, later and maybe never.
+  armed: { label: 'armed', className: 'text-primary' },
   error: { label: 'failed', className: 'text-red-400' },
   skipped_overlap: { label: 'skipped', className: 'text-amber-400' },
   skipped_disabled: { label: 'disabled', className: 'text-comment' },
