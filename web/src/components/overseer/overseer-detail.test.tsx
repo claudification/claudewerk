@@ -99,6 +99,33 @@ describe('the run heading', () => {
     expect(screen.getByText('NO RUN')).toBeTruthy()
     expect(screen.getByText(/of 0 max/)).toBeTruthy()
   })
+
+  /**
+   * WAITING IS NOT IDLE. `runVitality` reads seats, beats and the armed set --
+   * none of which change when a run is armed for 02:00 -- so it says ARMED and
+   * means it, and a pane that stopped there is one a reader cannot tell apart
+   * from a dead run. The appointment is printed beside the pill, with the offset
+   * it was set in and a countdown, because the broker's clock is UTC and the
+   * reader's is not.
+   */
+  it('says a run is WAITING on an appointment rather than leaving the pill to imply idle', () => {
+    const data = inspect()
+    data.live.inFlight = []
+    data.live.conversations = []
+    // 19:00 +07:00 is 12:00Z, and `NOW` is 06:00Z.
+    if (data.run) data.run.cadence = ['at:2026-08-18T19:00:00+07:00']
+    show(data)
+
+    expect(screen.getByText(/WAITING -- waiting until 2026-08-18T19:00:00\+07:00 \(in 6 hours\)/)).toBeTruthy()
+  })
+
+  it('says nothing about an appointment that has already passed', () => {
+    const data = inspect()
+    if (data.run) data.run.cadence = ['at:2026-08-18T05:00:00Z']
+    show(data)
+
+    expect(screen.queryByText(/WAITING --/)).toBeNull()
+  })
 })
 
 describe('the overseer block -- the thing the first live run hid', () => {

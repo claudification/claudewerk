@@ -7,6 +7,7 @@
  */
 
 import { beatStale, runVitality } from '@shared/epic-vitality'
+import { whenWaitingLine } from '@shared/epic-when'
 import type { EpicInspectResult } from '@shared/protocol'
 import { useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -34,6 +35,18 @@ export function headFacts(data: EpicInspectResult, nowMs: number) {
     lastBeat,
     target: run?.target ?? '-',
     concurrency: run?.concurrency ?? '-',
+    /**
+     * WAITING ON THE CLOCK IS NOT IDLE, and `runVitality` below cannot tell the
+     * difference: it reads seats, beats and the armed set, none of which change
+     * when a run is armed for 02:00. So the appointment is carried BESIDE the
+     * pill rather than folded into it -- the same shape the wall's run row uses,
+     * and the same reason: a gate that reported "ARMED, waiting for its first
+     * beat" for four hours is a pane that cannot be told apart from a dead one.
+     *
+     * Computed from `run.cadence`, which already crosses on the snapshot, so this
+     * needs no wire field and cannot disagree with the beat holding the run.
+     */
+    waiting: whenWaitingLine(run?.cadence, nowMs),
     // THE SAME derivation the header badge and the wall use, fed from the inspect
     // read instead of the activity feed. One function, three surfaces -- see
     // src/shared/epic-vitality.ts for the lie it was written to stop.
@@ -59,7 +72,7 @@ function RunHead({
   fetchedAt: number | null
   stale: boolean
 }) {
-  const { gen, maxGens, pct, lastBeat, target, concurrency, vitality } = headFacts(data, nowMs)
+  const { gen, maxGens, pct, lastBeat, target, concurrency, vitality, waiting } = headFacts(data, nowMs)
   const lease = leaseState(data.lease, data.live.overseerAlive, nowMs)
 
   return (
@@ -81,6 +94,10 @@ function RunHead({
       >
         {vitality.why}
       </div>
+      {/* THE APPOINTMENT, when there is one still ahead. Directly under the
+          vitality sentence because it CONTRADICTS it: the pill says ARMED or
+          IDLE and means it, and this is the reason that is the whole story. */}
+      {waiting && <div className="text-meta mt-0.5 text-warning">{`WAITING -- ${waiting}`}</div>}
       {/* WHO HOLDS THE LEASE, AND AT WHICH GENERATION. This window used to
           collapse the whole lease to a boolean and show live overseer
           CONVERSATIONS beside it -- a different fact, which the engine keeps

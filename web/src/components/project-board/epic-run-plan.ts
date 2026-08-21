@@ -47,10 +47,23 @@ export function firstBeat(plan: RunPlan, concurrency: number): number {
   return Math.min(plan.ready, Math.max(0, concurrency))
 }
 
-const WHEN_CLAUSE: Record<EpicCadence, string> = {
+/** The NAMED gates only. An appointment is an infinite family of values, so it
+ *  gets its clause built rather than looked up -- see `clauseFor`. */
+const WHEN_CLAUSE: Record<'now' | 'window' | 'queue', string> = {
   now: 'Starts now',
   window: "Starts in the project's night window",
   queue: 'Waits until no other epic in this project is running, then takes the runner exclusively',
+}
+
+/**
+ * One gate as a clause. An APPOINTMENT prints the instant it names, offset and
+ * all: this sentence is the last thing read before the RUN button, and "waits
+ * until 02:00" without a zone is exactly the ambiguity `format-when.ts` exists to
+ * refuse -- the broker's clock is UTC and the reader's is not.
+ */
+function clauseFor(gate: EpicCadence): string {
+  const named = (WHEN_CLAUSE as Record<string, string | undefined>)[gate]
+  return named ?? `Waits until ${gate.replace(/^at:/, '')}`
 }
 
 /**
@@ -63,7 +76,7 @@ const WHEN_CLAUSE: Record<EpicCadence, string> = {
  */
 function whenClause(gates: readonly EpicCadence[]): string {
   const [first, ...rest] = gates.length > 0 ? gates : (['now'] as const)
-  return [WHEN_CLAUSE[first], ...rest.map(g => lower(WHEN_CLAUSE[g]))].join(', and ')
+  return [clauseFor(first), ...rest.map(g => lower(clauseFor(g)))].join(', and ')
 }
 
 const TARGET_CLAUSE: Record<StartEpicOptions['target'], string> = {

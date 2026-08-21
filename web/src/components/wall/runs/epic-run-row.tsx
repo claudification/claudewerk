@@ -15,7 +15,8 @@
  * else on the row is allowed to be louder.
  */
 
-import type { EpicQueueReading } from '@shared/protocol'
+import { whenWaitingLine } from '@shared/epic-when'
+import type { EpicQueueReading, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
 import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
@@ -61,6 +62,26 @@ function QueueLine({ queue }: { queue: EpicQueueReading | undefined }) {
   return <div className={queue.blocked ? 'wall-run-why' : 'wall-run-overseer'}>{queue.reason}</div>
 }
 
+/**
+ * WAITING ON THE CLOCK IS NOT IDLE -- the same rule as `QueueLine`, one gate over.
+ *
+ * A run armed for 02:00 has nothing in flight, no seat and no fresh beat to show
+ * for itself, which is byte-for-byte what a dead run looks like on every other
+ * line of this row. So it prints the appointment and the countdown, and it never
+ * prints a bare time: the instant carries the offset it was set in, so it can be
+ * checked against a wall clock in any zone (`format-when.ts`'s rule).
+ *
+ * Computed from `run.cadence` rather than fetched, and that is the whole reason
+ * this needs no wire field: the appointment IS the state, it already crosses on
+ * the run snapshot, and a broker that computed a second copy of the countdown
+ * would be a rail that can disagree with the beat holding the run.
+ */
+function WhenLine({ run, nowMs }: { run: EpicRunSnapshot | null; nowMs: number }) {
+  const waiting = run ? whenWaitingLine(run.cadence, nowMs) : null
+  if (!waiting) return null
+  return <div className="wall-run-why">{`WAITING -- ${waiting}`}</div>
+}
+
 /** WHY IT IS NOT MOVING. The broker computes this sentence every beat and, until
  *  this pane, threw it away. It is the first thing to read on a run that
  *  stopped. */
@@ -100,6 +121,11 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
       {/* The inspect read is a beat fresher when it has one; the entry is what
           put the row on screen and is never absent. Same rule as `gen`. */}
       <QueueLine queue={inspect?.queue ?? entry.queue} />
+      {/* Above the buckets for the same reason the queue line is: "why is nothing
+          dispatching" has a different answer for a run waiting on the clock than
+          the DAG's, and printing the DAG's first sends the reader hunting through
+          card lanes for a reason that is not there. */}
+      <WhenLine run={run} nowMs={nowMs} />
       <BucketStrip buckets={runBuckets(inspect)} />
       <CapStrip caps={runCaps(run, nowMs)} />
       <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />

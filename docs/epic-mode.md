@@ -295,6 +295,7 @@ fires invisibly teaches nobody that the guard above it has a hole.
 | `now` | immediately, ignores the clock | always |
 | `window` | deferred to the project's nightshift window | always |
 | `queue` | deferred until no other epic in the project has work in flight, then EXCLUSIVE until this run goes dry | always |
+| an ISO instant | deferred until that moment passes -- an APPOINTMENT. Stored as `at:<iso>` | always |
 
 A verdict lands whichever gate is in force: judging is not night work, a card
 stuck in `in-review` is the worst place for work to sit, and -- for `queue` --
@@ -324,6 +325,51 @@ PERMITTED to dispatch" -- so it needs no state of its own, and arming clears it.
 The starvation risk is reported rather than left silent: position, what it is
 behind, how long it has waited, on the beat note every tick, in `inspect`, and
 on the wall's run rail. Past 30 minutes the line says `STARVING`.
+
+### An APPOINTMENT -- arm it now, start it then
+
+```
+epic_run action=start epic_id=... when=2026-08-22T02:00:00+07:00
+epic_run action=start epic_id=... when=window,2026-08-22T02:00:00+07:00
+```
+
+**An absolute instant with an offset, not a wall-clock time plus an IANA zone.**
+A one-shot appointment has no recurrence, so the DST machinery `parseCron` needs
+buys nothing here and costs the two edge cases it exists to handle. The offset is
+kept rather than folded to UTC because it is the only record of which clock the
+human was reading, and no surface may render a bare time (`format-when.ts`).
+
+**Always give it an offset or a trailing `Z`.** A zoneless date-time is read as
+UTC, explicitly and everywhere -- `Date.parse` would otherwise read that form as
+LOCAL time, and the broker container runs UTC while the sentinel runs on the
+laptop. UTC is also the safe direction to be wrong in: the run waits longer than
+meant rather than firing early.
+
+**It costs no wall clock.** `startedAt` means "the first beat the run was
+PERMITTED to dispatch", the appointment withholds that permission exactly as
+`window` does, and `maxWallClockMinutes` measures from `startedAt` -- so a run
+armed at noon for 02:00 is not burning a budget it may not use.
+
+**A waiting run is never mistaken for a stalled one.** The beat note carries
+`waiting until <instant> (in 4h 12m)` on every tick, the same treatment the
+restart quarantine gets; the `epic_run` caps line carries it beside spend and
+wall clock; and the wall's run rail prints `WAITING -- ...` above the DAG buckets.
+
+**`action=beat` overrides it, and records that it did.** The appointment is one
+person's note about when to begin, and the person pressing BEAT NOW is the one
+who set it. `window` and `queue` are NOT overridable, there or anywhere: `window`
+is a project policy about when the box may be busy and `queue` is a promise made
+to every other epic. The beat says which of them is holding rather than going
+quiet.
+
+**Two instants collapse to the latest.** Every gate must pass on the same beat,
+so an earlier appointment is unconditionally satisfied by the time a later one
+is; carrying both would be two countdowns to keep in step.
+
+**A gate only holds DISPATCH.** Generation 0 (the planning pass) and overseer
+wakes go through it, exactly as they do through `window` -- planning is analysis,
+and an epic that could not even be read until 02:00 would have nothing to
+dispatch when 02:00 arrived.
 
 ---
 
