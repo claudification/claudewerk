@@ -256,7 +256,7 @@ function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: S
   return { ok: true, run: () => deps.dispatch(floored.request), outcome: 'spawned' }
 }
 
-export type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
+type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
 
 /**
  * THE DENY-FLOOR ON EVERY SCHEDULED FIRE, ORDER OR NO ORDER.
@@ -301,7 +301,7 @@ export type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false
  * are quiet downgrades (drop the floor, or drop the human's file); a refusal
  * recorded in run history is the only one the human can see and fix.
  */
-export function applyDenyFloorToRequest(request: SpawnRequest): FloorApplication {
+function applyDenyFloorToRequest(request: SpawnRequest): FloorApplication {
   if (request.settingsInline === undefined && request.settingsPath !== undefined) {
     return {
       ok: false,
