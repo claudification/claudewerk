@@ -39,7 +39,7 @@ import { CapacityLedger } from './capacity-ledger'
 import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
-import { type CallBoard, listBoardCards, readBoardCard, untagBoardCard } from './nightshift-board'
+import { buildNightshiftScanDeps, type CallBoard, untagBoardCard } from './nightshift-board'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { settleWorkerFromStore } from './nightshift-guardians'
 import { computeWindowEndMs } from './nightshift-window'
@@ -47,7 +47,6 @@ import { getProjectSettings } from './project-settings'
 import { type NightshiftScanDeps, nightshiftScanner } from './scanners/nightshift-scanner'
 import { runScan } from './scanners/scanner'
 import { dispatchSpawn } from './spawn-dispatch'
-import { werkLiveness } from './werk-liveness'
 
 /** How often the engine advances in-flight runs (reaps finished workers, dispatches next). */
 const ORCH_TICK_MS = 20_000
@@ -371,13 +370,6 @@ async function advanceRun(store: ConversationStore, state: RunState): Promise<vo
   }
 }
 
-/** The registry reads the scan needs. Structural, so a test hands over a plain
- *  object rather than a whole ConversationStore. */
-interface ScanStore {
-  getAllConversations: () => Conversation[]
-  getActiveConversationCount: (id: string) => number
-}
-
 /**
  * THE RUN'S INPUT: the board, not a queue file.
  *
@@ -393,17 +385,11 @@ async function scanBoardForTasks(
   project: string,
   totalTasks: number,
 ): Promise<{ tasks: NightshiftQueueItem[]; idleReason?: string; crashed?: string }> {
-  const s = store as unknown as ScanStore
+  // `admitted` stays caller-owned -- here it IS the run's first wave, copied
+  // straight into `state.pending` below.
   const admitted: NightshiftQueueItem[] = []
   const deps: NightshiftScanDeps = {
-    getAllConversations: s.getAllConversations,
-    isLive: werkLiveness(s.getActiveConversationCount),
-    log: line => console.log(line),
-    now: () => Date.now(),
-    project,
-    listCards: () => listBoardCards(io.callBoard, store, project),
-    readCard: slug => readBoardCard(io.callBoard, store, project, slug),
-    totalTasks,
+    ...buildNightshiftScanDeps(io.callBoard, store, project, totalTasks),
     admitted,
   }
   const report = await runScan(nightshiftScanner, deps)
