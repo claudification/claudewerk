@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { Conversation, EpicResult } from '../shared/protocol'
+import type { ConversationStore } from './conversation-store'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
 import {
   beatOneEpic,
+  buildSweepDeps,
   markEngineBoot,
   quarantineRemainingMs,
   RESTART_QUARANTINE_MS,
@@ -12,6 +14,7 @@ import {
   type SweepDeps,
   sweepEpics,
 } from './epic-sweep-loop'
+import { NO_REAPING, OVERSEER_SILENCE_MS, SEAT_SILENCE_MS } from './epic-vitality'
 
 let beats: string[]
 let log: string[]
@@ -461,5 +464,84 @@ describe('the "epics" opt-in gate', () => {
     const res = await beatOneEpic(gated('claude://s/e1').deps, 'claude://s/e1', 'e1')
     expect(res.ok).toBe(true)
     expect(beats).toEqual(['claude://s/e1'])
+  })
+})
+
+/**
+ * THE ONE LINE THAT MAKES EITHER REAPER REAL.
+ *
+ * `buildSweepDeps` is the composition root, and until this suite existed nothing
+ * guarded it: the `epic-dead-seat-never-settles` verifier proved the gap by
+ * replacing the assignment with `void buildSeatReaper` and running
+ * `bun test src/broker/` -- 4654 pass, 0 fail. The entire feature could be
+ * deleted from the composition root and not one broker test noticed, because
+ * every other test in the repo builds `SweepDeps` by hand and supplies its own.
+ *
+ * That gap is now worse than it was: both lanes ride the SAME seam, so one bad
+ * line silently disarms the card-seat reaper and the overseer reaper together.
+ *
+ * These tests are behavioural on purpose. `expect(deps.reapers).toBeDefined()`
+ * would pass against `NO_REAPING`, which is precisely the mutation that must
+ * fail.
+ */
+describe('buildSweepDeps wires REAL reapers, not the zero value', () => {
+  const NOW = Date.parse('2026-08-21T17:00:00.000Z')
+  const silent = (agoMs: number): Conversation =>
+    ({
+      id: 'conv_quiet',
+      project: 'claude://s/p',
+      status: 'idle',
+      lastActivity: NOW - agoMs,
+    }) as unknown as Conversation
+
+  /** No socket for anybody -- the shape the incident wore. */
+  const store = () =>
+    ({
+      getAllConversations: () => convs,
+      getActiveConversationCount: () => 0,
+      hasAnyTranscript: () => true,
+      sumConversationCostUsd: () => 0,
+      getSentinel: () => undefined,
+      getSentinelByAlias: () => undefined,
+      addProjectListener: () => {},
+      removeProjectListener: () => {},
+    }) as unknown as ConversationStore
+
+  const built = () => buildSweepDeps(store(), { now: () => NOW }).reapers
+
+  test('the SEAT reaper reaps, and at SEAT_SILENCE_MS -- not at the zero value', () => {
+    expect(built()?.seat(silent(SEAT_SILENCE_MS))).toBeNull()
+    expect(built()?.seat(silent(SEAT_SILENCE_MS + 1))).toEqual({ silentForMs: SEAT_SILENCE_MS + 1 })
+  })
+
+  test('the OVERSEER reaper reaps, and at its OWN, longer grace', () => {
+    expect(built()?.overseer(silent(OVERSEER_SILENCE_MS))).toBeNull()
+    expect(built()?.overseer(silent(OVERSEER_SILENCE_MS + 1))).toEqual({ silentForMs: OVERSEER_SILENCE_MS + 1 })
+  })
+
+  /**
+   * THE ASSERTION THAT CATCHES A SWAP. The two reapers share a structural type,
+   * so wiring the seat's grace into the overseer's field typechecks silently --
+   * and costs a second supervisor five minutes early. Twelve minutes of silence
+   * is past one grace and inside the other, which is the only window that can
+   * tell the two fields apart.
+   */
+  test('and the two fields carry DIFFERENT graces, in the right order', () => {
+    const twelveMinutes = silent(12 * 60_000)
+    expect(built()?.seat(twelveMinutes)).not.toBeNull()
+    expect(built()?.overseer(twelveMinutes)).toBeNull()
+  })
+
+  test('both reapers read the FINAL clock, so a `now` override reaches them', () => {
+    const reapers = buildSweepDeps(store(), { now: () => NOW + OVERSEER_SILENCE_MS * 10 }).reapers
+    expect(reapers?.seat(silent(0))).not.toBeNull()
+    expect(reapers?.overseer(silent(0))).not.toBeNull()
+  })
+
+  /** `??=`, not `=`: a caller that wants the old behaviour can still ask for it. */
+  test('an explicit NO_REAPING override is honoured', () => {
+    const reapers = buildSweepDeps(store(), { now: () => NOW, reapers: NO_REAPING }).reapers
+    expect(reapers?.seat(silent(OVERSEER_SILENCE_MS * 100))).toBeNull()
+    expect(reapers?.overseer(silent(OVERSEER_SILENCE_MS * 100))).toBeNull()
   })
 })

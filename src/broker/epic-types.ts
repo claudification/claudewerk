@@ -40,8 +40,8 @@ export interface BeatDeps extends SentinelRpcDeps {
   /**
    * WHICH BRANCHES IN THIS PROJECT HAVE UNCOMMITTED WORK RIGHT NOW.
    *
-   * Only ever consulted when a seat has just been REAPED (`epic-seat-vitality.
-   * ts`), because it is a sentinel round trip with a 15s ceiling and a healthy
+   * Only ever consulted when a seat has just been REAPED (`epic-vitality.ts`),
+   * because it is a sentinel round trip with a 15s ceiling and a healthy
    * beat must not pay for it. What it buys is the second half of the 2026-08-21
    * finding: the seat that vanished had committed its implementation and left 392
    * lines of finished tests UNSTAGED in its worktree, and the only reason anyone

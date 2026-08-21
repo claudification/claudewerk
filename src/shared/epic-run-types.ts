@@ -73,8 +73,8 @@ export type EpicWakeReason =
   | 'resumed' // pause lifted / window opened
   /**
    * THE PREVIOUS SUPERVISOR DIED WITHOUT SAYING SO and this generation replaced
-   * it -- no recorded end, no socket, silent past the grace
-   * (`epic-overseer-vitality.ts`).
+   * it -- no recorded end, no socket, silent past `OVERSEER_SILENCE_MS`
+   * (`epic-vitality.ts`).
    *
    * Its own reason rather than folding into `started` or `card-settled`, because
    * a generation that replaced a corpse and one that followed a finished turn
