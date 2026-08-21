@@ -17,7 +17,9 @@ import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
-import type { EpicGroup, IsLive, ProducedOutput } from './epic-sweep'
+import { buildSeatReaper, type SeatReaper } from './epic-seat-vitality'
+import { type EpicGroup, emptyGroup, type IsLive, type ProducedOutput } from './epic-sweep'
+import type { GitDirt } from './epic-types'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -29,6 +31,7 @@ import {
 } from './project-settings'
 import { epicScanner, epicsToBeat, planBeatContexts } from './scanners/epic-scanner'
 import { runScan } from './scanners/scanner'
+import { type GitFabricTransport, gatherGitFabric } from './sotu/git-fabric-gather'
 import {
   markEngineBoot as markBoot,
   RESTART_QUARANTINE_MS as QUARANTINE_MS,
@@ -93,6 +96,16 @@ export interface SweepDeps extends BeatDeps {
    * before this existed.
    */
   publishActivity?: () => Promise<void>
+  /**
+   * THE SEAT REAPER -- see `epic-seat-vitality.ts`.
+   *
+   * ABSENT MEANS NOTHING IS EVER REAPED, which is exactly the behaviour that
+   * leaked a slot for twelve minutes on 2026-08-21, and is therefore the right
+   * default for a test that builds deps by hand: an unwired caller keeps the old
+   * arithmetic rather than reaping against a clock it never supplied.
+   * `buildSweepDeps` always installs the real one.
+   */
+  seatReaper?: SeatReaper
 }
 
 /**
@@ -144,7 +157,34 @@ interface SweepStore {
   getSentinelByAlias: SweepDeps['getSentinelByAlias']
   addProjectListener: SweepDeps['addProjectListener']
   removeProjectListener: SweepDeps['removeProjectListener']
+  /** The git-fabric RPC rides the GENERIC requestId-keyed FILE listener, which is
+   *  a different registry from the project one the epic RPCs use -- see
+   *  `conversation-store/listeners.ts`. Both are needed here. */
+  addFileListener: GitFabricTransport['addFileListener']
+  removeFileListener: GitFabricTransport['removeFileListener']
   broadcastConversationScoped: ActivityBroadcaster['broadcastConversationScoped']
+}
+
+/**
+ * The dirt question, answered from the git-fabric snapshot the sentinel already
+ * knows how to produce.
+ *
+ * NO NEW SENTINEL OP, and that is the point: `git_fabric_request` already walks
+ * every local branch and stamps `dirty` per worktree (`sentinel/git-fabric.ts`),
+ * which is exactly and only what a dead seat's report needs. A second, narrower
+ * "is this one branch dirty" RPC would be a second answer to a question the
+ * system already answers, and the two would drift.
+ */
+function buildGitDirt(store: SweepStore): (project: string) => Promise<GitDirt> {
+  return async project => {
+    const res = await gatherGitFabric(store as unknown as GitFabricTransport, project)
+    if (!res.fabric) return { ok: false, error: res.error ?? 'the sentinel returned no git fabric' }
+    return {
+      ok: true,
+      dirty: new Set(res.fabric.branches.filter(b => b.dirty).map(b => b.branch)),
+      known: new Set(res.fabric.branches.map(b => b.branch)),
+    }
+  }
 }
 
 // The liveness rule is WERK's, shared with the nightshift trigger -- see
@@ -161,6 +201,7 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
     // started -- and folding the two together cost a generation per sweep on
     // 2026-08-20. Durable-first so a broker restart cannot invent one.
     producedOutput: conv => s.hasAnyTranscript(conv.id),
+    gitDirt: buildGitDirt(s),
     // The spend cap's denominator. Durable-only (cost lives in `turns` and
     // nowhere in memory), so a broker with no store driver reports 0 -- which
     // reads as "no spend cap can trip" rather than "this run was free".
@@ -198,6 +239,14 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   // reads too, or the panel would be told a different story than the engine
   // acted on.
   deps.publishActivity ??= () => publishEpicActivity(deps, s as unknown as ActivityBroadcaster)
+  // THE EXPIRY ON "THIS CARD IS IN FLIGHT", bound to the FINAL clock for the
+  // reason above: a caller that overrode `now` and then found the reaper judging
+  // silence against the wall clock would get a group whose lanes disagree with
+  // every other number in the same beat.
+  deps.seatReaper ??= buildSeatReaper({
+    hasSocket: id => s.getActiveConversationCount(id) > 0,
+    now: () => deps.now(),
+  })
   return deps
 }
 
@@ -328,21 +377,10 @@ export function resolveBeatGroup(deps: SweepDeps, project: string, epicId: strin
  * found in the first one's peers and would be appended as a duplicate scope.
  */
 function pickBeatGroup(watched: readonly EpicGroup[], project: string, epicId: string): EpicGroup {
-  return (
-    watched.find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? {
-      epicId,
-      project,
-      inFlight: [],
-      inVerify: [],
-      overseerAlive: false,
-      liveOverseers: [],
-      settled: [],
-      failedLegs: [],
-      unspawnable: [],
-      convIds: [],
-      maxGenSeen: 0,
-    }
-  )
+  // `emptyGroup` rather than a literal, for the reason stated on it: a hand-rolled
+  // second zero value goes stale the moment `EpicGroup` gains a field, and the
+  // reader that got the stale one then reports a shape the other cannot.
+  return watched.find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? emptyGroup(epicId, project)
 }
 
 /**

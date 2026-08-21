@@ -156,7 +156,10 @@ export function runStamps(run: { acknowledgedAt?: string; updated?: string } | n
  * erase every other run from the badge.
  */
 export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.now()): Promise<EpicActivityEntry[]> {
-  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive)
+  // THE SAME FOLD THE SWEEP ACTS ON, reaper included: a feed that still counted
+  // a reaped seat as in flight would show a full ceiling for a slot the engine
+  // has already given back.
+  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.seatReaper)
   const reads = await Promise.all(groups.map(group => readRun(deps, group)))
   // THE SAME FOLD THE SWEEP ACTS ON. A feed that decided the queue differently
   // from the engine would be a rail that lies about the engine by construction --

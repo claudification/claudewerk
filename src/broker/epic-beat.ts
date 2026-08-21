@@ -455,7 +455,14 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
   if (actions.length > 0) {
     return beat(
       `dispatching ${plan.dispatch.length}, verifying ${plan.verify.length}` +
-        (plan.heldBack.length > 0 ? ` (${plan.heldBack.length} held back by the concurrency ceiling)` : ''),
+        // THE HELD-BACK LINE NAMES WHO IS HOLDING THE SLOTS. It was a bare count,
+        // and a bare count is unfalsifiable: `epic-project-runner` gen 7 read
+        // "held back by the concurrency ceiling" for twelve minutes while one of
+        // the two slots belonged to a conversation that had been dead the whole
+        // time, and there was nothing in the sentence for a reader to check.
+        (plan.heldBack.length > 0
+          ? ` (${plan.heldBack.length} held back by the concurrency ceiling, held by: ${input.inFlight.join(', ')})`
+          : ''),
       actions,
       // Work moved, so the dry streak is over. CONSECUTIVE is the whole point:
       // a run that alternates between a dry generation and a real one is making
@@ -467,7 +474,12 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
 
   if (plan.complete) return beat('every child terminal', [{ kind: 'complete' }])
 
-  if (input.inFlight.length > 0) return beat(`${input.inFlight.length} still in flight; waiting`)
+  // NAMED, for the reason above -- and this is the line the leaked slot actually
+  // produced, since a run with nothing else ready never reaches the held-back
+  // wording at all.
+  if (input.inFlight.length > 0) {
+    return beat(`${input.inFlight.length} still in flight; waiting: ${input.inFlight.join(', ')}`)
+  }
 
   // Nothing to do and nothing running. The overseer gets ONE chance to replan
   // before the run parks -- most "stuck" epics are a board problem it can fix.

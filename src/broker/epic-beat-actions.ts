@@ -11,10 +11,13 @@ import { fingerprintDelta } from '../shared/epic-board-fingerprint'
 import type { EpicLease } from '../shared/epic-lease'
 import type { planEpic } from '../shared/epic-ready'
 import type { EpicRunSnapshot } from '../shared/protocol'
+import type { TaskStatus } from '../shared/task-statuses'
 import type { EpicAction, EpicBeat } from './epic-beat'
+import { completionBody, deathBody, deathLogLine } from './epic-dead-seat-report'
 import { epicIo, tag } from './epic-io'
 import { forgetArmedEpic } from './epic-registry'
 import {
+  cardBranch,
   type EpicSpawnCtx,
   type EpicSpawnPlan,
   planImplementerSpawn,
@@ -22,8 +25,24 @@ import {
   planPlannerSpawn,
   planVerifierSpawn,
 } from './epic-spawn-plan'
-import { type EpicGroup, type FailedLeg, MAX_LAUNCH_ATTEMPTS } from './epic-sweep'
-import type { BeatDeps } from './epic-types'
+import { type AbandonedSeat, type EpicGroup, type FailedLeg, MAX_LAUNCH_ATTEMPTS } from './epic-sweep'
+import type { BeatDeps, GitDirt } from './epic-types'
+
+/**
+ * What a settle needs to know beyond the card id, and every field of it exists
+ * only for the DEATH case.
+ *
+ * Optional as a whole: a caller that passes nothing gets the plain completion
+ * wording for every card, which is exactly the behaviour that shipped before the
+ * reaper existed.
+ */
+export interface AcknowledgeContext {
+  /** The board lanes this beat read, so a death report can say where the card
+   *  was left. */
+  lane?: (cardId: string) => TaskStatus | undefined
+  /** The project's uncommitted state. `null` means the engine did not look. */
+  dirt?: GitDirt | null
+}
 
 /**
  * Write a `completion` entry for every settled card the baton has not seen.
@@ -32,14 +51,44 @@ import type { BeatDeps } from './epic-types'
  * into its card, and the point of this entry is to record that the card reached
  * a terminal state at all. An agent-authored summary here would be the one thing
  * the whole design says not to trust.
+ *
+ * TWO WORDINGS, ONE KIND. A card whose seat was REAPED (`group.abandonedSeats`)
+ * gets a body that says so, because "the work finished" and "the worker died"
+ * want opposite next moves from whoever reads the baton. The `completion` kind is
+ * shared on purpose -- see `epic-dead-seat-report.ts` for why a separate kind
+ * would settle the card forever.
  */
-export async function acknowledge(deps: BeatDeps, group: EpicGroup, pending: readonly string[]): Promise<void> {
+export async function acknowledge(
+  deps: BeatDeps,
+  group: EpicGroup,
+  pending: readonly string[],
+  ctx: AcknowledgeContext = {},
+): Promise<void> {
+  // LAST SEAT WINS when a card lost two of them this way: the newest reaping is
+  // the one whose worktree state is current, and reporting the older one would
+  // name a generation two seats ago.
+  const reaped = new Map<string, AbandonedSeat>()
+  for (const seat of group.abandonedSeats) {
+    const prior = reaped.get(seat.cardId)
+    if (!prior || seat.gen >= prior.gen) reaped.set(seat.cardId, seat)
+  }
+
   for (const cardId of pending) {
+    const seat = reaped.get(cardId)
+    if (seat) deps.log(`${tag(group.epicId, seat.gen)} ${deathLogLine(seat)}`)
+    const body = seat
+      ? deathBody({
+          seat,
+          lane: ctx.lane?.(cardId),
+          branch: cardBranch(group.epicId, cardId),
+          dirt: ctx.dirt ?? null,
+        })
+      : completionBody(cardId)
     const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
       kind: 'completion',
       convId: 'broker',
       cardId,
-      body: `Card \`${cardId}\` settled: every backing conversation has ended. Read the card for what it claims and its gate evidence for what it proved.`,
+      body,
     })
     if (!res.ok) deps.log(`${tag(group.epicId, 0)} baton append FAILED for ${cardId}: ${res.error}`)
   }

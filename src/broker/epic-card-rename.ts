@@ -89,6 +89,11 @@ export function applyCardRenames(group: EpicGroup, renames: CardRenames): EpicGr
     // Per CONVERSATION, not per card, so these are not deduplicated: two failed
     // launches under two names are still two attempts against the retry ceiling.
     failedLegs: group.failedLegs.map(leg => ({ ...leg, cardId: current(renames, leg.cardId) })),
+    // Same rule, same reason. A reaped seat translated to the board's current id
+    // is what lets the settle it caused be MATCHED to the card being
+    // acknowledged -- untranslated, the death report would silently fall back to
+    // the generic completion wording for exactly the card a rename touched.
+    abandonedSeats: group.abandonedSeats.map(seat => ({ ...seat, cardId: current(renames, seat.cardId) })),
   }
 }
 
