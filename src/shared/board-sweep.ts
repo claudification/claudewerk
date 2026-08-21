@@ -459,7 +459,6 @@ function idleReason(selected: number, acted: number): string | undefined {
  */
 // The fabric's registry that iterates the scanners is a separate card; this
 // binding is the contract conformance, and is consumed by the wiring card.
-// fallow-ignore-next-line unused-export
 export const boardSweepScanner: Scanner<BoardSweepDeps, BoardSweepBucket> = {
   id: 'morning-report',
   tag: '[board-sweep]',
