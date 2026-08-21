@@ -21,8 +21,9 @@
  */
 
 import { ACTIVITY_DEFAULT_DAYS, type ActivityMatrix } from '@shared/activity-matrix'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useWallRevive } from '@/lib/wall/use-wall-revive'
+import { useIsMounted } from './use-is-mounted'
 
 /** Today's square is the only one that moves inside a session. */
 const ACTIVITY_REFRESH_MS = 15 * 60_000
@@ -56,22 +57,21 @@ function isMatrix(body: unknown): body is ActivityMatrix {
   return typeof m.tz === 'string' && Array.isArray(m.days) && Array.isArray(m.metrics)
 }
 
-// Fallow reads the twelve lines below as a clone of `use-burn-feed`. They are the
-// same IDIOM (mounted ref, fetch, validate, keep-what-we-had) and not the same
-// LOGIC -- different URL, different guard, different state shape. Two instances of
-// a React idiom is not yet an abstraction; a THIRD feed hook is the moment to
-// extract `useJsonFeed<T>(url, isT)` and to fold both of these into it.
-// fallow-ignore-next-line code-duplication
+// The twelve lines fallow read here as a clone of `use-burn-feed` were the
+// mounted-ref block, and it is now `useIsMounted` -- one copy, both callers. What
+// is left in common is a `useState(EMPTY)` and a `useCallback`, which is React's
+// vocabulary rather than this file's logic.
+//
+// The REST of the shape -- fetch, validate, keep-what-we-had -- is still two
+// copies on purpose: different URL, different guard, different state shape, and
+// crucially different failure policy (this one KEEPS its matrix on a bad read;
+// burn REPLACES its three slots). Folding those into one `useJsonFeed<T>` would
+// have to carry that difference as a flag, which is the abstraction earning its
+// keep by hiding nothing. A THIRD feed hook with the same failure policy as one
+// of these two is the moment to extract it.
 export function useActivityFeed(refreshMs: number = ACTIVITY_REFRESH_MS): ActivityFeed {
   const [feed, setFeed] = useState<ActivityFeed>(EMPTY)
-
-  const live = useRef(true)
-  useEffect(() => {
-    live.current = true
-    return () => {
-      live.current = false
-    }
-  }, [])
+  const mounted = useIsMounted()
 
   const load = useCallback(async () => {
     const url = `/api/stats/activity-matrix?tz=${encodeURIComponent(viewerTimeZone())}&days=${ACTIVITY_DEFAULT_DAYS}`
@@ -82,7 +82,7 @@ export function useActivityFeed(refreshMs: number = ACTIVITY_REFRESH_MS): Activi
     } catch {
       body = null
     }
-    if (!live.current) return false
+    if (!mounted()) return false
     // A 403 or a body that is not a matrix keeps whatever we last knew. Blanking
     // the grid on a failed re-read would turn "we could not ask" into "you did
     // nothing", which is the one reading this pane must never produce.
@@ -92,7 +92,7 @@ export function useActivityFeed(refreshMs: number = ACTIVITY_REFRESH_MS): Activi
     }
     setFeed({ matrix: body, settled: true, stale: false })
     return true
-  }, [])
+  }, [mounted])
 
   const { stale } = useWallRevive('activity', load, refreshMs)
 

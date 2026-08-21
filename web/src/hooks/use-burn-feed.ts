@@ -49,18 +49,54 @@ import { WALL_PERIOD_MS, type WallPeriod } from '@/lib/wall/period-store'
 import { pullFeed } from '@/lib/wall/revive-store'
 import { useWallRevive } from '@/lib/wall/use-wall-revive'
 import { useConversationsStore } from './use-conversations'
+import { useIsMounted } from './use-is-mounted'
 
 /**
- * How often the historical half is re-read. Hourly buckets do not move faster,
- * and it is ONE number for every period on purpose: `useWallRevive` re-registers
- * the feed whenever this value changes, so a per-period clock would force a
- * second pull on top of the period change's own -- two fetches for one click.
+ * How often the historical half is re-read, PER WINDOW.
  *
- * The cost of that choice is real and worth naming: a `1m` fold asks for thirty
- * times the rows a `24h` fold does, on the same minute clock. Trimming that is
- * `wall-stats-hourly-payload-at-long-windows`, not this card.
+ * ONE CLOCK FOR EVERY WINDOW WAS THE BUG. `/api/stats/hourly` answers with one
+ * row per `(hour, account, model, project_uri, sentinel_id, profile)` tuple that
+ * billed, so the row count is proportional to the HOURS asked for. A `1m` fold
+ * asks for 720 hours; a `24h` fold asks for 24. On a shared minute clock that is
+ * thirty times the bytes per minute for the same pane, to redraw bars that
+ * cannot have moved.
+ *
+ * THE RULE THESE NUMBERS COME FROM: hours-asked-for per second of clock is
+ * CONSTANT, pinned to what `24h` cost before this card (24h / 60s = 0.4 h/s).
+ * Every entry below is `WALL_PERIOD_MS[p] / 0.4 h/s`, floored at 60s because the
+ * short windows already reach back to local midnight (`burnHourlyFrom`) and so
+ * can never ask for more than 24 hours no matter which of them is picked. That
+ * makes the cost claim arithmetic rather than a hope, and `use-burn-feed.test.ts`
+ * measures it end to end against a stubbed route rather than reading this table.
+ *
+ * THIRTY MINUTES AT `1m` IS NOT SLOW, and this is the fact that makes the whole
+ * trade free: `hourly_stats` excludes the hour in progress (`materializeHourly`),
+ * so NOTHING in this feed can move more than once an hour. A 60s clock on
+ * hour-grained data was 60x oversampled; 30 minutes is still 2x. A new bucket is
+ * on screen within half its own lifetime at every window, and the three things
+ * that bypass the clock entirely -- mount, reconnect, and the header's refresh
+ * button -- are unchanged.
+ *
+ * WHAT IT COSTS: the TODAY tile and the OpenRouter split share this request, so
+ * at `1m` they too settle for a half-hour clock. They are hour-grained and
+ * 30-day-scoped respectively, so neither has a number that a half hour can make
+ * wrong -- but a reader who wants the minute clock back picks a shorter window,
+ * which is the control doing exactly what it says.
  */
-const BURN_REFRESH_MS = 60_000
+const BURN_REFRESH_MS: Record<WallPeriod, number> = {
+  '1h': 60_000,
+  '6h': 60_000,
+  '24h': 60_000,
+  '3d': 3 * 60_000,
+  '7d': 7 * 60_000,
+  '1m': 30 * 60_000,
+}
+
+/** The refresh clock for a window. Exported so the pane -- and the cost test --
+ *  can name the number without duplicating the table. */
+export function burnRefreshMs(period: WallPeriod): number {
+  return BURN_REFRESH_MS[period]
+}
 
 /** The wall's period as the OpenRouter route's `?period=`. Only the longest one
  *  differs; see the header. */
@@ -115,7 +151,13 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 /**
  * Read the three feeds on mount, on every reconnect, on every period change, and
- * every `refreshMs`.
+ * every `refreshMs` -- which SCALES WITH THE WINDOW (see `BURN_REFRESH_MS`), so
+ * a wider fold is a slower clock and not a bigger bill per minute.
+ *
+ * ONE PULL PER PERIOD CLICK, and it takes two halves to keep it that way: the
+ * forced pull below, and `useWallRevive` no longer treating a changed `refreshMs`
+ * as a reason to re-register the feed. Either half alone gives two fetches for
+ * one click across a window boundary that also changes the clock.
  *
  * The poll and the reconnect pull belong to `useWallRevive`: this hook owns the
  * three requests and nothing about WHEN they happen -- except the period change,
@@ -126,16 +168,9 @@ async function getJson<T>(url: string): Promise<T | null> {
  * old rows would print a 24h fold under a `1h` header, which is the exact lie
  * every dash in this pane exists to refuse.
  */
-export function useBurnFeed(period: WallPeriod, refreshMs: number = BURN_REFRESH_MS): BurnFeed {
+export function useBurnFeed(period: WallPeriod, refreshMs: number = burnRefreshMs(period)): BurnFeed {
   const [feed, setFeed] = useState<BurnFeed>(EMPTY)
-
-  const live = useRef(true)
-  useEffect(() => {
-    live.current = true
-    return () => {
-      live.current = false
-    }
-  }, [])
+  const mounted = useIsMounted()
 
   const load = useCallback(async () => {
     const from = burnHourlyFrom(Date.now(), period)
@@ -144,7 +179,7 @@ export function useBurnFeed(period: WallPeriod, refreshMs: number = BURN_REFRESH
       getJson<{ totalCostUsd: number }>('/api/stats/summary?period=30d'),
       getJson<{ byFeature: BurnFeatureRow[] }>(`/api/stats/openrouter?period=${spendPeriodParam(period)}`),
     ])
-    if (!live.current) return false
+    if (!mounted()) return false
     setFeed({
       hourly: Array.isArray(hourly) ? hourly : null,
       monthUsd: typeof summary?.totalCostUsd === 'number' ? summary.totalCostUsd : null,
@@ -156,7 +191,7 @@ export function useBurnFeed(period: WallPeriod, refreshMs: number = BURN_REFRESH
     // an ordinary partial view (see the header comment); all three null is a
     // broker that did not answer, and that is exactly what stale means.
     return hourly !== null || summary !== null || openrouter !== null
-  }, [period])
+  }, [period, mounted])
 
   const { stale } = useWallRevive('burn', load, refreshMs)
 
