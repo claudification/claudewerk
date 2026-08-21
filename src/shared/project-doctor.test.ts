@@ -282,3 +282,55 @@ describe('illustration is not link rot', () => {
     expect(found[0].problem).toContain('really-gone')
   })
 })
+
+/**
+ * BOARD-WIDE, the same findings the write hook hands back on the PostToolUse
+ * edge -- one finding function, two callers, no second vocabulary. What differs
+ * is the CLOCK: the hook knows when a value was written and can say "that
+ * `delete_at` is already in the past"; a board pass does not, and an elapsed
+ * marker is the normal state of a card waiting on a human (F18), so it stays
+ * quiet here. See project-doctor-lifecycle.ts.
+ */
+describe('the lifecycle keys, board-wide', () => {
+  test('a reason on a card that is not archived', () => {
+    writeCard('live-one', 'title: L\nstatus: open\narchived_reason: done\narchived_by: me')
+    expect(checks(runProjectDoctor(root).findings)).toContain('lifecycle-reason-not-archived')
+  })
+
+  test('a duplicate-of that lands nowhere', () => {
+    writeCard('dupe', 'title: D\nstatus: archived\narchived_by: me\narchived_reason: duplicate-of:vanished')
+    const found = forCheck(runProjectDoctor(root).findings, 'lifecycle-duplicate-missing')
+    expect(found).toHaveLength(1)
+    expect(found[0].problem).toContain('vanished')
+  })
+
+  test('a cycle is found by resolving the chain across cards, and BOTH ends are told', () => {
+    writeCard('a-card', 'title: A\nstatus: archived\narchived_by: me\narchived_reason: duplicate-of:b-card')
+    writeCard('b-card', 'title: B\nstatus: archived\narchived_by: me\narchived_reason: duplicate-of:a-card')
+    expect(forCheck(runProjectDoctor(root).findings, 'lifecycle-duplicate-cycle')).toHaveLength(2)
+  })
+
+  test('an archived card with no actor on it', () => {
+    writeCard('unattributed', 'title: U\nstatus: archived\narchived_reason: cold')
+    expect(checks(runProjectDoctor(root).findings)).toContain('lifecycle-archived-by-missing')
+  })
+
+  test('a delete_at before the card existed', () => {
+    writeCard('early', 'title: E\nstatus: open\ncreated: 2026-08-10T00:00:00Z\ndelete_at: 2026-08-01')
+    expect(checks(runProjectDoctor(root).findings)).toContain('lifecycle-delete-at-before-start')
+  })
+
+  test('an ELAPSED delete_at is silent -- that is a card awaiting a human, not rot', () => {
+    writeCard('waiting', 'title: W\nstatus: open\ncreated: 2020-01-01\ndelete_at: 2020-06-01')
+    expect(checks(runProjectDoctor(root).findings)).not.toContain('lifecycle-delete-at-past')
+  })
+
+  test('a well-formed archived card adds nothing to the report', () => {
+    writeCard(
+      'gone',
+      'title: G\nstatus: archived\ncreated: 2026-01-01\narchived_reason: duplicate-of:kept\narchived_by: report-2026-08-22\ndelete_at: 2030-01-01',
+    )
+    writeCard('kept', 'title: K\nstatus: open\ncreated: 2026-01-01')
+    expect(checks(runProjectDoctor(root).findings).filter(c => c.startsWith('lifecycle-'))).toEqual([])
+  })
+})

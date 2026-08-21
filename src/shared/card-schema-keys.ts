@@ -116,6 +116,40 @@ const STORE_SPECS: Record<string, CardKeySpec> = {
     // clear. Declaring it here instead is what keeps it out of that pass while
     // still teaching the schema prompt, the validator and the doctor about it.
   },
+  archived_reason: {
+    key: 'archived_reason',
+    // NOT an enum, and that is forced: two of the three values are the literals
+    // `done` and `cold`, but the third is `duplicate-of:<card-id>` -- a POINTER,
+    // which no fixed value list can express. The shape is checked by
+    // project-doctor-lifecycle.ts instead, which can also resolve the id.
+    type: 'string',
+    doc: 'why an archived card was archived: `done`, `cold`, or `duplicate-of:<card-id>`',
+    consequence: 'the card is archived with no record of what happened to it',
+    // MACHINE: the morning report's `apply` op writes it at archive time from a
+    // proposal the human ticked. Hand-editing it claims a decision nobody made.
+    owner: 'machine',
+  },
+  archived_by: {
+    key: 'archived_by',
+    type: 'string',
+    doc: 'the actor that archived the card, e.g. `report-2026-08-22`',
+    // The whole point of D5 (epic-morning-report): "what happened to this card"
+    // must be answerable FROM THE CARD, without scanning every report written.
+    consequence: 'the archive becomes an unattributed mutation',
+    owner: 'machine',
+  },
+  delete_at: {
+    key: 'delete_at',
+    type: 'date',
+    // A MARKER, NOT AN INSTRUCTION, and the doc says so because that is the one
+    // thing a reader could get catastrophically wrong. F18: nothing is ever
+    // hard-deleted automatically -- the scavenger logs that the date elapsed and
+    // stops there. Removal is a human act, always.
+    doc: 'ISO 8601 date after which this card MAY be deleted -- a marker a human acts on, never an instruction',
+    consequence: 'the marker is invisible to the sweep, so the card is never proposed for removal',
+    // HUMAN: nothing writes this. A person decides a card has an expiry.
+    owner: 'human',
+  },
 }
 
 /**
@@ -156,9 +190,17 @@ const ORDER = [
   'depends_on',
   'relates_to',
   'created',
-  // Last, and only present on a card that has actually been renamed -- which is
-  // where the one card carrying it today already puts it.
+  // Only present on a card that has actually been renamed -- which is where the
+  // one card carrying it today already puts it.
   'renamed_from',
+  // THE LIFECYCLE KEYS, appended last and together. Ordered rather than merely
+  // known for the two things ordering buys: the store writes them, so they get
+  // a fixed position instead of landing wherever a hand edit left them; and an
+  // ordered key set to `''` is DROPPED rather than written as an empty line, so
+  // clearing `archived_reason:` on an un-archive leaves no residue.
+  'archived_reason',
+  'archived_by',
+  'delete_at',
 ] as const
 
 /**

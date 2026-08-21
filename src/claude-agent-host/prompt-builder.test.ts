@@ -54,4 +54,19 @@ describe('buildSystemPrompt project board section', () => {
       expect(text).toContain(key)
     }
   })
+
+  /** An agent that hand-writes `archived_by:` forges the one tier of the archive
+   *  record that is not purgeable -- so the prompt says who writes it. */
+  it('says a machine-authored key is not for hand-editing', () => {
+    expect(board()).toContain('`archived_by:` -- the actor that archived the card')
+    expect(board()).toContain('WRITTEN BY THE BOARD, never by hand')
+  })
+
+  it('and a HUMAN-authored key carries no such warning', () => {
+    const line = board()
+      .split('\n')
+      .find(l => l.startsWith('- `delete_at:`'))
+    expect(line).toContain('a marker a human acts on')
+    expect(line).not.toContain('never by hand')
+  })
 })
