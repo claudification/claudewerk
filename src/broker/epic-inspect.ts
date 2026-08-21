@@ -46,7 +46,7 @@ function groupFor(convs: readonly Conversation[], deps: SweepDeps, project: stri
   // engine had already replaced would send that human looking for a conversation
   // nobody can open.
   return (
-    groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.seatReaper, deps.overseerReaper).get(epicId) ??
+    groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.reapers).get(epicId) ??
     emptyGroup(epicId, project)
   )
 }
@@ -199,7 +199,7 @@ async function inspectQueue(
   // `toQueueScope` sets `busy` from `overseerAlive`, so a dead supervisor in one
   // epic reads as a project whose runner is occupied and blocks every OTHER
   // queued epic in it.
-  const groups = groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.seatReaper, deps.overseerReaper)
+  const groups = groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.reapers)
   const others = projectPeers(groups, project, epicId)
   const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
   // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. Every scope here is
@@ -274,13 +274,7 @@ export async function listEpicRuns(
   project: string,
   nowMs: number = Date.now(),
 ): Promise<EpicRunListEntry[]> {
-  const groups = groupEpicConversations(
-    deps.getAllConversations(),
-    deps.isLive,
-    deps.producedOutput,
-    deps.seatReaper,
-    deps.overseerReaper,
-  )
+  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.reapers)
   const ids = new Set<string>()
   // BY PROJECT IDENTITY, never by raw string. The caller types
   // `claude:///path` while the conversation store holds `claude://default/path`

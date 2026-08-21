@@ -7,12 +7,11 @@
  * told at the one moment a human can act on it.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import type { ConversationStore } from '../conversation-store'
-import { isArmed, isDeletedEpic, noteDeletedEpic, resetArmedEpics } from '../epic-registry'
 import { initProjectSettings, setProjectSettings } from '../project-settings'
 import type { KVStore } from '../store/types'
-import { __testing, createEpicRouter } from './epic'
+import { createEpicRouter } from './epic'
 
 const PROJECT = 'claude://default/Users/jonas/projects/demo'
 
@@ -126,38 +125,6 @@ describe('POST /api/epic delete -- the permission gate', () => {
   })
 })
 
-/**
- * ARMING UN-DELETES.
- *
- * A `start` writes a fresh `run.md`, so the epic has a real run again. Leaving
- * its tombstone in place would keep that new run off the wall, the badge and
- * `list` while it was genuinely running -- the invisibility the whole tail
- * section exists to prevent, arriving through a verb that is supposed to be
- * recoverable.
- *
- * Driven through `__testing.trackRun` rather than the router because it runs
- * only after a SUCCESSFUL sentinel op, and this test has no sentinel.
- */
-describe('the registry bookkeeping a successful op does', () => {
-  beforeEach(() => resetArmedEpics())
-  afterEach(() => resetArmedEpics())
-
-  test('start arms the run AND clears any tombstone on it', () => {
-    noteDeletedEpic(PROJECT, 'e1')
-
-    __testing.trackRun({ project: PROJECT, op: 'start', epicId: 'e1' })
-
-    expect(isArmed(PROJECT, 'e1')).toBe(true)
-    expect(isDeletedEpic(PROJECT, 'e1')).toBe(false)
-  })
-
-  test('pause and abort un-arm without touching the tombstone set', () => {
-    noteDeletedEpic(PROJECT, 'other')
-    __testing.trackRun({ project: PROJECT, op: 'start', epicId: 'e1' })
-
-    __testing.trackRun({ project: PROJECT, op: 'pause', epicId: 'e1' })
-
-    expect(isArmed(PROJECT, 'e1')).toBe(false)
-    expect(isDeletedEpic(PROJECT, 'other')).toBe(true)
-  })
-})
+/* The registry bookkeeping a successful op does now lives beside the arm it
+ * belongs to -- see `epic-arm.test.ts`. It never was a router question: it runs
+ * only after a SUCCESSFUL sentinel op, and these tests have no sentinel. */

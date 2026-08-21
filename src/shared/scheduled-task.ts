@@ -54,6 +54,42 @@ const CATCH_UP_MODES = ['skip', 'once'] as const
 /** What to do when the previous run is still going. */
 const OVERLAP_MODES = ['skip', 'parallel'] as const
 
+/** Every kind of work a schedule can fire. See `action` on the record below. */
+export const SCHEDULE_ACTIONS = ['spawn', 'board-sweep', 'epic-start'] as const
+export type ScheduleAction = (typeof SCHEDULE_ACTIONS)[number]
+
+/** The delivery rung an epic run is driven to -- `EpicRun['target']`, spelled
+ *  here rather than imported so the schedule schema keeps no dependency on the
+ *  epic substrate's own module graph. */
+const EPIC_TARGETS = ['pr', 'merged', 'shipped'] as const
+
+/**
+ * The `epic_run action=start` payload an `epic-start` schedule spends.
+ *
+ * The SAME axes the RUN button and the MCP tool send, under the same names, so
+ * "arm the migration epic at 02:00 on Saturday" is the tool call a human would
+ * have made -- deferred, not re-invented. `when` is the DISPATCH GATE and is
+ * re-evaluated every beat once the run is armed; it is a different question from
+ * this schedule's `cron`, which decides when the ARM happens. Both can be set,
+ * and a run armed at 02:00 with `when=window` still waits for the night window.
+ *
+ * `cadence` is deliberately NOT the name here: `when` is what the tool and the
+ * card call it, and the storage spelling is translated at the dispatch seam, in
+ * exactly the one place `epic_run` translates it too.
+ */
+const scheduleEpicSchema = z.object({
+  /** The epic CARD id -- its file name without `.md`. */
+  epicId: z.string().min(1, 'epic.epicId is required').max(128),
+  when: z.string().max(256).optional(),
+  target: z.enum(EPIC_TARGETS).optional(),
+  concurrency: z.number().int().positive().optional(),
+  /** The three handbrakes, none of them infinity. `0` disarms one. */
+  maxGens: z.number().int().nonnegative().optional(),
+  maxUsd: z.number().nonnegative().optional(),
+  maxWallClockMinutes: z.number().int().nonnegative().optional(),
+})
+export type ScheduleEpicStart = z.infer<typeof scheduleEpicSchema>
+
 export const scheduledTaskSchema = z.object({
   id: z.string().startsWith(SCHEDULED_TASK_ID_PREFIX),
   name: z.string().min(1, 'name is required').max(64),
@@ -100,18 +136,28 @@ export const scheduledTaskSchema = z.object({
    * rules about firing unattended work, none of them are rules about spawning,
    * and a second scheduler would have had to re-implement every one.
    *
+   * `epic-start` ARMS AN EPIC RUN -- the one thing the `when` axis could never
+   * do. `when=queue` and `when=<instant>` say when an ARMED run may dispatch;
+   * neither can arm one, so "arm the migration epic at 02:00 on Saturday" was a
+   * human pressing RUN until this value existed. It launches no conversation
+   * either: the epic engine's own beat does the dispatching from there.
+   *
    * OPTIONAL rather than `.default('spawn')` on purpose: every schedule stored
    * before this field existed genuinely has no `action`, and a default would
-   * make the type claim otherwise. `isSpawnSchedule` is the one place that
+   * make the type claim otherwise. `scheduleAction` is the one place that
    * absence is read as `spawn`.
    */
-  action: z.enum(['spawn', 'board-sweep']).optional(),
+  action: z.enum(SCHEDULE_ACTIONS).optional(),
   /**
    * The prompt a `spawn` schedule launches with. REQUIRED for `spawn` (enforced
    * in `checkAction` -- a spawn schedule with no prompt has nothing to run) and
-   * meaningless for `board-sweep`, whose work is the op, not a sentence.
+   * meaningless for `board-sweep`, whose work is the op, not a sentence, and for
+   * `epic-start`, whose work is the epic the board already describes.
    */
   prompt: z.string().max(SCHEDULE_MAX_PROMPT, 'prompt exceeds 64 KB').optional(),
+  /** WHICH epic to arm, and how. REQUIRED for `epic-start`, refused on every
+   *  other action -- see `checkAction`. */
+  epic: scheduleEpicSchema.optional(),
   profileId: z.string().optional(),
   spawn: scheduleSpawnSchema,
   /**
@@ -147,13 +193,21 @@ export function isOneShot(task: Pick<ScheduledTask, 'runAt'>): boolean {
   return task.runAt !== undefined
 }
 
+/**
+ * WHAT this schedule fires -- the ONE place an absent `action` is read as
+ * `spawn`, which is what every schedule written before the field existed meant.
+ */
+export function scheduleAction(task: Pick<ScheduledTask, 'action'>): ScheduleAction {
+  return task.action ?? 'spawn'
+}
+
 /** A schedule that launches a conversation, as opposed to running a board op. */
 export function isSpawnSchedule(task: Pick<ScheduledTask, 'action'>): boolean {
-  return (task.action ?? 'spawn') === 'spawn'
+  return scheduleAction(task) === 'spawn'
 }
 
 type WhenFields = Pick<ScheduledTask, 'cron' | 'runAt' | 'tz' | 'startAt' | 'endAt'>
-type ActionFields = Pick<ScheduledTask, 'action' | 'prompt'>
+type ActionFields = Pick<ScheduledTask, 'action' | 'prompt' | 'epic'>
 
 /**
  * Cross-field rules a plain object schema cannot express.
@@ -197,11 +251,24 @@ function checkWhenValue(task: WhenFields, ctx: z.RefinementCtx, nowMs: number): 
  * conversation with nothing to say; the old schema made `prompt` unconditionally
  * required, and this keeps that exact rule for every schedule that spawns while
  * letting a board op carry no prompt at all rather than a decorative one.
+ *
+ * An `epic-start` has the mirror-image requirement: no prompt (the epic card is
+ * the payload) and an `epic` block naming what to arm. A block sitting on any
+ * OTHER action is REFUSED rather than ignored, because ignoring it is silent and
+ * wrong in the expensive direction -- `action` left at its default with an
+ * `epic` block filled in is somebody who meant to arm a run and would instead
+ * have got a schedule that arms nothing, once a week, forever.
  */
 function checkAction(task: ActionFields, ctx: z.RefinementCtx): void {
-  if (!isSpawnSchedule(task)) return
-  if (!task.prompt || task.prompt.trim() === '') {
+  const action = scheduleAction(task)
+  if (action === 'spawn' && (!task.prompt || task.prompt.trim() === '')) {
     ctx.addIssue({ code: 'custom', message: 'prompt is required', path: ['prompt'] })
+  }
+  if (action === 'epic-start' && !task.epic) {
+    ctx.addIssue({ code: 'custom', message: 'epic is required for an epic-start schedule', path: ['epic'] })
+  }
+  if (action !== 'epic-start' && task.epic) {
+    ctx.addIssue({ code: 'custom', message: `epic is only meaningful for action "epic-start"`, path: ['epic'] })
   }
 }
 
@@ -254,10 +321,19 @@ export const scheduledTaskCreateSchema = scheduledTaskSchema
   .superRefine(refineSchedule)
 export type ScheduledTaskCreate = z.infer<typeof scheduledTaskCreateSchema>
 
-/** The body accepted by PATCH -- any subset; what IS present is re-validated. */
+/**
+ * The body accepted by PATCH -- any subset; what IS present is re-validated.
+ *
+ * `epic` is partial HERE and required-shaped in the record, deliberately: a
+ * patch that raises one ceiling must not have to re-send the epic id beside it,
+ * and `patchSchedule` merges the two before the WHOLE record is validated by
+ * `validatedScheduledTaskSchema`, which is where `epicId` becomes mandatory
+ * again. Same contract as `epic_run action=start`: one knob changes one knob.
+ */
 export const scheduledTaskPatchSchema = scheduledTaskSchema
   .omit({ id: true, createdBy: true, createdAt: true, updatedAt: true })
   .partial()
+  .extend({ epic: scheduleEpicSchema.partial().optional() })
   .superRefine((patch, ctx) => {
     if (patch.cron !== undefined) {
       const cron = parseCron(patch.cron)

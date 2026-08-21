@@ -97,6 +97,64 @@ describe('validatedScheduledTaskSchema', () => {
     expect(validatedScheduledTaskSchema.safeParse({ ...FULL, action: 'delete-everything' }).success).toBe(false)
   })
 
+  /**
+   * AN `epic-start` SCHEDULE. Its payload is the epic card, so the prompt rule
+   * inverts: no sentence, and an epic block that has to name something real.
+   */
+  describe('epic-start', () => {
+    const { prompt: _dropped, ...ARM } = FULL
+    const EPIC = { ...ARM, action: 'epic-start' as const, epic: { epicId: 'epic-migration' } }
+
+    test('needs no prompt -- the epic card is the payload', () => {
+      expect(validatedScheduledTaskSchema.safeParse(EPIC).success).toBe(true)
+    })
+
+    test('carries the whole arm payload: the gate, the rung, the ceiling, the three caps', () => {
+      const parsed = validatedScheduledTaskSchema.safeParse({
+        ...EPIC,
+        epic: {
+          epicId: 'epic-migration',
+          when: 'window,queue',
+          target: 'merged',
+          concurrency: 5,
+          maxGens: 12,
+          maxUsd: 40,
+          maxWallClockMinutes: 120,
+        },
+      })
+      expect(parsed.success).toBe(true)
+    })
+
+    test('refuses an arm with no epic -- it would fire weekly and arm nothing', () => {
+      const { epic: _none, ...noEpic } = EPIC
+      expect(errorOf(validatedScheduledTaskSchema, noEpic)).toContain('epic is required')
+    })
+
+    test('refuses an arm whose epic names no card', () => {
+      expect(errorOf(validatedScheduledTaskSchema, { ...EPIC, epic: { epicId: '' } })).toContain('epicId is required')
+    })
+
+    test('refuses an epic block on any other action -- that is a forgotten `action`, not a hint', () => {
+      expect(errorOf(validatedScheduledTaskSchema, { ...FULL, epic: { epicId: 'epic-migration' } })).toContain(
+        'epic-start',
+      )
+    })
+
+    test('still needs a zone -- the container is UTC', () => {
+      expect(errorOf(validatedScheduledTaskSchema, { ...EPIC, tz: 'Mars/Olympus' })).toContain('not a known IANA')
+    })
+
+    test('a one-shot arm is a real thing: "start it at 02:00 on Saturday, once"', () => {
+      const { cron: _repeating, ...oneShot } = EPIC
+      const parsed = scheduledTaskCreateSchema.safeParse({ ...oneShot, runAt: Date.now() + 3_600_000 })
+      expect(parsed.success).toBe(true)
+    })
+
+    test('a PATCH may carry one knob alone -- the epic id it belongs to is already stored', () => {
+      expect(scheduledTaskPatchSchema.safeParse({ epic: { maxUsd: 200 } }).success).toBe(true)
+    })
+  })
+
   test('requires projectUri and cwd', () => {
     expect(validatedScheduledTaskSchema.safeParse({ ...FULL, projectUri: '' }).success).toBe(false)
     expect(validatedScheduledTaskSchema.safeParse({ ...FULL, cwd: '' }).success).toBe(false)

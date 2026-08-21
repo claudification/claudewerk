@@ -125,6 +125,66 @@ describe('schedule_create defaults', () => {
   })
 })
 
+/**
+ * ARMING AN EPIC FROM A SCHEDULE.
+ *
+ * The tool is the whole surface here: an engine action nothing can set is an
+ * action nobody has. What matters is that the arm payload reaches the wire under
+ * the names the server reads, and that a schedule which needs no prompt is not
+ * forced to invent one.
+ */
+describe('schedule_create action=epic-start', () => {
+  const ARM = {
+    name: 'saturday migration',
+    cron: '0 2 * * 6',
+    action: 'epic-start',
+    epic_id: 'epic-migration',
+  }
+
+  test('puts the action and the epic block on the wire', async () => {
+    const { body } = await call(tools().schedule_create, { ...ARM, when: 'window,queue', max_usd: '40' })
+    const sched = body.schedule as { action: string; epic: Record<string, unknown>; prompt?: string }
+
+    expect(sched.action).toBe('epic-start')
+    expect(sched.epic).toEqual({ epicId: 'epic-migration', when: 'window,queue', maxUsd: 40 })
+  })
+
+  test('sends no prompt at all rather than an invented one', async () => {
+    const { body } = await call(tools().schedule_create, ARM)
+    expect(Object.hasOwn(body.schedule as object, 'prompt')).toBe(false)
+  })
+
+  test('numbers arrive as numbers -- MCP hands every param over as a string', async () => {
+    const { body } = await call(tools().schedule_create, {
+      ...ARM,
+      concurrency: '5',
+      max_gens: '12',
+      max_wall_clock_minutes: '120',
+    })
+    expect((body.schedule as { epic: Record<string, unknown> }).epic).toEqual({
+      epicId: 'epic-migration',
+      concurrency: 5,
+      maxGens: 12,
+      maxWallClockMinutes: 120,
+    })
+  })
+
+  test('an epic_id with no action still travels, so the server can say what was forgotten', async () => {
+    // Silently dropping it would arm nothing, weekly, with no error anywhere.
+    const { body } = await call(tools().schedule_create, { name: 'n', cron: '0 2 * * 6', epic_id: 'epic-migration' })
+    const sched = body.schedule as { action?: string; epic: Record<string, unknown> }
+    expect(sched.action).toBeUndefined()
+    expect(sched.epic).toEqual({ epicId: 'epic-migration' })
+  })
+
+  test('a board-sweep is reachable now too -- the engine has always implemented it', async () => {
+    const { body } = await call(tools().schedule_create, { name: 'n', cron: '0 6 * * *', action: 'board-sweep' })
+    const sched = body.schedule as { action: string }
+    expect(sched.action).toBe('board-sweep')
+    expect(Object.hasOwn(body.schedule as object, 'prompt')).toBe(false)
+  })
+})
+
 describe('schedule_update', () => {
   test('sends ONLY the fields supplied, so omitted ones are left alone', async () => {
     const { body } = await call(
@@ -147,6 +207,52 @@ describe('schedule_update', () => {
   test('an empty patch is refused instead of a pointless round trip', async () => {
     const { result } = await call(tools().schedule_update, { id: 'sch_aaaa' })
     expect(result.isError).toBe(true)
+  })
+
+  test('one epic knob patches one epic knob -- the id it belongs to is already stored', async () => {
+    const { body } = await call(
+      tools().schedule_update,
+      { id: 'sch_aaaa', max_usd: '200' },
+      { ok: true, schedule: SCHEDULE },
+    )
+    expect(body.patch).toEqual({ epic: { maxUsd: 200 } })
+  })
+
+  test('the action itself is patchable, so an arm can be turned back into a spawn', async () => {
+    const { body } = await call(
+      tools().schedule_update,
+      { id: 'sch_aaaa', action: 'spawn', prompt: 'do it by hand' },
+      { ok: true, schedule: SCHEDULE },
+    )
+    expect(body.patch).toEqual({ action: 'spawn', prompt: 'do it by hand' })
+  })
+})
+
+describe('what an agent can READ back about the action', () => {
+  test('an epic-start schedule shows what it arms and the gate it arms with', async () => {
+    const { result } = await call(
+      tools().schedule_get,
+      { id: 'sch_aaaa' },
+      {
+        ok: true,
+        schedule: {
+          ...SCHEDULE,
+          prompt: undefined,
+          action: 'epic-start',
+          epic: { epicId: 'epic-migration', when: 'window,queue', maxUsd: 40 },
+        },
+        runs: [],
+      },
+    )
+    const text = result.content[0].text
+    expect(text).toContain('epic-start epic-migration')
+    expect(text).toContain('when=window,queue')
+    expect(text).toContain('max_usd=40')
+  })
+
+  test('a plain spawn says so rather than saying nothing', async () => {
+    const { result } = await call(tools().schedule_get, { id: 'sch_aaaa' }, { ok: true, schedule: SCHEDULE, runs: [] })
+    expect(result.content[0].text).toContain('what      spawn')
   })
 })
 

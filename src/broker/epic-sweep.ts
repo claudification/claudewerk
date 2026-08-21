@@ -20,9 +20,8 @@ import type { EpicLease } from '../shared/epic-lease'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
-import { NEVER_REAPED, type OverseerReaper } from './epic-overseer-vitality'
 import { isDeletedEpic, listArmedEpics } from './epic-registry'
-import { NEVER_ABANDONED, type SeatReaper } from './epic-seat-vitality'
+import { type EpicReapers, NO_REAPING, type Reaper } from './epic-vitality'
 
 /** What one epic's conversations add up to, from the registry alone. */
 export interface EpicGroup {
@@ -70,8 +69,8 @@ export interface EpicGroup {
   liveOverseers: string[]
   /**
    * OVERSEER SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED
-   * -- dead by silence rather than by a recorded end. See
-   * `epic-overseer-vitality.ts`.
+   * -- dead by silence rather than by a recorded end, at
+   * `OVERSEER_SILENCE_MS` (`epic-vitality.ts`).
    *
    * Never overlaps `liveOverseers`: an entry here is precisely a conversation
    * that would have been in that list and no longer is.
@@ -107,7 +106,8 @@ export interface EpicGroup {
   failedLegs: FailedLeg[]
   /**
    * SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED -- dead
-   * by silence rather than by a recorded end. See `epic-seat-vitality.ts`.
+   * by silence rather than by a recorded end, at `SEAT_SILENCE_MS` -- a SHORTER
+   * grace than the overseer's, and `epic-vitality.ts` says why.
    *
    * Their cards have ALREADY been folded as dead: an abandoned seat is absent
    * from `inFlight` and present in `settled` (or `failedLegs`, if it never
@@ -291,7 +291,7 @@ function absorbCardSeat(
   tag: { epicId: string; cardId: string; role: FailedLeg['role']; gen: number },
   claimsLive: boolean,
   producedOutput: ProducedOutput,
-  reaper: SeatReaper,
+  reaper: Reaper,
   acc: Accumulators,
   group: EpicGroup,
 ): void {
@@ -343,13 +343,7 @@ function absorbCardSeat(
  * Both live lanes are written from the SAME verdict -- see
  * `EpicGroup.liveOverseers` for why splitting them freezes the run twice.
  */
-function absorbOverseer(
-  conv: Conversation,
-  gen: number,
-  claimsLive: boolean,
-  reaper: OverseerReaper,
-  group: EpicGroup,
-): void {
+function absorbOverseer(conv: Conversation, gen: number, claimsLive: boolean, reaper: Reaper, group: EpicGroup): void {
   if (!claimsLive) return
   const reaping = reaper(conv)
   if (!reaping) {
@@ -372,8 +366,7 @@ function absorb(
   conv: Conversation,
   isLive: IsLive,
   producedOutput: ProducedOutput,
-  reaper: SeatReaper,
-  overseerReaper: OverseerReaper,
+  reapers: EpicReapers,
   acc: Accumulators,
 ): void {
   const tag = conv.launchConfig?.epic
@@ -389,19 +382,19 @@ function absorb(
   acc.groups.set(tag.epicId, group)
 
   const live = isLive(conv)
-  // TWO REAPERS, ONE PHYSICAL FACT, TWO PRICES. Both lanes ask "is the host
-  // behind this conversation gone", and both are deliberately blind to `status`
-  // for the same reason -- but they are asked with DIFFERENT graces, because an
-  // overseer reaped wrongly wakes a second supervisor onto a board the first is
-  // still rewriting, while a card seat reaped wrongly strands one card. See
-  // `epic-seat-vitality.ts` and `epic-overseer-vitality.ts` for the two numbers.
+  // ONE RULE, TWO PRICES. Both lanes ask the same question -- "is the host behind
+  // this conversation gone" -- of the same predicate, and both are blind to
+  // `status` for the same reason. They are asked with DIFFERENT graces, because
+  // an overseer reaped wrongly wakes a second supervisor onto a board the first
+  // is still rewriting, while a card seat reaped wrongly strands one card. See
+  // `epic-vitality.ts` for the rule and for both numbers.
   if (tag.role === 'overseer') {
-    absorbOverseer(conv, tag.gen, live, overseerReaper, group)
+    absorbOverseer(conv, tag.gen, live, reapers.overseer, group)
     return
   }
   const { epicId, cardId, role, gen } = tag
   if (!cardId) return
-  absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, reaper, acc, group)
+  absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, reapers.seat, acc, group)
 }
 
 /**
@@ -481,15 +474,19 @@ export function groupEpicConversations(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput: ProducedOutput = () => true,
-  /** Reaps a card seat whose end was never recorded. DEFAULTS TO NEVER, so a
-   *  caller that has not wired a clock up keeps today's behaviour rather than
-   *  reaping on an instant it never supplied. */
-  reaper: SeatReaper = NEVER_ABANDONED,
-  /** Reaps an overseer whose end was never recorded. Same default, same reason. */
-  overseerReaper: OverseerReaper = NEVER_REAPED,
+  /**
+   * BOTH LANES' REAPERS, AS ONE ARGUMENT -- a card seat's and the overseer's, each
+   * carrying its own grace. One parameter rather than two adjacent positionals
+   * because the two share a structural type and the compiler cannot tell them
+   * apart; see {@link EpicReapers}.
+   *
+   * DEFAULTS TO NEITHER, so a caller that has not wired a clock up keeps today's
+   * behaviour rather than reaping on an instant it never supplied.
+   */
+  reapers: EpicReapers = NO_REAPING,
 ): Map<string, EpicGroup> {
   const acc: Accumulators = { groups: new Map(), cards: new Map(), verifiers: new Map(), outputs: new Map() }
-  for (const conv of convs) absorb(conv, isLive, producedOutput, reaper, overseerReaper, acc)
+  for (const conv of convs) absorb(conv, isLive, producedOutput, reapers, acc)
   splitLanes(acc)
   return acc.groups
 }
@@ -594,10 +591,9 @@ export function epicsToWatch(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput?: ProducedOutput,
-  reaper?: SeatReaper,
-  overseerReaper?: OverseerReaper,
+  reapers?: EpicReapers,
 ): EpicGroup[] {
-  const groups = groupEpicConversations(convs, isLive, producedOutput, reaper, overseerReaper)
+  const groups = groupEpicConversations(convs, isLive, producedOutput, reapers)
   for (const { project, epicId } of listArmedEpics()) {
     // A conversation-derived group is strictly better -- it knows what is in
     // flight -- so an armed entry only fills a gap, never overwrites one.

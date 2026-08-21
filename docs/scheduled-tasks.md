@@ -108,15 +108,31 @@ cron at all -- see the two kinds above.
 `describeWhen()` wraps it so a one-shot gets the same treatment ("Once, Thu 13
 Aug, 09:00 (Europe/Berlin)") and every surface renders one kind of sentence.
 
-## Two actions: spawn and board-sweep
+## Three actions: spawn, board-sweep, epic-start
 
 A schedule carries an `action`, and an absent one means `spawn` -- which is what
 every schedule written before the field existed meant.
 
-| Action | Fires | Records |
-|---|---|---|
-| `spawn` (default) | a conversation, via `dispatchSpawn` | `spawned` |
-| `board-sweep` | the morning report's board op, via the sentinel | `swept` |
+| Action | Fires | Records | Payload |
+|---|---|---|---|
+| `spawn` (default) | a conversation, via `dispatchSpawn` | `spawned` | `prompt` (required) |
+| `board-sweep` | the morning report's board op, via the sentinel | `swept` | none |
+| `epic-start` | arms an epic run, via `armEpicRun` | `armed` | `epic` (required) |
+
+`prompt` is required for a `spawn` and **ignored** by the other two; `epic` is
+required for an `epic-start` and **refused** on the other two (`checkAction`,
+`src/shared/scheduled-task.ts`). The asymmetry is on purpose: a stray `prompt`
+is an inert string, where an `epic` block sitting on a `spawn` is somebody who
+filled in the epic and forgot the action -- ignoring THAT would arm nothing,
+weekly, with no error anywhere. Refusing a stray prompt would also break the
+one-field patch that flips an existing spawn schedule to `board-sweep`.
+
+The refusal binds on PATCH as well as on create. `mergedEpic`
+(`src/broker/scheduled-tasks/operations.ts`) clears the block only when the
+action actually CHANGES away from `epic-start` and the patch sends no block of
+its own; every other stray `epic` reaches `checkAction` and is refused there.
+Clearing them instead is how `schedule_update id=<a spawn> epic_id=e1
+max_usd=200` used to answer `200 OK`, change nothing, and arm nothing, forever.
 
 A `board-sweep` launches **no conversation**, so it records `swept` and not
 `spawned` -- a run row claiming a conversation nobody can open is the kind of
@@ -141,6 +157,37 @@ Where the work happens: `src/broker/scheduled-tasks/board-sweep-dispatch.ts`
 (liveness answer + opt-in) -> `src/sentinel/board-sweep-op.ts` (the fold, the
 dated report at `.rclaude/project/reports/<date>.md`) and
 `src/sentinel/board-sweep-apply.ts` (the mutations Execute asks for).
+
+### `epic-start` -- arming a run on a clock
+
+An epic run's own `when` axis (`now` / `window` / `queue` / an ISO instant) says
+when an **armed** run may dispatch. None of its values can *arm* one, so "start
+the migration epic at 02:00 on Saturday" was a human pressing RUN until this
+action existed. The two clocks compose and are different questions:
+
+| Axis | Question | Where it lives |
+|---|---|---|
+| `cron` / `runAt` | when is the run **armed**? | the schedule |
+| `epic.when` | when may the armed run **dispatch**? | the run, re-evaluated every beat |
+
+The fire goes through **`armEpicRun` (`src/broker/epic-arm.ts`) -- the same
+function the RUN button and `epic_run action=start` reach**, never the sentinel
+op directly. An arm is more than that op: it registers the run in the armed set
+`epicsToWatch` reads (a freshly armed run has no conversations, so nothing else
+can find it), clears any tombstone on the epic, pushes the header badge, and
+refuses when the project's `epics` box is unticked. A second arm path that
+forwarded the op alone would leave a run armed on disk and invisible to the sweep
+forever.
+
+Like `board-sweep`, an `epic-start` launches no conversation of its own, so it
+records `armed` -- the seats come later, from the epic engine's beat, and may
+never come at all if the run's gate never opens. The `epics` opt-in is re-checked
+at every fire and records `skipped_disabled` for the same reason the morning
+report does.
+
+Where the work happens: `src/broker/scheduled-tasks/epic-start-dispatch.ts`
+(payload translation) -> `src/broker/epic-arm.ts` (the arm + its bookkeeping) ->
+the sentinel's `start` op.
 
 ## What a schedule spawns
 
@@ -216,7 +263,8 @@ Every firing writes a row, including the ones that launched nothing:
 | Outcome | Means |
 |---|---|
 | `spawned` | A conversation was launched |
-| `swept` | A `board-sweep` ran its op. No conversation -- see the two actions above |
+| `swept` | A `board-sweep` ran its op. No conversation -- see the three actions above |
+| `armed` | An `epic-start` armed an epic run. No conversation; the engine's beat dispatches later |
 | `error` | Dispatch failed (or the owner lost permission) |
 | `skipped_overlap` | Previous run still alive, or the concurrency ceiling was hit |
 | `missed` | Should have fired during an outage; recorded, not run. Also how a one-shot records that it went stale |
@@ -356,6 +404,8 @@ then disarms itself after five silent dispatch failures, weeks later.
 | Board-sweep dispatch (opt-in + liveness) | `src/broker/scheduled-tasks/board-sweep-dispatch.ts` |
 | The sweep + the dated report | `src/sentinel/board-sweep-op.ts`, `board-sweep-report.ts` |
 | Executing ticked proposals | `src/sentinel/board-sweep-apply.ts` |
+| Epic-start dispatch (payload translation) | `src/broker/scheduled-tasks/epic-start-dispatch.ts` |
+| The one arm path, shared with the RUN button | `src/broker/epic-arm.ts` |
 | The tick | `src/broker/scheduled-tasks/engine.ts` |
 | Firing + run rows | `src/broker/scheduled-tasks/fire.ts` |
 | Outage reconciliation | `src/broker/scheduled-tasks/catch-up.ts` |

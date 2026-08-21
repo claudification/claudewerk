@@ -16,11 +16,10 @@ import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
-import { buildOverseerReaper, type OverseerReaper } from './epic-overseer-vitality'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
-import { buildSeatReaper, type SeatReaper } from './epic-seat-vitality'
 import { type EpicGroup, emptyGroup, type IsLive, type ProducedOutput } from './epic-sweep'
 import type { GitDirt } from './epic-types'
+import { buildOverseerReaper, buildSeatReaper, type EpicReapers } from './epic-vitality'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -91,16 +90,6 @@ export interface SweepDeps extends BeatDeps {
    */
   producedOutput?: ProducedOutput
   /**
-   * Reaps an overseer whose end was never recorded -- no socket, silent past the
-   * grace (`epic-overseer-vitality.ts`). Without it `overseerAlive` is whatever
-   * the registry's `status` field happens to say, and a supervisor whose agent
-   * host died holds `guardBeat` -- and therefore the entire run -- forever.
-   *
-   * Optional so the tests that build deps by hand keep their old meaning (nothing
-   * is ever reaped); `buildSweepDeps` always installs the real one.
-   */
-  overseerReaper?: OverseerReaper
-  /**
    * Publish the activity feed to the control panel. Optional because every test
    * in this file builds deps by hand and none of them cares; absent means the
    * engine simply runs without a UI watching, which is exactly what it did
@@ -108,15 +97,19 @@ export interface SweepDeps extends BeatDeps {
    */
   publishActivity?: () => Promise<void>
   /**
-   * THE SEAT REAPER -- see `epic-seat-vitality.ts`.
+   * BOTH REAPERS -- a card seat's and the overseer's -- see `epic-vitality.ts`.
+   * One field rather than two, because the two are one structural type and
+   * nothing but a field name can tell them apart at a call site.
    *
-   * ABSENT MEANS NOTHING IS EVER REAPED, which is exactly the behaviour that
-   * leaked a slot for twelve minutes on 2026-08-21, and is therefore the right
-   * default for a test that builds deps by hand: an unwired caller keeps the old
-   * arithmetic rather than reaping against a clock it never supplied.
-   * `buildSweepDeps` always installs the real one.
+   * ABSENT MEANS NOTHING IS EVER REAPED. For a card seat that is exactly the
+   * behaviour that leaked a concurrency slot for twelve minutes on 2026-08-21;
+   * for the overseer it is a beat frozen forever at `overseer alive at gen N`.
+   * Both are bad, and both are still the right default for a test that builds
+   * deps by hand: an unwired caller keeps the old arithmetic rather than reaping
+   * against a clock it never supplied. `buildSweepDeps` always installs the real
+   * pair, and `epic-sweep-loop.test.ts` asserts that it does.
    */
-  seatReaper?: SeatReaper
+  reapers?: EpicReapers
 }
 
 /**
@@ -250,20 +243,24 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   // reads too, or the panel would be told a different story than the engine
   // acted on.
   deps.publishActivity ??= () => publishEpicActivity(deps, s as unknown as ActivityBroadcaster)
-  // THE EXPIRY ON "THIS CARD IS IN FLIGHT", bound to the FINAL clock for the
-  // reason above: a caller that overrode `now` and then found the reaper judging
-  // silence against the wall clock would get a group whose lanes disagree with
-  // every other number in the same beat. `??=` rather than an assignment so a
-  // test may still install the zero value and get exactly the old behaviour.
-  deps.seatReaper ??= buildSeatReaper({
-    hasSocket: id => s.getActiveConversationCount(id) > 0,
-    now: () => deps.now(),
-  })
-  // Same rule, same clock, a longer grace -- see `OVERSEER_SILENCE_MS`.
-  deps.overseerReaper ??= buildOverseerReaper({
-    hasSocket: id => s.getActiveConversationCount(id) > 0,
-    now: () => deps.now(),
-  })
+  // THE EXPIRY ON "THIS CARD IS IN FLIGHT" AND ON "THE SUPERVISOR IS AT THE
+  // KEYBOARD", bound to the FINAL clock for the reason above: a caller that
+  // overrode `now` and then found a reaper judging silence against the wall clock
+  // would get a group whose lanes disagree with every other number in the same
+  // beat. `??=` rather than an assignment so a test may still install `NO_REAPING`
+  // (or its own pair) and get exactly the old behaviour.
+  //
+  // THIS IS THE ONE LINE THAT MAKES EITHER REAPER REAL. Assign `NO_REAPING` here
+  // and the entire feature -- both lanes -- is silently a no-op with every other
+  // test in the repo still green. `epic-sweep-loop.test.ts` asserts against
+  // exactly that mutation; it is the only thing standing between this seam and a
+  // dead feature nobody notices.
+  const hasSocket = (id: string) => s.getActiveConversationCount(id) > 0
+  const now = () => deps.now()
+  deps.reapers ??= {
+    seat: buildSeatReaper({ hasSocket, now }),
+    overseer: buildOverseerReaper({ hasSocket, now }),
+  }
   return deps
 }
 
