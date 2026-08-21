@@ -4,6 +4,18 @@
 # $1 = worktree path
 
 WORKTREE="$1"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Keep the project board out of this worktree's checkout. `.rclaude/project/` is
+# a tracked tree; without this, every worktree gets its own stale 628-file copy
+# that an agent can commit by accident. See scripts/worktree-sparse-board.sh for
+# the full reasoning. A no-op while the board is still gitignored, so it is safe
+# to have landed before the first board commit -- which is the point.
+SPARSE_BOARD="$PROJECT_ROOT/scripts/worktree-sparse-board.sh"
+if [[ -f "$SPARSE_BOARD" ]]; then
+  bash "$SPARSE_BOARD" "$WORKTREE" || echo "WARNING: worktree-sparse-board.sh failed" >&2
+fi
+
 cd "$WORKTREE" || exit 1
 bun install --frozen-lockfile 2>/dev/null || bun install
 # Generate src/shared/version.ts (gitignored, not copied into the worktree) so
