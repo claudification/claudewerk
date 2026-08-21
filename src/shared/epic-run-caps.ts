@@ -13,6 +13,7 @@
  */
 
 import type { EpicRunMeta } from './epic-run-types'
+import { whenWaitingLine } from './epic-when'
 
 /** `$12.50`. Two decimals always: `$12.5` reads like a truncation. */
 export function formatUsd(n: number): string {
@@ -92,12 +93,29 @@ export function epicRunCaps(run: EpicRunMeta, nowMs: number): EpicCapReading[] {
   return [spendReading(run), wallClockReading(run, nowMs), generationReading(run)]
 }
 
-/** `spend $12.50/$100.00 ($87.50 left) . wall clock 37 min/480 min (443 min left)` */
+/**
+ * `spend $12.50/$100.00 ($87.50 left) . wall clock 37 min/480 min (443 min left)`
+ * -- and, while an appointment is still in the future,
+ * `. waiting until 2026-08-22T02:00:00+07:00 (in 4 hours)`.
+ *
+ * THE WAIT SITS IN THE CAPS BLOCK, beside spend and wall clock, because it is
+ * read for the same reason they are: "why is this run not moving, and how long
+ * until it does". It is NOT one of the readings above -- a cap has a used, a
+ * ceiling and a remainder, and an appointment has one moment. Forcing it into
+ * that shape would print a `used/limit` pair that means nothing.
+ *
+ * It is also the reason `formatEpicRunCaps` takes the whole run rather than the
+ * three ceilings: the appointment lives on the `when` axis (`cadence`), and every
+ * surface that prints this line -- the `epic_run` tool, the overseer's briefing --
+ * must reach the same countdown the BEAT is holding the run on.
+ */
 export function formatEpicRunCaps(run: EpicRunMeta, nowMs: number): string {
-  return epicRunCaps(run, nowMs)
+  const caps = epicRunCaps(run, nowMs)
     .map(c => {
       const left = c.remaining === null ? '' : ` (${c.remaining} left)`
       return `${c.label} ${c.used}/${c.limit}${left}${c.over ? ' OVER' : ''}`
     })
     .join(' . ')
+  const waiting = whenWaitingLine(run.cadence, nowMs)
+  return waiting ? `${caps} . ${waiting}` : caps
 }

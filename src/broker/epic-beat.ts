@@ -18,7 +18,7 @@
 
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
-import { gatedBy } from '../shared/epic-when'
+import { gatedBy, whenWaitingLine } from '../shared/epic-when'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { QueueVerdict } from './epic-queue'
 
@@ -63,6 +63,23 @@ export interface EpicBeatInput {
    * behaviour rather than a silently withheld dispatch.
    */
   queue?: QueueVerdict
+  /**
+   * THIS BEAT WAS ASKED FOR BY HAND -- `epic_run action=beat`, not the 45s sweep.
+   *
+   * It overrides the APPOINTMENT gate (`when=at:<iso>`) and nothing else. The
+   * appointment is a note-to-self a human made about when to start; pressing BEAT
+   * NOW is that same human saying "actually, now", and refusing them would leave
+   * no way to start an armed run early short of re-arming it.
+   *
+   * `window` and `queue` are deliberately NOT overridable and never have been.
+   * They are not one person's preference: `window` is a project policy about when
+   * the box may be busy, and `queue` is a promise made to every OTHER epic that
+   * nothing else will dispatch while one holds the runner. A back door around
+   * either is a back door around the only thing they guarantee.
+   *
+   * Absent means the sweep, which is the caller that must never override.
+   */
+  forced?: boolean
   /** The board's dispatch-relevant fingerprint right now (epic-board-fingerprint).
    *  Only meaningful while a planning generation is owed. */
   boardFingerprint: string
@@ -135,14 +152,42 @@ const beat = (note: string, actions: EpicAction[] = [], patch?: EpicBeatPatch): 
  * The queue verdict is consulted regardless of what THIS run's axis says, because
  * it has two directions: a queued epic waits its turn, and every other epic waits
  * while a queued one holds the runner (`epic-queue.ts`).
+ *
+ * THE APPOINTMENT GATE CARRIES A COUNTDOWN ON EVERY HELD BEAT, deliberately and
+ * for the same reason the restart quarantine does: a run waiting on the clock has
+ * nothing in flight and nothing to show for itself, which on every other line of
+ * every surface here is indistinguishable from a run that quietly died. The
+ * reason string IS the countdown -- it goes to the broker log, the beat ring, and
+ * from there to the wall.
  */
-function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string } {
+function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string; overrode: string | null } {
   const reasons: string[] = []
   if (gatedBy(input.run.cadence, 'window') && !input.windowOpen) {
     reasons.push('when=window and the window is closed')
   }
   if (input.queue?.blocked) reasons.push(input.queue.reason ?? 'when=queue and another epic holds the runner')
-  return { allowed: reasons.length === 0, reason: reasons.join('; ') }
+
+  const appointment = appointmentGate(input)
+  if (appointment.reason) reasons.push(appointment.reason)
+
+  return { allowed: reasons.length === 0, reason: reasons.join('; '), overrode: appointment.overrode }
+}
+
+/**
+ * THE APPOINTMENT HALF -- the only gate a forced beat may walk through.
+ *
+ * Its own function because it is the only one of the three with two answers
+ * rather than one: a live appointment either HOLDS this beat or was OVERRIDDEN by
+ * it, and both have to reach the note. Recorded rather than silent, because the
+ * run then dispatches at a time its own `when` says it should not have -- and a
+ * reader of the baton with no line here is looking at a gate that appears to have
+ * simply failed.
+ */
+function appointmentGate(input: EpicBeatInput): { reason: string | null; overrode: string | null } {
+  const waiting = whenWaitingLine(input.run.cadence, input.nowMs)
+  if (!waiting) return { reason: null, overrode: null }
+  if (input.forced) return { reason: null, overrode: `${waiting} -- OVERRIDDEN by an explicit beat` }
+  return { reason: waiting, overrode: null }
 }
 
 /** Terminal run states do nothing at all. Checked first so an aborted run cannot
@@ -367,9 +412,8 @@ export function planBeat(input: EpicBeatInput): EpicBeat {
  * exported. Real coverage from `bun test --coverage` on epic-beat.test.ts is
  * 100% of lines and 8/8 functions in this file, which puts actual CRAP at 10.
  */
-// fallow-ignore-next-line complexity
 function workBeat(input: EpicBeatInput): EpicBeat {
-  const { run, plan } = input
+  const { plan } = input
   const actions: EpicAction[] = plan.verify.map(c => ({ kind: 'verify' as const, cardId: c.slug }))
 
   // THE GATE HOLDS DISPATCH ONLY, never verification -- the `verify` actions are
@@ -381,6 +425,30 @@ function workBeat(input: EpicBeatInput): EpicBeat {
   if (!gate.allowed) {
     return beat(`${gate.reason}; ${plan.dispatch.length} card(s) waiting`, actions)
   }
+
+  const decided = movedBeat(input, actions)
+  // The override rides on whatever this beat went on to say, rather than being a
+  // note of its own: a beat emits exactly ONE line, and the useful shape is
+  // "here is the gate I walked through, and here is what I did with it". Applied
+  // to every outcome and not just the dispatching one, because a forced beat that
+  // fired an appointment early and then found nothing to do is the case a reader
+  // most needs explaining.
+  return gate.overrode ? { ...decided, note: `${gate.overrode}; ${decided.note}` } : decided
+}
+
+/**
+ * Every gate passed: move the work, or explain why there is none.
+ *
+ * The suppression below is on CRAP only, and it is measured rather than waved
+ * through: cyclomatic and cognitive are both under their thresholds, and the CRAP
+ * score is `CC^2 * (1 - cov)^3 + CC` against an ESTIMATED coverage -- fallow
+ * infers it from export references, and this function is deliberately not
+ * exported. Real coverage from `bun test --coverage` on epic-beat.test.ts is
+ * 100% of lines in this file.
+ */
+// fallow-ignore-next-line complexity
+function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
+  const { run, plan } = input
 
   actions.push(...plan.dispatch.map(c => ({ kind: 'dispatch' as const, cardId: c.slug, dependsOn: c.dependsOn ?? [] })))
 

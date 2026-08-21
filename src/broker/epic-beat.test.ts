@@ -493,3 +493,167 @@ describe('when=queue', () => {
     expect(kinds(both)).toEqual(['dispatch'])
   })
 })
+
+/**
+ * THE APPOINTMENT GATE, AT THE BEAT -- `when=at:<iso>`.
+ *
+ * The codec is `epic-when.test.ts`'s; what these pin is the half a beat owns:
+ * that an appointment in the future withholds DISPATCH and nothing else, that it
+ * costs no wall clock, that it never counts as a dry generation, that it composes
+ * with the other two gates, and that a FORCED beat -- and only a forced beat --
+ * walks through it and says that it did.
+ *
+ * `T0` is 2026-08-21T00:00:00Z, so `SOON` (02:00+07:00 on the 21st, = 19:00Z on
+ * the 20th) is in the PAST and `LATER` is four hours out.
+ */
+describe('when=<instant> -- an appointment', () => {
+  /** 2026-08-21T04:00:00Z, four hours after T0. */
+  const LATER = 'at:2026-08-21T11:00:00+07:00'
+  /** 2026-08-20T19:00:00Z -- five hours BEFORE T0. */
+  const PASSED = 'at:2026-08-21T02:00:00+07:00'
+
+  test('an armed run whose appointment is in the future dispatches NOTHING', () => {
+    const b = beat({}, { dispatch: [card('t1'), card('t2')] }, { cadence: [LATER], status: 'armed' })
+    expect(b.actions).toEqual([])
+  })
+
+  /** THE COUNTDOWN, EVERY TICK. A run waiting on the clock has nothing in flight
+   *  and no fresh beat, which is byte-for-byte what a dead run looks like -- the
+   *  same reason the restart quarantine logs one on every held tick. */
+  test('it logs what it is waiting for and how long is left, and never a bare time', () => {
+    const b = beat({}, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(b.note).toContain('waiting until 2026-08-21T11:00:00+07:00')
+    expect(b.note).toContain('in 4 hours')
+    expect(b.note).toContain('1 card(s) waiting')
+  })
+
+  test('it dispatches on the FIRST beat after the appointment passes', () => {
+    const b = beat({ nowMs: Date.parse('2026-08-21T04:00:00.000Z') }, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('an appointment already in the past is no gate at all', () => {
+    expect(kinds(beat({}, { dispatch: [card('t1')] }, { cadence: [PASSED] }))).toEqual(['dispatch'])
+  })
+
+  /**
+   * THE MOST LIKELY PLACE FOR THIS GATE TO INTRODUCE A SILENT BUG, and the card
+   * said so: a run that burned its wall-clock budget while waiting would park
+   * itself before it ever dispatched. `startedAt` is the whole answer -- it means
+   * "the first beat this run was PERMITTED to dispatch", the appointment withholds
+   * that permission, and `elapsedRunMinutes` returns null without it.
+   */
+  test('the wall clock does NOT start while the appointment is still ahead', () => {
+    const b = beat({}, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(b.patch?.startedAt).toBeUndefined()
+  })
+
+  test('and so the wall-clock ceiling cannot trip on a run that has only ever waited', () => {
+    // One minute of budget, armed hours ago, waiting on an appointment: with a
+    // clock that started at ARMING this would park before dispatching anything.
+    const b = beat(
+      { nowMs: Date.parse('2026-08-21T03:59:00.000Z') },
+      { dispatch: [card('t1')] },
+      { cadence: [LATER], maxWallClockMinutes: 1, created: '2026-08-20T00:00:00.000Z' },
+    )
+    expect(kinds(b)).toEqual([])
+    expect(b.note).not.toContain('wall clock ceiling')
+  })
+
+  test('the clock starts on the beat the appointment lets it through', () => {
+    const b = beat({ nowMs: Date.parse('2026-08-21T04:00:00.000Z') }, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(b.patch?.startedAt).toBe('2026-08-21T04:00:00.000Z')
+  })
+
+  test('waiting is not thrashing -- a held beat is NOT a dry generation', () => {
+    const b = beat({}, { dispatch: [card('t1')] }, { cadence: [LATER], dryGens: 1 })
+    expect(kinds(b)).toEqual([])
+    expect(b.patch?.dryGens).toBeUndefined()
+  })
+
+  test('a verdict still lands while the appointment holds -- judging is not scheduled work', () => {
+    const b = beat({}, { dispatch: [card('t1')], verify: [card('t2')] }, { cadence: [LATER] })
+    expect(kinds(b)).toEqual(['verify'])
+  })
+
+  test('window and the appointment COMPOSE -- both must pass on the same beat', () => {
+    const shut = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['window', PASSED] })
+    expect(kinds(shut)).toEqual([])
+    expect(shut.note).toContain('window is closed')
+
+    const early = beat({ windowOpen: true }, { dispatch: [card('t1')] }, { cadence: ['window', LATER] })
+    expect(kinds(early)).toEqual([])
+    expect(early.note).toContain('waiting until')
+
+    const both = beat({ windowOpen: true }, { dispatch: [card('t1')] }, { cadence: ['window', PASSED] })
+    expect(kinds(both)).toEqual(['dispatch'])
+  })
+
+  test('queue and the appointment COMPOSE, and one line names both', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['queue', LATER] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('position 2 of 3')
+    expect(b.note).toContain('waiting until')
+
+    const turn = beat({ queue: FREE }, { dispatch: [card('t1')] }, { cadence: ['queue', PASSED] })
+    expect(kinds(turn)).toEqual(['dispatch'])
+  })
+})
+
+/**
+ * BEAT NOW vs THE GATES.
+ *
+ * An explicit beat overrides the APPOINTMENT and nothing else. The appointment is
+ * one person's note about when to begin, so the person pressing the button is the
+ * one who set it; `window` is a project policy about when the box may be busy and
+ * `queue` is a promise made to every OTHER epic. A back door around either is a
+ * back door around the only thing they guarantee.
+ */
+describe('a forced beat and the `when` axis', () => {
+  const LATER = 'at:2026-08-21T11:00:00+07:00'
+
+  test('fires an appointment early', () => {
+    const b = beat({ forced: true }, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('and RECORDS that it did, so the baton does not read as a gate that failed', () => {
+    const b = beat({ forced: true }, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(b.note).toContain('OVERRIDDEN by an explicit beat')
+    expect(b.note).toContain('waiting until 2026-08-21T11:00:00+07:00')
+  })
+
+  test('says so even when the beat it forced found nothing to do', () => {
+    const b = beat({ forced: true, inFlight: ['t1'] }, {}, { cadence: [LATER] })
+    expect(b.note).toContain('OVERRIDDEN by an explicit beat')
+    expect(b.note).toContain('in flight')
+  })
+
+  test('starts the wall clock, because the run really is dispatching now', () => {
+    const b = beat({ forced: true }, { dispatch: [card('t1')] }, { cadence: [LATER] })
+    expect(b.patch?.startedAt).toBe('2026-08-21T00:00:00.000Z')
+  })
+
+  test('does NOT override a closed window', () => {
+    const b = beat({ forced: true, windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['window'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('window is closed')
+  })
+
+  test('does NOT override the queue -- that gate is a promise to other epics', () => {
+    const b = beat({ forced: true, queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('position 2 of 3')
+  })
+
+  test('an appointment it overrode does not un-hold the OTHER gates', () => {
+    const b = beat({ forced: true, windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['window', LATER] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('window is closed')
+    expect(b.note).not.toContain('waiting until')
+  })
+
+  test('the SWEEP never overrides -- `forced` absent is the caller that must not', () => {
+    expect(kinds(beat({}, { dispatch: [card('t1')] }, { cadence: [LATER] }))).toEqual([])
+  })
+})

@@ -16,22 +16,40 @@
  *
  * CADENCE IS A MODE, NOT AN ENGINE. `now` runs the epic immediately and reports
  * when it is done; `window` defers dispatch to the project's nightshift window;
- * `queue` waits until no other epic in the project is running. Same orchestrator,
- * same caps, same guardians -- one field decides when a ready card is allowed to
- * leave the queue.
+ * `queue` waits until no other epic in the project is running; an INSTANT waits
+ * until an appointment passes. Same orchestrator, same caps, same guardians --
+ * one field decides when a ready card is allowed to leave the queue.
  */
 
 import type { ConversationRole } from './conversation-role'
 
 /**
+ * AN APPOINTMENT ON THE `when` AXIS -- `at:2026-08-22T02:00:00+07:00`.
+ *
+ * AN ABSOLUTE INSTANT WITH AN OFFSET, and not a wall-clock time plus an IANA
+ * zone. A one-shot appointment has no recurrence, so the DST machinery
+ * `parseCron` needs buys nothing here and costs the two edge cases it exists to
+ * handle (the spring-forward gap, the autumn-back repeat). The offset is kept
+ * rather than folded to UTC because it is the only record of which clock the
+ * human was reading, and no surface here may render a bare time.
+ *
+ * The `at:` prefix is what makes this a GATE NAME rather than a loose timestamp:
+ * `parseWhen` matches gates by name and this family by shape, and a bare ISO
+ * string sitting in the same list would be indistinguishable from a value some
+ * future field happened to store there.
+ */
+export type EpicWhenInstant = `at:${string}`
+
+/**
  * One gate on the `when` axis -- a PER-BEAT dispatch predicate, not an arm-time
  * choice. `now` is the absence of a gate; `window` defers to the project's night
- * window; `queue` defers until no other epic in the project holds the runner.
+ * window; `queue` defers until no other epic in the project holds the runner; an
+ * `at:` instant defers until that moment has passed.
  *
  * The axis is spelled `when` on the verb surface and `cadence` in storage. Its
  * codec, and the reason for the two names, live in `epic-when.ts`.
  */
-export type EpicCadence = 'now' | 'window' | 'queue'
+export type EpicCadence = 'now' | 'window' | 'queue' | EpicWhenInstant
 
 /** Lifecycle of the RUN (distinct from the epic card's board lane). */
 export type EpicRunStatus = 'armed' | 'running' | 'paused' | 'complete' | 'aborted'
@@ -104,6 +122,11 @@ export interface EpicRunMeta {
    * while another epic runs" is an obvious ask, and answering it with three
    * separate verbs would mean three reason strings, three countdowns and three
    * places to look when a run goes quiet. See `epic-when.ts`.
+   *
+   * AN APPOINTMENT COSTS NO WALL CLOCK. `startedAt` below is stamped on the first
+   * beat the run is PERMITTED to dispatch, and an `at:` gate withholds that
+   * permission exactly as `window` does -- so a run armed at noon for 02:00 is
+   * not spending its `maxWallClockMinutes` budget waiting.
    */
   cadence: EpicCadence[]
   status: EpicRunStatus

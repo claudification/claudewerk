@@ -22,6 +22,7 @@ import { formatEpicRunCaps } from './epic-run-caps'
 import type { EpicRun } from './epic-run-store'
 import type { EpicWakeReason } from './epic-run-types'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { formatWhen } from './epic-when'
 
 export interface OverseerPromptCtx {
   projectUri: string
@@ -141,7 +142,11 @@ function stopping(ctx: OverseerPromptCtx): string {
 export function buildOverseerPrompt(ctx: OverseerPromptCtx): string {
   return [
     `You are THE OVERSEER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
-    `Generation ${ctx.run.gen}. Woken by: ${ctx.wake}. Cadence: ${ctx.run.cadence}. Target: ${ctx.run.target}.`,
+    // `formatWhen` rather than the raw field: it is a LIST, so interpolating it
+    // prints `window,at:2026-08-22T02:00:00+07:00` -- a spelling no reader of this
+    // prompt has ever been shown and the only place the axis would appear
+    // unrendered.
+    `Generation ${ctx.run.gen}. Woken by: ${ctx.wake}. When: ${formatWhen(ctx.run.cadence)}. Target: ${ctx.run.target}.`,
     '',
     AUTHORITY,
     '',

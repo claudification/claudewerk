@@ -407,7 +407,15 @@ export async function beatOneEpic(
     // against a view nobody could fetch.
     const unreadable = plan.failure(group)
     if (unreadable) return { ok: false, error: unreadable }
-    const outcome = await runEpicBeat(deps, group, plan.context(group))
+    // FORCED, and that flag means exactly one thing: an APPOINTMENT
+    // (`when=at:<iso>`) fires now rather than at the hour it names. The
+    // appointment is one human's note about when to begin, and the human pressing
+    // BEAT NOW is that same human changing their mind -- refusing them would
+    // leave no way to start an armed run early short of re-arming it, which
+    // clears the wall clock and the dry streak with it. `window` and `queue` are
+    // NOT overridden, here or anywhere: neither is a preference, and the beat
+    // still says which one is holding rather than going quiet.
+    const outcome = await runEpicBeat(deps, group, { ...plan.context(group), forced: true })
     // BEAT NOW exists because a human is watching and does not want to wait 45s
     // for the tick. Making them then wait 45s to SEE what it did would give back
     // exactly what the verb was for.
