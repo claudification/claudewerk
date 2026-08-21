@@ -43,6 +43,7 @@ import {
 import { epicIo, tag } from './epic-io'
 import { recordFinalPromises, recordSettledPromises } from './epic-promise'
 import type { QueueVerdict } from './epic-queue'
+import { isArmed } from './epic-registry'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
 
@@ -143,6 +144,29 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
       actions: 0,
       spawned: [],
     })
+  }
+
+  // STRANDED -- said in the broker log, not only in the panel.
+  //
+  // The run artifact says this epic is live, and the sweep's armed set does not
+  // carry it. That means the ONLY reason this beat is happening at all is a live
+  // conversation, and the moment the last seat exits the epic falls out of both
+  // halves of `epicsToWatch` and the run stops advancing with nothing logged and
+  // nothing thrown. That is precisely how `epic-the-wall` died on 2026-08-19,
+  // eleven minutes after a restart nobody connected to it.
+  //
+  // The armed set has been durable since 2026-08-21 (epic-registry.ts), so the
+  // ways left in are narrow -- a run armed by a broker older than that fix, or a
+  // project whose `epics` box was unticked while a run was live. Both need a
+  // human, and `runVitality` could only tell one who went looking. Logged on
+  // EVERY beat rather than once, because every one of them is inside the window
+  // where a `start` still costs nothing.
+  if (!isArmed(seats.project, seats.epicId)) {
+    deps.log(
+      `${tag(seats.epicId, run.gen)} STRANDED: the run is ${run.status} but this epic is not in the sweep's ` +
+        `armed set -- it is visible only through its live conversations and stops advancing when the last one ` +
+        `ends. Re-arm it with epic_run action=start.`,
+    )
   }
 
   const mismatch = generationMismatch(seats, run.gen)
