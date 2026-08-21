@@ -1,5 +1,16 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
-import { forgetArmedEpic, isArmed, listArmedEpics, noteArmedEpic, resetArmedEpics } from './epic-registry'
+import {
+  forgetArmedEpic,
+  initArmedEpics,
+  isArmed,
+  listArmedEpics,
+  noteArmedEpic,
+  resetArmedEpics,
+} from './epic-registry'
+import { epicsToWatch } from './epic-sweep'
+import { createSqliteKVStore } from './store/sqlite/kv'
+import type { KVStore } from './store/types'
 
 const P = 'claude://studio/proj'
 const Q = 'claude://studio/other'
@@ -79,5 +90,135 @@ describe('the armed-epic registry is spelling-blind', () => {
     noteArmedEpic(TYPED, 'e1')
     noteArmedEpic('claude:///Users/jonas/projects/elsewhere', 'e1')
     expect(listArmedEpics()).toHaveLength(2)
+  })
+})
+
+/**
+ * A BROKER RESTART MUST NOT STRAND A RUN.
+ *
+ * The set used to be a plain in-memory `Map`, and the header comment claimed
+ * only "the gap between armed and first dispatch" was lossy. It was not: the
+ * sweep unions this set with epics found through LIVE CONVERSATIONS, so a
+ * restarted run stayed visible exactly as long as a seat was open and vanished
+ * the moment the last one exited -- which for a healthy run happens between
+ * every pair of beats. `epic-the-wall` died that way on 2026-08-19.
+ *
+ * A REAL SQLITE KV, not a Map-backed fake, and that is deliberate. The obvious
+ * implementation persists the NUL-joined map key, and a bound key containing
+ * `\0` silently fails to round-trip through `bun:sqlite` -- arming would look
+ * fine and rehydrate nothing. Only a real driver catches that.
+ */
+describe('the armed set survives a broker restart', () => {
+  const TYPED = 'claude:///Users/jonas/projects/remote-claude'
+  const CANONICAL = 'claude://default/Users/jonas/projects/remote-claude'
+
+  /** The broker's own kv table, exactly as `schema.ts` declares it. `strict:
+   *  true` is not decoration -- `createSqliteKVStore` binds bare `key`/`value`
+   *  keys, which a non-strict open binds as SILENT NULL. */
+  function freshKv(): KVStore {
+    const db = new Database(':memory:', { strict: true })
+    db.run('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    return createSqliteKVStore(db)
+  }
+
+  /** Everything a restart does to this module: the process dies with its `Map`,
+   *  comes back, and is handed the SAME store. */
+  function restart(kv: KVStore): void {
+    resetArmedEpics()
+    expect(listArmedEpics()).toEqual([])
+    initArmedEpics(kv)
+  }
+
+  test('an epic armed before the restart is still armed after it', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(P, 'e1')
+
+    restart(kv)
+
+    expect(isArmed(P, 'e1')).toBe(true)
+    expect(listArmedEpics()).toEqual([{ project: P, epicId: 'e1' }])
+  })
+
+  test('and the sweep therefore still finds it with ZERO conversations', () => {
+    // The failure in full: no live conversation means the conversation half of
+    // `epicsToWatch` is empty, so the armed half is the only thing keeping the
+    // run in the engine's sight.
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(P, 'e1')
+
+    restart(kv)
+
+    expect(epicsToWatch([], () => false).map(g => g.epicId)).toEqual(['e1'])
+  })
+
+  test('a forgotten epic stays forgotten -- park/pause/abort are durable too', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(P, 'e1')
+    noteArmedEpic(Q, 'e2')
+    forgetArmedEpic(P, 'e1')
+
+    restart(kv)
+
+    expect(isArmed(P, 'e1')).toBe(false)
+    expect(listArmedEpics()).toEqual([{ project: Q, epicId: 'e2' }])
+  })
+
+  test('the persisted entry is matched by IDENTITY, not by the spelling that armed it', () => {
+    // The whole point of `runner-list-project-uri-unnormalized` landing first:
+    // persisting the raw string would have persisted that bug.
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(TYPED, 'e1')
+
+    restart(kv)
+
+    expect(isArmed(CANONICAL, 'e1')).toBe(true)
+    expect(isArmed('claude:////Users/jonas/projects/remote-claude/', 'e1')).toBe(true)
+    // ...and the RAW uri the caller armed with is what comes back out, because
+    // that is what the sweep hands onward to the sentinel.
+    expect(listArmedEpics()).toEqual([{ project: TYPED, epicId: 'e1' }])
+  })
+
+  test('re-arming after a restart does not double the entry', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(TYPED, 'e1')
+
+    restart(kv)
+    noteArmedEpic(CANONICAL, 'e1')
+
+    expect(listArmedEpics()).toHaveLength(1)
+  })
+
+  test('hydration REPLACES whatever was in memory rather than merging into it', () => {
+    // A second `init` is a restart, not a top-up. Merging would resurrect an
+    // epic that was forgotten while the store was detached.
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteArmedEpic(P, 'persisted')
+    resetArmedEpics()
+    noteArmedEpic(Q, 'memory-only')
+
+    initArmedEpics(kv)
+
+    expect(listArmedEpics()).toEqual([{ project: P, epicId: 'persisted' }])
+  })
+
+  test('a store holding garbage boots empty instead of throwing', () => {
+    // A broker that cannot boot is worse than one that forgets a run.
+    const kv = freshKv()
+    kv.set('epic:armed', [{ project: 'claude://s/p' }, null, 'nonsense', { epicId: 'e1' }])
+    expect(() => initArmedEpics(kv)).not.toThrow()
+    expect(listArmedEpics()).toEqual([])
+  })
+
+  test('with no store wired at all, arming still works -- memory-only, never a throw', () => {
+    // A broker running without a store driver must still be able to arm a run.
+    resetArmedEpics()
+    expect(() => noteArmedEpic(P, 'e1')).not.toThrow()
+    expect(isArmed(P, 'e1')).toBe(true)
   })
 })

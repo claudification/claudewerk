@@ -56,6 +56,7 @@ import { initUserNotes } from './desk/notes'
 import { initOrbMemory } from './desk/orb-memory'
 import { closeProjectMemory, initProjectMemory } from './desk/project-memory'
 import { closeDispatchThreads, initDispatchThreads } from './desk/threads'
+import { initArmedEpics } from './epic-registry'
 import { buildSweepDeps, startEpicSweep } from './epic-sweep-loop'
 import { startExternalStatusPolling, stopExternalStatusPolling } from './external-status'
 import { createGatewayRegistry } from './gateway-registry'
@@ -571,6 +572,11 @@ async function main() {
   initConversationLinks(store.kv)
   initInterConversationLog(store.messages)
   initAddressBook(store.kv)
+  // WHICH EPIC RUNS ARE ARMED, back from the store. MUST precede
+  // `startEpicSweep` below: a sweep that ticks against an empty set beats
+  // nothing, and a run whose last seat has already exited is then invisible to
+  // both halves of the sweep's union and stalls silently. See epic-registry.ts.
+  initArmedEpics(store.kv)
   initMessageQueue(store.messages)
   initShares({ kv: store.kv })
   setShareValidator(token => validateShareToken(token) !== null)

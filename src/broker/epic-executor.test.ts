@@ -17,6 +17,7 @@ import { toEpicRunView } from './epic-broker-rpc'
 import { type BeatDeps, runEpicBeat } from './epic-executor'
 import { configureEpicIo, epicIo, resetEpicIo } from './epic-io'
 import { resetPromiseMemory } from './epic-promise'
+import { noteArmedEpic, resetArmedEpics } from './epic-registry'
 import type { EpicGroup } from './epic-sweep'
 
 const PROJECT = 'claude://studio/proj'
@@ -338,6 +339,45 @@ describe('runEpicBeat', () => {
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(3)
     expect(log.join('\n')).not.toContain('generation DRIFT')
+  })
+
+  /**
+   * A STRANDED RUN SAYS SO IN THE BROKER LOG, EVERY BEAT.
+   *
+   * The armed set is durable now, but the ways in are not all closed: a run
+   * armed by an older broker, or a project whose `epics` box was unticked
+   * mid-run, still reaches a beat with nothing in the registry. In that state
+   * the ONLY reason the beat is happening is a live conversation, and the run
+   * dies silently the moment the last seat exits (`epic-the-wall`, 2026-08-19).
+   * `runVitality` already diagnosed it in the panel; nobody who was not looking
+   * at the panel could find out.
+   */
+  describe('a run the armed set has lost', () => {
+    afterEach(() => resetArmedEpics())
+
+    test('is called STRANDED in the log, with the verb that fixes it', async () => {
+      await runEpicBeat(deps(), group())
+      expect(log.join('\n')).toContain('STRANDED')
+      expect(log.join('\n')).toContain('epic_run action=start')
+    })
+
+    test('and an ARMED run gets no such line', async () => {
+      noteArmedEpic(PROJECT, 'e1')
+      await runEpicBeat(deps(), group())
+      expect(log.join('\n')).not.toContain('STRANDED')
+    })
+
+    test('matched by project IDENTITY -- a differently-spelled arm still counts as armed', async () => {
+      noteArmedEpic('claude://studio/proj/', 'e1')
+      await runEpicBeat(deps(), group())
+      expect(log.join('\n')).not.toContain('STRANDED')
+    })
+
+    test.each(['paused', 'complete', 'aborted'] as const)('a %s run is not stranded, it is over', async status => {
+      run = { ...RUN, status }
+      await runEpicBeat(deps(), group())
+      expect(log.join('\n')).not.toContain('STRANDED')
+    })
   })
 
   test('a REFUSED lease spawns nothing and is logged as normal, not as an error', async () => {
