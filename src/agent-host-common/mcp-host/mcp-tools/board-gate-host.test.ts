@@ -83,7 +83,11 @@ describe('the gate writes through serializeCard, not raw frontmatter', () => {
   test('an unwritable card never throws -- the stamp is best-effort, the move proceeds', () => {
     const missing = join(dir, 'no', 'such', 'card.md')
     expect(() =>
-      writeGateEvidence(missing, { meta: { title: 'T' }, body: 'body', raw: {} }, { evidence_tests: 'pass' }),
+      writeGateEvidence(
+        missing,
+        { meta: { title: 'T' }, body: 'body', raw: {}, hasFrontmatter: true },
+        { evidence_tests: 'pass' },
+      ),
     ).not.toThrow()
   })
 
