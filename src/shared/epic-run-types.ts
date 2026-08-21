@@ -81,6 +81,19 @@ export interface EpicLogEntry {
   kind: EpicLogKind
   /** The conversation that wrote the entry. */
   convId: string
+  /**
+   * The epic the entry belongs to.
+   *
+   * ADDED BESIDE `cardId`, never folded into it, because this type crosses the
+   * wire: every consumer above the parse boundary keeps reading a bare card id
+   * and there is no protocol break. Only the on-disk token is composed
+   * (`epic-log-tag.ts`), and only `epic-log.ts` ever sees it composed.
+   *
+   * Optional for the same version-skew reason the rest of this envelope is: an
+   * entry from an older writer has no epic of its own, and the reader supplies
+   * the log's -- which, while a baton is per-epic, is the same answer.
+   */
+  epicId?: string
   /** Card the entry concerns, when it concerns one. */
   cardId?: string
   body: string
