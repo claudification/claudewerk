@@ -31,6 +31,7 @@ import {
   WidgetType,
 } from '@codemirror/view'
 import { parseCanvasRefs } from '@/lib/canvas-refs'
+import type { TaskTokenContext } from '@/lib/cards/task-tokens'
 import { parseConversationRefs } from '@/lib/conversation-refs'
 import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
@@ -416,6 +417,12 @@ interface InputExtensionOptions {
    * enableAutocomplete is true.
    */
   getSubCommandContext?: () => SubCommandContext
+  /**
+   * Quick Task token context, read lazily at completion time. Returning null
+   * (the default) leaves every token trigger inert, which is what keeps `@`
+   * meaning skills+agents in the prompt input.
+   */
+  getTaskTokenContext?: () => TaskTokenContext | null
 }
 
 // ---------------------------------------------------------------------------
@@ -543,10 +550,15 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   ]
 
   if (opts.enableEffortKeywords) extensions.push(effortKeywordPlugin)
-  if (opts.enableAutocomplete || opts.customSlashCommands) {
+  if (opts.enableAutocomplete || opts.customSlashCommands || opts.getTaskTokenContext) {
     const getCtx = opts.getSubCommandContext ?? (() => ({ tasks: [], conversationId: null }))
     extensions.push(
-      autocompleteExtension({ getSubCommandContext: getCtx, customSlashCommands: opts.customSlashCommands }),
+      autocompleteExtension({
+        getSubCommandContext: getCtx,
+        customSlashCommands: opts.customSlashCommands,
+        enableProseSources: opts.enableAutocomplete,
+        getTaskTokenContext: opts.getTaskTokenContext,
+      }),
     )
   }
 

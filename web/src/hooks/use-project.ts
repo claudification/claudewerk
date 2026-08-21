@@ -28,22 +28,26 @@ export interface ProjectTask extends ProjectTaskMeta {
   body: string
 }
 
-export function useProject(conversationId: string | null) {
-  // Resolve projectUri for this conversation -- same project = same cache.
-  const projectUri = useConversationsStore(s =>
-    conversationId ? (s.conversationsById[conversationId]?.project ?? null) : null,
-  )
+/**
+ * Every hydrated card of a project, addressed by URI rather than by
+ * conversation.
+ *
+ * Split out of `useProject` because a caller can legitimately want a board it
+ * has no conversation in -- Quick Task's `/project` switch files into any known
+ * project, and resolving that through a conversation id would make "a project I
+ * am not currently sitting in" unaddressable.
+ */
+export function useProjectTasksList(projectUri: string | null): ProjectTaskMeta[] {
   const cache = useProjectTasks(projectUri)
 
-  // Eagerly hydrate the whole manifest for legacy callers that expect a
-  // ProjectTaskMeta[]. New callers should use useProjectTasks directly to
-  // get lazy hydration.
+  // Eagerly hydrate the whole manifest for callers that expect a
+  // ProjectTaskMeta[]. Callers wanting lazy hydration use useProjectTasks.
   useEffect(() => {
     if (cache.manifest.length === 0) return
     cache.hydrate(cache.manifest)
   }, [cache.manifest, cache.hydrate])
 
-  const tasks: ProjectTaskMeta[] = useMemo(() => {
+  return useMemo(() => {
     const out: ProjectTaskMeta[] = []
     for (const entry of cache.manifest) {
       const meta = cache.getMeta(entry)
@@ -51,17 +55,51 @@ export function useProject(conversationId: string | null) {
     }
     return out
   }, [cache])
+}
+
+export function useProject(conversationId: string | null) {
+  // Resolve projectUri for this conversation -- same project = same cache.
+  const projectUri = useConversationsStore(s =>
+    conversationId ? (s.conversationsById[conversationId]?.project ?? null) : null,
+  )
+  const cache = useProjectTasks(projectUri)
+  const tasks = useProjectTasksList(projectUri)
 
   const refresh = useCallback(async () => {
     // The cache auto-refreshes via project_changed; this is a no-op for the
     // new path. Kept for back-compat -- callers used to trigger a refetch.
   }, [])
 
+  /**
+   * Create a card.
+   *
+   * Forwards an EXPLICIT key list rather than spreading `input`, which is the
+   * same trap `setCardEpic` documents: a key that isn't named here is accepted
+   * by the type, sent nowhere, and silently missing from the card. The store
+   * (`createProjectTask`) has always understood epic/dependsOn/relatesTo --
+   * only this shim was dropping them on the floor.
+   */
   const createTask = useCallback(
-    async (input: { title?: string; body: string; priority?: string; tags?: string[] }) => {
+    async (input: {
+      title?: string
+      body: string
+      priority?: string
+      tags?: string[]
+      epic?: string
+      dependsOn?: string[]
+      relatesTo?: string[]
+    }) => {
       if (!projectUri) return null
       const resp = await sendBoardOp(projectUri, 'create', {
-        input: { title: input.title, body: input.body, priority: asPriority(input.priority), tags: input.tags },
+        input: {
+          title: input.title,
+          body: input.body,
+          priority: asPriority(input.priority),
+          tags: input.tags,
+          epic: input.epic,
+          dependsOn: input.dependsOn,
+          relatesTo: input.relatesTo,
+        },
       })
       return (resp.note as ProjectTaskMeta) ?? null
     },

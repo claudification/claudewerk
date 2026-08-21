@@ -49,6 +49,15 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   const subCmdCtxRef = useRef<SubCommandContext>({ tasks: projectTasks, conversationId: conversationId })
   subCmdCtxRef.current = { tasks: projectTasks, conversationId: conversationId }
 
+  // Quick Task token context. Read through a ref at completion time so the
+  // caller can hand us a fresh `onPick` every render without the extensions
+  // (built once, below) ever needing a rebuild.
+  const taskTokensRef = useRef(props.taskTokens)
+  taskTokensRef.current = props.taskTokens
+  // Captured at mount like the other toggles -- a surface either is a Quick
+  // Task editor or it is not, and none of them flips mid-life.
+  const wantsTaskTokens = useRef(props.taskTokens != null).current
+
   const onSubmitRef = useRef(props.onSubmit)
   onSubmitRef.current = props.onSubmit
 
@@ -88,6 +97,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
         // Read sub-command context lazily so /workon picks up the latest
         // project tasks + conversation id without rebuilding extensions.
         getSubCommandContext: () => subCmdCtxRef.current,
+        getTaskTokenContext: wantsTaskTokens ? () => taskTokensRef.current ?? null : undefined,
       }),
     // react-doctor-disable-next-line react-doctor/exhaustive-deps
     [],

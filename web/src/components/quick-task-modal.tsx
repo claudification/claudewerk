@@ -1,127 +1,104 @@
 /**
  * Quick Task Modal - Ctrl+Shift+N shortcut
  * Creates a card at .rclaude/project/cards/<id>.md with `status: inbox`
+ *
+ * Render-only: the state machine is `use-quick-task.ts`. Tokens (grammar in
+ * lib/cards/task-tokens.ts): `@epic` `!priority` `+depends-on` `&relates-to`
+ * `/project` are EATEN on accept; `#tag` stays in the text and is parsed at
+ * submit.
  */
 
 import { AlertTriangle, FileText } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { useConversationsStore } from '@/hooks/use-conversations'
-import { useProject } from '@/hooks/use-project'
-import { haptic } from '@/lib/utils'
 import { InputEditor } from './input-editor'
-import { quickTaskBus } from './quick-task-trigger'
+import { ProjectTag } from './project-tag'
+import { QuickTaskChips } from './quick-task-chips'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 import { Kbd, KbdGroup } from './ui/kbd'
+import { useQuickTask } from './use-quick-task'
+import { useProjectLook } from './wall/use-project-look'
+
+function NoProjectWarning() {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-400">
+      <AlertTriangle className="size-3.5 shrink-0" />
+      <span className="text-[10px] font-mono">No project selected -- type /project to pick a board</span>
+    </div>
+  )
+}
+
+function Footer({ onSubmit, disabled }: { onSubmit: () => void; disabled: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
+      <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+        <Kbd>↵</Kbd> add
+        <span className="text-fg-faint">·</span>
+        <KbdGroup>
+          <Kbd>⇧</Kbd>
+          <Kbd>↵</Kbd>
+        </KbdGroup>{' '}
+        newline
+        <span className="text-fg-faint">·</span>
+        <Kbd>Esc</Kbd> close
+      </span>
+      <Button type="button" variant="accent" size="sm" onClick={onSubmit} disabled={disabled}>
+        Add
+        <Kbd className="border-accent-foreground/25 bg-accent-foreground/15 text-accent-foreground">↵</Kbd>
+      </Button>
+    </div>
+  )
+}
 
 export function QuickTaskModal() {
-  const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
-  const [flash, setFlash] = useState(false)
+  const q = useQuickTask()
 
-  const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
-  const conversation = useConversationsStore(state =>
-    state.selectedConversationId ? state.conversationsById[state.selectedConversationId] : undefined,
-  )
-  const isActive = conversation != null && conversation.status !== 'ended'
-  const hasWrapper = (conversation?.connectionIds?.length ?? 0) > 0
-
-  const { createTask } = useProject(selectedConversationId && isActive ? selectedConversationId : null)
-
-  // Opener keybindings + palette command live EAGERLY in use-global-commands.ts
-  // (the modal is lazy-mounted, so an opener registered here would be dead until
-  // first armed). All open paths -- FAB, palette, Ctrl+Shift+N -- converge on the
-  // `open-quick-task` window event handled below.
-  useEffect(() => {
-    function handleOpen() {
-      if (selectedConversationId && isActive) {
-        haptic('tap')
-        setOpen(true)
-      }
-    }
-    quickTaskBus.setHandler(handleOpen)
-    return () => quickTaskBus.setHandler(null)
-  }, [selectedConversationId, isActive])
-
-  // Radix Dialog handles Escape natively; clear text on close via onOpenChange.
-  const handleOpenChange = useCallback((next: boolean) => {
-    setOpen(next)
-    if (!next) setText('')
-  }, [])
-
-  const handleSubmit = useCallback(() => {
-    if (!text.trim() || !hasWrapper) return
-    haptic('tap')
-    const lines = text.trim().split('\n')
-    const title = lines[0]
-    const body = lines.length > 1 ? lines.slice(1).join('\n').trim() : text.trim()
-
-    // Log to console for recovery in case the WS relay fails
-    console.log('[quick-task] Creating task:', JSON.stringify({ title, body, conversationId: selectedConversationId }))
-
-    createTask({ title, body }).catch(err => {
-      console.error('[quick-task] Failed to create task:', err, { title, body })
-    })
-    haptic('success')
-    setText('')
-    setOpen(false)
-    setFlash(true)
-    setTimeout(() => setFlash(false), 1000)
-  }, [text, createTask, hasWrapper, selectedConversationId])
+  // WHICH board is this landing on? A capture box that files into "the selected
+  // conversation's project" is the thing you get wrong at 2am with six
+  // conversations open -- and `/project` makes the target genuinely free, so
+  // the header has to say it. Same icon and colour as everywhere else.
+  const lookUp = useProjectLook()
+  const look = q.targetProject ? lookUp(q.targetProject) : null
 
   return (
     <>
-      {flash && !open && (
+      {q.flash && !q.open && (
         <div className="fixed bottom-4 right-4 z-[100] px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 text-xs font-mono animate-pulse">
           Task created
         </div>
       )}
-      <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg max-h-[50vh] flex flex-col p-0 top-[15vh] translate-y-0">
+      <Dialog open={q.open} onOpenChange={q.onOpenChange}>
+        <DialogContent className="max-w-lg max-h-[60vh] flex flex-col p-0 top-[15vh] translate-y-0">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border shrink-0">
             <FileText className="size-4 text-accent" />
             <DialogTitle className="text-xs">Quick Task</DialogTitle>
-            <span className="text-[10px] text-muted-foreground ml-1">project task</span>
+            {look && (
+              <ProjectTag
+                name={look.projectName}
+                icon={look.projectIcon}
+                color={look.projectColor}
+                className={`ml-auto text-[10px] font-mono font-bold uppercase tracking-wide ${
+                  // A retarget is the one case where the header disagrees with
+                  // the conversation behind the modal -- ring it so the switch
+                  // is impossible to miss.
+                  q.retargeted ? 'ring-1 ring-current/40 rounded px-1.5 py-0.5' : ''
+                }`}
+              />
+            )}
           </div>
-          {!hasWrapper && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border-b border-amber-500/30 text-amber-400">
-              <AlertTriangle className="size-3.5 shrink-0" />
-              <span className="text-[10px] font-mono">No agent host connected -- task cannot be delivered</span>
-            </div>
-          )}
+          {!q.targetProject && <NoProjectWarning />}
+          <QuickTaskChips chips={q.chips} onRemove={q.onRemoveChip} />
           <div className="p-3 flex-1 min-h-0">
             <InputEditor
-              value={text}
-              onChange={setText}
-              onSubmit={handleSubmit}
-              placeholder="First line = title, rest = body... Shift+Enter for new line"
+              value={q.text}
+              onChange={q.setText}
+              onSubmit={q.submit}
+              placeholder="Title, then body. /project @epic !priority +waits-on &see-also #tag"
               autoFocus
               inline
+              taskTokens={q.taskTokens}
             />
           </div>
-          <div className="flex items-center justify-between px-3 py-2 border-t border-border shrink-0">
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1.5">
-              <Kbd>↵</Kbd> add
-              <span className="text-fg-faint">·</span>
-              <KbdGroup>
-                <Kbd>⇧</Kbd>
-                <Kbd>↵</Kbd>
-              </KbdGroup>{' '}
-              newline
-              <span className="text-fg-faint">·</span>
-              <Kbd>Esc</Kbd> close
-            </span>
-            <Button
-              type="button"
-              variant="accent"
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!text.trim() || !hasWrapper}
-            >
-              Add
-              <Kbd className="border-accent-foreground/25 bg-accent-foreground/15 text-accent-foreground">↵</Kbd>
-            </Button>
-          </div>
+          <Footer onSubmit={q.submit} disabled={!q.text.trim() || !q.targetProject} />
         </DialogContent>
       </Dialog>
     </>
