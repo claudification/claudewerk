@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { planEpic, planTagged } from './epic-ready'
+import { NEEDS_REFINE_TAG, planEpic, planTagged } from './epic-ready'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
@@ -224,5 +224,90 @@ describe('planTagged -- `exclude` narrows the COHORT, never the board', () => {
 
   test('an untagged board says nobody carries the tag', () => {
     expect(tagged([card('a', 'open', { tags: [] })]).idleReason).toContain('no card carries')
+  })
+})
+
+describe('a ROUGH card is not ready -- the `needsRefine` precondition', () => {
+  const rough = (slug: string, status: TaskStatus = 'open', extra: Partial<ProjectTaskMeta> = {}) =>
+    card(slug, status, { epic: 'e1', ...extra, tags: [NEEDS_REFINE_TAG, ...(extra.tags ?? [])] })
+
+  test('it is refused into a NAMED bucket, not silently dropped', () => {
+    const p = plan([EPIC, rough('t1')])
+    expect(p.dispatch).toEqual([])
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('the refusal is countable and says which cards', () => {
+    const p = plan([EPIC, rough('t1'), rough('t2')])
+    expect(p.needsRefine.length).toBe(2)
+    expect(p.idleReason).toContain(NEEDS_REFINE_TAG)
+    expect(p.idleReason).toContain('t1, t2')
+  })
+
+  test('a clean sibling still dispatches -- one rough card does not stall the epic', () => {
+    const p = plan([EPIC, rough('t1'), card('t2', 'open', { epic: 'e1' })])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t2'])
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['t1'])
+    expect(p.idleReason).toBeUndefined()
+  })
+
+  /**
+   * THE POINT OF A PRECONDITION OVER AN ORDERING. The refiner may run before,
+   * after, concurrently or never; drop the tag and the card is ready on the very
+   * next fold, with nothing having had to run in sequence.
+   */
+  test('draining the tag makes the card ready, with no ordering required', () => {
+    const before = plan([EPIC, rough('t1')])
+    const after = plan([EPIC, card('t1', 'open', { epic: 'e1' })])
+    expect(before.dispatch).toEqual([])
+    expect(after.dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(after.needsRefine).toEqual([])
+  })
+
+  test('roughness beats a dependency stall -- the reason reported is the actionable one', () => {
+    const p = plan([EPIC, rough('t1', 'open', { dependsOn: ['nope'] })])
+    expect(p.waitingOnDeps).toEqual([])
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  /**
+   * WITHHELD FROM `dispatch`, NOT FROM `verify`. `REFINER@1` is denied the status
+   * verb, so a rough card blocked from the verify lane would sit in `in-review`
+   * with nothing on the board able to move it.
+   */
+  test('an in-review card still gets its verdict', () => {
+    const p = plan([EPIC, rough('t1', 'in-review')])
+    expect(p.verify.map(c => c.slug)).toEqual(['t1'])
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('a tag left on a finished card is history, not a stall', () => {
+    const p = plan([EPIC, rough('t1', 'done'), rough('t2', 'archived')])
+    expect(p.needsRefine).toEqual([])
+    expect(p.idleReason).not.toContain(NEEDS_REFINE_TAG)
+  })
+
+  test('a question that is also rough is reported ONCE, as a question', () => {
+    const p = plan([EPIC, rough('q1', 'open', { tags: [NEEDS_OVERSEER_TAG] })])
+    expect(p.questions.map(c => c.slug)).toEqual(['q1'])
+    expect(p.needsRefine).toEqual([])
+    expect(p.idleReason).toContain('open question')
+  })
+
+  test('an unspawnable card outranks a rough one -- nothing else here stays broken on its own', () => {
+    const p = planDead([EPIC, rough('t1'), card('t2', 'open', { epic: 'e1' })], ['t2'])
+    expect(p.idleReason).toContain('seats keep dying')
+  })
+
+  test('the tag selector refuses a rough card too -- the precondition is not epic-only', () => {
+    const p = planTagged({
+      cards: [card('a', 'open', { tags: ['ready', NEEDS_REFINE_TAG] }), card('b', 'open', { tags: ['ready'] })],
+      tag: 'ready',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+    })
+    expect(p.dispatch.map(c => c.slug)).toEqual(['b'])
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['a'])
   })
 })

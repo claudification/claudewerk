@@ -1,0 +1,371 @@
+import { beforeEach, describe, expect, test } from 'bun:test'
+import { SYSTEM_TAGS } from '../../shared/board-system-tags'
+import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
+import type { ProjectTaskMeta } from '../../shared/project-task-types'
+import type { Conversation } from '../../shared/protocol'
+import { REFINER, REFINER_ORDER_ID } from '../../shared/refiner-order'
+import type { SpawnRequest } from '../../shared/spawn-schema'
+import type { TaskStatus } from '../../shared/task-statuses'
+import { MAX_LAUNCH_ATTEMPTS } from '../epic-sweep'
+import { DEFAULT_REFINE_CONCURRENCY, REFINE_EPIC_ID, type RefineDeps, refineScanner } from './refine-scanner'
+import { runScan } from './scanner'
+
+/**
+ * NO BROKER, NO SENTINEL, NO CC PROCESS. Everything below is the scanner, the
+ * shared folds it reuses and a plain object -- the contract's own stated
+ * property, and the reason the epic sweep is the one engine that is tested.
+ */
+
+let seq = 0
+function card(slug: string, status: TaskStatus = 'open', extra: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
+  seq += 1
+  return {
+    slug,
+    status,
+    title: slug,
+    tags: [NEEDS_REFINE_TAG],
+    refs: [],
+    created: '2026-08-21T10:00:00Z',
+    mtime: seq,
+    bodyPreview: '',
+    ...extra,
+  }
+}
+
+/** A refiner seat in the registry, as `groupEpicConversations` sees it. */
+function seat(cardId: string, over: Partial<Conversation> = {}, epicId = REFINE_EPIC_ID): Conversation {
+  seq += 1
+  return {
+    id: `conv_${epicId}_${cardId}_${seq}`,
+    project: 'claude://s/p',
+    status: 'ended',
+    launchConfig: { epic: { epicId, role: 'implementer', gen: 0, cardId } },
+    ...over,
+  } as unknown as Conversation
+}
+
+let log: string[]
+let dispatched: Array<{ request: SpawnRequest; cardId: string }>
+
+function deps(over: Partial<RefineDeps> = {}): RefineDeps {
+  return {
+    getAllConversations: () => [],
+    isLive: () => false,
+    log: line => log.push(line),
+    now: () => 0,
+    getCards: async () => [],
+    producedOutput: () => true,
+    concurrency: 3,
+    project: 'claude://s/p',
+    projectRoot: '/p',
+    dispatch: async (request, cardId) => {
+      dispatched.push({ request, cardId })
+      return true
+    },
+    ...over,
+  }
+}
+
+/** Every unit refused, by bucket -- the shape a pane would render. */
+function buckets(refused: readonly { unit: string; bucket: string }[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const r of refused) {
+    const list = out[r.bucket] ?? []
+    list.push(r.unit)
+    out[r.bucket] = list
+  }
+  return out
+}
+
+/** The deny rules that reached the seat's settings fragment. */
+function denyRules(request: SpawnRequest): string[] {
+  const permissions = (request.settingsInline ?? {}).permissions as { deny?: string[] } | undefined
+  return permissions?.deny ?? []
+}
+
+beforeEach(() => {
+  log = []
+  dispatched = []
+})
+
+describe('the tag it drains', () => {
+  test('`needs-refine` is still what the system-tag registry calls it', () => {
+    expect(SYSTEM_TAGS.map(t => t.tag)).toContain(NEEDS_REFINE_TAG)
+  })
+
+  test('only tagged cards are selected -- an untagged card is not even a refusal', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a'), card('b', 'open', { tags: [] })] }),
+    )
+    expect(report.selected).toEqual(['a'])
+    expect(report.acted).toEqual(['a'])
+  })
+})
+
+describe('the seat it dispatches is REFINER@1, not a second definition of one', () => {
+  test('a rough card gets a refiner carrying the order caps', async () => {
+    const report = await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
+
+    expect(report.acted).toEqual(['a'])
+    expect(report.unaccounted).toEqual([])
+    const request = dispatched[0]?.request as SpawnRequest
+    expect(request.model).toBe(REFINER.order.caps.model)
+    expect(request.effort).toBe(REFINER.order.caps.effort)
+    expect(request.maxBudgetUsd).toBe(REFINER.order.caps.maxBudgetUsd)
+    expect(request.adHoc).toBe(true)
+    expect(request.headless).toBe(true)
+  })
+
+  /**
+   * THE ONE GUARANTEE THAT MATTERS. `flipsStatus: false` in `TASK_MODES` is a
+   * flag a prompt builder may or may not honour; the order's deny rule is the
+   * same rule enforced by the harness. A refiner that moved a card to in-review
+   * would be lying on the board about work that never happened.
+   */
+  test("the order's deny on the status verb reaches the seat", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
+    expect(denyRules(dispatched[0]?.request as SpawnRequest)).toContain('mcp__rclaude__project_set_status')
+  })
+
+  test("the unattended deny FLOOR rides along with the order's own rules", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
+    const deny = denyRules(dispatched[0]?.request as SpawnRequest)
+    expect(deny.some(rule => rule.includes('push'))).toBe(true)
+    expect(deny).toContain('mcp__rclaude__project_set_status')
+  })
+
+  test("the project's own deny rules are kept, not replaced by the order's", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a')], permissions: { deny: ['Bash(rm:*)'] } }))
+    const deny = denyRules(dispatched[0]?.request as SpawnRequest)
+    expect(deny).toContain('Bash(rm:*)')
+    expect(deny).toContain('mcp__rclaude__project_set_status')
+  })
+
+  /** The tag removal is step 6 of `REFINER_INSTRUCTIONS`, imported rather than
+   *  restated -- the drain is the whole point and a second copy of the prose is
+   *  the drift this epic exists to end. */
+  test('the prompt orders the tag removed, and names the card file', async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('rough-card')] }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
+    expect(prompt).toContain(NEEDS_REFINE_TAG)
+    expect(prompt).toContain('REMOVE')
+  })
+
+  test("a seat is tagged with the RESERVED lane, never with the card's own epic", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { epic: 'epic-x' })] }))
+    expect(dispatched[0]?.request.epic?.epicId).toBe(REFINE_EPIC_ID)
+    expect(dispatched[0]?.request.epic?.cardId).toBe('a')
+  })
+
+  test("the ceiling is the order's reservation, not a number picked here", () => {
+    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER.reservation)
+  })
+
+  test('a re-tagged card dispatches under the next attempt number, so the name is new', async () => {
+    // A settled seat normally refuses the card (`already-run`); one that produced
+    // nothing does not settle it, so this is the retry path in the shared fold.
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a')], getAllConversations: () => [seat('a')], producedOutput: () => false }),
+    )
+    expect(report.acted).toEqual(['a'])
+    expect(dispatched[0]?.request.epic?.gen).toBe(1)
+    expect(dispatched[0]?.request.name).toContain('g1')
+  })
+})
+
+describe('what it refuses, and by what name', () => {
+  test('a card with a live refiner is skipped', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a')], getAllConversations: () => [seat('a')], isLive: () => true }),
+    )
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)).toEqual({ 'live-conversation': ['a'] })
+  })
+
+  /**
+   * THE DRAIN'S OWN BOUND. The tag IS the queue, so a refiner that finished
+   * without removing it would otherwise be re-dispatched on every tick forever
+   * -- the exact "spawn per card without a ceiling" the card forbids.
+   */
+  test('a card whose refiner already ran is NOT dispatched again', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a')], getAllConversations: () => [seat('a')] }),
+    )
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)['already-run']).toEqual(['a'])
+    expect(report.idleReason).toContain('re-tag')
+  })
+
+  test('a card someone is already building is not rewritten under them', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('busy', 'in-progress'), card('judging', 'in-review')] }),
+    )
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)['not-actionable']?.sort()).toEqual(['busy', 'judging'])
+  })
+
+  test('a tag left on a finished card is history, not a queue entry', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('done', 'done'), card('gone', 'archived')] }),
+    )
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)['not-actionable']?.sort()).toEqual(['done', 'gone'])
+    expect(report.unaccounted).toEqual([])
+  })
+
+  test('a card whose refiners keep dying is not retried forever', async () => {
+    const dead = Array.from({ length: MAX_LAUNCH_ATTEMPTS }, () => seat('a'))
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a')], getAllConversations: () => dead, producedOutput: () => false }),
+    )
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)['unspawnable']).toEqual(['a'])
+  })
+
+  test('a backlog does not consume every seat -- the surplus is held, not truncated', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        concurrency: DEFAULT_REFINE_CONCURRENCY,
+        getCards: async () => Array.from({ length: 40 }, (_, i) => card(`c${i}`)),
+      }),
+    )
+    expect(report.acted.length).toBe(DEFAULT_REFINE_CONCURRENCY)
+    expect(buckets(report.refused)['held-back']?.length).toBe(40 - DEFAULT_REFINE_CONCURRENCY)
+    expect(report.unaccounted).toEqual([])
+  })
+
+  test('a live refiner eats a slot, so the ceiling counts what is running too', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        concurrency: 2,
+        getCards: async () => [card('live'), card('a'), card('b')],
+        getAllConversations: () => [seat('live')],
+        isLive: () => true,
+      }),
+    )
+    expect(report.acted).toEqual(['a'])
+    expect(buckets(report.refused)).toEqual({ 'live-conversation': ['live'], 'held-back': ['b'] })
+  })
+
+  test('an unfinished dependency does NOT hold a rough card back -- refining is not implementing', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('dep', 'open', { tags: [] }), card('a', 'open', { dependsOn: ['dep'] })] }),
+    )
+    expect(report.acted).toEqual(['a'])
+  })
+
+  test('a refused spawn is a refusal, not an action', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({ getCards: async () => [card('a')], dispatch: async () => false }),
+    )
+    expect(report.acted).toEqual([])
+    expect(buckets(report.refused)['dispatch-failed']).toEqual(['a'])
+  })
+
+  test('a dispatch that THROWS takes only its own card down', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        getCards: async () => [card('a'), card('b')],
+        dispatch: async (request, cardId) => {
+          if (cardId === 'a') throw new Error('sentinel is down')
+          dispatched.push({ request, cardId })
+          return true
+        },
+      }),
+    )
+    expect(report.acted).toEqual(['b'])
+    expect(buckets(report.refused)['dispatch-failed']).toEqual(['a'])
+    expect(log.join('\n')).toContain('[refine] dispatch threw for a: sentinel is down')
+  })
+
+  /**
+   * A settings fragment the order's deny rules CANNOT be unioned into must not
+   * produce a refiner that quietly regained the status verb -- the one outcome
+   * worse than not dispatching at all.
+   *
+   * Reachable because per-project permissions are JSON off disk: a hand-edited
+   * `deny` list carrying a number is exactly the shape that gets here.
+   */
+  test('a fragment the order cannot be applied to refuses the card, naming the order', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        getCards: async () => [card('a')],
+        permissions: { deny: [7 as unknown as string] },
+        dispatch: async () => {
+          throw new Error('a seat must not be dispatched when its order could not be applied')
+        },
+      }),
+    )
+    expect(report.acted).toEqual([])
+    expect(dispatched).toEqual([])
+    expect(buckets(report.refused)['order-refused']).toEqual(['a'])
+    expect(report.refused[0]?.detail).toContain(REFINER_ORDER_ID)
+  })
+})
+
+describe('the accounting -- no rough card is ever dropped', () => {
+  test('every selected card is acted on or refused, across every bucket at once', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        concurrency: 1,
+        getCards: async () => [
+          card('go'),
+          card('surplus'),
+          card('busy', 'in-progress'),
+          card('finished', 'done'),
+          card('ran'),
+        ],
+        getAllConversations: () => [seat('ran')],
+      }),
+    )
+    expect(report.selected.length).toBe(5)
+    expect(report.unaccounted).toEqual([])
+    expect(log).toEqual([])
+    expect(buckets(report.refused)).toEqual({
+      'not-actionable': ['busy', 'finished'],
+      'already-run': ['ran'],
+      'held-back': ['surplus'],
+    })
+    expect(report.acted).toEqual(['go'])
+  })
+
+  test('an empty board is idle with a reason, not silent', async () => {
+    const report = await runScan(refineScanner, deps())
+    expect(report.selected).toEqual([])
+    expect(report.idleReason).toContain(NEEDS_REFINE_TAG)
+  })
+
+  test('a pass that dispatched something reports no idle reason', async () => {
+    const report = await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
+    expect(report.idleReason).toBeUndefined()
+  })
+
+  test('a board read that throws is swallowed and reported, not fatal', async () => {
+    const report = await runScan(
+      refineScanner,
+      deps({
+        getCards: async () => {
+          throw new Error('sentinel unreachable')
+        },
+      }),
+    )
+    expect(report.crashed).toBe('sentinel unreachable')
+    expect(report.scanner).toBe('refine')
+    expect(log.join('\n')).toContain('[refine] scan crashed')
+  })
+})
