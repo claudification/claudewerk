@@ -37,6 +37,8 @@ function promise(id: string, verdict: Row['verdict'], over: Partial<Row> = {}): 
     conversation: null,
     session: null,
     asked: null,
+    preLedger: false,
+    inferred: false,
     closes: [],
     commits: [],
     verdict,

@@ -18,7 +18,7 @@
  * be the one leaking.
  */
 
-import type { PromiseRow } from '@shared/promise-ledger'
+import { isBrokenPromise, isInferred, type PromiseRow } from '@shared/promise-ledger'
 import { usePromiseLedger } from '@/hooks/use-promise-ledger'
 import { brokenReason, verdictFace, verdictTally } from '@/lib/promise-verdict'
 import { haptic } from '@/lib/utils'
@@ -31,6 +31,7 @@ const TONE_TEXT: Record<string, string> = {
   broken: 'text-destructive',
   unknown: 'text-info',
   unclaimed: 'text-fg-muted',
+  historic: 'text-fg-dim',
 }
 
 export function ProjectPromisesSection({ projectUri }: { projectUri: string }) {
@@ -47,7 +48,7 @@ export function ProjectPromisesSection({ projectUri }: { projectUri: string }) {
     return refused === null ? null : <p className="text-[10px] text-fg-dim px-1">promise ledger: {refused}</p>
   }
 
-  const broken = ledger.rows.filter(row => isFiled(row.status) && row.verdict !== 'delivered')
+  const broken = ledger.rows.filter(isBrokenPromise)
   const promised = ledger.rows.filter(row => row.closes.length > 0)
   if (broken.length === 0 && promised.length === 0) return null
 
@@ -110,6 +111,7 @@ function BrokenRow({ row }: { row: PromiseRow }) {
  */
 function TallyLine({ rows, resolverBase }: { rows: PromiseRow[]; resolverBase: string | null }) {
   const tally = verdictTally(rows.map(row => row.verdict))
+  const inferred = rows.filter(isInferred).length
   if (tally.length === 0) return null
 
   return (
@@ -123,15 +125,19 @@ function TallyLine({ rows, resolverBase }: { rows: PromiseRow[]; resolverBase: s
           </span>
         )
       })}
+      {/* SAID OUT LOUD, next to the count it qualifies. A `delivered` row whose
+          sha a script reconstructed is still delivered -- the commit is real and
+          it is on main -- but a reader who assumes somebody PROMISED it is
+          reading more into the number than it says. */}
+      {inferred > 0 && (
+        <span className="text-[10px] font-mono text-fg-dim">
+          <span aria-hidden="true">~ </span>
+          {inferred} reconstructed by backfill, not promised
+        </span>
+      )}
       {resolverBase === null && (
         <span className="text-[10px] text-info">no main branch here -- nothing could be checked against it</span>
       )}
     </div>
   )
-}
-
-/** DONE or ARCHIVED. Matches `closedWithoutCommit`; one line, so this page never
- *  grows a second opinion about what "filed as finished" means. */
-function isFiled(status: string): boolean {
-  return status === 'done' || status === 'archived'
 }

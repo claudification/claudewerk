@@ -34,7 +34,7 @@ import {
   closedWithoutCommit,
   type PromiseRow,
   parsePromiseBlock,
-  verdictFor,
+  rowVerdict,
 } from './promise-ledger'
 import { TASK_STATUSES, type TaskStatus } from './task-statuses'
 
@@ -92,7 +92,17 @@ function rowFor(card: PromiseCard, resolve: CommitResolver): PromiseRow | null {
   // earns it a row.
   if (promise === null && !(status !== null && FILED.has(status))) return null
 
-  const block = promise ?? { agreed: null, conversation: null, session: null, asked: null, closes: [] }
+  const block = promise ?? {
+    agreed: null,
+    conversation: null,
+    session: null,
+    asked: null,
+    closes: [],
+    // A card with NO block gets no amnesty. The marker is a thing somebody wrote
+    // on a card, so its absence is an answer and never a default to be kind with.
+    preLedger: false,
+    inferred: false,
+  }
   const commits = block.closes.map(resolve)
   return {
     id: card.id,
@@ -100,7 +110,7 @@ function rowFor(card: PromiseCard, resolve: CommitResolver): PromiseRow | null {
     title: String(meta.title || card.id),
     ...block,
     commits,
-    verdict: verdictFor(commits),
+    verdict: rowVerdict(block, commits),
   }
 }
 
@@ -119,6 +129,9 @@ const VERDICT_ORDER: Record<PromiseRow['verdict'], number> = {
   unverifiable: 2,
   'not-started': 3,
   delivered: 4,
+  // Below `delivered` on purpose. A delivered row at least names the commit that
+  // delivered it; an amnestied one is the bottom of the ledger by construction.
+  'pre-ledger': 5,
 }
 
 export function promiseLedgerRows(

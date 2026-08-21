@@ -41,6 +41,9 @@ export type VerdictTone =
   | 'unknown'
   /** Nobody claimed anything. Benign on an open card; damning on a filed one. */
   | 'unclaimed'
+  /** Filed before the ledger existed. Recedes furthest -- it is the one state
+   *  that is genuinely not news, and there are hundreds of them. */
+  | 'historic'
 
 export interface VerdictFace {
   tone: VerdictTone
@@ -67,6 +70,10 @@ const FACES: Record<PromiseVerdict, VerdictFace> = {
   // point of this state is that nobody answered one.
   unverifiable: { tone: 'unknown', glyph: '?', short: 'could not verify', long: 'could not verify' },
   'not-started': { tone: 'unclaimed', glyph: '·', short: 'not started', long: 'not started' },
+  // `~` and not `·`: it has to be distinguishable from `not started` at a glance,
+  // because the two differ by exactly the thing a reader needs -- whether this
+  // card is being accused or excused.
+  'pre-ledger': { tone: 'historic', glyph: '~', short: 'pre-ledger', long: 'filed before the ledger existed' },
 }
 
 export function verdictFace(verdict: PromiseVerdict): VerdictFace {
@@ -86,12 +93,22 @@ export function brokenReason(verdict: PromiseVerdict): string {
   if (verdict === 'not-started') return 'nothing behind it -- no commit was ever named'
   if (verdict === 'commit-missing') return 'names a commit that does not exist'
   if (verdict === 'not-on-main') return 'the commit it names is NOT on main'
+  // Never reached from the loud table -- `isBrokenPromise` excludes it -- but a
+  // reason function that throws away a case is one that lies the day it is.
+  if (verdict === 'pre-ledger') return 'filed before the ledger existed -- no promise was possible'
   return 'could not verify -- the commit it names was never checked'
 }
 
 /** The ledger's own summary line: how many of each, worst first, zeroes dropped. */
 export function verdictTally(verdicts: readonly PromiseVerdict[]): { verdict: PromiseVerdict; count: number }[] {
-  const order: PromiseVerdict[] = ['commit-missing', 'not-on-main', 'unverifiable', 'not-started', 'delivered']
+  const order: PromiseVerdict[] = [
+    'commit-missing',
+    'not-on-main',
+    'unverifiable',
+    'not-started',
+    'delivered',
+    'pre-ledger',
+  ]
   return order
     .map(verdict => ({ verdict, count: verdicts.filter(v => v === verdict).length }))
     .filter(entry => entry.count > 0)
