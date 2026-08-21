@@ -71,6 +71,39 @@ export function isEpicCard(card: ProjectTaskMeta, childCount = 0): boolean {
   return childCount > 0 || card.tags.includes(EPIC_TAG)
 }
 
+/**
+ * ONE CARD, PROJECTED INTO THE READINESS FOLD'S UNIT.
+ *
+ * Extracted from `buildEpicIndex` because the epic index is no longer the only
+ * way a cohort of cards is chosen: `epic-ready.ts` now also selects by TAG, for
+ * the work-order scanner, and that selector needs the identical `waitingOn`
+ * rule. Two copies of "which of my `depends_on` are not done yet" is precisely
+ * the drift the scanner fabric exists to end -- a tag-selected card would
+ * quietly answer the readiness question differently from an epic-selected one.
+ *
+ * `doneIds` is passed in rather than derived so one pass over the board serves
+ * every card in it.
+ */
+export function toEpicChild(card: ProjectTaskMeta, doneIds: ReadonlySet<string>): EpicChild {
+  return {
+    card,
+    bucket: epicBucket(card.status),
+    waitingOn: (card.dependsOn ?? []).filter(id => !doneIds.has(id)),
+  }
+}
+
+/** Ids of every card the board considers finished -- the input `toEpicChild`
+ *  measures `depends_on` against. */
+export function doneCardIds(cards: readonly ProjectTaskMeta[]): Set<string> {
+  return new Set(cards.filter(c => c.status === 'done').map(c => c.slug))
+}
+
+/** Every member terminal, and there was at least one. Shared with the tag
+ *  selector so "complete" means one thing whichever way a cohort was chosen. */
+export function childrenComplete(children: readonly EpicChild[]): boolean {
+  return children.length > 0 && children.every(c => c.bucket === 'done' || c.bucket === 'dropped')
+}
+
 function countBucket(children: EpicChild[], bucket: EpicBucket): number {
   return children.filter(c => c.bucket === bucket).length
 }
@@ -91,7 +124,7 @@ function rollUp(epicId: string, card: ProjectTaskMeta | null, children: EpicChil
     dropped,
     total,
     pct: total > 0 ? Math.round((done / total) * 100) : null,
-    complete: children.length > 0 && notStarted === 0 && inProgress === 0,
+    complete: childrenComplete(children),
   }
 }
 
@@ -104,16 +137,15 @@ function rollUp(epicId: string, card: ProjectTaskMeta | null, children: EpicChil
  */
 export function buildEpicIndex(cards: readonly ProjectTaskMeta[]): Map<string, EpicRollup> {
   const byId = new Map(cards.map(c => [c.slug, c]))
-  const doneIds = new Set(cards.filter(c => c.status === 'done').map(c => c.slug))
+  const doneIds = doneCardIds(cards)
   const childrenByEpic = new Map<string, EpicChild[]>()
 
   for (const card of cards) {
     if (!card.epic) continue
-    const waitingOn = (card.dependsOn ?? []).filter(id => !doneIds.has(id))
-    const bucket = epicBucket(card.status)
+    const child = toEpicChild(card, doneIds)
     const list = childrenByEpic.get(card.epic)
-    if (list) list.push({ card, bucket, waitingOn })
-    else childrenByEpic.set(card.epic, [{ card, bucket, waitingOn }])
+    if (list) list.push(child)
+    else childrenByEpic.set(card.epic, [child])
   }
 
   const index = new Map<string, EpicRollup>()
