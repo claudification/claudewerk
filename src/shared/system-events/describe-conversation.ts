@@ -85,6 +85,15 @@ export const CONVERSATION_DESCRIBERS: Record<string, Describer> = {
     return content ? { text: content, severity: 'muted' } : null
   },
   info: entry => ({ text: str(entry.content), severity: INFO_SEVERITY[str(entry.level)] ?? 'info' }),
+  // A refused control verb is a FAILED state change the user asked for by hand.
+  // It reads at error severity because the alternative -- what shipped before --
+  // was absolute silence, indistinguishable from the command never being sent.
+  'control-failed': entry => {
+    const content = str(entry.content).trim()
+    if (content) return { text: clamp(content, 240), severity: 'error' }
+    const verb = str(entry.verb) || 'control request'
+    return { text: `${verb} was refused`, severity: 'error' }
+  },
   notification,
   compacted: () => ({ text: 'Context compacted', severity: 'notice' }),
   'conversation-state': entry => ({ text: `Conversation: ${str(entry.state)}`, severity: 'muted' }),

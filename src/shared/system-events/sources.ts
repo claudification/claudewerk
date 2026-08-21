@@ -41,6 +41,10 @@ const CC_SYSTEM: Record<string, string> = {
   local_command: 'command-input',
   local_command_output: 'command-output',
   informational: 'info',
+  // rclaude-synthesized: a control verb (set_permission_mode, set_model,
+  // interrupt, stop_task, ...) that Claude Code REFUSED or never answered. The
+  // reason CC gave is the whole point of the line -- it used to be discarded.
+  control_failed: 'control-failed',
   notification: 'notification',
   compact_boundary: 'compacted',
   session_state_changed: 'conversation-state',

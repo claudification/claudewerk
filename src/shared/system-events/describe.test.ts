@@ -251,6 +251,24 @@ describe('task-updated', () => {
   })
 })
 
+describe('control-failed', () => {
+  it('draws a refused control verb at error severity, reason and all', () => {
+    const line = sys('control_failed', {
+      content:
+        'Set permission mode (bypassPermissions) was refused: Cannot set permission mode to bypassPermissions because the session was not launched with --dangerously-skip-permissions',
+      verb: 'set_permission_mode',
+    })
+    expect(line.severity).toBe('error')
+    expect(line.text).toContain('--dangerously-skip-permissions')
+  })
+
+  it('still names the verb when the entry arrives with no prose', () => {
+    const line = sys('control_failed', { verb: 'stop_task' })
+    expect(line.text).toBe('stop_task was refused')
+    expect(line.severity).toBe('error')
+  })
+})
+
 describe('severity from the backend own level', () => {
   it('colors a warning differently from an info', () => {
     expect(sys('informational', { content: 'careful', level: 'warning' }).severity).toBe('warn')

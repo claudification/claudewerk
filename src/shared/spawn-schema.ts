@@ -168,7 +168,27 @@ export const spawnRequestSchema = z.object({
     .optional()
     .describe('Model override. Omit to use project/global default. Only set when a specific model is requested.'),
   effort: effortEnum.optional().describe('Thinking effort budget'),
-  permissionMode: permissionModeEnum.optional().describe('CC permission prompting mode'),
+  // The full trap, at the point of decision. An agent choosing this value reads
+  // ONLY this string (mcp-tools/spawn.ts runs z.toJSONSchema over the schema),
+  // and the nine words it used to say cost a worker its whole run: spawned into
+  // `dontAsk` with no allowlist, it could not Write, could not run a shell, could
+  // not even call set_status to report being blocked, and burned $2.34 producing
+  // an analysis it had no way to act on, file, or hand off.
+  permissionMode: permissionModeEnum
+    .optional()
+    .describe(
+      'CC permission prompting mode. READ BEFORE CHOOSING -- two of these are traps:\n' +
+        '- "dontAsk" DENIES every tool that is not on `permissions.allow`. It does NOT mean ' +
+        '"unattended, do not interrupt the human". With no allowlist the worker can do NOTHING: ' +
+        'no Write, no Bash, not even set_status to report that it is blocked. If you pick it, you MUST ' +
+        'supply an allowlist via `settingsInline` (e.g. `{permissions: {allow: [...]}}`); ' +
+        'src/shared/unattended-permissions.ts DEFAULT_ALLOW is the sane starting set.\n' +
+        '- "bypassPermissions" can ONLY be chosen HERE, at spawn. CC refuses to enter it at runtime ' +
+        '(set_permission_mode errors with "the session was not launched with --dangerously-skip-permissions"), ' +
+        'so a session born in any other mode can never be lifted into it -- the only remedy is a respawn.\n' +
+        'Runtime-reachable later via set_permission_mode: plan, acceptEdits, default, and auto (model-gated). ' +
+        'For an unattended worker that should just work, "auto" is the low-risk pick.',
+    ),
   autocompactPct: z.number().min(0).max(100).optional().describe('Auto-compact threshold (%)'),
   maxBudgetUsd: z
     .number()

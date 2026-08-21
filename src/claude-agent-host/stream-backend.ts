@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type { Subprocess } from 'bun'
 import type { TranscriptEntry } from '../shared/protocol'
 import { ensureSecureDir, writeSecureFileSync } from '../shared/secure-temp'
+import { buildControlFailedEntry, controlDiagLine, type PendingControl } from './control-response'
 import { debug as _debug } from './debug'
 import { type HandlerContext, handleMessage } from './stream-handlers'
 import { createMonitorTracker } from './stream-monitors'
@@ -119,6 +120,10 @@ export interface StreamBackendOptions {
    *  (see TURN_SUMMARY_ENV in ./turn-summary). */
   onTurnSummary?: (summary: ParsedTurnSummary) => void
   onJsonStreamLine?: (line: string) => void
+  /** Host-level diagnostic sink (`ctx.diag`). The stream layer owns facts the
+   *  host never sees -- control-response outcomes above all -- and LOG
+   *  EVERYTHING means they reach the same NDJSON as the rest of the lifecycle. */
+  onDiag?: (type: string, msg: string) => void
   onExit?: (code: number | null) => void
 }
 
@@ -165,6 +170,10 @@ export interface ControlRequestResult {
   timedOut?: boolean
 }
 
+/** In-flight awaited control_requests: the verb (so the outcome can be diag'd
+ *  with detail) plus the promise resolver, keyed by request_id. */
+type ControlResolvers = Map<string, { subtype: string; resolve: (r: ControlRequestResult) => void }>
+
 export interface StreamProcess {
   proc: Subprocess
   sendUserMessage: (text: string) => void
@@ -201,7 +210,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
   // Resolvers for generic debug control_requests, keyed by request_id.
   // Separate from pendingControlRequests (which drives set_model/perm-mode
   // transcript notices); this one returns the full response to the caller.
-  const controlRequestResolvers = new Map<string, (r: ControlRequestResult) => void>()
+  const controlRequestResolvers: ControlResolvers = new Map()
 
   const hctx: HandlerContext = {
     monitors: createMonitorTracker(),
@@ -228,6 +237,7 @@ export function spawnStreamClaude(options: StreamBackendOptions): StreamProcess 
       onThinkingProgress: options.onThinkingProgress,
       onCommandsChanged: options.onCommandsChanged,
       onTurnSummary: options.onTurnSummary,
+      onDiag: options.onDiag,
     },
   }
 
@@ -395,12 +405,40 @@ function nextRequestId(prefix: string): string {
   return `${prefix}-${++controlSeq}`
 }
 
+/** How long a set_model / set_permission_mode may go unanswered before the host
+ *  declares it lost. Generous -- CC answers these in milliseconds when it is
+ *  alive, so anything past this is a hang, not slowness. */
+const CONTROL_RESPONSE_TIMEOUT_MS = 15_000
+
+/**
+ * Arm the no-response watchdog for a control_request whose answer drives a
+ * transcript notice. A request CC never answers used to sit in the pending map
+ * forever and the user saw nothing -- the same silence as a refusal, one layer
+ * further out. The handler deletes the pending entry when the response lands, so
+ * a fired timer with nothing to delete is the definition of "no answer came".
+ */
+function armControlTimeout(
+  id: string,
+  pending: PendingControl,
+  pendingControlRequests: Map<string, PendingControl>,
+  options: StreamBackendOptions,
+) {
+  const timer = setTimeout(() => {
+    if (!pendingControlRequests.delete(id)) return
+    const reason = `no response from Claude Code after ${CONTROL_RESPONSE_TIMEOUT_MS / 1000}s`
+    options.onDiag?.('conversation', `${controlDiagLine(id, pending, 'timeout')}: ${reason}`)
+    debug(`control_request ${id} (${pending.subtype}) timed out`)
+    options.onTranscriptEntries?.([buildControlFailedEntry(pending, reason) as TranscriptEntry], false)
+  }, CONTROL_RESPONSE_TIMEOUT_MS)
+  timer.unref?.()
+}
+
 function buildStreamProcess(
   proc: Subprocess<'pipe', 'pipe', 'pipe'>,
   writeStdin: (json: Record<string, unknown>) => void,
   options: StreamBackendOptions,
   pendingControlRequests: Map<string, { subtype: string; detail?: string }>,
-  controlRequestResolvers: Map<string, (r: ControlRequestResult) => void>,
+  controlRequestResolvers: ControlResolvers,
 ): StreamProcess {
   return {
     proc,
@@ -464,7 +502,9 @@ function buildStreamProcess(
     sendSetModel(model: string) {
       debug(`Setting model: ${model}`)
       const id = nextRequestId('mdl')
-      pendingControlRequests.set(id, { subtype: 'set_model', detail: model })
+      const pending: PendingControl = { subtype: 'set_model', detail: model }
+      pendingControlRequests.set(id, pending)
+      armControlTimeout(id, pending, pendingControlRequests, options)
       writeStdin({
         type: 'control_request',
         request_id: id,
@@ -475,7 +515,9 @@ function buildStreamProcess(
     sendSetPermissionMode(mode: string) {
       debug(`Setting permission mode: ${mode}`)
       const id = nextRequestId('perm')
-      pendingControlRequests.set(id, { subtype: 'set_permission_mode', detail: mode })
+      const pending: PendingControl = { subtype: 'set_permission_mode', detail: mode }
+      pendingControlRequests.set(id, pending)
+      armControlTimeout(id, pending, pendingControlRequests, options)
       writeStdin({
         type: 'control_request',
         request_id: id,
@@ -500,9 +542,17 @@ function buildStreamProcess(
 
     sendInterrupt() {
       debug('Sending interrupt')
+      // CC answers an interrupt with a real control_response (verified against
+      // 2.1.238: `{subtype: "success", response: {still_queued: []}}`), so this
+      // rides the same confirm/refuse/timeout path as every other verb rather
+      // than being fire-and-hope.
+      const id = nextRequestId('int')
+      const pending: PendingControl = { subtype: 'interrupt' }
+      pendingControlRequests.set(id, pending)
+      armControlTimeout(id, pending, pendingControlRequests, options)
       writeStdin({
         type: 'control_request',
-        request_id: nextRequestId('int'),
+        request_id: id,
         request: { subtype: 'interrupt' },
       })
     },
@@ -518,12 +568,23 @@ function buildStreamProcess(
           resolve(r)
         }
         const timer = setTimeout(
-          () => finish({ ok: false, timedOut: true, error: `control_request ${subtype} timed out` }),
+          () => {
+            // A timeout is the same silence as a refusal, one layer out -- diag
+            // it here so the NDJSON records the verb that never came back.
+            options.onDiag?.(
+              'conversation',
+              `${controlDiagLine(id, { subtype }, 'timeout')}: no response after ${timeoutMs}ms`,
+            )
+            finish({ ok: false, timedOut: true, error: `control_request ${subtype} timed out after ${timeoutMs}ms` })
+          },
           timeoutMs,
         )
-        controlRequestResolvers.set(id, r => {
-          clearTimeout(timer)
-          finish(r)
+        controlRequestResolvers.set(id, {
+          subtype,
+          resolve: r => {
+            clearTimeout(timer)
+            finish(r)
+          },
         })
         debug(`debug control_request: ${subtype} (${id})`)
         writeStdin({ type: 'control_request', request_id: id, request: { subtype, ...payload } })

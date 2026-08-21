@@ -328,6 +328,13 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
       }
     },
 
+    // The stream layer's own diagnostics (control-response outcomes above all)
+    // land in the SAME host diag log as the rest of the lifecycle, so a flap is
+    // reconstructible from one file instead of two.
+    onDiag(type, msg) {
+      ctx.diag(type, msg)
+    },
+
     onJsonStreamLine(line) {
       if (ctx.jsonStreamAttached && ctx.wsClient?.isConnected()) {
         ctx.wsClient.sendJsonStreamData([line], false)

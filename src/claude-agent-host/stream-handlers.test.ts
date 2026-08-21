@@ -328,6 +328,127 @@ describe('stream-handlers subagent containment (Checkpoint A)', () => {
   })
 })
 
+/**
+ * A control verb CC REFUSES is a state change, and the user must see it. The
+ * live failure this locks down: `/mode bypassPermissions` at a session launched
+ * `--permission-mode dontAsk`. CC answered with a perfectly actionable error
+ * string; the host dropped it on the floor and the user saw absolute silence,
+ * indistinguishable from the command never being sent.
+ */
+describe('stream-handlers control_response', () => {
+  const CC_REFUSAL =
+    'Cannot set permission mode to bypassPermissions because the session was not launched with --dangerously-skip-permissions'
+
+  function createControlCtx() {
+    const diags: Array<{ type: string; msg: string }> = []
+    const ctx = createTestContext({ onDiag: (type, msg) => diags.push({ type, msg }) })
+    return { ...ctx, diags }
+  }
+
+  test('an ERROR response surfaces CC verbatim reason as a transcript entry', () => {
+    const { hctx, entries } = createControlCtx()
+    hctx.pendingControlRequests.set('perm-1', { subtype: 'set_permission_mode', detail: 'bypassPermissions' })
+
+    handleMessage(hctx, {
+      type: 'control_response',
+      response: { subtype: 'error', request_id: 'perm-1', error: CC_REFUSAL },
+    })
+
+    expect(entries).toHaveLength(1)
+    const entry = entries[0] as unknown as { type: string; subtype: string; content: string }
+    expect(entry.type).toBe('system')
+    expect(entry.subtype).toBe('control_failed')
+    // The verb, the requested value, and CC's own words -- all three.
+    expect(entry.content).toContain('permission mode')
+    expect(entry.content).toContain('bypassPermissions')
+    expect(entry.content).toContain(CC_REFUSAL)
+  })
+
+  test('an ERROR response is diagnosed with requestId, verb, detail and outcome', () => {
+    const { hctx, diags } = createControlCtx()
+    hctx.pendingControlRequests.set('perm-2', { subtype: 'set_permission_mode', detail: 'bypassPermissions' })
+
+    handleMessage(hctx, {
+      type: 'control_response',
+      response: { subtype: 'error', request_id: 'perm-2', error: CC_REFUSAL },
+    })
+
+    expect(diags).toHaveLength(1)
+    expect(diags[0].msg).toContain('perm-2')
+    expect(diags[0].msg).toContain('set_permission_mode')
+    expect(diags[0].msg).toContain('bypassPermissions')
+    expect(diags[0].msg).toContain('error')
+    expect(diags[0].msg).toContain(CC_REFUSAL)
+  })
+
+  test('a SUCCESS response is diagnosed too -- every control response, always', () => {
+    const { hctx, entries, diags } = createControlCtx()
+    hctx.pendingControlRequests.set('perm-3', { subtype: 'set_permission_mode', detail: 'plan' })
+
+    handleMessage(hctx, {
+      type: 'control_response',
+      response: { subtype: 'success', request_id: 'perm-3' },
+    })
+
+    expect(entries).toHaveLength(1)
+    expect((entries[0] as unknown as { content: string }).content).toBe('Permission mode: plan')
+    expect(diags).toHaveLength(1)
+    expect(diags[0].msg).toContain('perm-3')
+    expect(diags[0].msg).toContain('success')
+  })
+
+  test('a verb with no bespoke text still confirms -- generic fallback, never silence', () => {
+    const { hctx, entries } = createControlCtx()
+    hctx.pendingControlRequests.set('int-1', { subtype: 'interrupt' })
+
+    handleMessage(hctx, { type: 'control_response', response: { subtype: 'success', request_id: 'int-1' } })
+
+    expect(entries).toHaveLength(1)
+    expect((entries[0] as unknown as { content: string }).content.length).toBeGreaterThan(0)
+  })
+
+  test('an error with no `error` field still surfaces the refusal', () => {
+    const { hctx, entries } = createControlCtx()
+    hctx.pendingControlRequests.set('mdl-1', { subtype: 'set_model', detail: 'opus' })
+
+    handleMessage(hctx, { type: 'control_response', response: { subtype: 'error', request_id: 'mdl-1' } })
+
+    expect(entries).toHaveLength(1)
+    const content = (entries[0] as unknown as { content: string }).content
+    expect(content).toContain('model')
+    expect(content).toContain('opus')
+  })
+
+  test('an AWAITED response is diagnosed with its verb and left to the caller to report', () => {
+    const { hctx, entries, diags } = createControlCtx()
+    const results: Array<{ ok: boolean; error?: string }> = []
+    hctx.controlRequestResolvers = new Map([['dbg-1', { subtype: 'stop_task', resolve: r => results.push(r) }]])
+
+    handleMessage(hctx, {
+      type: 'control_response',
+      response: { subtype: 'error', request_id: 'dbg-1', error: 'no such task' },
+    })
+
+    // The caller owns the user-facing line here (reportControlFailure), but the
+    // outcome still gets its diag -- EVERY control response, whatever the route.
+    expect(results).toEqual([{ ok: false, subtype: 'error', response: undefined, error: 'no such task' }])
+    expect(entries).toHaveLength(0)
+    expect(diags).toHaveLength(1)
+    expect(diags[0].msg).toContain('stop_task')
+    expect(diags[0].msg).toContain('no such task')
+  })
+
+  test('an unmatched response is diagnosed but emits nothing', () => {
+    const { hctx, entries, diags } = createControlCtx()
+
+    handleMessage(hctx, { type: 'control_response', response: { subtype: 'error', request_id: 'ghost-1', error: 'x' } })
+
+    expect(entries).toHaveLength(0)
+    expect(diags).toHaveLength(1)
+    expect(diags[0].msg).toContain('ghost-1')
+  })
+})
+
 describe('stream-handlers thinking_tokens', () => {
   function createThinkingProgressCtx() {
     const progress: Array<{ tokens: number; delta?: number }> = []

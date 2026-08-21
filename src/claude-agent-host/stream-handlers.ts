@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto'
 import type { TranscriptEntry } from '../shared/protocol'
+import { buildControlFailedEntry, buildControlOkEntry, controlDiagLine, type PendingControl } from './control-response'
 import { debug as _debug } from './debug'
 import type {
   ControlRequestResult,
@@ -39,9 +40,11 @@ function resolveAgentScope(hctx: HandlerContext, parentToolUseId: string): strin
 export interface HandlerContext {
   monitors: MonitorTracker
   replay: ReplayBuffer
-  pendingControlRequests: Map<string, { subtype: string; detail?: string }>
-  /** Resolvers for generic debug control_requests (full response back to caller). */
-  controlRequestResolvers?: Map<string, (r: ControlRequestResult) => void>
+  pendingControlRequests: Map<string, PendingControl>
+  /** Resolvers for generic awaited control_requests (full response back to the
+   *  caller). Carries the VERB alongside the resolver so the outcome can be
+   *  diag'd here even though the caller owns the user-facing report. */
+  controlRequestResolvers?: Map<string, { subtype: string; resolve: (r: ControlRequestResult) => void }>
   syntheticUserUuids?: Map<string, string>
   conversationId?: string
   callbacks: Pick<
@@ -63,6 +66,7 @@ export interface HandlerContext {
     | 'onThinkingProgress'
     | 'onCommandsChanged'
     | 'onTurnSummary'
+    | 'onDiag'
   >
 }
 
@@ -685,48 +689,56 @@ function handleControlRequest(hctx: HandlerContext, msg: Record<string, unknown>
   })
 }
 
+/**
+ * LOG EVERYTHING: one diag line per control response, whatever route it takes
+ * and whether or not we still know which verb asked for it. This is the line
+ * whose absence made a refused `/mode bypassPermissions` unreconstructible from
+ * the NDJSON -- it took a hand-written stdin probe against the CC binary to
+ * recover a string we already had in memory.
+ */
+function diagControlResponse(
+  hctx: HandlerContext,
+  requestId: string,
+  pending: PendingControl | undefined,
+  outcome: string,
+  error?: string,
+) {
+  hctx.callbacks.onDiag?.('conversation', `${controlDiagLine(requestId, pending, outcome)}${error ? `: ${error}` : ''}`)
+}
+
 function handleControlResponse(hctx: HandlerContext, msg: Record<string, unknown>) {
   const response = msg.response as Record<string, unknown> | undefined
   if (!response) return
 
   const requestId = (response.request_id as string) || ''
   const subtype = response.subtype as string
+  const ok = subtype === 'success'
+  const error = typeof response.error === 'string' ? response.error : undefined
+  const outcome = ok ? 'success' : subtype || 'error'
   debug(`control_response: ${requestId} subtype=${subtype}`)
 
-  // Generic debug control_request: resolve the caller's promise with the full
-  // response (success OR error) before the set_model/perm-mode notice logic.
+  // Generic (awaited) control_request: resolve the caller's promise with the
+  // full response, success OR error, before the notice logic. The CALLER owns
+  // what the user sees here -- see reportControlFailure in ./execute-control --
+  // but the outcome is diag'd on this route too.
   const resolver = hctx.controlRequestResolvers?.get(requestId)
   if (resolver) {
     hctx.controlRequestResolvers?.delete(requestId)
-    resolver({
-      ok: subtype === 'success',
-      subtype,
-      response: response.response,
-      error: typeof response.error === 'string' ? response.error : undefined,
-    })
+    diagControlResponse(hctx, requestId, { subtype: resolver.subtype }, outcome, error)
+    resolver.resolve({ ok, subtype, response: response.response, error })
     return
   }
 
   const pending = hctx.pendingControlRequests.get(requestId)
   hctx.pendingControlRequests.delete(requestId)
-  if (!pending || subtype !== 'success') return
+  diagControlResponse(hctx, requestId, pending, outcome, error)
 
-  let text: string | null = null
-  if (pending.subtype === 'set_model') {
-    text = pending.detail ? `Model changed to ${pending.detail}` : 'Model changed'
-  } else if (pending.subtype === 'set_permission_mode') {
-    text = pending.detail ? `Permission mode: ${pending.detail}` : 'Permission mode changed'
-  }
-
-  if (!text) return
+  // A response with no pending request is a late or duplicate answer -- diag'd
+  // above, but there is no verb or requested value to write a line about.
+  if (!pending) return
 
   if (!hctx.replay.done) flushReplayBuffer(hctx.replay, hctx.callbacks.onTranscriptEntries)
-  const entry = {
-    type: 'system' as const,
-    subtype: 'informational',
-    timestamp: new Date().toISOString(),
-    content: text,
-  } as TranscriptEntry
+  const entry = (ok ? buildControlOkEntry(pending) : buildControlFailedEntry(pending, error)) as TranscriptEntry
   hctx.callbacks.onTranscriptEntries?.([entry], false)
 }
 

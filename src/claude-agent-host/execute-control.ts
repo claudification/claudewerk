@@ -7,6 +7,7 @@
 
 import { canonicalizeModelSlug } from '../shared/models'
 import type { AgentHostContext } from './agent-host-context'
+import { reportControlFailure } from './control-response'
 import { beginLaunch, emitLaunchEvent } from './launch-events'
 
 type ControlArgs = {
@@ -111,7 +112,7 @@ function executeHeadlessControl(
       // already persisted + broadcast, this is the second writer catching up.
       ctx.diag('conversation', `Set title requested (${source}): ${title}`)
       void ctx.streamProc.sendControlRequest('rename_session', { title }).then(r => {
-        if (!r.ok) ctx.diag('conversation', `rename_session failed: ${r.error ?? 'unknown'}`)
+        if (!r.ok) reportControlFailure(ctx, { subtype: 'rename_session', detail: title }, r.error)
       })
       return true
     }
@@ -123,7 +124,7 @@ function executeHeadlessControl(
       // is the ONE place CC specifics are allowed. Fire-and-forget; the running
       // snapshot the host emits will reflect the task leaving the set.
       void ctx.streamProc.sendControlRequest('stop_task', { task_id: taskId }).then(r => {
-        if (!r.ok) ctx.diag('conversation', `stop_task ${taskId.slice(0, 8)} failed: ${r.error ?? 'unknown'}`)
+        if (!r.ok) reportControlFailure(ctx, { subtype: 'stop_task', detail: taskId.slice(0, 8) }, r.error)
       })
       return true
     }
