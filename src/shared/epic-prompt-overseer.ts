@@ -44,6 +44,38 @@ const AUTHORITY = [
   'list below. If you punt those back without answering, the epic stops, because nobody else can answer them.',
 ].join('\n')
 
+/**
+ * THE ONE SHAPE THAT BREAKS THE ENGINE, said in the prompt rather than left for
+ * the TTL to clean up after.
+ *
+ * `overseerGate` (epic-beat.ts) will not dispatch under a live overseer, and a
+ * blocking Bash call is indistinguishable from an idle conversation from outside:
+ * it emits no events AND keeps its agent-host socket, so `seatAbandoned` cannot
+ * reap it either. On 2026-08-20 gen 14 of `epic-the-wall-ii` ran `until grep -q
+ * SERVER_EXIT ...; do sleep 30; done` as its last action, waiting on a suite that
+ * had already died, and stopped the whole run until a human killed four PIDs by
+ * hand.
+ *
+ * The lease TTL now breaks that hold at `LEASE_STALE_MS`, so this is prevention
+ * rather than the only defence -- but ten minutes of a stopped run plus a
+ * displaced generation is still the expensive path, and this is the cheap one.
+ * CONCRETE ABOUT THE ALTERNATIVE, because "do not block" on its own leaves an
+ * overseer that genuinely needs a long job with nothing to do instead, which is
+ * how the rule gets rationalised away at 3am.
+ */
+const NEVER_BLOCK = [
+  'NEVER BLOCK IN BASH. No `until ... sleep`, no `while ! ...; do sleep`, no `wait`, no polling loop, no',
+  '`sleep` of any length. A blocking call emits no events but keeps your host socket, so from outside you are',
+  'indistinguishable from an idle conversation that is merely alive -- and a live overseer HOLDS THE ENTIRE',
+  'RUN. Nothing dispatches, nothing verifies, nothing settles. On 2026-08-20 one `until grep -q ...; do sleep',
+  '30; done`, waiting on a suite that had already died, stopped a run dead until a human killed it by hand.',
+  '',
+  'A LONG JOB INSTEAD: start it in the BACKGROUND (`run_in_background`, or redirect to a log), write what you',
+  'started and where its output lands into the baton and the digest, and END YOUR TURN. The next generation',
+  'reads the baton, checks the log ONCE with a plain non-blocking command, and takes it from there. Waiting is',
+  "the engine's job; a generation with nothing left to DECIDE is a generation that should be over.",
+].join('\n')
+
 function rollupLine(ctx: OverseerPromptCtx): string {
   const r = ctx.plan.rollup
   if (!r) return 'BOARD: this epic has no children yet.'
@@ -144,6 +176,8 @@ function stopping(ctx: OverseerPromptCtx): string {
     'Otherwise: finish your beat and STOP. The engine dispatches, the workers work, and the next settle wakes',
     'a fresh you. Do NOT sit and poll, do NOT implement a card yourself (you are the judge, not the doer), and',
     'do NOT spawn anything -- the orchestrator owns dispatch.',
+    '',
+    NEVER_BLOCK,
   ].join('\n')
 }
 

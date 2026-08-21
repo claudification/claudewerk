@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { LEASE_STALE_MS } from '../shared/epic-lease'
 import type { EpicPlan } from '../shared/epic-ready'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { EpicRunSnapshot } from '../shared/protocol'
@@ -203,6 +204,84 @@ describe('planBeat', () => {
     const b = beat({}, { idleReason: 'nothing ready: t3 <- t2' }, { dryGens: 1 })
     expect(kinds(b)).toEqual(['park'])
     expect(b.actions[0]).toMatchObject({ reason: expect.stringContaining('t3 <- t2') })
+  })
+})
+
+/**
+ * THE LEASE HAS A TTL AND THE BEAT NOW ASKS ABOUT IT.
+ *
+ * `evaluateLease` has presumed a holder dead at `LEASE_STALE_MS` since the day it
+ * was written, and nothing ever put the question to it: `guardBeat` returned on
+ * bare liveness, so every wake -- the only thing that reaches the CAS -- sat below
+ * the line that never ran. On 2026-08-20 an overseer blocked in an `until ...
+ * sleep` Bash loop kept its agent-host socket, emitted no events, was therefore
+ * un-reapable (`seatAbandoned` requires NO socket), and held the run for the life
+ * of the broker: 13+ consecutive beats of `overseer alive at gen 14; holding the
+ * beat` with three cards ready and zero in flight.
+ *
+ * The TTL here and the CAS's are THE SAME CONSTANT on purpose. A shorter one here
+ * would let the beat send a wake the CAS then refuses, which is the same freeze
+ * with a busier log.
+ */
+describe('a stale lease stops holding the beat', () => {
+  const heldFor = (ms: number) => new Date(T0 - ms).toISOString()
+  const WEDGED = { overseerAlive: true, leaseAt: heldFor(LEASE_STALE_MS + 60_000) }
+
+  test('a live overseer past the TTL no longer withholds dispatch', () => {
+    const b = beat(WEDGED, { dispatch: [card('t1')] })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  test('and the note says STALE, with the age and the TTL it passed', () => {
+    const b = beat(WEDGED, { dispatch: [card('t1')] })
+    expect(b.note).toContain('STALE')
+    expect(b.note).toContain('11m')
+    expect(b.note).toContain('NOT holding the beat')
+  })
+
+  /** Nothing to dispatch is the case that actually reaches the CAS: the wake goes
+   *  out under the same generation the stale holder is sitting on, and
+   *  `evaluateLease` grants over it because `holderAlive && !isStale` is false. */
+  test('with nothing to dispatch, the wake goes out so the CAS can replace the holder', () => {
+    const b = beat(WEDGED, { idleReason: 'nothing ready' })
+    expect(kinds(b)).toEqual(['wake-overseer'])
+    expect(b.actions[0]).toMatchObject({ expectGen: 3 })
+    expect(b.note).toContain('STALE')
+  })
+
+  test('an overseer INSIDE the TTL still holds, and the hold says how long it has held', () => {
+    const b = beat({ overseerAlive: true, leaseAt: heldFor(4 * 60_000) }, { dispatch: [card('t1')] })
+    expect(b.actions).toEqual([])
+    expect(b.note).toContain('WORKING')
+    expect(b.note).toContain('4m')
+  })
+
+  /** Strictly greater, matching `isStale`. A beat that broke a grip one tick
+   *  earlier than the CAS would send a wake the CAS refuses. */
+  test('exactly at the TTL is not yet stale', () => {
+    expect(beat({ overseerAlive: true, leaseAt: heldFor(LEASE_STALE_MS) }, { dispatch: [card('t1')] }).actions).toEqual(
+      [],
+    )
+  })
+
+  /** The OPPOSITE reading from `isStale`, deliberately: no evidence about the
+   *  grip's age is not evidence that it is old, and the safe answer to "may I
+   *  dispatch under a live supervisor" is no. */
+  test.each([
+    ['absent', undefined],
+    ['unparseable', 'not-a-date'],
+  ])('a %s lease timestamp holds, rather than breaking a grip on no evidence', (_label, leaseAt) => {
+    const b = beat({ overseerAlive: true, ...(leaseAt ? { leaseAt } : {}) }, { dispatch: [card('t1')] })
+    expect(b.actions).toEqual([])
+    expect(b.note).toContain('lease age unknown')
+  })
+
+  /** The ceilings outrank the lease. A run over budget parks whatever the grip
+   *  says, and the park's note must not claim a lease was let go. */
+  test('a run over its generation ceiling parks, and says nothing about the lease', () => {
+    const b = beat({ ...WEDGED, gen: 40 }, { dispatch: [card('t1')] }, { maxGens: 40 })
+    expect(kinds(b)).toEqual(['park'])
+    expect(b.note).not.toContain('STALE')
   })
 })
 

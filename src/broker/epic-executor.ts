@@ -29,7 +29,7 @@ import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats
 import { planEpic } from '../shared/epic-ready'
 import { gatedBy } from '../shared/epic-when'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
-import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
+import { type EpicBeat, type EpicBeatInput, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import {
   type AcknowledgeContext,
   acknowledge,
@@ -174,6 +174,24 @@ async function settleContext(
  */
 function leaseGen(view: EpicRunView): number {
   return view.lease?.gen ?? 0
+}
+
+/**
+ * WHEN THE GRIP WAS TAKEN, as a spread-ready fragment -- the TTL half of the
+ * overseer gate (`overseerGate`, epic-beat.ts).
+ *
+ * Its own function for the identical reason {@link leaseGen} is, and the shape is
+ * dictated by the same ceiling: `runEpicBeat` is at its complexity threshold, and
+ * an inline `?.`/ternary pair for a fact that is not a decision costs it two
+ * branches. Returning the FRAGMENT rather than the string keeps the ternary here
+ * too -- the call site is one spread and no branch at all.
+ *
+ * EMPTY MEANS NO TTL, which is `EpicBeatInput.leaseAt`'s stated convention: an
+ * epic that has never been woken has no grip to age out, and a beat must not
+ * displace a supervisor on an age nobody supplied.
+ */
+function leaseTaken(view: EpicRunView): Pick<EpicBeatInput, 'leaseAt'> {
+  return view.lease?.at ? { leaseAt: view.lease.at } : {}
 }
 
 /**
@@ -362,6 +380,11 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // the overseer and parks a run that is simply mid-launch.
     inFlight: withPendingSeats(group.inFlight, pendingSeats),
     overseerAlive: group.overseerAlive,
+    // THE TTL ON THAT LIVENESS, from the SAME `get` the generation above came
+    // from. Without it `overseerAlive` is an unbounded hold, and the one shape
+    // that never lifts -- a supervisor blocked in a Bash call, socket held,
+    // events silent, un-reapable -- stops the run for the life of the broker.
+    ...leaseTaken(view),
     // A SPENT FACT, keyed on the lease holder rather than on the lane -- see
     // `EpicBeatInput.overseerLost`. The wake this drives moves the lease, so the
     // next beat reads false and the replacement is billed exactly once. Stated

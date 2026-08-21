@@ -95,14 +95,16 @@ export const SEAT_SILENCE_MS = 10 * 60 * 1000
  * life. FIFTEEN MINUTES.
  *
  * WHICH DIRECTION A MISTAKE FALLS IN, and it is the opposite lane's answer, which
- * is why this is a second number. A false negative is a frozen run:
+ * is why this is a second number. A false negative is a stalled run:
  *
- *     // epic-beat.ts, guardBeat()
- *     if (input.overseerAlive) return beat(`overseer alive at gen N; holding the beat`)
+ *     // epic-beat.ts, overseerGate()
+ *     if (heldMs === null || heldMs <= LEASE_STALE_MS) return { hold: beat(`... WORKING ...`), aged: null }
  *
  * Nothing dispatches, nothing verifies, nothing settles, nothing parks, and that
  * line is indistinguishable from the healthy case it exists to describe --
- * expensive, recoverable, and loud once anybody looks. A false POSITIVE wakes a
+ * expensive, recoverable, and loud once anybody looks. It is now BOUNDED by
+ * {@link LEASE_STALE_MS} rather than unbounded: the hold lifts once the grip ages
+ * out, which is the whole of `epic-lease-has-no-timeout`. A false POSITIVE wakes a
  * SECOND overseer alongside a first that is still typing, and the overseer is the
  * one role that rewrites cards, merges branches and answers questions, so two of
  * them racing costs a generation of tokens and can undo board edits mid-write.

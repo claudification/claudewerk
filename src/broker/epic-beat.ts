@@ -16,10 +16,12 @@
  * and a duplicate is refused by the lease CAS. Self-healing beats bookkeeping.
  */
 
+import { LEASE_STALE_MS } from '../shared/epic-lease'
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
 import type { EpicWakeReason } from '../shared/epic-run-types'
 import { gatedBy, whenWaitingLine } from '../shared/epic-when'
+import { formatDuration } from '../shared/format-duration'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { QueueVerdict } from './epic-queue'
 
@@ -72,6 +74,22 @@ export interface EpicBeatInput {
   inFlight: readonly string[]
   /** Is the lease holder's conversation still alive? */
   overseerAlive: boolean
+  /**
+   * WHEN THE CURRENT LEASE WAS TAKEN -- `view.lease.at`, verbatim. The TTL half
+   * of the overseer gate, and the reason a wedged supervisor no longer stops a
+   * run forever.
+   *
+   * THE TIMESTAMP AND NOT THE `EpicLease`, even though the caller holds the whole
+   * object. `gen` is already its own input for the reason its own docstring
+   * gives, and handing the beat a second route to the same generation is exactly
+   * the "which copy did it read" argument that mirror cost this engine hours on
+   * 2026-08-20. One field, one question: how long has this grip been held.
+   *
+   * ABSENT MEANS NO TTL -- today's behaviour, an unbounded hold -- which is the
+   * same convention `queue` and `producedOutput` use: a caller that has not wired
+   * this up must not have its supervisor displaced on an age nobody supplied.
+   */
+  leaseAt?: string
   /**
    * THE CONVERSATION HOLDING THIS EPIC IS A CORPSE, and the fold has just said so
    * for the first time (`lostOverseer`, epic-sweep.ts).
@@ -345,24 +363,121 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
 }
 
 /**
+ * HOW LONG THE CURRENT LEASE HAS BEEN HELD, or null when that cannot be known.
+ *
+ * NULL IS "DO NOT BREAK IT", and it is the OPPOSITE reading `isStale`
+ * (epic-lease.ts) gives the same missing timestamp. The asymmetry is deliberate,
+ * because the two are answering different questions: the CAS asks "may this
+ * waker take the grip", which a released or never-stamped lease should not
+ * block, while this asks "may the engine dispatch underneath a live supervisor",
+ * which on no evidence at all it should not.
+ */
+function leaseHeldMs(input: EpicBeatInput): number | null {
+  if (!input.leaseAt) return null
+  const taken = Date.parse(input.leaseAt)
+  return Number.isFinite(taken) ? Math.max(0, input.nowMs - taken) : null
+}
+
+/** The overseer gate's two outcomes, and never both: HOLD this beat, or say out
+ *  loud that the grip has aged out and go on without it. */
+interface OverseerVerdict {
+  /** The beat to return, when a live supervisor still owns the epic. */
+  hold: EpicBeat | null
+  /** The grip is past its TTL. Rides on whatever note this beat ends up writing,
+   *  because a beat emits exactly ONE line and the useful shape is "here is the
+   *  hold I did not take, and here is what I did instead". */
+  aged: string | null
+}
+
+/**
+ * IS A LIVE OVERSEER STILL ENTITLED TO THE WHOLE RUN? Bare liveness used to be
+ * the entire answer, and that single unconditional early return was the deadlock
+ * of 2026-08-20.
+ *
+ * An overseer mid-turn owns the epic and nothing may dispatch underneath it: it
+ * may be rewriting the very cards the plan was computed from. The PLANNER sits in
+ * the same seat, so this covers it too -- which is most of why it is not a
+ * separate role. But `overseerAlive` has no upper bound, and the one shape that
+ * breaks the engine is invisible from outside: a blocking Bash call (`until ...
+ * sleep`) emits no events AND keeps its agent-host socket, so the conversation
+ * scores `idle`, `seatAbandoned` cannot reap it (it requires NO socket), and the
+ * hold below never lifts. Gen 14 of `epic-the-wall-ii` logged `overseer alive at
+ * gen 14; holding the beat` 13+ consecutive times with three cards ready and zero
+ * in flight, and only a human with a `kill` got the run moving again.
+ *
+ * SO THE GRIP HAS AN AGE, AND IT IS `LEASE_STALE_MS` -- the SAME constant
+ * `evaluateLease` has always presumed a holder dead at, imported rather than
+ * re-chosen. Nothing here decides staleness for the fleet; it puts to the beat a
+ * question the CAS was already answering and was never asked. Sizing this
+ * shorter would be strictly worse than the deadlock it replaces: the beat would
+ * send a wake the CAS then refuses, every 45 seconds, which is the same freeze
+ * with a busier log.
+ *
+ * WHAT HAPPENS AFTER IT LIFTS is the existing engine and nothing new. Ready cards
+ * dispatch; a run with nothing ready reaches `wake-overseer`, whose CAS grants
+ * over the aged holder (`holderAlive && !isStale` is false) and records it in
+ * `replaced`, so the displacement is audited rather than lost. The replacement's
+ * lease is stamped fresh, so a supervisor that stays wedged costs ONE extra
+ * generation per TTL window -- bounded by `maxGens`, loud in the baton, and not a
+ * stopped run.
+ */
+function overseerGate(input: EpicBeatInput): OverseerVerdict {
+  if (!input.overseerAlive) return { hold: null, aged: null }
+
+  const heldMs = leaseHeldMs(input)
+  const age = heldMs === null ? 'lease age unknown' : `lease taken ${formatDuration(heldMs)} ago`
+
+  // Strictly greater, matching `isStale`. Equality holding is what keeps the two
+  // from disagreeing for one tick at the boundary.
+  if (heldMs === null || heldMs <= LEASE_STALE_MS) {
+    return { hold: beat(`overseer alive at gen ${input.gen} and WORKING (${age}); holding the beat`), aged: null }
+  }
+
+  return {
+    hold: null,
+    // "NOT holding" rather than "breaking it": this beat lets go of the HOLD, and
+    // whether the lease itself moves depends on whether what follows is a wake.
+    // A dispatch under an aged grip touches no lease at all.
+    aged:
+      `overseer alive at gen ${input.gen} but its lease is STALE (${age}, TTL ` +
+      `${formatDuration(LEASE_STALE_MS)}) -- NOT holding the beat`,
+  }
+}
+
+/**
+ * THE DECISION, with the two gates that outrank every other reason a beat has.
+ *
+ * Ordering, and it is the design rather than an accident of layout: the CEILINGS
+ * come first, so a run that is over budget parks whatever the lease says and its
+ * park note does not claim a grip was let go. The OVERSEER GATE comes second,
+ * because everything below it either dispatches work or wakes a supervisor, and
+ * both are things a live overseer is entitled to stop.
+ *
+ * Split from `guardBeat` so the aged-lease line can ride onto the note of
+ * whatever the beat went on to do -- including `workBeat`'s, which `guardBeat`
+ * never sees.
+ */
+function decide(input: EpicBeatInput): EpicBeat {
+  const capped = capBeat(input)
+  if (capped) return capped
+
+  const overseer = overseerGate(input)
+  if (overseer.hold) return overseer.hold
+
+  const decided = guardBeat(input) ?? workBeat(input)
+  return overseer.aged ? { ...decided, note: `${overseer.aged}; ${decided.note}` } : decided
+}
+
+/**
  * Reasons a beat does something OTHER than move work, most urgent first. Order
- * is the design: an epic that is simultaneously over its ceiling, owed a plan
- * and holding an unacknowledged settle must do exactly one of those, and which
- * one is not arbitrary.
+ * is the design: an epic that is simultaneously owed a plan and holding an
+ * unacknowledged settle must do exactly one of those, and which one is not
+ * arbitrary. The two gates ABOVE all of these live in `decide`.
  *
  * Returns null when nothing is in the way, at which point `workBeat` decides.
  */
 function guardBeat(input: EpicBeatInput): EpicBeat | null {
   const { plan } = input
-
-  const capped = capBeat(input)
-  if (capped) return capped
-
-  // An overseer mid-turn owns the epic. Do not dispatch underneath it: it may be
-  // rewriting the very cards the plan was computed from. The PLANNER sits in the
-  // same seat, so this guard covers it too -- which is most of why it is not a
-  // separate role.
-  if (input.overseerAlive) return beat(`overseer alive at gen ${input.gen}; holding the beat`)
 
   // GENERATION 0. Ahead of every other decision, including settles and questions:
   // once planning is owed, nothing may dispatch until it has happened, or the
@@ -457,7 +572,7 @@ export function planBeat(input: EpicBeatInput): EpicBeat {
   // same class of bug as the baton entries a paused epic used to collect.
   if (isInertRun(input.run.status)) return beat(`run is ${input.run.status}; nothing to do`)
 
-  const decided = guardBeat(input) ?? workBeat(input)
+  const decided = decide(input)
   // The decision's own writes win over the ledger's: they are about THIS beat,
   // and the ledger is about the run.
   const patch = pruned({ ...ledgerWrites(input), ...decided.patch }, input.run)
