@@ -253,7 +253,9 @@ describe('the armed set survives a broker restart', () => {
     noteDeletedEpic(P, 'e1')
     restart(kv)
 
-    const seats = [{ id: 'c1', project: P, status: 'ended', launchConfig: { epic: { epicId: 'e1', role: 'implementer', gen: 1 } } }]
+    const seats = [
+      { id: 'c1', project: P, status: 'ended', launchConfig: { epic: { epicId: 'e1', role: 'implementer', gen: 1 } } },
+    ]
 
     expect(epicsToWatch(seats as never, () => false).map(g => g.epicId)).toEqual([])
   })

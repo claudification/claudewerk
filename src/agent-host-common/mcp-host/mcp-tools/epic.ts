@@ -52,7 +52,7 @@ const DESCRIPTION = [
   '                    armed by mistake, a duplicate, or a scratch run nobody wants in the history; use clear for a',
   '                    real run you have simply finished reading. RECOVERABLE: the tree is MOVED to',
   '                    .rclaude/project/epics/.deleted/<id>-<ts>/, never rm-ed, and the reply says where. It NEVER',
-  '                    touches the epic\'s CARDS -- they outlive runs by design, and the reply counts what it left.',
+  "                    touches the epic's CARDS -- they outlive runs by design, and the reply counts what it left.",
   '                    Two refusals: the run must be paused, aborted or complete, and NO conversation tagged with',
   '                    this epic may still be live. `reason` is recorded in the baton, inside the tombstone.',
   'action=beat         run ONE beat RIGHT NOW instead of waiting up to 45s for the sweep. Use this after arming',

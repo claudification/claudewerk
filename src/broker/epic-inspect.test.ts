@@ -5,7 +5,7 @@ import type { Conversation, EpicRunSnapshot } from '../shared/protocol'
 import { recordBeat, resetBeatLog } from './epic-beat-log'
 import { inspectEpic, listEpicRuns } from './epic-inspect'
 import { configureEpicIo, resetEpicIo } from './epic-io'
-import { noteArmedEpic, resetArmedEpics } from './epic-registry'
+import { noteArmedEpic, noteDeletedEpic, resetArmedEpics } from './epic-registry'
 import type { SweepDeps } from './epic-sweep-loop'
 
 /** The three forms of one project that the fleet actually produces: what the MCP
@@ -175,6 +175,42 @@ describe('listEpicRuns burial', () => {
     )
     const rows = await listEpicRuns(deps([conv(TYPED, 'e1')]), TYPED, NOW)
     expect(rows[0]?.cleared).toBe('aged-out')
+  })
+
+  /**
+   * A DELETED RUN IS THE ONE THING THIS SURFACE DOES HIDE, and the contrast with
+   * the six tests above is the point.
+   *
+   * A CLEARED run stays enumerable because `list` is how an agent FINDS a run to
+   * resume or abort, and a run nothing can name is a run that gets stranded. A
+   * DELETED run has no artifact left to name -- every verb the row would offer
+   * would fail or silently arm a brand new run -- so a row for it would be an
+   * offer this surface cannot honour.
+   */
+  test('a DELETED run is gone from the list, not marked', async () => {
+    stubRuns({ e1: { status: 'aborted', updated: ago(60_000) }, e2: { status: 'aborted', updated: ago(60_000) } })
+    noteDeletedEpic(TYPED, 'e1')
+
+    const rows = await listEpicRuns(deps([conv(TYPED, 'e1'), conv(TYPED, 'e2')]), TYPED, NOW)
+
+    expect(rows.map(r => r.epicId)).toEqual(['e2'])
+  })
+
+  test('and it is gone under a different spelling of the same project too', async () => {
+    stubRuns({ e1: { status: 'aborted', updated: ago(60_000) } })
+    noteDeletedEpic(CANONICAL, 'e1')
+
+    expect(await listEpicRuns(deps([conv(SCARRED, 'e1')]), TYPED, NOW)).toEqual([])
+  })
+
+  /** The tombstone is filtered AFTER the union, so neither source can smuggle
+   *  one back -- an armed entry left behind by a crash is still not a run. */
+  test('an armed entry cannot smuggle a deleted run back onto the list', async () => {
+    stubRuns({})
+    noteArmedEpic(TYPED, 'e1')
+    noteDeletedEpic(TYPED, 'e1')
+
+    expect(await listEpicRuns(deps([]), TYPED, NOW)).toEqual([])
   })
 })
 

@@ -142,6 +142,11 @@ function trackRun(body: EpicHttpBodyReady): void {
   } else if (body.op === 'pause' || body.op === 'abort') forgetArmedEpic(body.project, body.epicId)
 }
 
+/** Exposed for tests: the one piece here that encodes POLICY rather than
+ *  plumbing, and the only one a router test cannot reach -- it runs after a
+ *  successful sentinel op, and a test has no sentinel to succeed against. */
+export const __testing = { trackRun }
+
 function toActionInput(body: EpicHttpBodyReady): ActionInput {
   return {
     project: body.project,

@@ -315,7 +315,7 @@ describe('delete', () => {
   test('an epic with no cards still says the cards were not touched', async () => {
     run = endedRun()
 
-    expect((await actionDelete(deps(), { project: P, epicId: 'e1' }) as { note: string }).note).toContain(
+    expect(((await actionDelete(deps(), { project: P, epicId: 'e1' })) as { note: string }).note).toContain(
       'NOT touched',
     )
   })
