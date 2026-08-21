@@ -93,9 +93,13 @@ function theJob(ctx: PlannerPromptCtx): string {
     '   cannot infer.',
     '',
     '6. WRITE THE BATON. Append ONE `intent` entry listing EVERY card you created, closed, archived, split or',
-    '   re-ordered, and why. Then write the run digest (the body of run.md) as the plan of record. Be complete:',
-    '   this entry is the only account Jonas gets of what you changed on his board, and the next generation',
-    '   knows nothing except this file and the board.',
+    `   re-ordered, and why. Then write the run digest -- the WHOLE of`,
+    `   \`${ctx.projectRoot}/.rclaude/project/epics/${id}/digest.md\` -- as the plan of record. Be complete: this`,
+    '   entry is the only account Jonas gets of what you changed on his board, and the next generation knows',
+    '   nothing except these files and the board.',
+    '',
+    '   `run.md` beside it is MACHINE-OWNED engine state and editing it deadlocks the run: its frontmatter holds',
+    '   the generation counter the lease is compared against. Write `digest.md`. Never `run.md`.',
   ].join('\n')
 }
 

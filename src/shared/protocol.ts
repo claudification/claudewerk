@@ -4997,7 +4997,7 @@ export interface QuestEvent {
 export type EpicOpKind =
   | 'start' // arm (or resume) a run for one epic card
   | 'get' // run meta + baton tail + the computed plan
-  | 'patch' // merge scalars into run.md (gen, status, digest, dryGens)
+  | 'patch' // merge scalars into run.md (gen, status, dryGens); `digest` writes digest.md
   | 'log_append' // append-only baton entry (NEVER rewrites)
   | 'lease' // compare-and-swap the overseer singleton on the epic card
   | 'release' // drop the lease, keeping the generation counter
@@ -5216,8 +5216,10 @@ export interface EpicResult {
   error?: string
 }
 
-/** The run as it crosses the wire: run.md frontmatter + its digest body. An
- *  ALIAS, not a copy -- the store and the wire must not be able to disagree. */
+/** The run as it crosses the wire: `run.md`'s frontmatter plus the digest from
+ *  `digest.md` beside it (two files on disk, one struct here -- see
+ *  `epic-run-store.ts` for why they were split). An ALIAS, not a copy: the store
+ *  and the wire must not be able to disagree. */
 export type EpicRunSnapshot = EpicRunFull
 
 /**
