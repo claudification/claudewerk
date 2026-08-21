@@ -111,6 +111,52 @@ test('submit carries the accepted chips onto the card', () => {
   expect(params.input.body).toBe('do it #infra')
 })
 
+test('the refine submit tags the card, and files it exactly once', () => {
+  const { result } = open()
+  act(() => result.current.setText('half an idea'))
+  act(() => result.current.submitRefine())
+
+  expect(sendBoardOp).toHaveBeenCalledTimes(1)
+  const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
+  expect(params.input.tags).toEqual(['needs-refine'])
+  // Same card either way -- only the tag differs.
+  expect(params.input.title).toBe('half an idea')
+})
+
+test('the refine tag joins the #tags from the text, it does not replace them', () => {
+  const { result } = open()
+  act(() => result.current.setText('half an idea #infra #wall'))
+  act(() => result.current.submitRefine())
+
+  const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
+  expect(params.input.tags).toEqual(['infra', 'wall', 'needs-refine'])
+})
+
+test('a capture that already says #needs-refine gets it ONCE, not twice', () => {
+  const { result } = open()
+  act(() => result.current.setText('already flagged #needs-refine'))
+  act(() => result.current.submitRefine())
+
+  const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
+  expect(params.input.tags).toEqual(['needs-refine'])
+})
+
+test('the plain submit never adds the refine tag', () => {
+  const { result } = open()
+  act(() => result.current.setText('a finished thought #infra'))
+  act(() => result.current.submit())
+
+  const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
+  expect(params.input.tags).toEqual(['infra'])
+})
+
+test('an empty refine capture submits nothing either', () => {
+  const { result } = open()
+  act(() => result.current.setText('  '))
+  act(() => result.current.submitRefine())
+  expect(sendBoardOp).not.toHaveBeenCalled()
+})
+
 test('an empty capture submits nothing', () => {
   const { result } = open()
   act(() => result.current.setText('   '))

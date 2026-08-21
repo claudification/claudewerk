@@ -27,8 +27,9 @@ import { useIsMobile } from '../../shell/use-is-mobile'
 import { useScrollLock } from '../../shell/use-scroll-lock'
 import type { SubCommandContext } from '../../sub-commands'
 import type { InputEditorProps } from '../../types'
-import { buildInputExtensions, darkThemeBase, replaceEditorDoc, submitFromEditor } from './extensions'
+import { buildInputExtensions, darkThemeBase } from './extensions'
 import { attachPasteUpload, uploadDroppedFile } from './paste-drop'
+import { attachShiftEnterNewline, replaceEditorDoc, submitFromEditor } from './submit-keys'
 
 export default function CodeMirrorBackendInner(props: InputEditorProps) {
   const [dragOver, setDragOver] = useState(false)
@@ -61,6 +62,14 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   const onSubmitRef = useRef(props.onSubmit)
   onSubmitRef.current = props.onSubmit
 
+  // Mod-Enter's alternate submit. Captured at mount like the other toggles: a
+  // surface either offers a second submit or it does not, and none of them
+  // flips mid-life. The callback itself is read through a ref, so the caller
+  // can hand us a fresh closure every render without rebuilding extensions.
+  const onSubmitAltRef = useRef(props.onSubmitAlt)
+  onSubmitAltRef.current = props.onSubmitAlt
+  const wantsAltSubmit = useRef(props.onSubmitAlt != null).current
+
   const onStashRef = useRef(props.onStash)
   onStashRef.current = props.onStash
 
@@ -85,6 +94,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
     () =>
       buildInputExtensions({
         onSubmit: () => onSubmitRef.current(),
+        onSubmitAlt: wantsAltSubmit ? () => onSubmitAltRef.current?.() : undefined,
         onStash: props.onStash ? (text: string) => onStashRef.current?.(text) : undefined,
         // Larger font on mobile for thumb typing; bumped further in the
         // expanded panel (see scoped CSS override below).
@@ -106,28 +116,7 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   function onCreateEditor(view: EditorView) {
     viewRef.current = view
     attachPasteUpload(view, () => conversationIdRef.current)
-
-    // Shift+Enter -> newline, registered directly on contentDOM in capture
-    // phase. CM6's InputState.handleEvent blocks ALL keydown events during
-    // active composition (ignoreDuringComposition). On iOS, predictive text
-    // keeps composition alive across modifier keys -- so Shift+Enter arrives
-    // while composing and CM6 silently drops it before any keymap or
-    // domEventHandler fires. This capture-phase listener runs before CM6's
-    // own bubble-phase handler, sidestepping the composition gate entirely.
-    view.contentDOM.addEventListener(
-      'keydown',
-      (e: KeyboardEvent) => {
-        if (e.key === 'Enter' && e.shiftKey) {
-          e.preventDefault()
-          e.stopPropagation()
-          view.dispatch(view.state.replaceSelection(view.state.lineBreak), {
-            scrollIntoView: true,
-            userEvent: 'input',
-          })
-        }
-      },
-      { capture: true },
-    )
+    attachShiftEnterNewline(view)
   }
 
   function onDrop(e: React.DragEvent) {

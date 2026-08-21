@@ -10,6 +10,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { applyChip, emptyChips } from '@/lib/cards/task-chips'
 
 const submit = vi.fn()
+const submitRefine = vi.fn()
 let state: Record<string, unknown> = {}
 
 vi.mock('./use-quick-task', () => ({ useQuickTask: () => state }))
@@ -17,7 +18,17 @@ vi.mock('./wall/use-project-look', () => ({
   useProjectLook: () => (uri: string) => ({ projectName: uri === 'claude://s/yemaya' ? 'YEMAYA' : 'CLAUDEWERK' }),
 }))
 vi.mock('./input-editor', () => ({
-  InputEditor: ({ placeholder }: { placeholder?: string }) => <textarea placeholder={placeholder} readOnly />,
+  // The editor's key handling is CM6's (pinned in submit-keys.test.ts); what
+  // this stub proves is the WIRING -- that Mod-Enter's callback is the refine
+  // submit and not the plain one.
+  InputEditor: ({ placeholder, onSubmitAlt }: { placeholder?: string; onSubmitAlt?: () => void }) => (
+    <>
+      <textarea placeholder={placeholder} readOnly />
+      <button type="button" onClick={onSubmitAlt}>
+        alt-submit
+      </button>
+    </>
+  ),
 }))
 
 const { QuickTaskModal } = await import('./quick-task-modal')
@@ -32,6 +43,7 @@ function mount(over: Record<string, unknown> = {}) {
     onRemoveChip: () => {},
     taskTokens: {},
     submit,
+    submitRefine,
     flash: false,
     targetProject: 'claude://s/here',
     retargeted: false,
@@ -43,6 +55,7 @@ function mount(over: Record<string, unknown> = {}) {
 afterEach(() => {
   cleanup()
   submit.mockClear()
+  submitRefine.mockClear()
 })
 
 test('names the board the capture will land on', () => {
@@ -82,5 +95,22 @@ test('the placeholder advertises every trigger', () => {
   const ph = screen.getByRole('textbox').getAttribute('placeholder') ?? ''
   for (const t of ['/project', '@epic', '!priority', '+waits-on', '&see-also', '#tag']) {
     expect(ph).toContain(t)
+  }
+})
+
+test("the editor's alternate submit is the REFINE one, never the plain one", () => {
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: 'alt-submit' }))
+  expect(submitRefine).toHaveBeenCalledTimes(1)
+  expect(submit).not.toHaveBeenCalled()
+})
+
+test('the footer advertises every key path, refine included', () => {
+  mount()
+  // Radix portals the dialog, so read the document rather than the container.
+  const footer = document.body.textContent ?? ''
+  // A keybinding nobody can see is a keybinding nobody uses.
+  for (const hint of ['add', 'newline', 'refine later', 'close']) {
+    expect(footer).toContain(hint)
   }
 })

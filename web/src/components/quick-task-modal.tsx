@@ -6,6 +6,9 @@
  * lib/cards/task-tokens.ts): `@epic` `!priority` `+depends-on` `&relates-to`
  * `/project` are EATEN on accept; `#tag` stays in the text and is parsed at
  * submit.
+ *
+ * Two submit keys: Enter files the card as captured, Cmd/Ctrl+Enter files the
+ * same card tagged `needs-refine` for a later pass. Just a tag -- no spawn.
  */
 
 import { AlertTriangle, FileText } from 'lucide-react'
@@ -38,6 +41,13 @@ function Footer({ onSubmit, disabled }: { onSubmit: () => void; disabled: boolea
           <Kbd>↵</Kbd>
         </KbdGroup>{' '}
         newline
+        <span className="text-fg-faint">·</span>
+        {/* A keybinding nobody can see is a keybinding nobody uses. */}
+        <KbdGroup>
+          <Kbd>⌘</Kbd>
+          <Kbd>↵</Kbd>
+        </KbdGroup>{' '}
+        refine later
         <span className="text-fg-faint">·</span>
         <Kbd>Esc</Kbd> close
       </span>
@@ -92,6 +102,7 @@ export function QuickTaskModal() {
               value={q.text}
               onChange={q.setText}
               onSubmit={q.submit}
+              onSubmitAlt={q.submitRefine}
               placeholder="Title, then body. /project @epic !priority +waits-on &see-also #tag"
               autoFocus
               inline

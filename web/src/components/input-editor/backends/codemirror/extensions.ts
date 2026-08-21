@@ -37,6 +37,7 @@ import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
 import { autocompleteExtension } from './autocomplete'
 import { composingField, composingTracker } from './composition'
+import { altSubmitKeymap, clearEditorDoc, submitFromEditor } from './submit-keys'
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown decorator
@@ -397,6 +398,13 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
 
 interface InputExtensionOptions {
   onSubmit: () => void
+  /**
+   * Second submit on `Mod-Enter` (Cmd on macOS, Ctrl elsewhere). OPT-IN: omit
+   * it and no binding is registered at all, so a surface that wants one submit
+   * path keeps exactly one. Quick Task uses it to file the card tagged
+   * `needs-refine`.
+   */
+  onSubmitAlt?: () => void
   onStash?: (text: string) => void
   fontSize?: number
   minHeight?: string
@@ -425,49 +433,26 @@ interface InputExtensionOptions {
   getTaskTokenContext?: () => TaskTokenContext | null
 }
 
-// ---------------------------------------------------------------------------
-// Direct CM doc manipulation -- bypasses react-codemirror's 200ms typing
-// latch (TYPING_TIMOUT in useCodeMirror.js) by dispatching changes through
-// the view instead of waiting for the React value prop to propagate.
-// ---------------------------------------------------------------------------
-
-function clearEditorDoc(view: EditorView) {
-  const len = view.state.doc.length
-  if (len > 0) view.dispatch({ changes: { from: 0, to: len, insert: '' } })
-}
-
-export function replaceEditorDoc(view: EditorView, text: string) {
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text },
-    selection: { anchor: text.length },
-  })
-}
-
+// NOTE: the direct doc mutations (clearEditorDoc / replaceEditorDoc /
+// submitFromEditor) live in ./submit-keys alongside the keys that trigger them.
+// They bypass react-codemirror's 200ms typing latch (TYPING_TIMOUT in
+// useCodeMirror.js) by dispatching through the view instead of waiting for the
+// React value prop to propagate.
+//
 // NOTE: requestEditorSetValue moved to the CM-free ./editor-bridge module so
 // the input hot path can import it WITHOUT dragging all of @codemirror into
 // the eager index chunk. Import it from './editor-bridge', not from here.
-
-export function submitFromEditor(view: EditorView, onSubmit: () => void) {
-  // ORDER MATTERS: submit BEFORE clearing. @uiw/react-codemirror's onChange
-  // fires SYNCHRONOUSLY off the clear's docChanged transaction. A consumer
-  // whose onSubmit reads a live external store (the dispatcher: submit() reads
-  // get().intent, which onChange writes) would otherwise see the just-cleared
-  // '' and bail -- the "dead input" bug. The main chat dodged it only by
-  // reading a stale React closure. Submitting first means every consumer reads
-  // the typed text; the clear then resets the visible doc instantly (still
-  // bypassing react-codemirror's 200ms typing latch).
-  onSubmit()
-  clearEditorDoc(view)
-}
 
 export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
   const fontSize = opts.fontSize ?? 14
   const minHeight = opts.minHeight ?? '1.5em'
   const maxHeight = opts.maxHeight ?? '12em'
 
-  // Shift-Enter -> newline is handled by a capture-phase listener on
-  // contentDOM (see inner.tsx onCreateEditor) to bypass CM6's composition
-  // gate on iOS. The keymap below only handles unmodified Enter.
+  // Shift-Enter -> newline is handled by a capture-phase listener on contentDOM
+  // (attachShiftEnterNewline, wired in inner.tsx onCreateEditor) to bypass CM6's
+  // composition gate on iOS. The keymap below only handles unmodified Enter --
+  // CM6 keys bindings on the full modifier string, so Meta-Enter / Ctrl-Enter
+  // never reach it.
 
   // Submit on Enter (unmodified).
   const submitKeymap = keymap.of([
@@ -481,6 +466,9 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
       },
     },
   ])
+
+  // Mod-Enter -> the alternate submit. Only present when a caller asked for one.
+  const altKeymap = opts.onSubmitAlt ? altSubmitKeymap(opts.onSubmitAlt) : []
 
   const stashKeymap = opts.onStash
     ? keymap.of([
@@ -530,6 +518,7 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     composingTracker,
     drawSelection(),
     history(),
+    altKeymap, // before submitKeymap for the same reason: ours wins over defaultKeymap
     submitKeymap, // before defaultKeymap so our Enter wins (autocomplete still wins over us when popup is open)
     stashKeymap,
     escapeBlurKeymap,

@@ -1,7 +1,7 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { afterEach, describe, expect, it } from 'vitest'
-import { submitFromEditor } from './extensions'
+import { submitFromEditor } from './submit-keys'
 
 // Reproduces the dispatcher "dead input" at the smallest faithful scope.
 //

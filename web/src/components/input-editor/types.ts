@@ -14,6 +14,12 @@ export interface InputEditorProps {
   value: string
   onChange: (value: string) => void
   onSubmit: () => void
+  /** Second submit, fired on `Mod-Enter` (Cmd on macOS, Ctrl elsewhere).
+   *  OPT-IN per instance exactly like `taskTokens`: absent everywhere but the
+   *  Quick Task modal, so the prompt input never grows a second submit path.
+   *  CodeMirror backend only -- the legacy textarea has no keymap layer, same
+   *  as it has no task-token completion. */
+  onSubmitAlt?: () => void
   disabled?: boolean
   placeholder?: string
   className?: string
