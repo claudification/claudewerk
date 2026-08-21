@@ -133,7 +133,7 @@ function planSection(p: EpicInspectPlan): string[] {
 /** What is actually running. `armed NO` on a run that says `armed` is the tell
  *  for a broker restart, and the mismatch warning is the tell for spawns racing
  *  the lease -- both were previously invisible outside the logs. */
-function liveSection(l: EpicInspectLive): string[] {
+function liveSection(l: EpicInspectLive, unread = false): string[] {
   const convs = l.conversations.map(
     c => `  - ${c.id} ${c.role}${c.cardId ? ` ${c.cardId}` : ''} gen ${c.gen} [${c.status}]${c.live ? ' LIVE' : ''}`,
   )
@@ -144,7 +144,11 @@ function liveSection(l: EpicInspectLive): string[] {
     `in flight: ${l.inFlight.join(', ') || NONE}`,
     `settled: ${l.settled.join(', ') || NONE}`,
     `settled but NOT acknowledged by the baton: ${l.unacknowledged.join(', ') || NONE}`,
-    ...(l.generationMismatch ? [`WARNING: ${l.generationMismatch}`] : []),
+    // The mismatch compares the registry against `run.md`'s generation, so on an
+    // unread run it compares against a default. A newer broker already declines
+    // to compute it (`toInspectLive`); this also holds the line against an older
+    // one whose payload still carries the fabricated warning.
+    ...(l.generationMismatch && !unread ? [`WARNING: ${l.generationMismatch}`] : []),
     ...(convs.length > 0 ? ['conversations:', ...convs] : []),
   ]
 }
@@ -166,19 +170,50 @@ function beatsSection(beats: EpicInspectResult['beats']): string[] {
 
 const NO_RUN = 'NO RUN ARTIFACT -- never armed, or armed on a broker that has since restarted'
 
+/**
+ * THE HEADLINE OF A READ THAT NEVER HAPPENED.
+ *
+ * `NO_RUN` is a DIAGNOSIS -- "never armed, or armed on a broker that has since
+ * restarted" -- and a read that timed out has earned neither disjunct. On
+ * 2026-08-21 a healthy, running, generation-6 epic with its `run.md` on disk the
+ * whole time rendered as never armed because one sentinel RPC did not answer,
+ * and "never armed" is ACTIONABLE: it invites an arm, and arming a live run is
+ * the write that corrupted this run's caps at generation 3.
+ *
+ * So the headline says the one thing the code actually knows, and says out loud
+ * that the run's own facts are absent rather than empty.
+ */
+function readFailureHeader(epicId: string, error: string): string[] {
+  return [
+    `epic ${epicId}: RUN ARTIFACT NOT READ -- the read failed: ${error}`,
+    'status, generation, caps and lease are UNKNOWN, not absent. Retry the read; do NOT arm on the strength of this.',
+  ]
+}
+
 /** The debug read. Order is the design: the reason FIRST, then what the DAG
  *  wants, then what is actually running, then what the machine last did. */
 function renderInspect(i: EpicInspectResult): string {
+  // UNREAD is a third state beside "has a run" and "has none". Every line below
+  // that is derived from `run.md` -- the lease, the generation comparison -- is
+  // a statement about a file this call never got, so it is withheld rather than
+  // printed from a default.
+  const unread = !i.run && Boolean(i.error)
   return [
-    ...(i.run ? runHeader(i.run) : [`epic ${i.epicId}: ${NO_RUN}`]),
+    ...(i.run
+      ? runHeader(i.run)
+      : unread
+        ? readFailureHeader(i.epicId, i.error ?? '')
+        : [`epic ${i.epicId}: ${NO_RUN}`]),
     // THE QUEUE, ABOVE THE PLAN. "Why is nothing dispatching" has a different
     // answer for a queued run than the DAG's, and printing the DAG's first would
     // send the reader hunting through card lanes for a reason that is not there.
     ...(i.queue ? [`queue: ${i.queue.reason}`] : []),
-    leaseLine(i.lease),
-    ...(i.error ? [`error: ${i.error}`] : []),
+    unread ? 'lease: unknown -- not read' : leaseLine(i.lease),
+    // Folded into the headline when the read failed; still an aside when a run
+    // DID come back and something secondary (a baton slice, say) errored.
+    ...(i.error && !unread ? [`error: ${i.error}`] : []),
     ...(i.plan ? planSection(i.plan) : []),
-    ...liveSection(i.live),
+    ...liveSection(i.live, unread),
     ...beatsSection(i.beats),
     ...batonBlock(i.baton, '## Baton'),
   ].join('\n')

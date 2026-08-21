@@ -200,6 +200,53 @@ describe('inspect', () => {
   })
 })
 
+/**
+ * 2026-08-21, overseer gen 6 of `epic-project-runner`: a single sentinel timeout
+ * rendered a healthy, running, gen-6 epic as `NO RUN ARTIFACT -- never armed`,
+ * `lease: free (never run)` and a gen-0 mismatch WARNING. Every one of those
+ * three lines is derived from a file the code never managed to read.
+ *
+ * `NO_RUN` is a DIAGNOSIS ("never armed, or armed on a broker that has since
+ * restarted"), and the fix an agent draws from it -- arm the run -- is the exact
+ * write that corrupts a live run's caps.
+ */
+describe('inspect after a FAILED read', () => {
+  const failed = (over: Partial<EpicInspectResult> = {}) =>
+    inspect({ run: null, lease: null, error: 'sentinel timed out', ...over })
+
+  test('the headline names the READ FAILURE -- a timed-out read has not earned the never-armed diagnosis', () => {
+    expect(renderEpic(failed())).not.toContain('NO RUN ARTIFACT')
+  })
+
+  test('the error is quoted in the headline, not left as an aside three lines down', () => {
+    const out = renderEpic(failed())
+    const headline = out.split('\n')[0]
+    expect(headline).toContain('sentinel timed out')
+  })
+
+  test('the lease is UNKNOWN, not free -- `free (never run)` is a fact about a file nobody read', () => {
+    expect(renderEpic(failed())).not.toContain('never run')
+  })
+
+  test('the gen-0 WARNING is suppressed -- gen 0 is the parser default for an absent file', () => {
+    const l = inspect().inspect!.live
+    const out = renderEpic(
+      failed({ live: { ...l, generationMismatch: 'conversations tagged gen 6 but run.md says 0' } }),
+    )
+    expect(out).not.toContain('WARNING')
+  })
+
+  test('a CLEAN read with no run keeps today diagnosis -- the never-armed case is real and must survive', () => {
+    expect(renderEpic(inspect({ run: null }))).toContain('NO RUN ARTIFACT')
+  })
+
+  test('an error alongside a run that DID read is still an aside -- the run header is the true headline', () => {
+    const out = renderEpic(inspect({ error: 'baton read partial' }))
+    expect(out.split('\n')[0]).toContain('generation 7/40')
+    expect(out).toContain('baton read partial')
+  })
+})
+
 describe('the other shapes', () => {
   test('an empty list says nothing is visible rather than printing a bare count', () => {
     expect(renderEpic({ ok: true, runs: [] })).toContain('No epic runs visible')

@@ -121,9 +121,15 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   const io = epicIo()
   const view = ctx.view ?? (await io.fetchEpicRun(deps, seats.project, seats.epicId))
   if (!view.run) {
+    // TWO WAYS TO HAVE NO RUN, ONE BEHAVIOUR, TWO SENTENCES. Skipping is right
+    // for both, but the NOTE is what the wall row and the beat list render, and
+    // "nothing is on disk for it" is a claim about a file a timed-out read never
+    // reached. `view.error` is carried alongside either way.
     return finish(deps, seats, 0, {
       epicId: seats.epicId,
-      note: 'no run artifact -- the epic is armed but nothing is on disk for it',
+      note: view.error
+        ? `run artifact NOT READ -- the read failed: ${view.error}; skipping this beat rather than acting blind`
+        : 'no run artifact -- the epic is armed but nothing is on disk for it',
       actions: 0,
       spawned: [],
       error: view.error,

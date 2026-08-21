@@ -272,3 +272,39 @@ describe('inspectEpic queue peers', () => {
     expect(result.queue).toBeUndefined()
   })
 })
+
+/**
+ * A read that FAILED and a read that found nothing are different answers, and
+ * only one of them licenses a claim about the run. Gen 6 of `epic-project-runner`
+ * met a sentinel timeout and inspect reported `run.md says 0` about a gen-6 run.
+ */
+describe('inspectEpic after a failed read', () => {
+  afterEach(() => resetEpicIo())
+
+  function stubFailedRead(error?: string): void {
+    configureEpicIo({
+      fetchEpicRun: async () => ({
+        run: null,
+        baton: [],
+        acknowledgedCardIds: [],
+        dispatchCounts: {},
+        lease: null,
+        ...(error ? { error } : {}),
+      }),
+      fetchBoardCards: async () => [],
+    })
+  }
+
+  test('no generation mismatch is fabricated against the gen-0 default', async () => {
+    stubFailedRead('sentinel timed out')
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.error).toBe('sentinel timed out')
+    expect(result.live).not.toHaveProperty('generationMismatch')
+  })
+
+  test('a CLEAN read with no artifact still compares against gen 0 -- that comparison is real', async () => {
+    stubFailedRead()
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.live.generationMismatch).toContain('run.md says 0')
+  })
+})

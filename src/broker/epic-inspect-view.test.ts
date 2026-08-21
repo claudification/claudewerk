@@ -158,6 +158,17 @@ describe('toInspectLive', () => {
     )
   })
 
+  /**
+   * `runGen: null` is "the run was never read", which is NOT `runGen: 0`. The
+   * comparison against 0 is what produced `tagged gen 6 but run.md says 0` on a
+   * gen-6 run whose only sin was one timed-out sentinel RPC.
+   */
+  test('a run that was never READ produces no mismatch -- there is nothing to disagree with', () => {
+    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 9 }), runGen: null })).not.toHaveProperty(
+      'generationMismatch',
+    )
+  })
+
   test('unacknowledged settles are surfaced -- this is what a wake is FOR', () => {
     const out = toInspectLive({ ...base, group: group({ settled: ['t7'] }), unacknowledged: ['t7'] })
     expect(out.unacknowledged).toEqual(['t7'])

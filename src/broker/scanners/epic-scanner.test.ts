@@ -46,7 +46,9 @@ beforeEach(() => {
       acknowledgedCardIds: [],
       dispatchCounts: {},
       lease: null,
-      error: 'no run in this test',
+      // No `error`: these tests want a read that SUCCEEDED and found no run.
+      // The beat now says something different when the read itself failed, and
+      // a stub that reports both at once could no longer say which it meant.
     }),
     fetchBoardCards: async () => [],
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
