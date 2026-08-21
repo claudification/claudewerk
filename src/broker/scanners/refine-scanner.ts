@@ -52,7 +52,16 @@ import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
 import { applyOrderToRequest } from '../scheduled-tasks/fire'
-import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
+import {
+  DISPATCH_FAILED_BUCKET,
+  type DispatchFailedBucket,
+  type DispatchUnit,
+  dispatchUnits,
+  type Refusal,
+  type Scanner,
+  type ScannerDeps,
+  type ScanOutcome,
+} from './scanner'
 
 /**
  * THE EPIC ID EVERY REFINER SEAT IS TAGGED WITH -- a reserved lane, not a real
@@ -66,6 +75,11 @@ import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
  * in-flight legs and acknowledged into its baton.
  */
 export const REFINE_EPIC_ID = 'refine'
+
+/** Log prefix. Named here because `scanRefine` hands it to the shared dispatch
+ *  tail, and the `Scanner` record below quotes the same constant -- two
+ *  spellings of a log prefix is how a grep stops finding half the lines. */
+const REFINE_TAG = '[refine]'
 
 /**
  * MAX REFINER SEATS IN FLIGHT, quoted from the ORDER rather than picked here.
@@ -98,16 +112,19 @@ export type RefineBucket =
   | 'unspawnable'
   | 'held-back'
   | 'order-refused'
-  | 'dispatch-failed'
+  // Spelled by the shared surface, never restated here -- see
+  // `DISPATCH_FAILED_BUCKET`, which is the bucket the shared dispatch tail
+  // files into.
+  | DispatchFailedBucket
 
-export const REFINE_BUCKETS: readonly RefineBucket[] = [
+const REFINE_BUCKETS: readonly RefineBucket[] = [
   'live-conversation',
   'already-run',
   'not-actionable',
   'unspawnable',
   'held-back',
   'order-refused',
-  'dispatch-failed',
+  DISPATCH_FAILED_BUCKET,
 ] as const
 
 export interface RefineDeps extends ScannerDeps {
@@ -229,6 +246,120 @@ function compileSeat(deps: RefineDeps, card: ProjectTaskMeta): SeatCompilation {
   return { ok: true, request: applied.request }
 }
 
+/** What the shared liveness fold already knows about this scanner's own lane,
+ *  as the three membership tests {@link triageSelected} actually asks. */
+interface RefineLiveness {
+  live: ReadonlySet<string>
+  settled: ReadonlySet<string>
+  dead: ReadonlySet<string>
+}
+
+/** The SHARED liveness fold, over this scanner's own reserved lane. It answers
+ *  in-flight, settled and unspawnable in one pass and the epic sweep uses the
+ *  identical one, so the two engines cannot disagree about what is alive. */
+function refineGroup(deps: RefineDeps): ReturnType<typeof emptyGroup> {
+  return (
+    groupEpicConversations(deps.getAllConversations(), deps.isLive, deps.producedOutput).get(REFINE_EPIC_ID) ??
+    emptyGroup(REFINE_EPIC_ID, deps.project)
+  )
+}
+
+/**
+ * EVERY WAY A SELECTED CARD IS REFUSED BEFORE THE CEILING, MOST SPECIFIC FIRST
+ * -- first rule that claims the card wins, and everything below it is skipped.
+ *
+ * A table rather than an if-chain, matching `WITHHOLD_RULES` in `epic-ready.ts`
+ * and `IDLE_RULES` beside it: THE ORDER IS THE DESIGN, and a table makes that
+ * order something you can read, reorder and test rather than something you
+ * reconstruct by tracing branches. `lint:patterns` enforces it as a covenant
+ * ("no-long-if-chain"), which is how this one got written down.
+ *
+ * CEILING-FREE ON PURPOSE. A card refused by any rule here never reaches the
+ * ceiling, so it never consumes a slot another card could have used.
+ */
+const REFUSAL_RULES: ReadonlyArray<{
+  claims: (card: ProjectTaskMeta, liveness: RefineLiveness) => boolean
+  bucket: RefineBucket
+  detail: (card: ProjectTaskMeta) => string
+}> = [
+  {
+    // A REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
+    // the only lanes where that is true; moving the spec out from under a live
+    // implementer, or rewriting a card whose work already shipped, is worse than
+    // leaving the tag on. Terminal cards land here too -- a tag left on a `done`
+    // card is history, not a queue entry.
+    claims: card => epicBucket(card.status) !== 'notStarted',
+    bucket: 'not-actionable',
+    detail: card =>
+      `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a refiner rewrites a card nobody is building yet`,
+  },
+  {
+    claims: (card, liveness) => liveness.live.has(card.slug),
+    bucket: 'live-conversation',
+    detail: () => 'a refiner is already working it',
+  },
+  {
+    claims: (card, liveness) => liveness.dead.has(card.slug),
+    bucket: 'unspawnable',
+    detail: () => 'refiner seats keep dying before producing anything; not retried',
+  },
+  {
+    // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
+    // forever. A refiner that ran and finished leaves the tag on only if it
+    // failed to reach step 6 of its instructions -- and dispatching a second
+    // one, and a third, every tick, is the treadmill. The card stays tagged and
+    // visible with a reason instead; re-tagging it (or fixing whatever stopped
+    // the drain) re-authorises it, by a decision somebody made, never the clock.
+    claims: (card, liveness) => liveness.settled.has(card.slug),
+    bucket: 'already-run',
+    detail: () => 'a refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
+  },
+]
+
+/**
+ * WHICH SELECTED CARDS A REFINER MAY BE SENT TO, and a named bucket for every
+ * one of the rest.
+ *
+ * The one place that walks {@link REFUSAL_RULES}. Everything a reader has to
+ * audit is in the table; this is the loop that applies it.
+ */
+function triageSelected(
+  selected: readonly ProjectTaskMeta[],
+  liveness: RefineLiveness,
+): { candidates: ProjectTaskMeta[]; refused: Refusal<RefineBucket>[] } {
+  const refused: Refusal<RefineBucket>[] = []
+  const candidates: ProjectTaskMeta[] = []
+  for (const card of selected) {
+    const rule = REFUSAL_RULES.find(r => r.claims(card, liveness))
+    if (rule) refused.push({ unit: card.slug, bucket: rule.bucket, detail: rule.detail(card) })
+    else candidates.push(card)
+  }
+  return { candidates, refused }
+}
+
+/**
+ * COMPILE EVERY SEAT BEFORE ANY OF THEM IS SENT, so the dispatch itself is the
+ * shared tail and nothing else.
+ *
+ * An order that asks for more privilege than this caller holds, or a fragment
+ * its deny rules cannot be unioned into, is a REFUSAL and not a quiet downgrade
+ * -- dispatching a refiner that regained the status verb looks exactly like a
+ * correct run until a card lands in the wrong lane.
+ */
+function compileSeats(
+  deps: RefineDeps,
+  cards: readonly ProjectTaskMeta[],
+): { units: DispatchUnit[]; refused: Refusal<RefineBucket>[] } {
+  const units: DispatchUnit[] = []
+  const refused: Refusal<RefineBucket>[] = []
+  for (const card of cards) {
+    const seat = compileSeat(deps, card)
+    if (seat.ok) units.push({ id: card.slug, send: () => deps.dispatch(seat.request, card.slug) })
+    else refused.push({ unit: card.slug, bucket: 'order-refused', detail: seat.reason })
+  }
+  return { units, refused }
+}
+
 /**
  * ONE PASS.
  *
@@ -243,60 +374,13 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
     return { selected: [], acted: [], refused: [], idleReason: `no card carries \`${NEEDS_REFINE_TAG}\`` }
   }
 
-  // The SHARED liveness fold, over this scanner's own reserved lane. It answers
-  // in-flight, settled and unspawnable in one pass and the epic sweep uses the
-  // identical one, so the two engines cannot disagree about what is alive.
-  const group =
-    groupEpicConversations(deps.getAllConversations(), deps.isLive, deps.producedOutput).get(REFINE_EPIC_ID) ??
-    emptyGroup(REFINE_EPIC_ID, deps.project)
-  const live = new Set(group.inFlight)
-  const settled = new Set(group.settled)
-  const dead = new Set(group.unspawnable)
-
-  const refused: Refusal<RefineBucket>[] = []
-  const candidates: ProjectTaskMeta[] = []
-  for (const card of selected) {
-    // A REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
-    // the only lanes where that is true; moving the spec out from under a live
-    // implementer, or rewriting a card whose work already shipped, is worse than
-    // leaving the tag on. Terminal cards land here too -- a tag left on a `done`
-    // card is history, not a queue entry.
-    if (epicBucket(card.status) !== 'notStarted') {
-      refused.push({
-        unit: card.slug,
-        bucket: 'not-actionable',
-        detail: `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a refiner rewrites a card nobody is building yet`,
-      })
-      continue
-    }
-    if (live.has(card.slug)) {
-      refused.push({ unit: card.slug, bucket: 'live-conversation', detail: 'a refiner is already working it' })
-      continue
-    }
-    if (dead.has(card.slug)) {
-      refused.push({
-        unit: card.slug,
-        bucket: 'unspawnable',
-        detail: 'refiner seats keep dying before producing anything; not retried',
-      })
-      continue
-    }
-    // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
-    // forever. A refiner that ran and finished leaves the tag on only if it
-    // failed to reach step 6 of its instructions -- and dispatching a second
-    // one, and a third, every tick, is the treadmill. The card stays tagged and
-    // visible with a reason instead; re-tagging it (or fixing whatever stopped
-    // the drain) re-authorises it, by a decision somebody made, never the clock.
-    if (settled.has(card.slug)) {
-      refused.push({
-        unit: card.slug,
-        bucket: 'already-run',
-        detail: 'a refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
-      })
-      continue
-    }
-    candidates.push(card)
-  }
+  const group = refineGroup(deps)
+  const triaged = triageSelected(selected, {
+    live: new Set(group.inFlight),
+    settled: new Set(group.settled),
+    dead: new Set(group.unspawnable),
+  })
+  const refused = triaged.refused
 
   // THE CEILING, counting every live refiner and not just the ones whose card is
   // still in this pass's cohort: a seat mid-refine holds its slot even on the
@@ -304,30 +388,17 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
   const slots = Math.max(0, deps.concurrency - group.inFlight.length)
   refused.push(
     ...refuseLane(
-      candidates.slice(slots),
+      triaged.candidates.slice(slots),
       'held-back',
       () => `rough, but the refiner ceiling (${deps.concurrency}) is full`,
     ),
   )
 
+  const compiled = compileSeats(deps, triaged.candidates.slice(0, slots))
+  refused.push(...compiled.refused)
+
   const acted: string[] = []
-  for (const card of candidates.slice(0, slots)) {
-    const seat = compileSeat(deps, card)
-    // An order that asks for more privilege than this caller holds, or a
-    // fragment its deny rules cannot be unioned into, is a REFUSAL and not a
-    // quiet downgrade -- dispatching a refiner that regained the status verb
-    // looks exactly like a correct run until a card lands in the wrong lane.
-    if (!seat.ok) {
-      refused.push({ unit: card.slug, bucket: 'order-refused', detail: seat.reason })
-      continue
-    }
-    const ok = await deps.dispatch(seat.request, card.slug).catch(err => {
-      deps.log(`[refine] dispatch threw for ${card.slug}: ${err instanceof Error ? err.message : String(err)}`)
-      return false
-    })
-    if (ok) acted.push(card.slug)
-    else refused.push({ unit: card.slug, bucket: 'dispatch-failed', detail: 'the spawn was refused' })
-  }
+  await dispatchUnits(compiled.units, { tag: REFINE_TAG, log: deps.log }, { acted, refused })
 
   return {
     selected: selected.map(c => c.slug),
@@ -353,7 +424,7 @@ function idleReason(selectedCount: number, refused: readonly Refusal<RefineBucke
 
 export const refineScanner: Scanner<RefineDeps, RefineBucket> = {
   id: 'refine',
-  tag: '[refine]',
+  tag: REFINE_TAG,
   selects: `cards tagged \`${NEEDS_REFINE_TAG}\``,
   does: 'dispatch',
   buckets: REFINE_BUCKETS,
