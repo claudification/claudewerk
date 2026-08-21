@@ -185,3 +185,33 @@ describe('prompt modes', () => {
     expect(out.indexOf('commit all changes')).toBeLessThan(out.indexOf('</project-task>'))
   })
 })
+
+/**
+ * The roster is built by the CALLER -- this module is handed one card and can
+ * never see the board -- so all that is asserted here is that it arrives, that
+ * it lands before the step that refers to it, and that absent means absent.
+ */
+describe('the open-epic roster', () => {
+  const ROSTER = 'OPEN EPICS on this board:\n- epic-a -- Alpha (1/4)'
+
+  it('lands inside the wrapper, above the instructions that point at it', () => {
+    const out = buildTaskPrompt(baseTask, undefined, undefined, 'refine', ROSTER)
+    expect(out).toContain('- epic-a -- Alpha (1/4)')
+    expect(out.indexOf('OPEN EPICS')).toBeLessThan(out.indexOf('REFINE this card'))
+    expect(out).toContain('</project-task>')
+  })
+
+  it('threads through composeSpawnPrompt', () => {
+    const out = composeSpawnPrompt('', { taskWrapper: baseTask, mode: 'refine', epicRoster: ROSTER })
+    expect(out).toContain('- epic-a -- Alpha (1/4)')
+  })
+
+  it('costs not one byte when the caller sends none', () => {
+    expect(buildTaskPrompt(baseTask, undefined, undefined, 'refine', '')).toBe(
+      buildTaskPrompt(baseTask, undefined, undefined, 'refine'),
+    )
+    expect(composeSpawnPrompt('', { taskWrapper: baseTask, mode: 'refine', epicRoster: undefined })).toBe(
+      composeSpawnPrompt('', { taskWrapper: baseTask, mode: 'refine' }),
+    )
+  })
+})

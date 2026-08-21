@@ -7,11 +7,18 @@
  * single card's LAUNCH modal and an epic's action row had no way to reach them
  * without copying the prose, which is how two definitions of "refine" start.
  *
+ * REFINE'S EPIC SOFT-LINK STEP IS IMPORTED (`epic-roster.ts`), not written out
+ * here, and the same constant is step 6 of `REFINER_INSTRUCTIONS`. The two
+ * definitions of "refine" have drifted apart once already; a rule about when a
+ * card may be parented is exactly the kind that must not do it twice.
+ *
  * `flipsStatus` is the part that is not cosmetic. WORK moves the card
  * in-progress -> in-review because work happened. Asking an agent to READ five
  * cards and report on them must never mark them reviewed -- an ANALYZE run that
  * flipped status was a board that lied about what had been built.
  */
+
+import { EPIC_SOFT_LINK_STEP } from './epic-roster'
 
 export type TaskMode = 'work' | 'refine' | 'analyze'
 
@@ -56,6 +63,7 @@ For each task:
 3. Add missing tags and set appropriate priority
 4. Break down large tasks into smaller, actionable sub-tasks
 5. Identify dependencies between tasks
+6. ${EPIC_SOFT_LINK_STEP}
 
 Edit the card files themselves. Do NOT change any card's status, and do NOT
 start implementing the work.`,
@@ -65,6 +73,7 @@ start implementing the work.`,
 3. Add missing tags and set an appropriate priority
 4. Break it into smaller, actionable sub-tasks if it is too large
 5. Note any dependencies on other cards
+6. ${EPIC_SOFT_LINK_STEP}
 
 Edit the card file itself. Do NOT change the card's status, and do NOT start
 implementing the work.`,

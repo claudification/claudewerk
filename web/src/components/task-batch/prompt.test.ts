@@ -72,6 +72,16 @@ describe('buildBatchPrompt', () => {
   it('survives an empty selection without emitting a stray path', () => {
     expect(buildBatchPrompt('x', [])).toBe('x\n\nTasks:\n')
   })
+
+  it('puts the epic roster between the instructions and the cards', () => {
+    const out = buildBatchPrompt('Refine these.', [card()], 'OPEN EPICS on this board:\n- epic-a -- Alpha (1/4)')
+    expect(out.indexOf('Refine these.')).toBeLessThan(out.indexOf('OPEN EPICS'))
+    expect(out.indexOf('OPEN EPICS')).toBeLessThan(out.indexOf('Tasks:'))
+  })
+
+  it('is byte-identical to the roster-less prompt when there is no roster', () => {
+    expect(buildBatchPrompt('x', [card()], '')).toBe(buildBatchPrompt('x', [card()]))
+  })
 })
 
 describe('batchOpenState', () => {

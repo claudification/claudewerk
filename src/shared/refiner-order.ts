@@ -23,6 +23,7 @@
  * themselves belong to `werk-work-orders` and are deliberately NOT edited here.
  */
 
+import { EPIC_SOFT_LINK_STEP } from './epic-roster'
 import { type Order, validateOrder } from './order'
 
 /** The one id a scheduled task names to spend this seat. */
@@ -43,6 +44,11 @@ export const REFINER_ORDER_ID = 'REFINER@1'
  *
  * Derived from `TASK_MODES`' `refine.single` so the two do not drift while both
  * exist; the additions are the tag removal and the explicit no-status clause.
+ *
+ * STEP 6 IS IMPORTED, not written here, for that same reason -- `epic-roster.ts`
+ * owns both the roster block and the sentence that tells a seat what to do with
+ * it, so the scanner seat and the panel's refine cannot disagree about when a
+ * card may be parented.
  */
 export const REFINER_INSTRUCTIONS = `REFINE this card -- do not implement it.
 1. Read the card file for full context, and the code it points at
@@ -50,7 +56,8 @@ export const REFINER_INSTRUCTIONS = `REFINE this card -- do not implement it.
 3. Add missing tags and set an appropriate priority
 4. Break it into smaller, actionable sub-tasks if it is too large
 5. Note any dependencies on other cards
-6. REMOVE the \`needs-refine\` tag from the card's \`tags:\` line -- the tag is the
+6. ${EPIC_SOFT_LINK_STEP}
+7. REMOVE the \`needs-refine\` tag from the card's \`tags:\` line -- the tag is the
    queue, and a card you refined but left tagged comes back to you forever
 
 Edit the card file itself. Do NOT change the card's status (you cannot -- the

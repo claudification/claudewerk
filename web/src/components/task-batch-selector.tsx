@@ -12,6 +12,7 @@
  */
 
 import { cardRelPath } from '@shared/card-path'
+import { openEpicRoster, wantsEpicRoster } from '@shared/epic-roster'
 import { TASK_MODES, type TaskMode, taskMode } from '@shared/task-modes'
 import { Fzf } from 'fzf'
 import { CheckSquare, Copy, Info, ListChecks, Search, Send, X } from 'lucide-react'
@@ -389,10 +390,25 @@ export const TaskBatchSelector = memo(function TaskBatchSelector() {
     })
   }, [])
 
+  /**
+   * The open-epic roster, sent only when this batch can act on it: a REFINE of
+   * a selection containing at least one card with no `epic:` yet. A work or
+   * analyze batch never parents anything, and a selection where every card is
+   * already parented has nothing to soft-link -- both would be paying for a
+   * board dump the agent cannot use.
+   *
+   * Built from `tasks` (the whole board), not from `selectedTasks`: the epics a
+   * card should join are almost never inside the batch you selected.
+   */
+  const epicRoster = useMemo(
+    () => (wantsEpicRoster(templateId === 'refine', selectedTasks) ? openEpicRoster(tasks) : ''),
+    [templateId, selectedTasks, tasks],
+  )
+
   // Build final prompt
   const finalPrompt = useMemo(
-    () => buildBatchPrompt(customInstructions, selectedTasks),
-    [customInstructions, selectedTasks],
+    () => buildBatchPrompt(customInstructions, selectedTasks, epicRoster),
+    [customInstructions, selectedTasks, epicRoster],
   )
 
   // Actions

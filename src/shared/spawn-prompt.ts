@@ -42,6 +42,10 @@ export type PromptOptions = {
   taskWrapper?: TaskMeta
   /** What to DO with the card. Defaults to `work`. See `task-modes.ts`. */
   mode?: TaskMode
+  /** The open-epic roster block (`epic-roster.ts`), when the caller decided
+   *  this run can use one. Built by the CALLER because this module is handed a
+   *  single card and never the board. Empty/absent emits nothing at all. */
+  epicRoster?: string
 }
 
 /**
@@ -52,7 +56,7 @@ export function composeSpawnPrompt(basePrompt: string, opts: PromptOptions = {})
   const suffixes =
     (opts.autoCommit ? AUTO_COMMIT_INSTRUCTIONS : '') + (opts.worktreeMergeBack ? WORKTREE_MERGEBACK_INSTRUCTIONS : '')
   if (opts.taskWrapper) {
-    return buildTaskPrompt(opts.taskWrapper, suffixes || undefined, basePrompt || undefined, opts.mode)
+    return buildTaskPrompt(opts.taskWrapper, suffixes || undefined, basePrompt || undefined, opts.mode, opts.epicRoster)
   }
   return basePrompt + suffixes
 }
@@ -77,12 +81,18 @@ function modeInstructions(mode: TaskMode | undefined, slug: string): string {
  * If `basePrompt` is provided (non-empty), it overrides the task body content.
  * `mode` selects the lifecycle instruction block; it defaults to `work`, which
  * is byte-for-byte what this emitted before modes existed.
+ *
+ * `epicRoster` goes BEFORE the instructions, because the soft-link step inside
+ * them refers to it ("if an OPEN EPICS list appears in this prompt"). Whether
+ * there should be one at all is the caller's call: this function is handed one
+ * card and cannot see the board.
  */
 export function buildTaskPrompt(
   task: TaskMeta,
   extraInstructions?: string,
   basePrompt?: string,
   mode?: TaskMode,
+  epicRoster?: string,
 ): string {
   const tagAttrs = [
     `id="${task.slug}"`,
@@ -95,5 +105,6 @@ export function buildTaskPrompt(
     .join(' ')
   const content = (basePrompt ?? task.body ?? task.bodyPreview ?? task.title).trim() || task.title
   const instructions = modeInstructions(mode, task.slug)
-  return `<project-task ${tagAttrs}>\n${content}\n\n${instructions}${extraInstructions || ''}\n</project-task>`
+  const roster = epicRoster ? `${epicRoster}\n\n` : ''
+  return `<project-task ${tagAttrs}>\n${content}\n\n${roster}${instructions}${extraInstructions || ''}\n</project-task>`
 }

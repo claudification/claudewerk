@@ -19,8 +19,16 @@ export function taskPromptLine(task: ProjectTaskMeta): string {
   return `- **${task.title}**${prio}\n  ${cardRelPath(task.slug)}`
 }
 
-export function buildBatchPrompt(instructions: string, tasks: ProjectTaskMeta[]): string {
-  return `${instructions}\n\nTasks:\n${tasks.map(taskPromptLine).join('\n')}`
+/**
+ * `epicRoster` sits between the instructions and the card list, for the reason
+ * `spawn-prompt.ts` gives: the refine template's soft-link step points at "an
+ * OPEN EPICS list in this prompt", so the list has to be in the prompt before
+ * the cards it is meant to be applied to. Empty (the normal case, since every
+ * mode but refine passes nothing) emits not one extra byte.
+ */
+export function buildBatchPrompt(instructions: string, tasks: ProjectTaskMeta[], epicRoster = ''): string {
+  const roster = epicRoster ? `\n\n${epicRoster}` : ''
+  return `${instructions}${roster}\n\nTasks:\n${tasks.map(taskPromptLine).join('\n')}`
 }
 
 /** What an `open-batch-selector` payload means for the selector's state. */
