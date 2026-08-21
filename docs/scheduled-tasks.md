@@ -190,12 +190,19 @@ the ceiling of 3 actually admitted 2.)
 
 **Work orders and reserved seats.** A schedule may name an `orderId` -- today
 only `REFINER@1` (`src/shared/refiner-order.ts`). The order supplies the seat's
-caps (model, effort, budget, deny rules), composed through `composeOrderCaps` so
-it can only ever *narrow* what the scheduler already holds, and it declares a
-`reservation`: how many of the 3 slots that role may hold at once. `REFINER@1`
-reserves 1, so a backlog of `#needs-refine` cards leaves 2 slots permanently
-reachable by the nightly sweep and the recap. A schedule naming no order is
-bounded by the global ceiling alone.
+caps (model, effort, budget, **turn ceiling**, deny rules), composed through
+`composeOrderCaps` so it can only ever *narrow* what the scheduler already holds,
+and it declares a `reservation`: how many of the 3 slots that role may hold at
+once. `REFINER@1` reserves 1, so a backlog of `#needs-refine` cards leaves 2
+slots permanently reachable by the nightly sweep and the recap. A schedule naming
+no order -- or naming one that declares no `reservation` -- is bounded by the
+global ceiling alone; `reservation: 0` parks a role so it holds no slot at all.
+
+`caps.maxTurns` becomes CC's `--max-turns` on the seat that launches, by the same
+route `maxBudgetUsd` takes: spawn message -> `buildHeadlessArgs`
+(`src/sentinel/headless-args.ts`) -> `rclaude` -> `claude`. Like the budget, it is
+**headless-only** -- the PTY revive path has no flag seam for it, and no
+unattended seat takes that path.
 
 | Refusal in `error` | Means |
 |---|---|
