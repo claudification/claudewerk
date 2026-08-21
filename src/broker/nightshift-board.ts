@@ -25,20 +25,18 @@ import { werkLiveness } from './werk-liveness'
 export type CallBoard = typeof callBoard
 
 /** Every card on the project's board, any lane. `[]` when the sentinel is gone
- *  -- a night run with no board is an empty run, never a crash. */
-export async function listBoardCards(
-  call: CallBoard,
-  store: ConversationStore,
-  project: string,
-): Promise<ProjectTaskMeta[]> {
+ *  -- a night run with no board is an empty run, never a crash.
+ *  Module-internal: `buildNightshiftScanDeps` below is the only door to it. */
+async function listBoardCards(call: CallBoard, store: ConversationStore, project: string): Promise<ProjectTaskMeta[]> {
   const res = await call(store, project, { op: 'list' })
   if (!res.ok) return []
   return (res.tasks as ProjectTaskMeta[] | undefined) ?? []
 }
 
 /** One card WITH its body -- the read that makes the task a reference rather
- *  than a copy. `null` when the card is gone or the sentinel refused. */
-export async function readBoardCard(
+ *  than a copy. `null` when the card is gone or the sentinel refused.
+ *  Module-internal, same as `listBoardCards`. */
+async function readBoardCard(
   call: CallBoard,
   store: ConversationStore,
   project: string,
@@ -80,7 +78,7 @@ export async function untagBoardCard(
 
 /** The registry reads the scan needs. Structural, so a test hands over a plain
  *  object rather than a whole ConversationStore. */
-export interface NightshiftScanStore {
+interface NightshiftScanStore {
   getAllConversations: () => Conversation[]
   getActiveConversationCount: (id: string) => number
 }
