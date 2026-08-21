@@ -723,7 +723,9 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
       needsRefine,
       exhausted,
       alreadyRun,
-      inFlight: inFlight.size,
+      // The SAME set the ceiling was computed from, sorted so one beat's line
+      // reads identically twice.
+      inFlight: [...inFlight].sort(),
     }),
   }
 }
@@ -744,7 +746,18 @@ interface IdleInput {
   needsRefine: ProjectTaskMeta[]
   exhausted: ProjectTaskMeta[]
   alreadyRun: ProjectTaskMeta[]
-  inFlight: number
+  /**
+   * THE CARDS HOLDING THE SLOTS, not merely how many there are.
+   *
+   * It was a bare count, and that is precisely what let a leaked slot hide.
+   * `epic-project-runner` gen 7 read "2 already in flight (concurrency ceiling)"
+   * for twelve minutes while one of those two was a conversation that had been
+   * dead the whole time -- and an anonymous number is unfalsifiable: there is
+   * nothing in it for a reader to check. Named, the same line becomes a claim
+   * somebody can test in one `list_conversations` call, so a slot no live
+   * conversation occupies can no longer be reported as a busy ceiling.
+   */
+  inFlight: readonly string[]
 }
 
 /**
@@ -808,13 +821,18 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
   { when: i => i.complete, say: () => 'every child is terminal' },
   {
     when: i => i.ready.length > 0 && i.slots === 0,
-    say: i => `${i.ready.length} card(s) ready but ${i.inFlight} already in flight (concurrency ceiling)`,
+    say: i =>
+      `${i.ready.length} card(s) ready but ${i.inFlight.length} already in flight (concurrency ceiling): ` +
+      `${i.inFlight.join(', ')}`,
   },
   {
     when: i => i.waitingOnDeps.length > 0,
     say: i => `nothing ready: ${i.waitingOnDeps.map(w => `${w.card.slug} <- ${w.waitingOn.join(', ')}`).join('; ')}`,
   },
-  { when: i => i.inFlight > 0, say: i => `${i.inFlight} card(s) still in flight` },
+  {
+    when: i => i.inFlight.length > 0,
+    say: i => `${i.inFlight.length} card(s) still in flight: ${i.inFlight.join(', ')}`,
+  },
   { when: i => i.cohortSize === 0, say: i => i.emptyDetail },
 ]
 

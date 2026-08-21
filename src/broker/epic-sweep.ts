@@ -20,6 +20,7 @@ import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
 import { isDeletedEpic, listArmedEpics } from './epic-registry'
+import { NEVER_ABANDONED, type SeatReaper } from './epic-seat-vitality'
 
 /** What one epic's conversations add up to, from the registry alone. */
 export interface EpicGroup {
@@ -71,6 +72,22 @@ export interface EpicGroup {
    */
   failedLegs: FailedLeg[]
   /**
+   * SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED -- dead
+   * by silence rather than by a recorded end. See `epic-seat-vitality.ts`.
+   *
+   * Their cards have ALREADY been folded as dead: an abandoned seat is absent
+   * from `inFlight` and present in `settled` (or `failedLegs`, if it never
+   * produced anything), which is the whole point -- the slot comes back.
+   *
+   * This lane exists so the SETTLE CAN SAY WHICH KIND IT IS. Both a clean exit
+   * and a silent death arrive at `settled` and both get one machine
+   * `completion` entry, and an overseer reading `log.md` alone must be able to
+   * tell "the work finished" from "the worker died" -- one invites a verifier,
+   * the other invites somebody to go and look at the worktree. Reported per
+   * CONVERSATION, like `failedLegs`, because a card can lose two seats this way.
+   */
+  abandonedSeats: AbandonedSeat[]
+  /**
    * Cards that have burned `MAX_LAUNCH_ATTEMPTS` seats without one of them
    * producing anything. THE BOUND ON THE RETRY PATH.
    *
@@ -106,6 +123,31 @@ export interface FailedLeg {
   role: 'implementer' | 'verifier'
   /** The generation that dispatched it -- so the baton entry can say WHEN. */
   gen: number
+}
+
+/**
+ * One seat the engine reaped: the registry still calls it live, and it has held
+ * no connection and said nothing for longer than the engine will wait.
+ *
+ * Carries the evidence rather than a verdict, because the baton entry has to be
+ * checkable by a human who does not trust it: WHICH conversation, in WHICH role,
+ * from WHICH generation, silent since WHEN, and -- the field that makes the whole
+ * thing legible -- the status the registry was still reporting while the seat was
+ * gone.
+ */
+export interface AbandonedSeat {
+  cardId: string
+  convId: string
+  role: 'implementer' | 'verifier'
+  /** The generation that dispatched it. */
+  gen: number
+  /** The conversation's own last sign of life, epoch ms. */
+  lastActivity: number
+  /** How long it had been silent when the engine gave up on it, ms. */
+  silentForMs: number
+  /** The status the registry still carried. THE FIELD THAT LIED -- never
+   *  `ended`, or `werkLiveness` would have settled the card without help. */
+  status: Conversation['status']
 }
 
 /** Liveness is the registry's to know; the caller supplies the predicate. */
@@ -155,6 +197,7 @@ export function emptyGroup(epicId: string, project: string): EpicGroup {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    abandonedSeats: [],
     unspawnable: [],
     convIds: [],
     maxGenSeen: 0,
@@ -188,11 +231,33 @@ interface Accumulators {
 function absorbCardSeat(
   conv: Conversation,
   tag: { epicId: string; cardId: string; role: FailedLeg['role']; gen: number },
-  live: boolean,
+  claimsLive: boolean,
   producedOutput: ProducedOutput,
+  reaper: SeatReaper,
   acc: Accumulators,
   group: EpicGroup,
 ): void {
+  // THE REAP, and it happens HERE rather than inside the injected `isLive` so
+  // that the group can still SAY a seat was reaped. Folding it into liveness
+  // reads identically and loses the one fact the baton needs: whether this
+  // card's settle is a finish or a death.
+  //
+  // Asked only of a seat that CLAIMS to be live -- a conversation already known
+  // dead has nothing to reap, and recording it here would turn every ordinary
+  // finished seat into a reported corpse.
+  const reaping = claimsLive ? reaper(conv) : null
+  if (reaping) {
+    group.abandonedSeats.push({
+      cardId: tag.cardId,
+      convId: conv.id,
+      role: tag.role,
+      gen: tag.gen,
+      lastActivity: conv.lastActivity,
+      silentForMs: reaping.silentForMs,
+      status: conv.status,
+    })
+  }
+  const live = claimsLive && !reaping
   noteCardLiveness(acc.cards, tag.epicId, tag.cardId, live)
   // Second, role-scoped fold. The combined one above still owns settle/dispatch;
   // this one exists so the beat can ask "is a VERDICT already being written" --
@@ -211,7 +276,13 @@ function absorbCardSeat(
 
 /** Fold one conversation into the accumulators. Split out so the grouping pass
  *  reads as "for each conversation, absorb it" and nothing else. */
-function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutput, acc: Accumulators): void {
+function absorb(
+  conv: Conversation,
+  isLive: IsLive,
+  producedOutput: ProducedOutput,
+  reaper: SeatReaper,
+  acc: Accumulators,
+): void {
   const tag = conv.launchConfig?.epic
   if (!tag?.epicId) return
 
@@ -225,6 +296,13 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
   acc.groups.set(tag.epicId, group)
 
   const live = isLive(conv)
+  // THE OVERSEER IS DELIBERATELY NOT REAPED HERE. An overseer stuck at a
+  // non-`ended` status is the same lie with a different consequence -- it holds
+  // `overseerAlive`, which holds the WHOLE beat rather than one slot -- and
+  // unfreezing it means granting the lease to a second overseer, which is the
+  // one action in this engine that costs a full generation if it is wrong. That
+  // is its own card (`epic-overseer-seat-never-reaped`), not a rider on this
+  // one: the fix below is bounded to the card lanes it was filed for.
   if (tag.role === 'overseer') {
     if (live) {
       group.overseerAlive = true
@@ -234,7 +312,7 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
   }
   const { epicId, cardId, role, gen } = tag
   if (!cardId) return
-  absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, acc, group)
+  absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, reaper, acc, group)
 }
 
 /**
@@ -295,9 +373,10 @@ export function groupEpicConversations(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput: ProducedOutput = () => true,
+  reaper: SeatReaper = NEVER_ABANDONED,
 ): Map<string, EpicGroup> {
   const acc: Accumulators = { groups: new Map(), cards: new Map(), verifiers: new Map(), outputs: new Map() }
-  for (const conv of convs) absorb(conv, isLive, producedOutput, acc)
+  for (const conv of convs) absorb(conv, isLive, producedOutput, reaper, acc)
   splitLanes(acc)
   return acc.groups
 }
@@ -395,8 +474,9 @@ export function epicsToWatch(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput?: ProducedOutput,
+  reaper?: SeatReaper,
 ): EpicGroup[] {
-  const groups = groupEpicConversations(convs, isLive, producedOutput)
+  const groups = groupEpicConversations(convs, isLive, producedOutput, reaper)
   for (const { project, epicId } of listArmedEpics()) {
     // A conversation-derived group is strictly better -- it knows what is in
     // flight -- so an armed entry only fills a gap, never overwrites one.

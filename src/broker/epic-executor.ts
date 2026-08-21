@@ -28,8 +28,9 @@ import { renderEpicLogTail } from '../shared/epic-log'
 import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats'
 import { planEpic } from '../shared/epic-ready'
 import { gatedBy } from '../shared/epic-when'
+import type { ProjectTaskMeta } from '../shared/project-task-types'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
-import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
+import { type AcknowledgeContext, acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
 import type { EpicRunView } from './epic-broker-rpc'
 import {
@@ -110,6 +111,39 @@ async function applyBeatPatch(deps: BeatDeps, group: EpicGroup, gen: number, pat
   const res = await epicIo().sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch })
   if (!res.ok) {
     deps.log(`${tag(group.epicId, gen)} run patch FAILED (${Object.keys(patch).join(', ')}): ${res.error}`)
+  }
+}
+
+/**
+ * WHAT A SETTLE NEEDS BEYOND THE CARD ID -- and the round trip it refuses to pay
+ * unless a seat actually died.
+ *
+ * The git scan behind `gitDirt` is a sentinel round trip with a 15-second
+ * ceiling, and the overwhelming majority of settles are ordinary completions that
+ * have no use for it. So the trip is bought ONLY when this beat is about to
+ * acknowledge a card whose seat was reaped: on a healthy run the cost is exactly
+ * zero, and on the beat where it matters it buys the one fact nobody had on
+ * 2026-08-21 -- that the corpse left 392 lines of finished work unstaged.
+ *
+ * Never throws and never blocks a settle. A scan that fails comes back as
+ * UNKNOWN, which is reported as UNKNOWN; "we could not look" must not be allowed
+ * to read as "there is nothing there".
+ */
+async function settleContext(
+  deps: BeatDeps,
+  group: EpicGroup,
+  cards: readonly ProjectTaskMeta[],
+  pending: readonly string[],
+): Promise<AcknowledgeContext> {
+  const lanes = new Map(cards.map(c => [c.slug, c.status]))
+  const lane = (cardId: string) => lanes.get(cardId)
+  const reaped = new Set(group.abandonedSeats.map(s => s.cardId))
+  if (!pending.some(cardId => reaped.has(cardId))) return { lane }
+  if (!deps.gitDirt) return { lane, dirt: null }
+  try {
+    return { lane, dirt: await deps.gitDirt(group.project) }
+  } catch (err) {
+    return { lane, dirt: { ok: false, error: err instanceof Error ? err.message : String(err) } }
   }
 }
 
@@ -208,7 +242,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // failure in this file's docstring real (gens 23-28, 2026-08-19). Rename-aware,
   // or a card acknowledged under its old id would settle again under its new one.
   const pending = unacknowledgedCards(group.settled, renameAwareAcks(view.acknowledgedCardIds, renames))
-  if (pending.length > 0) await acknowledge(deps, group, pending)
+  if (pending.length > 0) await acknowledge(deps, group, pending, await settleContext(deps, group, cards, pending))
 
   // THE PROMISE LEDGER, in the same region and for the same reason: a fact the
   // engine learned and did not write down is a fact the next sweep rediscovers
