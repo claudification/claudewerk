@@ -67,8 +67,6 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
     // only -- `a4-sotu.test.tsx`'s one-request assertion still holds.
     { code: 'S1', feeds: [], load: () => import('./panes/s1-host-vitals') },
     { code: 'P4', feeds: ['fleet-tokens'], load: () => import('./panes/p4-fleet') },
-    { code: 'A4', feeds: ['sheaf'], load: () => import('./panes/a4-sotu') },
-    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
     // A9, like A8, was NOT one of the twelve stubs this registry shipped with --
     // they are all consumed -- so `werk-activity-matrix` is the second pane card
     // that also edits this file, and says so in its commit rather than slipping
@@ -81,7 +79,15 @@ export const WALL_COLUMNS: Record<WallColumn, WallPaneEntry[]> = {
     // the column a seventh pane can join without shrinking a sixth. The grid is
     // wider than any of the three columns and scrolls sideways in all of them,
     // so C being the narrowest costs nothing.
+    //
+    // THIRD OVERRIDE (Jonas, 2026-08-21): "put this above state of the union, so
+    // SOTU and SHEAF are the bottom two in that column". A9 landed appended, at
+    // the foot of C; it now sits ABOVE the sheaf pair. The two prose panes are
+    // the ones a viewer READS, so they go last, under everything that is read at
+    // a glance. Nothing else in C moved.
     { code: 'A9', feeds: ['activity'], load: () => import('./panes/a9-activity') },
+    { code: 'A4', feeds: ['sheaf'], load: () => import('./panes/a4-sotu') },
+    { code: 'A6', feeds: ['sheaf'], load: () => import('./panes/a6-sheaf') },
   ],
 }
 
