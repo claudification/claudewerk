@@ -29,7 +29,7 @@ import { lastBeatAt, recentBeats } from './epic-beat-log'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
 import { epicIo } from './epic-io'
 import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
-import { isArmed, listArmedEpics } from './epic-registry'
+import { isArmed, isDeletedEpic, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
 
@@ -267,6 +267,16 @@ export async function listEpicRuns(
   }
   for (const armed of listArmedEpics()) {
     if (isSameProject(armed.project, project)) ids.add(armed.epicId)
+  }
+  // A DELETED RUN IS NOT MARKED HERE, IT IS GONE. That is the one place this
+  // surface parts company with `clear`: a cleared run is still enumerable
+  // because `list` is how an agent FINDS a run to resume or abort, and a run
+  // nothing can name is a run that gets stranded. A deleted run has no artifact
+  // to name -- resuming it would arm a fresh one -- so leaving a row for it
+  // would offer verbs that cannot work. Filtered after the union, so neither
+  // source can smuggle one back.
+  for (const epicId of [...ids]) {
+    if (isDeletedEpic(project, epicId)) ids.delete(epicId)
   }
 
   const rows = await Promise.all(

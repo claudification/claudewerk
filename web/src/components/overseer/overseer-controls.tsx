@@ -8,12 +8,18 @@
  * PAUSE and ABORT are separate BUTTONS now, not two gestures on one control. A
  * modifier key as the only thing between "resume later with the baton intact"
  * and "terminal, no resume" is a UI daring you to make a mistake you cannot
- * undo. ABORT additionally confirms, because it is the one action here that
- * cannot be walked back.
+ * undo. ABORT confirms, because it is the one action here that cannot be walked
+ * back.
+ *
+ * DELETE confirms too, and its confirm carries the two facts a human will
+ * otherwise assume wrongly: the artifact MOVES rather than dies, and the epic's
+ * CARDS are untouched. It is the exact complement of ABORT's guard -- ABORT is
+ * enabled only while the run is live, DELETE only once it is not -- so the pair
+ * reads as one axis rather than two overlapping ways to end a run.
  */
 
 import type { EpicRunSnapshot } from '@shared/protocol'
-import { Gauge, Pause, Play, Square, Unlock } from 'lucide-react'
+import { Gauge, Pause, Play, Square, Trash2, Unlock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { cn, haptic } from '@/lib/utils'
@@ -70,6 +76,23 @@ const ACTIONS: Action[] = [
     danger: true,
     enabled: LIVE,
     confirm: epicId => `Abort the ${epicId} run for good? A pause is resumable; this is not.`,
+  },
+  {
+    verb: 'delete',
+    label: 'DELETE',
+    icon: <Trash2 className="size-2.5" />,
+    title:
+      'Remove this run from the record: gone from the wall, from list and from the armed set. ' +
+      'The run file and its baton are MOVED to .rclaude/project/epics/.deleted/, not destroyed. ' +
+      'The epic CARDS are NOT deleted. Refused while the run is live or any of its seats is.',
+    danger: true,
+    // The mirror of ABORT's guard, and the reason both are DISABLED rather than
+    // hidden: a live run must be stopped before it can be deleted, and a human
+    // who cannot see the button never learns that deleting is possible at all.
+    enabled: run => run !== null && !LIVE(run),
+    confirm: epicId =>
+      `Delete the ${epicId} run? The run file and its baton MOVE to .deleted/ and can be restored by hand. ` +
+      'Its CARDS are NOT deleted -- they stay on the board exactly as they are.',
   },
 ]
 

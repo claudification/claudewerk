@@ -5007,6 +5007,7 @@ export type EpicOpKind =
   | 'pause'
   | 'abort'
   | 'clear' // acknowledge a run that has ENDED, so it leaves the wall's tail
+  | 'delete' // remove an ENDED run from the record -- a MOVE to `.deleted/`, never an rm
 
 /** start payload. */
 export interface EpicStartInput {
@@ -5204,6 +5205,14 @@ export interface EpicResult {
    *  attempt, this one is a fact about the world, and collapsing them would make
    *  `granted` mean two different things depending on which op you asked. */
   currentLease?: EpicLease | null
+  /**
+   * delete -- where the run's tree WENT, relative to the project root.
+   *
+   * The evidence that `delete` is a move and not an `rm`: a caller can print it,
+   * and a human can `mv` it back. Absent on every other op, and absent on a
+   * refused delete -- nothing moved, so there is nowhere to name.
+   */
+  deletedTo?: string
   error?: string
 }
 

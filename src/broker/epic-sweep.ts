@@ -19,7 +19,7 @@
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
-import { listArmedEpics } from './epic-registry'
+import { isDeletedEpic, listArmedEpics } from './epic-registry'
 
 /** What one epic's conversations add up to, from the registry alone. */
 export interface EpicGroup {
@@ -406,5 +406,20 @@ export function epicsToWatch(
   // arming nor a tagged conversation can smuggle a reserved lane past it.
   // `groupEpicConversations` itself stays unfiltered on purpose: it is the raw
   // registry view, and `epic-inspect` wants to SEE a reserved lane's seats.
-  return [...groups.values()].filter(group => !isReservedScannerLane(group.epicId))
+  return [...groups.values()].filter(watchable)
+}
+
+/**
+ * The two ways a group is NOT a run worth watching.
+ *
+ * A DELETED run is filtered here for exactly the reason a reserved lane is,
+ * stated one comment up: the registry keeps a conversation after it ends, so a
+ * deleted run's tagged seats would keep producing a group forever -- a phantom
+ * epic with no `run.md`, beaten every 45s and rendered on the wall, the badge and
+ * the rail. Deleting the artifact cannot fix that on its own, because nothing
+ * here reads the filesystem. One predicate for the sweep AND the activity feed,
+ * which is the whole reason `epicsToWatch` is shared.
+ */
+function watchable(group: EpicGroup): boolean {
+  return !isReservedScannerLane(group.epicId) && !isDeletedEpic(group.project, group.epicId)
 }

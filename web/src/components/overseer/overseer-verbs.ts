@@ -1,5 +1,5 @@
 /**
- * The five control-bar VERBS as plain async functions.
+ * The six control-bar VERBS as plain async functions.
  *
  * Split out of the bar so that file stays layout + wiring. Each returns the line
  * to show the user, which is why they are functions and not raw API calls: the
@@ -9,10 +9,10 @@
  */
 
 import type { EpicRunSnapshot } from '@shared/protocol'
-import { beatRun, breakLease } from '@/lib/epic-inspect-api'
+import { beatRun, breakLease, deleteEpicRun } from '@/lib/epic-inspect-api'
 import { abortEpicRun, pauseEpicRun, startEpicRun } from '@/lib/epic-run-api'
 
-export type Verb = 'pause' | 'resume' | 'abort' | 'beat' | 'break'
+export type Verb = 'pause' | 'resume' | 'abort' | 'beat' | 'break' | 'delete'
 
 export interface VerbContext {
   project: string
@@ -69,11 +69,26 @@ async function unstick({ project, epicId }: VerbContext): Promise<string> {
   return r.ok ? r.data : r.error
 }
 
-/** Strategy map, per the covenant: five branches on one key is not an if-chain. */
+/**
+ * DELETE THE RUN -- and the whole reason it is safe to put on a control bar is
+ * that it is a MOVE. The sentinel relocates the run's tree to `.deleted/`, so
+ * this returns where it went and a human can put it back.
+ *
+ * The reply is passed through verbatim rather than summarised: it names the
+ * tombstone AND counts the cards that were left alone, and both of those are
+ * facts a human will otherwise assume wrongly about a verb called "delete".
+ */
+async function remove({ project, epicId }: VerbContext): Promise<string> {
+  const r = await deleteEpicRun(project, epicId, 'deleted from the overseer window')
+  return r.ok ? r.data : r.error
+}
+
+/** Strategy map, per the covenant: six branches on one key is not an if-chain. */
 export const VERBS: Record<Verb, (ctx: VerbContext) => Promise<string>> = {
   pause,
   resume,
   abort,
   beat,
   break: unstick,
+  delete: remove,
 }

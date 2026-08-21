@@ -1,20 +1,25 @@
 /**
- * The BROKER-COMPUTED epic actions -- `inspect`, `list`, `beat`, `break_lease`.
+ * The BROKER-SIDE epic actions -- `inspect`, `list`, `beat`, `break_lease`,
+ * `delete`.
  *
- * None of them is an `EpicOpKind`. That wire stays exactly as small as it is:
- * these four are assembled from things the broker already holds (its
+ * Four of the five are assembled from things the broker already holds (its
  * conversation registry, the armed set, the beat ring) plus reads it already
- * makes, and the two that DO write reuse existing sentinel ops rather than
- * adding new ones.
+ * makes, and add no sentinel op at all. `delete` is the one that does, and it
+ * belongs on this side for the same reason `break_lease` does: the refusal that
+ * matters most is a question only the broker can answer -- is the lease holder
+ * still alive, is a seat still writing to the tree this verb is about to move.
  *
  * Split out of `epic.ts` so that file stays parse -> gate -> dispatch, and the
  * behaviour worth testing sits somewhere a test can call it.
  */
 
+import { buildEpicIndex } from '../../shared/epic-cards'
 import type { EpicLogEntry } from '../../shared/epic-run-types'
 import type { EpicBatonQuery, EpicInspectResult, EpicRunListEntry } from '../../shared/protocol'
-import { appendBaton, fetchEpicRun, sendEpicOp } from '../epic-broker-rpc'
+import { appendBaton, fetchBoardCards, fetchEpicRun, sendEpicOp } from '../epic-broker-rpc'
 import { inspectEpic, listEpicRuns } from '../epic-inspect'
+import { epicConversations } from '../epic-inspect-view'
+import { forgetArmedEpic, noteDeletedEpic } from '../epic-registry'
 import { beatOneEpic, type SweepDeps } from '../epic-sweep-loop'
 
 /**
@@ -25,6 +30,7 @@ import { beatOneEpic, type SweepDeps } from '../epic-sweep-loop'
  */
 export interface ActionIo {
   fetchEpicRun: typeof fetchEpicRun
+  fetchBoardCards: typeof fetchBoardCards
   sendEpicOp: typeof sendEpicOp
   appendBaton: typeof appendBaton
   inspectEpic: typeof inspectEpic
@@ -32,7 +38,15 @@ export interface ActionIo {
   beatOneEpic: typeof beatOneEpic
 }
 
-const REAL_IO: ActionIo = { fetchEpicRun, sendEpicOp, appendBaton, inspectEpic, listEpicRuns, beatOneEpic }
+const REAL_IO: ActionIo = {
+  fetchEpicRun,
+  fetchBoardCards,
+  sendEpicOp,
+  appendBaton,
+  inspectEpic,
+  listEpicRuns,
+  beatOneEpic,
+}
 let io: ActionIo = REAL_IO
 
 /** CUMULATIVE, like `configureEpicIo` -- layers on what is configured now, so a
@@ -141,6 +155,84 @@ export async function actionBreakLease(deps: SweepDeps, input: ActionInput): Pro
 }
 
 /**
+ * WHAT A DELETE LEAVES BEHIND, said before anyone can be surprised by it.
+ *
+ * Deleting a run does NOT delete its cards, and that is deliberate: cards
+ * outlive runs by design -- it is what let `epic-project-runner` adopt eight
+ * cards that already existed -- so a run is the record of an ATTEMPT and the
+ * cards are the work. A human deleting a run will assume the opposite unless
+ * told, so the reply says it in words rather than leaving it to be discovered.
+ */
+async function orphanNote(deps: SweepDeps, project: string, epicId: string): Promise<string> {
+  const rollup = buildEpicIndex(await io.fetchBoardCards(deps, project)).get(epicId)
+  const open = rollup ? rollup.notStarted + rollup.inProgress : 0
+  if (!rollup) return 'Its cards were NOT touched -- deleting a run never deletes cards.'
+  return (
+    `Its ${rollup.children.length} card(s) were NOT touched -- ${open} of them unfinished. ` +
+    'Deleting a run never deletes cards; arm the epic again to keep working them.'
+  )
+}
+
+/**
+ * DELETE A RUN -- remove it from the record, recoverably.
+ *
+ * A BROKER ACTION and not a bare sentinel op, for the same reason `break_lease`
+ * is one: the refusal that matters most here is a question only the broker can
+ * answer. The sentinel refuses on the run's own status (armed / running), which
+ * it can read off the artifact; it cannot know whether a conversation carrying
+ * this epic's tag is still alive, and that is the seat that would be writing
+ * into a tree this verb is about to move out from under it.
+ *
+ * STRICTER THAN `clear` ON PURPOSE. `clear` tolerates dead seats because an
+ * acknowledgement it gets wrong is one click from being undone. This one refuses
+ * on ANY live seat.
+ *
+ * NOT STRICTER ABOUT CARDS. An open card is reported, never a refusal: a run
+ * armed by mistake on an epic with twenty open cards is precisely the case this
+ * verb exists for, and refusing there would make it useless exactly when it is
+ * wanted. See `orphanNote`.
+ */
+export async function actionDelete(deps: SweepDeps, input: ActionInput): Promise<ActionResult> {
+  const view = await io.fetchEpicRun(deps, input.project, input.epicId, { limit: 1 })
+  if (view.error) return { ok: false, error: view.error, status: 502 }
+  if (!view.run) {
+    return { ok: false, error: `${input.epicId} has no run artifact -- there is nothing to delete`, status: 409 }
+  }
+
+  const live = epicConversations(deps.getAllConversations(), deps.isLive, input.epicId).filter(c => c.live)
+  if (live.length > 0) {
+    return {
+      ok: false,
+      error:
+        `${live.length} conversation(s) tagged with ${input.epicId} are still live ` +
+        `(${live.map(c => c.id).join(', ')}) -- stop them before deleting the run they are writing to`,
+      status: 409,
+    }
+  }
+
+  const cards = await orphanNote(deps, input.project, input.epicId)
+  const res = await io.sendEpicOp(deps, input.project, {
+    op: 'delete',
+    epicId: input.epicId,
+    ...(input.reason ? { reason: input.reason } : {}),
+  })
+  if (!res.ok) return { ok: false, error: res.error ?? 'delete failed', status: 409 }
+
+  // AFTER the sentinel confirms, never before. A run left in the armed set is a
+  // run the sweep keeps looking for, and a tombstone written for a delete the
+  // sentinel refused would hide a run that is still very much there.
+  forgetArmedEpic(input.project, input.epicId)
+  noteDeletedEpic(input.project, input.epicId)
+  // Same moment `start` / `pause` / `abort` publish: a human who just deleted a
+  // run is definitely looking at the badge, and waiting 45s for the next tick to
+  // agree with the click would read as the delete not having worked.
+  void deps.publishActivity?.()
+
+  const where = res.deletedTo ? ` The artifact was MOVED to \`${res.deletedTo}\`, not destroyed.` : ''
+  return { ok: true, note: `deleted the ${input.epicId} run (was ${view.run.status}).${where} ${cards}` }
+}
+
+/**
  * Which broker actions exist, and what they do. A strategy map so `epic.ts` can
  * ask "is this a broker action" and "run it" without knowing any of them.
  */
@@ -149,6 +241,7 @@ export const BROKER_ACTIONS: Record<string, (deps: SweepDeps, input: ActionInput
   list: actionList,
   beat: actionBeat,
   break_lease: actionBreakLease,
+  delete: actionDelete,
 }
 
 /**
@@ -156,6 +249,6 @@ export const BROKER_ACTIONS: Record<string, (deps: SweepDeps, input: ActionInput
  *
  * `break_lease` deliberately does NOT un-arm the run: breaking a lease is an
  * unstick, not a stop, and the whole point is that the next beat wakes a fresh
- * overseer. Only `pause` and `abort` drop a run out of the sweep.
+ * overseer. Only `pause`, `abort` and `delete` drop a run out of the sweep.
  */
-export const BROKER_WRITE_ACTIONS = new Set(['beat', 'break_lease'])
+export const BROKER_WRITE_ACTIONS = new Set(['beat', 'break_lease', 'delete'])

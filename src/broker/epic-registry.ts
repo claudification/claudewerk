@@ -54,6 +54,11 @@ export interface ArmedEpic {
   epicId: string
 }
 
+/** A run somebody DELETED, remembered as the same (project, epicId) pair. An
+ *  alias rather than a second interface, so a signature can still say which of
+ *  the two questions it is about. */
+export type DeletedEpic = ArmedEpic
+
 /** `${projectIdentityKey(project)}\0${epicId}` -- a NUL join, since neither part
  *  can contain one.
  *
@@ -66,7 +71,24 @@ type Key = string
 
 const KV_KEY = 'epic:armed'
 
+/**
+ * THE TOMBSTONE SET -- runs a human deleted, so no surface resurrects them.
+ *
+ * A deleted run's ARTIFACT is gone (moved to `.deleted/`), but the broker does
+ * not find runs on disk: it finds them by grouping CONVERSATIONS that carry an
+ * epic launch tag, and the registry keeps conversations long after they end. So
+ * deleting the tree alone leaves exactly the phantom `epicsToWatch` already
+ * documents one file over -- a permanent group with no `run.md`, beaten every
+ * 45s forever and rendered on every surface that lists runs.
+ *
+ * Same storage shape and the same covenant as the armed set above: two strings
+ * per run in the broker's own `kv`, never a filesystem question. Re-arming an
+ * epic clears its tombstone, because a run that started again is a real run.
+ */
+const DELETED_KV_KEY = 'epic:deleted'
+
 const armed = new Map<Key, ArmedEpic>()
+const deleted = new Map<Key, DeletedEpic>()
 
 /** Null until the broker boots (and in every test that does not care). Absent
  *  means memory-only, exactly the old behaviour -- never a throw, because a
@@ -81,29 +103,38 @@ function save(): void {
   kv?.set(KV_KEY, [...armed.values()])
 }
 
+function saveDeleted(): void {
+  kv?.set(DELETED_KV_KEY, [...deleted.values()])
+}
+
+/** One persisted list -> one map, keys rebuilt through `key()` rather than
+ *  trusted, so a set written by a broker with a different normalization rule
+ *  comes back normalized under the current one. */
+function hydrate(store: KVStore, kvKey: string, into: Map<Key, ArmedEpic>): void {
+  into.clear()
+  const raw = store.get<ArmedEpic[]>(kvKey)
+  if (!Array.isArray(raw)) return
+  for (const entry of raw) {
+    if (typeof entry?.project !== 'string' || typeof entry?.epicId !== 'string') continue
+    into.set(key(entry.project, entry.epicId), { project: entry.project, epicId: entry.epicId })
+  }
+}
+
 /**
- * Rehydrate the armed set from the broker's own store. Call ONCE, at boot,
- * BEFORE `startEpicSweep` -- a sweep that ticks first would see an empty set and
- * beat nothing, which is the whole failure this exists to close.
- *
- * Rebuilds every map key through `key()` rather than trusting anything
- * persisted, so a set written by a broker with a different normalization rule
- * comes back normalized under the current one.
+ * Rehydrate the armed set -- AND the tombstone set beside it -- from the
+ * broker's own store. Call ONCE, at boot, BEFORE `startEpicSweep`: a sweep that
+ * ticks first would see an empty armed set and beat nothing, which is the whole
+ * failure this exists to close, and an empty tombstone set would resurrect every
+ * deleted run for exactly one boot.
  */
 export function initArmedEpics(store: KVStore): void {
   kv = store
-  armed.clear()
-  const raw = store.get<ArmedEpic[]>(KV_KEY)
-  if (Array.isArray(raw)) {
-    for (const entry of raw) {
-      if (typeof entry?.project !== 'string' || typeof entry?.epicId !== 'string') continue
-      armed.set(key(entry.project, entry.epicId), { project: entry.project, epicId: entry.epicId })
-    }
-  }
+  hydrate(store, KV_KEY, armed)
+  hydrate(store, DELETED_KV_KEY, deleted)
   // Logged even at zero: "rehydrated 0" and no line at all are different facts,
   // and the second one is what an unwired init looks like.
   console.log(
-    `[epic-registry] rehydrated ${armed.size} armed epic(s) from the store` +
+    `[epic-registry] rehydrated ${armed.size} armed epic(s) and ${deleted.size} deleted run(s) from the store` +
       (armed.size > 0 ? `: ${[...armed.values()].map(a => a.epicId).join(', ')}` : ''),
   )
 }
@@ -127,9 +158,34 @@ export function isArmed(project: string, epicId: string): boolean {
   return armed.has(key(project, epicId))
 }
 
+/** A run was deleted: never watch it, never list it, never beat it again.
+ *  Called by `actionDelete` AFTER the sentinel confirms the move, never before
+ *  -- a tombstone for a delete the sentinel refused would hide a live run. */
+export function noteDeletedEpic(project: string, epicId: string): void {
+  deleted.set(key(project, epicId), { project, epicId })
+  saveDeleted()
+}
+
+/** UN-delete. Arming an epic id again means there is a real run behind it, and a
+ *  tombstone left in place would make the new run invisible on every surface --
+ *  the exact failure `startEpicRun` wiping `acknowledgedAt` guards against, one
+ *  layer up. */
+export function forgetDeletedEpic(project: string, epicId: string): void {
+  if (deleted.delete(key(project, epicId))) saveDeleted()
+}
+
+export function isDeletedEpic(project: string, epicId: string): boolean {
+  return deleted.has(key(project, epicId))
+}
+
+export function listDeletedEpics(): DeletedEpic[] {
+  return [...deleted.values()]
+}
+
 /** Tests only. Drops the store handle too, so a case that wired a KV cannot
  *  leak writes into the next one. */
 export function resetArmedEpics(): void {
   armed.clear()
+  deleted.clear()
   kv = null
 }

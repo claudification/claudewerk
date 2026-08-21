@@ -1200,6 +1200,24 @@
 	border-color: color-mix(in oklch, var(--warning) 55%, transparent);
 	background: color-mix(in oklch, var(--warning) 12%, transparent);
 }
+/* DELETE sits directly beside CLEAR and does something CLEAR does not, so it
+   must not read as the same control one button over. Destructive tint at rest,
+   destructive fill when armed -- the armed state stays distinct from the warning
+   colour every other armed verb on this pane uses. */
+.wall-run-act-danger {
+	color: color-mix(in oklch, var(--destructive) 78%, var(--fg-muted));
+	border-color: color-mix(in oklch, var(--destructive) 35%, var(--border));
+}
+.wall-run-act-danger:hover {
+	border-color: color-mix(in oklch, var(--destructive) 60%, transparent);
+	background: color-mix(in oklch, var(--destructive) 10%, transparent);
+	color: var(--destructive);
+}
+.wall-run-act-danger-armed {
+	color: var(--destructive);
+	border-color: var(--destructive);
+	background: color-mix(in oklch, var(--destructive) 18%, transparent);
+}
 .wall-run-note,
 .wall-run-read {
 	font-size: 10px;

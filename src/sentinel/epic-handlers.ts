@@ -15,10 +15,12 @@
  * Op dispatch is a strategy map (STRATEGY MAPS covenant), not a switch.
  */
 
+import { relative } from 'node:path'
 import { OVERSEER_KEY_PREFIX, readLease, releasePatch } from '../shared/epic-lease'
 import { acknowledgedCardIds, appendEpicLog, dispatchCountsByCard, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
-import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
+import { deleteEpicRun, patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
+import type { EpicRunStatus } from '../shared/epic-run-types'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
 import { casLeaseOnCard, patchCardMeta, readCardMeta } from './epic-card-meta'
 import { SEAT_HANDLERS } from './epic-seat-handlers'
@@ -33,6 +35,16 @@ const fail = (error: string): OpOutcome => ({ ok: false, error })
  *  still fits in a prompt. A DEBUGGING caller overrides it via `baton.limit`;
  *  the default is sized for the prompt, not for the human. */
 const BATON_TAIL = 20
+
+/**
+ * The only states a run may be DELETED from.
+ *
+ * An ALLOWLIST, where `clear` refuses on a denylist -- and the asymmetry is the
+ * point. An acknowledgement written to the wrong run is one click from being
+ * undone; a delete moves the artifact, so a status this file has not been taught
+ * about must refuse rather than default to relocating the record.
+ */
+const DELETABLE: readonly EpicRunStatus[] = ['paused', 'aborted', 'complete']
 
 function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
   const run = readEpicRun(root, epicId)
@@ -166,6 +178,54 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       nowMs,
     )
     return { ok: true, run: { ...run } }
+  },
+
+  /**
+   * REMOVE A RUN FROM THE RECORD -- and `delete` is a MOVE, never an `rm`.
+   *
+   * `clear` says "this happened and I have seen it". This says "this should not
+   * be in the record at all": a run armed by mistake, a duplicate, a scratch run
+   * nobody wants in the history. Those are genuinely different questions, which
+   * is the only reason a second verb exists -- the 2026-08-20 decision that an
+   * ACK beats a delete still holds for everything `clear` covers.
+   *
+   * REFUSES ON AN ALLOWLIST, one notch stricter than `clear`'s denylist, and it
+   * asks THE ARTIFACT'S OWN INTENT for the same reason `clear` does: vitality
+   * folds in the armed set, the beat ring and live seats, which are broker-side
+   * facts the sentinel does not have and should not learn. The broker adds the
+   * refusal only IT can make -- no live seat may be writing to a tree that is
+   * about to move (`epic-actions.ts`).
+   *
+   * THE BATON ENTRY IS WRITTEN BEFORE THE MOVE, so it travels INTO the
+   * tombstone. A delete recorded only in the broker's log would be a deletion
+   * the recovered artifact could not explain.
+   *
+   * IT DOES NOT TOUCH THE EPIC'S CARDS, deliberately and loudly. Cards outlive
+   * runs by design -- that is what let `epic-project-runner` adopt eight cards
+   * that already existed -- so a run is a record of an ATTEMPT, not the work.
+   */
+  delete(root, msg, nowMs) {
+    const current = readEpicRun(root, msg.epicId)
+    if (!current) return fail(`epic run not found: ${msg.epicId}`)
+    if (!DELETABLE.includes(current.status)) {
+      return fail(`run is ${current.status} -- only a paused, aborted or complete run can be deleted`)
+    }
+    appendEpicLog(
+      root,
+      msg.epicId,
+      {
+        kind: 'checkpoint',
+        convId: 'sentinel',
+        body: `Run DELETED from the record (status ${current.status}): ${msg.reason || 'no reason given'}`,
+      },
+      nowMs,
+    )
+    const to = deleteEpicRun(root, msg.epicId, nowMs)
+    if (!to) return fail(`epic run not found: ${msg.epicId}`)
+    // RELATIVE to the project, never the absolute path. This string is rendered
+    // in a panel and pasted into reports; the box's directory layout is not
+    // something a wall row needs to publish to say where the tombstone is.
+    return { ok: true, run: { ...current }, deletedTo: relative(root, to) }
   },
 }
 
