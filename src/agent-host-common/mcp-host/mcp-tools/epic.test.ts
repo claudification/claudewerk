@@ -1,7 +1,33 @@
 import { describe, expect, test } from 'bun:test'
-import { toBody } from './epic'
+import { DESCRIPTION, toBody } from './epic'
 
 const base = { project: 'claude://s/p', epic_id: 'e1' }
+
+/**
+ * A DOCUMENTATION TEST, on purpose, and only for this one sentence.
+ *
+ * The extend capability shipped with the first `startEpicRun` and stayed
+ * invisible for months because the description did not name it -- the bug was
+ * never in the code. So the words are the deliverable, and the next card to
+ * rewrite this block (`runner-project-run-state` re-scopes every verb to the
+ * project run) would otherwise drop them without anything going red.
+ *
+ * Deliberately asserts the CLAIM, not the prose: that the block says start
+ * raises a ceiling on a live run and that the generation lives on the card.
+ * Rephrase it freely; just do not stop saying it.
+ */
+describe('the description names start as the extend verb', () => {
+  test('it says start raises the ceiling on a run that is already going', () => {
+    expect(DESCRIPTION).toContain('START IS ALSO THE EXTEND VERB')
+    expect(DESCRIPTION).toMatch(/LIVE run|mid-flight/)
+    expect(DESCRIPTION).toContain('max_gens=60')
+  })
+
+  test('it points the generation counter at the card, so nobody edits run.md to move it', () => {
+    expect(DESCRIPTION).toContain('overseer_gen')
+    expect(DESCRIPTION).toMatch(/does NOT reset the generation counter/)
+  })
+})
 
 describe('toBody', () => {
   test.each(['project', 'action'])('a missing %s is refused with a message, not a request', field => {
