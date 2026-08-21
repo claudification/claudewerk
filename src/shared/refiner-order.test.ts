@@ -8,9 +8,10 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { orderRole } from './epic-orders'
 import { validateOrder } from './order'
 import { composeOrderCaps, internalOrderCaller } from './order-caps'
-import { REFINER, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
+import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
 
 describe('REFINER@1, the artifact', () => {
   test('is a legal order@1 -- the repo does not exempt its own orders from the validator', () => {
@@ -37,7 +38,7 @@ describe('REFINER@1, the artifact', () => {
   })
 
   test('its instructions tell the seat to drain the tag and leave the status alone', () => {
-    const text = REFINER.instructions
+    const text = REFINER_ORDER.instructions ?? ''
     expect(text).toContain('needs-refine')
     expect(text.toLowerCase()).toContain('remove')
     expect(text).toContain("Do NOT change the card's status")
@@ -48,6 +49,38 @@ describe('REFINER@1, the artifact', () => {
     expect(seatOrder(REFINER_ORDER_ID)).toBe(REFINER)
     expect(seatOrder('NOPE@1')).toBeUndefined()
     expect(seatOrder(undefined)).toBeUndefined()
+  })
+})
+
+/**
+ * THE MISLABEL, GONE -- and the refusal that has to come with it.
+ *
+ * `REFINER@1` shipped as `seat: 'implementer', prompt: 'implementer'` because
+ * `order@1` had no other true thing to say. Declaring `seat: 'refiner'` is only
+ * half the fix: an open seat name with nothing refusing it is just a wider
+ * string, and the failure it prevents is specific -- `orderRole` feeding
+ * `undefined` into `buildEpicWorkerSettings`, which reads the MUTE off the role,
+ * so a refiner compiled into a generation would be dispatched, silently muted
+ * and tagged with a role that is not one.
+ */
+describe('a refiner is spent by the scheduler and never enters a generation', () => {
+  test('it declares the seat it actually fills', () => {
+    expect(REFINER_ORDER.seat).toBe('refiner')
+  })
+
+  test('it names no prompt builder -- the four compile a CARD into an epic seat', () => {
+    expect(REFINER_ORDER.prompt).toBeUndefined()
+  })
+
+  test('it carries its own instruction block, on the order rather than beside it', () => {
+    expect(REFINER_ORDER.instructions).toBe(REFINER_INSTRUCTIONS)
+    // The wrapper that existed only because `order@1` could not hold this.
+    expect(REFINER).not.toHaveProperty('instructions')
+  })
+
+  test('orderRole REFUSES it rather than mapping it to undefined', () => {
+    expect(() => orderRole(REFINER_ORDER)).toThrow(/refiner/)
+    expect(() => orderRole(REFINER_ORDER)).toThrow(/does not dispatch/)
   })
 })
 

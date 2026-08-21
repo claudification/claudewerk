@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from 'bun:test'
 import {
+  composeSeatPrompt,
   isCommandLineSafe,
   ORDER_FLAG_ALLOWLIST,
   ORDER_INSTRUCTIONS_MAX,
@@ -167,6 +168,38 @@ describe('an order says where its prompt comes from -- prompt XOR instructions',
       'instructions',
     )
     expect(validateOrder({ ...OK, prompt: undefined, instructions: 'x'.repeat(ORDER_INSTRUCTIONS_MAX) })).toBeTruthy()
+  })
+})
+
+/**
+ * THE FIELD REACHING A PROMPT IS THE WHOLE POINT OF THE FIELD.
+ *
+ * An `instructions` block that validates and is delivered to nobody is the same
+ * inertness `REFINER@1`'s wrapper type already shipped once, with a nicer type
+ * on it. `composeSeatPrompt` is the seam; `fire.ts` is the caller that spends it
+ * onto a real scheduled dispatch.
+ */
+describe('composeSeatPrompt', () => {
+  const carrier = validateOrder({ ...OK, prompt: undefined, instructions: 'DRAIN the tag.\nDo not implement.' })
+
+  test('an order that names a BUILDER leaves the context alone -- there is nothing to fold in', () => {
+    expect(composeSeatPrompt(validateOrder(OK), 'refine card x')).toBe('refine card x')
+  })
+
+  test('no order at all leaves the context alone', () => {
+    expect(composeSeatPrompt(undefined, 'refine card x')).toBe('refine card x')
+  })
+
+  test('an order carrying instructions APPENDS them -- the caller keeps its own prompt', () => {
+    const composed = composeSeatPrompt(carrier, 'refine card x')
+    expect(composed.startsWith('refine card x')).toBe(true)
+    expect(composed).toContain('DRAIN the tag.')
+    // Context first, block second, and a blank line between them.
+    expect(composed).toBe('refine card x\n\nDRAIN the tag.\nDo not implement.')
+  })
+
+  test('an empty context is the block alone, not a leading blank line', () => {
+    expect(composeSeatPrompt(carrier, '')).toBe('DRAIN the tag.\nDo not implement.')
   })
 })
 

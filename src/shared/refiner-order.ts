@@ -14,13 +14,18 @@
  * INTO orders when `order@1` is everywhere; growing it first would be building
  * the thing we are replacing.
  *
- * WHAT `order@1` CANNOT HOLD YET, and why this file has a wrapper type.
+ * WHAT `order@1` CANNOT HOLD YET, and why this file still has a wrapper type.
  * `OrderCaps` has model, effort, agent, budget, permission mode and MCP config.
  * It has no `maxTurns`, and there is no way to express "this role may hold at
  * most N of the scheduler's slots" -- both are real caps a role carries, and
  * both are carried by {@link SeatOrder} alongside the order until the schema
- * grows them (card `order-caps-turns-and-reservation`). The order files
- * themselves belong to `werk-work-orders` and are deliberately NOT edited here.
+ * grows them (card `order-caps-turns-and-reservation`).
+ *
+ * WHAT IT HOLDS NOW: THE SEAT AND THE INSTRUCTIONS. Both used to be here in the
+ * wrapper -- the order declared `seat: 'implementer', prompt: 'implementer'`
+ * because `OrderSeat` was a closed union over the epic engine's four, and the
+ * instruction block sat in `SeatOrder` because `order@1` had nowhere to put it.
+ * `order-seat-union-is-closed` opened both, so `REFINER@1` says what it is.
  */
 
 import { type Order, validateOrder } from './order'
@@ -59,13 +64,20 @@ status verb is denied to this seat), and do NOT start implementing the work.`
 /**
  * `REFINER@1`.
  *
- * SEAT IS `implementer`, AND THAT IS A COMPROMISE WORTH NAMING. `OrderSeat` is
- * a closed union over the four seats of the EPIC engine, so `refiner` is not
- * currently a value an order may carry. The implementer seat is the closest
- * true statement -- given one card, edits files, muted, may not approve its own
- * work -- and nothing in the epic engine ever reads this order: it is spent by
- * the scheduler, and `EPIC_ORDERS` (the epic engine's lookup) does not contain
- * it. Opening the union is `order-seat-union-is-closed`.
+ * SEAT IS `refiner`, AND IT CARRIES ITS OWN INSTRUCTIONS. It used to declare
+ * `seat: 'implementer', prompt: 'implementer'` -- the closest true statement
+ * available while `OrderSeat` was a closed union over the epic engine's four
+ * and `prompt` had to name one of the broker's four compiled-in builders. It
+ * was a MISLABEL and it was inert only because nothing in the epic engine reads
+ * this order: it is spent by the scheduler and by `refine-scanner`, and
+ * `EPIC_ORDERS` (the epic engine's lookup) does not contain it. A second
+ * non-epic seat would have made it stop being inert.
+ *
+ * NO `prompt`, BY THE SAME TOKEN. The four builders compile a CARD into an epic
+ * seat's prompt; a refiner is handed one card by a scheduler that has no
+ * generation, no beat and no baton, so naming one of them was never true either.
+ * `orderRole(REFINER_ORDER)` THROWS, and that refusal is the point -- see
+ * `epic-orders.ts`.
  *
  * NO WORKTREE, for the overseer's reason: the board lives in the main checkout
  * and a card refined inside an isolated worktree is a card nobody else sees.
@@ -83,8 +95,8 @@ export const REFINER_ORDER: Order = validateOrder({
   kind: 'order@1',
   id: REFINER_ORDER_ID,
   title: 'Refiner -- makes a rough card buildable, and drains #needs-refine',
-  seat: 'implementer',
-  prompt: 'implementer',
+  seat: 'refiner',
+  instructions: REFINER_INSTRUCTIONS,
   namePrefix: 'refine ',
   caps: {
     // Rewriting a four-word capture into a spec is the cheapest thing the fleet
@@ -111,15 +123,14 @@ export const REFINER_ORDER: Order = validateOrder({
 /**
  * An order plus the caps `order@1` cannot express yet.
  *
- * The split is temporary and the fields are here rather than invented into
- * `order.ts` because that file belongs to another card in flight. When the
- * schema grows them, `maxTurns` moves into `caps` and `reservation` alongside
- * it, and this type collapses to `Order`.
+ * The split is temporary and SHRINKING: `instructions` used to live here too,
+ * because `order@1` could not carry a seat's own prompt text, and it moved onto
+ * the order itself with `order-seat-union-is-closed`. When the schema grows the
+ * last two, `maxTurns` moves into `caps` and `reservation` alongside it, and
+ * this type collapses to `Order`.
  */
 export interface SeatOrder {
   order: Order
-  /** The instruction block handed to the seat. */
-  instructions: string
   /**
    * Turn ceiling for ONE seat. DECLARED, NOT YET ENFORCED: `OrderCaps` has no
    * `maxTurns` and `SpawnRequest` has no field to carry it either, so nothing
@@ -147,7 +158,6 @@ export interface SeatOrder {
 /** `REFINER@1`, with the caps that do not fit in `order@1` yet. */
 export const REFINER: SeatOrder = {
   order: REFINER_ORDER,
-  instructions: REFINER_INSTRUCTIONS,
   // A card is one file. Read it, read what it points at, rewrite it, drop the
   // tag. A refiner still going at 30 turns has stopped refining and started
   // implementing, which is the failure this seat exists to not do.

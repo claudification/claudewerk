@@ -216,6 +216,34 @@ export interface Order {
   notes?: string
 }
 
+/**
+ * The prompt a seat actually launches with: WHAT to do, then WHO is doing it.
+ *
+ * THIS IS THE FUNCTION THAT MAKES {@link Order.instructions} REAL. A field that
+ * validates and reaches no spawn is the same inertness `REFINER@1`'s wrapper
+ * type already shipped once, with a nicer type on it -- so the schema half of
+ * "a new seat is cheap" is only true once something turns the block into prompt
+ * text. An order that NAMES a builder returns `context` untouched: the builder
+ * produced the whole prompt and there is nothing to fold in.
+ *
+ * CONTEXT FIRST, INSTRUCTIONS SECOND, matching the one hand-rolled composition
+ * that predates this function (`refine-scanner.ts`'s `buildRefinerPrompt`:
+ * which card, then the block verbatim). The context is the half that changes per
+ * dispatch -- which card, which minute, which project -- and the instruction
+ * block is the standing half, so a seat reads its standing rules against a
+ * target it already has rather than the other way round.
+ *
+ * IT APPENDS, IT DOES NOT REPLACE. Dropping the caller's own context in favour
+ * of the order's block would silently discard the one thing a human wrote for
+ * this particular dispatch, which for a scheduled fire is the prompt the schema
+ * makes mandatory.
+ */
+export function composeSeatPrompt(order: Order | undefined, context: string): string {
+  const instructions = order?.instructions
+  if (instructions === undefined) return context
+  return context.length === 0 ? instructions : `${context}\n\n${instructions}`
+}
+
 /** Thrown by {@link validateOrder}. `field` names the offending path. */
 export class OrderValidationError extends Error {
   field: string
