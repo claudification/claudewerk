@@ -282,13 +282,13 @@ function createTranscriptStore(): TranscriptStore {
   const seqCounters = new Map<string, number>()
 
   function scopeKey(conversationId: string, agentId: string | null | undefined): string {
-    return `${conversationId} ${agentId ?? ''}`
+    return `${conversationId}\0${agentId ?? ''}`
   }
 
   /** Highest seq across all scopes of a conversation (for getLastSeq, which is
    *  scope-agnostic). */
   function maxSeqForConversation(conversationId: string): number {
-    const prefix = `${conversationId} `
+    const prefix = `${conversationId}\0`
     let max = 0
     for (const [key, value] of seqCounters) {
       if (key.startsWith(prefix) && value > max) max = value
@@ -1110,7 +1110,7 @@ function createCostStore(): CostStore {
 
         const sentinelId = t.sentinelId ?? ''
         const profile = profileBucketMem(t.profile)
-        const profileKey = `${sentinelId} ${profile}`
+        const profileKey = `${sentinelId}\0${profile}`
         const pf = profileAgg.get(profileKey) ?? {
           sentinelId,
           profile,
@@ -1169,7 +1169,7 @@ function createCostStore(): CostStore {
       for (const t of matches) {
         const sentinelId = t.sentinelId ?? ''
         const profile = profileBucketMem(t.profile)
-        const key = `${sentinelId} ${profile}`
+        const key = `${sentinelId}\0${profile}`
         const row = agg.get(key) ?? {
           sentinelId,
           profile,
