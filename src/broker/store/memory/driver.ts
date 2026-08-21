@@ -1025,7 +1025,13 @@ function createCostStore(): CostStore {
       const buckets = new Map<string, HourlyRow>()
       for (const t of relevant) {
         const hour = hourKey(t.timestamp)
-        const key = `${hour}\0${t.account}\0${t.model}\0${t.projectUri}`
+        // sentinel/profile are part of the key, not passengers: the sqlite
+        // driver's hourly_stats PK carries both for the same reason -- two
+        // profiles billing the same hour+account+model+project are two rows,
+        // and merging them stamps one profile with the other's spend.
+        const sentinelId = t.sentinelId ?? ''
+        const profile = profileBucketMem(t.profile)
+        const key = `${hour}\0${t.account}\0${t.model}\0${t.projectUri}\0${sentinelId}\0${profile}`
         const existing = buckets.get(key)
         if (existing) {
           existing.turnCount++
@@ -1046,6 +1052,8 @@ function createCostStore(): CostStore {
             cacheReadTokens: t.cacheReadTokens,
             cacheWriteTokens: t.cacheWriteTokens,
             costUsd: t.costUsd,
+            sentinelId,
+            profile,
           })
         }
       }
@@ -1056,9 +1064,10 @@ function createCostStore(): CostStore {
         const dayBuckets = new Map<string, HourlyRow>()
         for (const h of hourly) {
           const day = h.hour.slice(0, 10)
-          // projectUri (and sentinel/profile, when a bucket ever carries them)
-          // belong in the key: keying on (day, account, model) alone merged
-          // every project's spend into one row and kept the first bucket's URI.
+          // projectUri, sentinel and profile all belong in the key: keying on
+          // (day, account, model) alone merged every project's spend into one
+          // row and kept the first bucket's URI. The hour buckets above carry
+          // sentinelId/profile on every row, so these are never the fallback.
           const key = `${day}\0${h.account}\0${h.model}\0${h.projectUri}\0${h.sentinelId ?? ''}\0${h.profile ?? ''}`
           const existing = dayBuckets.get(key)
           if (existing) {

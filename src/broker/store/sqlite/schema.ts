@@ -136,6 +136,58 @@ function stripProfileFromConversationScopes(db: Database): void {
   }
 }
 
+/** The hourly rollup of `turns`. Every attribution column is in the PRIMARY KEY:
+ *  `sentinel_id` and `profile` used to be denormalised passengers outside it,
+ *  justified by `project_uri` encoding the profile in its userinfo slot -- which
+ *  stopped being true when Phase 6 stripped `profile@host` out of the URI. Two
+ *  profiles billing the same hour+account+model+project then merged into one row
+ *  whose whole SUM(cost_usd) was stamped with whichever value MIN() picked. */
+function createHourlyStatsTable(db: Database): void {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS hourly_stats (
+      hour TEXT NOT NULL,
+      account TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      project_uri TEXT NOT NULL DEFAULT '',
+      turn_count INTEGER NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      sentinel_id TEXT NOT NULL DEFAULT '',
+      profile TEXT NOT NULL DEFAULT 'default',
+      PRIMARY KEY (hour, account, model, project_uri, sentinel_id, profile)
+    )
+  `)
+}
+
+/** hourly-stats-pk widening (2026-08-21): rebuild an `hourly_stats` still keyed
+ *  on the narrow (hour, account, model, project_uri) PK.
+ *
+ *  A PK change is a table rebuild in SQLite. The existing rows are NOT copied
+ *  over: each one is already a merge of every profile that billed that
+ *  hour+account+model+project, stamped with a single MIN()-picked sentinel and
+ *  profile, and that merge cannot be undone in place. `turns` is the source of
+ *  truth, so dropping them costs nothing -- `materializeHourly()` rebuilds the
+ *  queried window on the next `queryHourly()` call.
+ *
+ *  Idempotent: once the PK carries both columns this is a no-op. */
+function widenHourlyStatsPk(db: Database): void {
+  const pkCols = (db.prepare(`PRAGMA table_info('hourly_stats')`).all() as Array<{ name: string; pk: number }>)
+    .filter(r => r.pk > 0)
+    .map(r => r.name)
+  if (pkCols.includes('sentinel_id') && pkCols.includes('profile')) return
+
+  const before = (db.prepare('SELECT COUNT(*) as n FROM hourly_stats').get() as { n: number }).n
+  db.run('DROP TABLE hourly_stats')
+  createHourlyStatsTable(db)
+  console.log(
+    `[hourly-stats-pk] rebuilt hourly_stats with sentinel_id + profile in the PK; ` +
+      `dropped ${before} merged row(s), re-materialised from turns on next query`,
+  )
+}
+
 export function createSchema(db: Database) {
   db.run('PRAGMA journal_mode = WAL')
   db.run('PRAGMA foreign_keys = ON')
@@ -465,26 +517,17 @@ export function createSchema(db: Database) {
       exact_cost INTEGER NOT NULL DEFAULT 0
     )
   `)
-  db.run(`
-    CREATE TABLE IF NOT EXISTS hourly_stats (
-      hour TEXT NOT NULL,
-      account TEXT NOT NULL DEFAULT '',
-      model TEXT NOT NULL DEFAULT '',
-      project_uri TEXT NOT NULL DEFAULT '',
-      turn_count INTEGER NOT NULL DEFAULT 0,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-      cost_usd REAL NOT NULL DEFAULT 0,
-      PRIMARY KEY (hour, account, model, project_uri)
-    )
-  `)
+  createHourlyStatsTable(db)
   // Phase 5 (sentinel profiles): denormalised (sentinel_id, profile) columns on
   // the cost tables. Since the URI no longer encodes profile (Phase 6 strip),
   // the `profile` column is the authoritative per-row profile name. The broker
   // stores NAMES only -- never configDir or env (Profile-Env Boundary).
   addPhase5ProfileColumns(db)
+  // hourly-stats-pk widening: a pre-existing table still keyed on
+  // (hour, account, model, project_uri) gets rebuilt so the two profile columns
+  // stop being a MIN() lie. Must run before the index creation below -- the
+  // rebuild drops the table, taking its indexes with it.
+  widenHourlyStatsPk(db)
   // profile-url-strip (2026-05-22): rewrite any pre-existing `profile@host`
   // project_uri rows to canonical form, AND backfill conversation.resolvedProfile
   // from the extracted name. Idempotent.
