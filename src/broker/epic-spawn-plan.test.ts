@@ -55,6 +55,7 @@ const PLAN: EpicPlan = {
   waitingOnDeps: [],
   unspawnable: [],
   needsRefine: [],
+  exhausted: [],
   complete: false,
 }
 

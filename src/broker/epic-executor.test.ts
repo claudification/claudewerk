@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
 import type { CommitRow } from '../shared/commit-ledger'
-import { acknowledgedCardIds, readEpicLog } from '../shared/epic-log'
+import { acknowledgedCardIds, dispatchCountsByCard, readEpicLog } from '../shared/epic-log'
+import { MAX_CARD_SEATS } from '../shared/epic-ready'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import { cardPath } from '../shared/project-paths'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
@@ -137,6 +138,7 @@ beforeEach(() => {
       run,
       baton,
       acknowledgedCardIds: acknowledgedCardIds(baton),
+      dispatchCounts: dispatchCountsByCard(baton),
       lease: null,
       ...(run ? {} : { error: 'no run' }),
     }),
@@ -258,6 +260,7 @@ describe('runEpicBeat', () => {
         run,
         baton,
         acknowledgedCardIds: acknowledgedCardIds(baton),
+        dispatchCounts: dispatchCountsByCard(baton),
         lease: { convId: 'conv_holder', gen: 4, at: '' },
       }),
     })
@@ -297,6 +300,7 @@ describe('runEpicBeat', () => {
         run,
         baton,
         acknowledgedCardIds: acknowledgedCardIds(baton),
+        dispatchCounts: dispatchCountsByCard(baton),
         lease: { convId: 'conv_dead', gen: 11, at: '' },
       }),
     })
@@ -312,6 +316,7 @@ describe('runEpicBeat', () => {
         run,
         baton,
         acknowledgedCardIds: acknowledgedCardIds(baton),
+        dispatchCounts: dispatchCountsByCard(baton),
         lease: { convId: 'conv_dead', gen: 11, at: '' },
       }),
     })
@@ -325,6 +330,7 @@ describe('runEpicBeat', () => {
         run,
         baton,
         acknowledgedCardIds: acknowledgedCardIds(baton),
+        dispatchCounts: dispatchCountsByCard(baton),
         lease: { convId: 'conv_dead', gen: 3, at: '' },
       }),
     })
@@ -622,6 +628,119 @@ describe('runEpicBeat against the real sentinel seam', () => {
     const out = await runEpicBeat(deps(), group({ settled: [...SETTLED, 'brand-new'] }))
     expect(out.note).toContain('1 unacknowledged settle(s): brand-new')
     expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+  })
+})
+
+/**
+ * THE BOUNCE LANE, end to end, through the REAL sentinel seam.
+ *
+ * `epic-ready.test.ts` pins the arithmetic; this pins the WIRING, which is the
+ * half a pure-fold test cannot reach: the seat count is folded over the whole log
+ * sentinel-side, crosses on the `get` reply, and is read back by the beat. A
+ * double for `fetchEpicRun` would happily return a number the sentinel never
+ * computes.
+ *
+ * The board is the one generation 4 of `epic-scanner-fabric` woke to: a card the
+ * verifier bounced back to `in-progress`, its seat dead, a free concurrency slot,
+ * and -- before this -- nothing that would ever pick it up again.
+ */
+describe('a bounced card, against the real sentinel seam', () => {
+  const NOW = Date.parse('2026-08-21T09:50:00.000Z')
+  let root = ''
+
+  const sentinel = (op: 'get' | 'log_append', extra: Record<string, unknown> = {}) =>
+    handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
+
+  /** One seat going out, exactly as `spawnForCard` records it. */
+  const recordDispatch = (cardId: string, n: number) => {
+    for (let i = 0; i < n; i++) {
+      sentinel('log_append', {
+        logAppend: { kind: 'dispatch', convId: `conv_${cardId}_${i}`, cardId, body: `Implementer dispatched.` },
+      })
+    }
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'epic-bounce-'))
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      'utf8',
+    )
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'start', epicId: 'e1', start: { plan: false } },
+      NOW,
+    )
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { gen: 3 } },
+      NOW,
+    )
+    // The bounce, as the engine actually leaves it: the implementer settled and
+    // was acknowledged, then the verifier sent the card back to `in-progress`.
+    sentinel('log_append', { logAppend: { kind: 'completion', convId: 'broker', cardId: 't1', body: 'settled' } })
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-progress', { epic: 'e1' })]
+
+    configureEpicIo({
+      fetchEpicRun: async (_d, _p, epicId, q?: EpicBatonQuery) =>
+        toEpicRunView(sentinel('get', { ...(q ? { baton: q } : {}) }) as EpicResult & { epicId: typeof epicId }),
+      appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
+    })
+  })
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('gets a fresh IMPLEMENTER -- the generation this project lost to it', async () => {
+    recordDispatch('t1', 2)
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
+    expect(spawns[0].epic).toMatchObject({ cardId: 't1' })
+    expect(out.note).toContain('dispatching 1')
+  })
+
+  test('is not woken about again -- its settle was acknowledged generations ago', async () => {
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.some(s => s.epic.role === 'overseer')).toBe(false)
+  })
+
+  test('with a live seat on it, nothing goes out', async () => {
+    const out = await runEpicBeat(deps(), group({ inFlight: ['t1'] }))
+    expect(spawns).toHaveLength(0)
+    expect(out.note).toContain('still in flight')
+  })
+
+  /** THE CEILING, crossing the wire. The count is folded over the whole log by
+   *  the sentinel, so this is the test that proves the field is actually sent. */
+  test('stops at the seat ceiling rather than billing a seat every 45s', async () => {
+    recordDispatch('t1', MAX_CARD_SEATS)
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+  })
+
+  test('and says so in the beat note, naming the card', async () => {
+    recordDispatch('t1', MAX_CARD_SEATS)
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(out.note).toContain('t1')
+    expect(out.note).toContain(String(MAX_CARD_SEATS))
+  })
+
+  /** The seat it just spent is on the log BEFORE the next beat reads it, which is
+   *  the only reason the ceiling can close at all: the conversation behind that
+   *  seat carries no epic tag until its agent host connects. */
+  test('the seat it spends is counted immediately, without waiting for the conversation', async () => {
+    recordDispatch('t1', MAX_CARD_SEATS - 1)
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
+    // Second beat, same board, same dead seat -- and the registry still knows
+    // nothing about the conversation the first beat spawned. The ceiling closes
+    // anyway, because the seat went into the LOG the moment it was spent. What
+    // comes out instead is the overseer, woken once on a dry generation, which is
+    // the visible-and-stopped shape `unspawnable` already has.
+    spawns = []
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
   })
 })
 

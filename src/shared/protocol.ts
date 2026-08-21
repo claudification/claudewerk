@@ -5041,6 +5041,21 @@ export interface EpicResult {
    * survivable) fold rather than treat every card as unacknowledged.
    */
   acknowledgedCardIds?: string[]
+  /**
+   * get -- cardId -> how many seats the log records having been dispatched for
+   * it, folded over the whole log rather than over the `baton` slice above.
+   *
+   * The bound on the redispatch path: a card back in `in-progress` after a bounce
+   * is dispatchable again (`epic-ready.ts`), and without a ceiling that is the
+   * thirteen-seat failure in a new place. Counted from the BATON because a
+   * `dispatch` entry is written the instant a spawn is accepted, while the
+   * conversation behind it carries no epic tag until its agent host connects.
+   *
+   * OPTIONAL for version skew only, exactly as `acknowledgedCardIds` above: a new
+   * broker meeting an old sentinel folds the tail instead, which under-counts an
+   * old card rather than reporting every card as fresh.
+   */
+  dispatchCounts?: Record<string, number>
   /** log_append -- the persisted entry. */
   logEntry?: EpicLogEntry
   /** lease -- granted or refused, with the holder either way. */

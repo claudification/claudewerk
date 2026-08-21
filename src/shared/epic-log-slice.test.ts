@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { appendEpicLog, readEpicLogSlice } from './epic-log'
+import { appendEpicLog, dispatchCountsByCard, readEpicLog, readEpicLogSlice } from './epic-log'
 
 let root: string
 const T0 = Date.parse('2026-08-18T10:00:00.000Z')
@@ -83,5 +83,45 @@ describe('readEpicLogSlice', () => {
   test('a limit past the end returns everything, not a padded list', () => {
     seed()
     expect(readEpicLogSlice(root, 'e1', { limit: 999 })).toHaveLength(12)
+  })
+})
+
+/**
+ * THE CEILING'S DENOMINATOR (`MAX_CARD_SEATS`). Counted from the BATON rather
+ * than from the conversation registry because a `dispatch` entry is written the
+ * instant a spawn is accepted, whereas the conversation behind it carries no
+ * epic tag until its agent host connects -- so a registry count reads zero in
+ * exactly the window a runaway starts in.
+ */
+describe('dispatchCountsByCard', () => {
+  test('an empty log counts nothing', () => {
+    expect(dispatchCountsByCard([])).toEqual({})
+  })
+
+  test('counts one seat per dispatch entry, per card', () => {
+    seed()
+    // The seed alternates dispatch/verdict over t1..t6, so every card has
+    // exactly one dispatch entry and one verdict.
+    expect(dispatchCountsByCard(readEpicLog(root, 'e1'))).toEqual({ t1: 1, t2: 1, t3: 1, t4: 1, t5: 1, t6: 1 })
+  })
+
+  test('a redispatched card accumulates -- the count is the ceiling, so it must not reset', () => {
+    for (const i of [0, 1, 2]) {
+      appendEpicLog(root, 'e1', { kind: 'dispatch', convId: `c${i}`, cardId: 't1', body: '' }, T0 + i)
+    }
+    expect(dispatchCountsByCard(readEpicLog(root, 'e1')).t1).toBe(3)
+  })
+
+  /** A failed launch already has its own `dispatch` entry ahead of it, and the
+   *  launch path has its own bound in `MAX_LAUNCH_ATTEMPTS`. */
+  test('a dispatch-failed entry is not a second seat', () => {
+    appendEpicLog(root, 'e1', { kind: 'dispatch', convId: 'c1', cardId: 't1', body: '' }, T0)
+    appendEpicLog(root, 'e1', { kind: 'dispatch-failed', convId: 'c1', cardId: 't1', body: '' }, T0 + 1)
+    expect(dispatchCountsByCard(readEpicLog(root, 'e1')).t1).toBe(1)
+  })
+
+  test('an entry with no card belongs to no card', () => {
+    appendEpicLog(root, 'e1', { kind: 'dispatch', convId: 'c1', body: 'no card' }, T0)
+    expect(dispatchCountsByCard(readEpicLog(root, 'e1'))).toEqual({})
   })
 })

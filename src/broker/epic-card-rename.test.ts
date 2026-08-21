@@ -8,7 +8,14 @@
 import { describe, expect, test } from 'bun:test'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { TaskStatus } from '../shared/task-statuses'
-import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
+import {
+  applyCardRenames,
+  cardRenames,
+  orphanedAckLine,
+  orphanedCardIds,
+  renameAwareAcks,
+  renameAwareCounts,
+} from './epic-card-rename'
 import type { EpicGroup } from './epic-sweep'
 
 function card(slug: string, over: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
@@ -142,6 +149,35 @@ describe('renameAwareAcks', () => {
 
   test('with no renames it is the identity', () => {
     expect(renameAwareAcks(['a', 'b'], new Map())).toEqual(['a', 'b'])
+  })
+})
+
+describe('renameAwareCounts', () => {
+  const renames = cardRenames([card('new', { renamedFrom: ['old'] })])
+
+  /**
+   * SUMMED, not merged. A card dispatched under `old`, renamed, then dispatched
+   * again under `new` has entries under both names, and a ceiling that saw only
+   * one half would make "rename the card" the documented way to buy six more
+   * seats.
+   */
+  test('seats spent under both names count against ONE ceiling', () => {
+    expect(renameAwareCounts({ old: 4, new: 2 }, renames)).toEqual({ new: 6 })
+  })
+
+  test('a count written only under the old id follows the card', () => {
+    expect(renameAwareCounts({ old: 3 }, renames)).toEqual({ new: 3 })
+  })
+
+  test('leaves an unrelated card alone', () => {
+    expect(renameAwareCounts({ other: 1 }, renames)).toEqual({ other: 1 })
+  })
+
+  test('with no renames it is a copy, not the caller`s object', () => {
+    const counts = { a: 1 }
+    const out = renameAwareCounts(counts, new Map())
+    expect(out).toEqual({ a: 1 })
+    expect(out).not.toBe(counts)
   })
 })
 

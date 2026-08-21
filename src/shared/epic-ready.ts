@@ -9,10 +9,33 @@
  * decide arithmetic.
  *
  * TWO LANES come out of here:
- *   - `dispatch`  not-started cards whose `depends_on` are all done -> implementer
+ *   - `dispatch`  cards whose `depends_on` are all done and which have nobody
+ *                 working them -> implementer. NOT-STARTED cards, and ALSO cards
+ *                 sitting in `in-progress` with no live seat -- see THE BOUNCE
+ *                 LANE below.
  *   - `verify`    cards sitting in `in-review` -> a Guard leg, which is the half
  *                 of the DONE-gate that was written and never wired (the existing
  *                 `buildGuardPrompt` had zero callers before epic mode).
+ *
+ * THE BOUNCE LANE. `dispatch` used to consider `notStarted` cards only, and
+ * `verify` considers `in-review` only, while `epicBucket` maps BOTH `in-progress`
+ * and `in-review` to `inProgress`. So a card at `in-progress` was in neither
+ * lane: invisible to dispatch (wrong bucket) and invisible to verify (wrong
+ * status). That is not a corner -- it is the DOCUMENTED bounce path. The overseer
+ * prompt tells every overseer that a bounced card "is back in `in-progress` ...
+ * leave it, it redispatches". It did not redispatch. Generation 3 of
+ * `epic-scanner-fabric` followed that instruction exactly and generation 4 woke
+ * to a free slot, a dead seat and a card nobody would ever pick up; a human had
+ * to move it back to `open` by hand, which is the one thing an unattended run
+ * cannot depend on. `EpicRollup.complete` requires `inProgress === 0`, so the run
+ * could not finish either -- it burned generations until a ceiling parked it.
+ *
+ * The fix is the LANE PREDICATE, not the bucket: `in-progress` genuinely IS
+ * progress, and the rollup counts, the `complete` predicate and every board
+ * surface read `epicBucket`'s mapping.
+ *
+ * `in-review` is deliberately NOT swept in. That lane belongs to the verifier,
+ * and an in-review card with no live verifier is already handled by `verify`.
  *
  * Concurrency is capped at the run's `concurrency` (default 3). That ceiling is
  * a review ceiling, not a machine one -- see werk-andon.
@@ -20,10 +43,14 @@
  * TWO SELECTORS, ONE FOLD. `planEpic` picks the cohort by epic membership;
  * `planTagged` picks it by board TAG, which is what the work-order scanner
  * needs -- an authorised card is authorised whether or not it belongs to an
- * epic. Only the SELECTION differs. Everything after it -- deps, the ceiling,
- * questions, unspawnable, the idle table -- is one body, because a second
- * readiness fold answering the same arithmetic slightly differently is the exact
- * drift the scanner fabric exists to end (scanner-work-orders).
+ * epic. Everything after the selection -- deps, the ceiling, questions,
+ * unspawnable, the idle table -- is one body, because a second readiness fold
+ * answering the same arithmetic slightly differently is the exact drift the
+ * scanner fabric exists to end (scanner-work-orders).
+ *
+ * The selector carries exactly one POLICY bit with it, `Cohort.bounceLane`, and
+ * it is stated as a field rather than inferred inside the fold so that the one
+ * place the two cohorts genuinely differ is visible at both call sites.
  *
  * A ROUGH CARD IS NOT READY -- the `needsRefine` bucket, and it is a
  * PRECONDITION rather than an ordering (scanner-refine).
@@ -70,6 +97,29 @@ import type { ProjectTaskMeta } from './project-task-types'
  */
 export const NEEDS_REFINE_TAG = 'needs-refine'
 
+/**
+ * HOW MANY SEATS ONE CARD MAY COST BEFORE THE ENGINE STOPS SENDING MORE.
+ *
+ * THE BOUND ON THE BOUNCE LANE, and it is not optional. "A card at `in-progress`
+ * is dispatchable again" is right once per bounce and ruinous without a ceiling:
+ * an implementer that dies without moving its card leaves that card at
+ * `in-progress` forever, which is a fresh seat every 45s until a spend cap
+ * notices. That is the same hazard `unspawnable` was written for after gen 2 of
+ * `epic-the-wall-ii` spent thirteen seats on one card, in a new place.
+ *
+ * SIX, counted in SEATS rather than in bounces, because seats are what the baton
+ * records and what the run is billed for (`dispatchCountsByCard` explains why the
+ * count cannot distinguish an implementer from a verifier). A card that reaches
+ * `done` the first time costs two -- one implementer, one verifier -- so six is
+ * three full rounds: the original attempt plus two bounces. A card that has been
+ * through three implementers without converging is not one more implementer away
+ * from converging; it is a card the overseer needs to look at.
+ *
+ * Applied to the BOUNCE lane only. A `notStarted` card is dispatched on its
+ * bucket exactly as it always was -- see `overSeatCeiling`.
+ */
+export const MAX_CARD_SEATS = 6
+
 /** Everything the fold needs that is NOT about how the cohort was chosen. */
 export interface PlanCohortInput {
   /** Every card on the board (the selector narrows it to the cohort). */
@@ -102,6 +152,30 @@ export interface PlanCohortInput {
    * `idleReason`, which drives a dry generation -> one overseer wake -> a park.
    */
   unspawnable?: readonly string[]
+  /**
+   * cardId -> how many seats the BATON records having been dispatched for it,
+   * over the whole log (`dispatchCountsByCard`). The ceiling on the bounce lane,
+   * `MAX_CARD_SEATS`.
+   *
+   * THE BATON RATHER THAN `inFlight`, and the distinction is the one trap in this
+   * whole change. A seat dispatched on beat N does not appear in `inFlight` on
+   * beat N+1: `EpicGroup` is folded purely from the conversation registry, and a
+   * spawned conversation carries no epic tag until its agent host connects
+   * (`setPendingLaunchConfig` is consumed by the meta handler). So during that
+   * window a just-dispatched card looks exactly like a bounced one, and the
+   * engine has NOTHING that can tell them apart -- the baton's `dispatch` entry
+   * says a seat went out but cannot say whether it came back, because
+   * `appendEpicLog` writes at most one machine `completion` per card by design
+   * and `verdict`, the other resolving kind, has no writer anywhere in the
+   * codebase. That gap is REPORTED, not papered over with an invented timestamp:
+   * what this count does is bound its cost, so the window can spend a seat but
+   * can never spend thirteen.
+   *
+   * Omitted means no ceiling, which is what `planTagged` wants: a tag cohort has
+   * no baton, and the work-order scanner bounds its own retries with the
+   * `already-run` guard instead.
+   */
+  dispatches?: Readonly<Record<string, number>>
 }
 
 /** Select the cohort by EPIC membership. */
@@ -182,6 +256,15 @@ export interface EpicPlan {
    * a question whereas the refiner only rewrites prose.
    */
   needsRefine: ProjectTaskMeta[]
+  /**
+   * Cards sitting in `in-progress` with no live seat that have burned
+   * `MAX_CARD_SEATS`. The bounce lane's ceiling, NAMED for `unspawnable`'s
+   * reason: a card the engine has stopped sending work at is the single most
+   * important thing on the pane, and a ceiling that silently withheld one would
+   * be indistinguishable from the bug this whole file just fixed -- `idleReason`
+   * reading "nothing ready" over a card nobody will ever pick up.
+   */
+  exhausted: ProjectTaskMeta[]
   /** Every child terminal, and there was at least one. */
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. Goes straight into the baton. */
@@ -191,6 +274,34 @@ export interface EpicPlan {
 /** A card whose lane means "an independent verdict is owed". */
 function needsVerdict(card: ProjectTaskMeta): boolean {
   return card.status === 'in-review'
+}
+
+/**
+ * A card the BOUNCE LANE owns: `in-progress`, which `epicBucket` folds into
+ * `inProgress` alongside `in-review` and which therefore has no bucket of its
+ * own. Asked of the STATUS, never of the bucket, for exactly that reason.
+ */
+function isBounced(card: ProjectTaskMeta): boolean {
+  return card.status === 'in-progress'
+}
+
+/** Is this card in a lane an implementer can be sent to at all? Liveness,
+ *  roughness, questions and the ceiling are separate refusals below. */
+function inDispatchLane(child: EpicChild, bounceLane: boolean): boolean {
+  return child.bucket === 'notStarted' || (bounceLane && isBounced(child.card))
+}
+
+/**
+ * Has this card burned its seat ceiling? BOUNCE LANE ONLY.
+ *
+ * A `notStarted` card is dispatched on its bucket exactly as it always was. The
+ * ceiling is deliberately not widened to it here: a card left in `open` by a seat
+ * that died IS redispatched every beat today, which is the same unbounded-retry
+ * shape and worth fixing -- but in its own card, not as a rider on this one. The
+ * work-order scanner already solved it for the tag cohort (`already-run`).
+ */
+function overSeatCeiling(child: EpicChild, dispatches: Readonly<Record<string, number>>): boolean {
+  return isBounced(child.card) && (dispatches[child.card.slug] ?? 0) >= MAX_CARD_SEATS
 }
 
 /** A question an implementer parked for the overseer, not a unit of work. */
@@ -210,6 +321,24 @@ interface Cohort {
   children: readonly EpicChild[]
   /** What `idleReason` says when the cohort is empty. */
   emptyDetail: string
+  /**
+   * Does this cohort get THE BOUNCE LANE -- `in-progress` cards with no live seat
+   * treated as dispatchable? The epic selector's, and only that one.
+   *
+   * A bounce is something a VERIFIER does, and an epic run is the only cohort
+   * with a verify lane: the work-order scanner dispatches implementers and
+   * nothing else, so a `ready` card sitting in `in-progress` was never bounced --
+   * it is a card somebody moved by hand, and that scanner deliberately names it
+   * `not-actionable` rather than acting on it. Sweeping it in from the shared
+   * fold would be one card's fix silently rewriting another scanner's dispatch
+   * policy.
+   *
+   * The second reason is the harder one: this lane's ceiling is counted from the
+   * BATON (`MAX_CARD_SEATS`), and a tag cohort has no baton. An unbounded bounce
+   * lane is precisely the failure that ceiling exists to prevent, so a selector
+   * that cannot supply the bound does not get the lane.
+   */
+  bounceLane: boolean
 }
 
 /**
@@ -224,7 +353,10 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
       idleReason: `no epic \`${input.epicId}\` on the board (no card carries it and no card claims it as a parent)`,
     }
   }
-  return foldCohort({ rollup, children: rollup.children, emptyDetail: 'the epic has no children yet' }, input)
+  return foldCohort(
+    { rollup, children: rollup.children, emptyDetail: 'the epic has no children yet', bounceLane: true },
+    input,
+  )
 }
 
 /**
@@ -242,7 +374,10 @@ export function planTagged(input: TaggedPlanInput): EpicPlan {
   const doneIds = doneCardIds(input.cards)
   const tagged = input.cards.filter(c => c.tags.includes(input.tag))
   const children = tagged.filter(c => !input.exclude?.has(c.slug)).map(card => toEpicChild(card, doneIds))
-  return foldCohort({ rollup: null, children, emptyDetail: emptyTagDetail(input.tag, tagged.length) }, input)
+  return foldCohort(
+    { rollup: null, children, emptyDetail: emptyTagDetail(input.tag, tagged.length), bounceLane: false },
+    input,
+  )
 }
 
 /** Why a tag cohort is empty -- "nobody carries it" and "the caller refused all
@@ -263,6 +398,7 @@ function emptyPlan(): EpicPlan {
     waitingOnDeps: [],
     unspawnable: [],
     needsRefine: [],
+    exhausted: [],
     complete: false,
   }
 }
@@ -288,8 +424,16 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
 
   const ready: ProjectTaskMeta[] = []
   const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
+  const exhausted: ProjectTaskMeta[] = []
+  const dispatches = input.dispatches ?? {}
   for (const child of cohort.children) {
-    if (child.bucket !== 'notStarted' || inFlight.has(child.card.slug)) continue
+    // LIVENESS FIRST, and it is now the load-bearing half of the predicate rather
+    // than a rider on the bucket: `notStarted` cards were never in flight by
+    // construction, whereas a bounced card at `in-progress` is exactly as likely
+    // to have a seat on it as not. A live seat needs no bucket of its own -- the
+    // aggregate "N card(s) still in flight" already names it.
+    if (inFlight.has(child.card.slug)) continue
+    if (!inDispatchLane(child, cohort.bounceLane)) continue
     if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
     // A rough card is not ready, and it is refused BEFORE the dependency check
     // so it never reaches `waitingOnDeps` -- being rough is the story, and a
@@ -297,6 +441,14 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     // engine looking for a graph problem it does not have.
     if (isRough(child.card)) continue
     if (dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
+    // The ceiling is checked AFTER the refusals above and BEFORE the dependency
+    // check, for `isRough`'s reason: "this card has burned six seats" is the
+    // story, and reporting it as blocked on a dependency would send the engine
+    // looking for a graph problem it does not have.
+    if (overSeatCeiling(child, dispatches)) {
+      exhausted.push(child.card)
+      continue
+    }
     if (child.waitingOn.length > 0) waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
     else ready.push(child.card)
   }
@@ -315,6 +467,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     waitingOnDeps,
     unspawnable,
     needsRefine,
+    exhausted,
     complete,
     idleReason: idleReason({
       complete,
@@ -327,6 +480,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
       waitingOnDeps,
       unspawnable,
       needsRefine,
+      exhausted,
       inFlight: inFlight.size,
     }),
   }
@@ -346,6 +500,7 @@ interface IdleInput {
   waitingOnDeps: EpicPlan['waitingOnDeps']
   unspawnable: ProjectTaskMeta[]
   needsRefine: ProjectTaskMeta[]
+  exhausted: ProjectTaskMeta[]
   inFlight: number
 }
 
@@ -365,6 +520,18 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
     say: i =>
       `${i.unspawnable.length} card(s) whose seats keep dying before producing anything, no longer retried: ` +
       `${i.unspawnable.map(c => c.slug).join(', ')} -- grep the broker log for \`Spawn FAILED stderr:\``,
+  },
+  {
+    // BESIDE `unspawnable` and above everything else, because it is the same
+    // class of fact: the engine has STOPPED, and no later beat resolves it. The
+    // difference from `unspawnable` is where the failure is -- there the seat
+    // cannot launch, here the seats launch fine and the card is not converging --
+    // so the two are separate reasons rather than one blurred count.
+    when: i => i.exhausted.length > 0,
+    say: i =>
+      `${i.exhausted.length} card(s) back in \`in-progress\` that have already cost ${MAX_CARD_SEATS} or more ` +
+      `seats, no longer re-dispatched: ${i.exhausted.map(c => c.slug).join(', ')} -- read the \`## Guard Findings\` ` +
+      'on the card and decide whether it is one card or two',
   },
   {
     when: i => i.questions.length > 0,

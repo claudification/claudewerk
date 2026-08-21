@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NEEDS_REFINE_TAG, planEpic, planTagged } from './epic-ready'
+import { MAX_CARD_SEATS, NEEDS_REFINE_TAG, planEpic, planTagged } from './epic-ready'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
@@ -181,6 +181,196 @@ describe('cards the engine has given up launching', () => {
     const cards = [EPIC, card('t1', 'open', { epic: 'e1' })]
     expect(planDead(cards, []).dispatch.map(c => c.slug)).toEqual(['t1'])
     expect(plan(cards).unspawnable).toEqual([])
+  })
+})
+
+/**
+ * THE BOUNCE LANE, and the generation this project lost to its absence.
+ *
+ * `dispatch` considered `notStarted` only and `verify` considers `in-review`
+ * only, while `epicBucket` folds BOTH `in-progress` and `in-review` into
+ * `inProgress`. A card at `in-progress` was therefore in neither lane -- and that
+ * is the lane the overseer prompt tells every overseer a BOUNCED card sits in,
+ * promising it "redispatches". Generation 3 of `epic-scanner-fabric` followed
+ * that instruction on `scanner-work-orders`; generation 4 woke to a free slot, a
+ * dead seat, and a card nobody would ever pick up.
+ */
+describe('a bounced card at `in-progress` is dispatchable again', () => {
+  /** The bounce lane's ceiling input: cardId -> seats the baton has recorded. */
+  const planSeats = (cards: ProjectTaskMeta[], dispatches: Record<string, number>, inFlight: string[] = []) =>
+    planEpic({ cards, epicId: 'e1', concurrency: 3, inFlight, inVerify: [], dispatches })
+
+  test('with NO live implementer it goes back out', () => {
+    const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1' })])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(p.idleReason).toBeUndefined()
+  })
+
+  test('with a live implementer it does NOT -- one seat per card, still', () => {
+    const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1' })], 3, ['t1'])
+    expect(p.dispatch).toEqual([])
+    expect(p.exhausted).toEqual([])
+    expect(p.idleReason).toContain('still in flight')
+  })
+
+  /**
+   * `in-review` IS NOT SWEPT IN. That lane belongs to the verifier: an in-review
+   * card with no live verifier is already handled by `verify`, and dispatching an
+   * implementer onto it would put a writer on a branch a Guard is mid-review of.
+   */
+  test('an in-review card stays verify-only and is never dispatched', () => {
+    const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })])
+    expect(p.dispatch).toEqual([])
+    expect(p.verify.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('an in-review card with no live verifier is still not dispatched', () => {
+    const p = planEpic({
+      cards: [EPIC, card('t1', 'in-review', { epic: 'e1' })],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+    })
+    expect(p.dispatch).toEqual([])
+  })
+
+  test('it consumes a concurrency slot like any other dispatch', () => {
+    const cards = [
+      EPIC,
+      card('t1', 'in-progress', { epic: 'e1' }),
+      card('t2', 'open', { epic: 'e1' }),
+      card('t3', 'open', { epic: 'e1' }),
+    ]
+    const p = plan(cards, 2)
+    expect(p.dispatch.length + p.heldBack.length).toBe(3)
+    expect(p.dispatch).toHaveLength(2)
+  })
+
+  test('a bounced card still waits on an unfinished dependency', () => {
+    const p = plan([
+      EPIC,
+      card('dep', 'open', { epic: 'e1' }),
+      card('t1', 'in-progress', { epic: 'e1', dependsOn: ['dep'] }),
+    ])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['dep'])
+    expect(p.waitingOnDeps.map(w => w.card.slug)).toEqual(['t1'])
+  })
+
+  test('a bounced card the engine cannot launch is still withheld', () => {
+    const p = planDead([EPIC, card('t1', 'in-progress', { epic: 'e1' })], ['t1'])
+    expect(p.dispatch).toEqual([])
+    expect(p.unspawnable.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('a bounced card carrying a question is answered, not re-implemented', () => {
+    const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] })])
+    expect(p.dispatch).toEqual([])
+    expect(p.questions.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  /**
+   * THE RETRY CEILING. "An `in-progress` card is dispatchable again" is right
+   * once per bounce and ruinous without a bound: an implementer that dies without
+   * moving its card leaves it at `in-progress` forever, which is a fresh seat
+   * every 45s. Gen 2 of `epic-the-wall-ii` spent thirteen on one card the last
+   * time an unbounded retry path shipped.
+   */
+  describe('the retry ceiling', () => {
+    test('one seat short of the ceiling still dispatches', () => {
+      const p = planSeats([EPIC, card('t1', 'in-progress', { epic: 'e1' })], { t1: MAX_CARD_SEATS - 1 })
+      expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+      expect(p.exhausted).toEqual([])
+    })
+
+    test('at the ceiling it is withheld', () => {
+      const p = planSeats([EPIC, card('t1', 'in-progress', { epic: 'e1' })], { t1: MAX_CARD_SEATS })
+      expect(p.dispatch).toEqual([])
+    })
+
+    test('and is NAMED rather than silently dropped -- the whole bug this file just fixed', () => {
+      const p = planSeats([EPIC, card('t1', 'in-progress', { epic: 'e1' })], { t1: MAX_CARD_SEATS + 4 })
+      expect(p.exhausted.map(c => c.slug)).toEqual(['t1'])
+      expect(p.idleReason).toContain('t1')
+      expect(p.idleReason).toContain(String(MAX_CARD_SEATS))
+      expect(p.idleReason).not.toContain('nothing ready')
+    })
+
+    test('the ceiling is per card -- a sibling with seats to spare still goes out', () => {
+      const p = planSeats(
+        [EPIC, card('t1', 'in-progress', { epic: 'e1' }), card('t2', 'in-progress', { epic: 'e1' })],
+        {
+          t1: MAX_CARD_SEATS,
+        },
+      )
+      expect(p.dispatch.map(c => c.slug)).toEqual(['t2'])
+      expect(p.exhausted.map(c => c.slug)).toEqual(['t1'])
+      expect(p.idleReason).toBeUndefined()
+    })
+
+    /**
+     * BOUNCE LANE ONLY. A `notStarted` card is dispatched on its bucket exactly as
+     * it always was; widening the ceiling to that lane is a separate card
+     * (`epic-open-lane-redispatches-forever`), not a rider on this one.
+     */
+    test('a not-started card is not subject to it', () => {
+      const p = planSeats([EPIC, card('t1', 'open', { epic: 'e1' })], { t1: MAX_CARD_SEATS + 10 })
+      expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+      expect(p.exhausted).toEqual([])
+    })
+
+    test('an exhausted card is reported ONCE, and as exhausted rather than dependency-blocked', () => {
+      const p = planSeats([EPIC, card('t1', 'in-progress', { epic: 'e1', dependsOn: ['ghost'] })], {
+        t1: MAX_CARD_SEATS,
+      })
+      expect(p.exhausted.map(c => c.slug)).toEqual(['t1'])
+      expect(p.waitingOnDeps).toEqual([])
+    })
+
+    test('a live seat wins over the ceiling -- an exhausted card being worked is not a stall', () => {
+      const p = planSeats([EPIC, card('t1', 'in-progress', { epic: 'e1' })], { t1: MAX_CARD_SEATS }, ['t1'])
+      expect(p.exhausted).toEqual([])
+      expect(p.idleReason).toContain('still in flight')
+    })
+
+    test('an unspawnable card outranks an exhausted one -- its seat cannot launch at all', () => {
+      const p = planEpic({
+        cards: [EPIC, card('t1', 'in-progress', { epic: 'e1' }), card('t2', 'in-progress', { epic: 'e1' })],
+        epicId: 'e1',
+        concurrency: 3,
+        inFlight: [],
+        inVerify: [],
+        unspawnable: ['t2'],
+        dispatches: { t1: MAX_CARD_SEATS },
+      })
+      expect(p.idleReason).toContain('seats keep dying')
+    })
+
+    test('omitting the counts means no ceiling -- the field is optional by design', () => {
+      const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1' })])
+      expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+      expect(p.exhausted).toEqual([])
+    })
+  })
+
+  /**
+   * THE LANE IS THE EPIC SELECTOR'S, AND ONLY ITS. A bounce is something a
+   * VERIFIER does, and the tag cohort has no verify lane: the work-order scanner
+   * dispatches implementers and nothing else, and deliberately names a `ready`
+   * card sitting in `in-progress` `not-actionable`. It also has no baton, so it
+   * could not supply the ceiling this lane requires -- and an unbounded bounce
+   * lane is the exact failure that ceiling exists to prevent.
+   */
+  test('the TAG selector does not get it -- an in-progress `ready` card stays untouched', () => {
+    const p = planTagged({
+      cards: [card('a', 'in-progress', { tags: ['ready'] }), card('b', 'open', { tags: ['ready'] })],
+      tag: 'ready',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+    })
+    expect(p.dispatch.map(c => c.slug)).toEqual(['b'])
+    expect(p.exhausted).toEqual([])
   })
 })
 
