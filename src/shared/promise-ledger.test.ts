@@ -8,12 +8,14 @@ import {
   closedWithoutCommit,
   detectCardDefects,
   insertPromiseBlock,
+  isBrokenPromise,
   isOutstanding,
   isStub,
   type PromiseRow,
   parsePromiseBlock,
   promiseFromCard,
   renderPromiseBlock,
+  rowVerdict,
   stubs,
   verdictFor,
 } from './promise-ledger'
@@ -63,6 +65,8 @@ describe('parsePromiseBlock', () => {
       session: '292e9fce-df36-4467-8bb9-e80f6d036a76',
       asked: 'per card, WHICH COMMIT delivered it',
       closes: ['83bf55f0'],
+      preLedger: false,
+      inferred: false,
     })
   })
 
@@ -228,6 +232,8 @@ describe('promiseFromCard / the loud tables', () => {
     conversation: null,
     session: null,
     asked: 'something',
+    preLedger: false,
+    inferred: false,
     closes: [],
     commits: [],
     verdict: 'not-started',
@@ -351,6 +357,8 @@ describe('insertPromiseBlock -- line surgery, never a re-serialisation', () => {
       session: null,
       asked: null,
       closes: [],
+      preLedger: false,
+      inferred: false,
     })
   })
 
@@ -617,5 +625,69 @@ describe('CRLF cards -- round-trip or refuse, never a silent mangle', () => {
     expect(b.text).toBe(noBlock)
     expect(b.changed).toBe(false)
     expect(b.refused).toBe(reason)
+  })
+})
+
+describe('pre-ledger -- an AMNESTY for cards filed before this existed, never a mute', () => {
+  const filed = (promise: string[]) => ({ id: 'old', status: 'done', title: 'Old work', text: card(promise) })
+
+  it('a filed card marked pre_ledger with no claim reads `pre-ledger`, not `not started`', () => {
+    const row = promiseFromCard(filed(['  pre_ledger: true', '  closes: []']), resolver(new Set()))
+    expect(row?.preLedger).toBe(true)
+    expect(row?.verdict).toBe('pre-ledger')
+    // The whole point: it is OUT of the loud table.
+    expect(closedWithoutCommit([row as PromiseRow])).toEqual([])
+    expect(isBrokenPromise(row as PromiseRow)).toBe(false)
+    expect(isOutstanding('pre-ledger')).toBe(false)
+  })
+
+  it('THE AMNESTY DOES NOT COVER A CLAIM. A pre-ledger card naming a dead sha is still accused', () => {
+    // This is the guard that stops `pre_ledger: true` becoming a way to file
+    // anything as finished and have the ledger agree. It excuses SILENCE, never
+    // a claim that does not stand up.
+    const row = promiseFromCard(filed(['  pre_ledger: true', '  closes: [deadbeef]']), resolver(new Set()))
+    expect(row?.verdict).toBe('commit-missing')
+    expect(closedWithoutCommit([row as PromiseRow])).toHaveLength(1)
+  })
+
+  it('a pre-ledger card that DID land on main reads `delivered` -- the better answer wins', () => {
+    const row = promiseFromCard(filed(['  pre_ledger: true', '  closes: [83bf55f0]']), resolver(new Set(['83bf55f0'])))
+    expect(row?.verdict).toBe('delivered')
+  })
+
+  it('only the exact string `true` grants it -- a typo leaves the card answering for itself', () => {
+    for (const written of ['maybe', 'True', 'yes', '1', '']) {
+      const row = promiseFromCard(filed([`  pre_ledger: ${written}`, '  closes: []']), resolver(new Set()))
+      expect(row?.preLedger).toBe(false)
+      expect(row?.verdict).toBe('not-started')
+    }
+  })
+
+  it('an UNMARKED filed card is untouched by any of this -- it is still accused', () => {
+    const row = promiseFromCard(filed(['  closes: []']), resolver(new Set()))
+    expect(row?.preLedger).toBe(false)
+    expect(row?.verdict).toBe('not-started')
+    expect(closedWithoutCommit([row as PromiseRow])).toHaveLength(1)
+  })
+
+  it("rowVerdict leaves verdictFor pure: the amnesty is applied to the ROW, never to git's answer", () => {
+    expect(verdictFor([])).toBe('not-started')
+    expect(rowVerdict({ preLedger: true, closes: [] }, [])).toBe('pre-ledger')
+    expect(rowVerdict({ preLedger: false, closes: [] }, [])).toBe('not-started')
+  })
+
+  it('renderPromiseBlock omits pre_ledger unless it is asked for', () => {
+    expect(renderPromiseBlock({ agreed: '2026-08-21' }).some(l => l.includes('pre_ledger'))).toBe(false)
+    const stamped = renderPromiseBlock({ agreed: '2026-08-21', preLedger: true })
+    expect(stamped).toContain('  pre_ledger: true')
+    // And it round-trips through the parser it was written for.
+    const text = ['---', 'title: x', 'status: done', ...stamped, '---', '', 'b', ''].join('\n')
+    expect(parsePromiseBlock(text)?.preLedger).toBe(true)
+  })
+
+  it('survives the card writer that flattens everything else -- the round trip keeps the marker', () => {
+    const stamped = insertPromiseBlock(card([]).replace('promise:\n', ''), { agreed: '2026-08-21', preLedger: true })
+    const { meta, body, raw } = parseFrontmatter(stamped.text)
+    expect(parsePromiseBlock(serializeCard(meta, body, raw))?.preLedger).toBe(true)
   })
 })

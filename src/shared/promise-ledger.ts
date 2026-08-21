@@ -66,6 +66,22 @@ export type PromiseVerdict =
   /** The resolver itself failed. NEVER folded into any of the above -- "I could
    *  not check" is not "it is fine", and it is not "it is broken" either. */
   | 'unverifiable'
+  /**
+   * Filed before this ledger existed, and marked so ON THE CARD.
+   *
+   * An AMNESTY, not a mute, and the distinction is the whole design. 342 of this
+   * board's 343 filed cards were closed before `promise:` was a thing anyone
+   * could write, so accusing them says nothing about the run that closed them --
+   * it only teaches a reader to scroll past a red table, and a table nobody
+   * reads catches nothing. The amnesty is granted ONE card at a time by a
+   * `pre_ledger: true` line somebody wrote down, never by a date the reader
+   * infers, so it can be audited, revoked, and never accidentally handed to a
+   * card that should have known better.
+   *
+   * IT ONLY APPLIES WHEN NOTHING WAS CLAIMED. A pre-ledger card that names a
+   * commit is judged on that commit like any other -- see `rowVerdict`.
+   */
+  | 'pre-ledger'
 
 /** One commit's standing, as git reported it. */
 export interface CommitStanding {
@@ -87,6 +103,26 @@ export interface PromiseBlock {
   session: string | null
   asked: string | null
   closes: string[]
+  /**
+   * `pre_ledger: true` -- this card was filed before the ledger existed and no
+   * promise was ever possible for it. Absent on every card written since, and
+   * NOTHING infers it: it is written once, deliberately, by the backfill.
+   */
+  preLedger: boolean
+  /**
+   * `inferred: true` -- the shas in `closes:` were RECONSTRUCTED by the backfill
+   * from a commit message or a card's own prose, not recorded by anyone at the
+   * moment the work landed.
+   *
+   * DELIBERATELY NOT A VERDICT, for the same reason `isStub` is not one. The
+   * verdict answers "do these commits stand up", a question about git, and the
+   * answer is genuinely `delivered` -- the commit is real and it is on main.
+   * This answers a different question: "did anybody actually promise this, or
+   * did a script guess?" Folding the two would either hide a real delivery or
+   * dress a guess up as a promise, and this ledger's worst possible row is a
+   * confident `delivered` that nobody can trace.
+   */
+  inferred: boolean
 }
 
 /** One promise, resolved against git. */
@@ -294,6 +330,10 @@ export function parsePromiseBlock(text: string): PromiseBlock | null {
     session: scalar(block, 'session'),
     asked: scalar(block, 'asked'),
     closes: parseCloses(block),
+    // EXACTLY `true`, nothing else. An amnesty that a typo can grant is not one:
+    // `pre_ledger: maybe` reads as false and the card keeps answering for itself.
+    preLedger: scalar(block, 'pre_ledger') === 'true',
+    inferred: scalar(block, 'inferred') === 'true',
   }
 }
 
@@ -317,9 +357,34 @@ export function verdictFor(commits: CommitStanding[]): PromiseVerdict {
   return 'delivered'
 }
 
-/** True when a promise still owes work -- i.e. it belongs on the pending list. */
+/**
+ * The verdict for one ROW -- git's answer, plus the one thing git cannot know.
+ *
+ * `verdictFor` stays a pure function of what the resolver said, because that is
+ * what makes all five git states provable with no repo on disk. The amnesty is
+ * a fact about the CARD, so it is applied here instead of being smuggled into
+ * the resolver's answer.
+ *
+ * THE GUARD IS `closes.length === 0`, and it is the entire safety of the
+ * feature. A pre-ledger card that names a commit has made a claim, and a claim
+ * gets judged -- otherwise the marker becomes a way to file anything as finished
+ * and have the ledger agree. Amnesty covers the cards that never claimed; it
+ * never covers a claim that does not stand up.
+ */
+export function rowVerdict(
+  block: Pick<PromiseBlock, 'preLedger' | 'closes'>,
+  commits: CommitStanding[],
+): PromiseVerdict {
+  if (block.preLedger && block.closes.length === 0) return 'pre-ledger'
+  return verdictFor(commits)
+}
+
+/** True when a promise still owes work -- i.e. it belongs on the pending list.
+ *  `pre-ledger` owes nothing: the work was done, in a world that had no way to
+ *  record which commit did it. Leaving it outstanding would park 342 cards on a
+ *  pending list that can never be worked down. */
 export function isOutstanding(v: PromiseVerdict): boolean {
-  return v !== 'delivered'
+  return v !== 'delivered' && v !== 'pre-ledger'
 }
 
 /**
@@ -342,6 +407,17 @@ export function isStub(row: Pick<PromiseBlock, 'asked'>): boolean {
   return row.asked === null || row.asked.trim() === ''
 }
 
+/**
+ * True when this row's commits were RECONSTRUCTED rather than recorded.
+ *
+ * Guarded on `closes` being non-empty: `inferred: true` with nothing claimed is
+ * a contradiction (nothing was inferred), and a row that reported it would put
+ * a "guessed" marker next to a promise that guessed nothing.
+ */
+export function isInferred(row: Pick<PromiseBlock, 'inferred' | 'closes'>): boolean {
+  return row.inferred && row.closes.length > 0
+}
+
 /** Every promise carrying no ask. Rendered on its own, never folded in. */
 export function stubs(rows: PromiseRow[]): PromiseRow[] {
   return rows.filter(isStub)
@@ -355,7 +431,7 @@ export function promiseFromCard(
   const p = parsePromiseBlock(args.text)
   if (p === null) return null
   const commits = p.closes.map(resolve)
-  return { id: args.id, status: args.status, title: args.title, ...p, commits, verdict: verdictFor(commits) }
+  return { id: args.id, status: args.status, title: args.title, ...p, commits, verdict: rowVerdict(p, commits) }
 }
 
 /**
@@ -366,8 +442,23 @@ export function promiseFromCard(
  * authority, at machine speed. This asks whether a commit agrees.
  */
 export function closedWithoutCommit(rows: PromiseRow[]): PromiseRow[] {
-  const FILED = new Set(['done', 'archived'])
-  return rows.filter(r => FILED.has(r.status) && r.verdict !== 'delivered')
+  return rows.filter(isBrokenPromise)
+}
+
+/** DONE or ARCHIVED -- the two lanes that assert the work is finished. */
+const FILED_LANES: ReadonlySet<string> = new Set(['done', 'archived'])
+
+/**
+ * Does THIS row belong in the loud table? The ONE answer, for every surface.
+ *
+ * It was three: this module, the wall's `useCardVerdicts` and the project
+ * panel each filtered `isFiled(status) && verdict !== 'delivered'` themselves.
+ * Three copies of a predicate is three places to forget a new benign verdict --
+ * and `pre-ledger` is exactly that, so two of them would have gone on accusing
+ * 342 amnestied cards while the third had stopped. One function, three callers.
+ */
+export function isBrokenPromise(row: Pick<PromiseRow, 'status' | 'verdict'>): boolean {
+  return FILED_LANES.has(row.status) && isOutstanding(row.verdict)
 }
 
 /**
@@ -445,6 +536,16 @@ export interface PromiseSeed {
    *  a requirement) silences the "no ask written down" warning and tells the
    *  next agent nothing, which is strictly worse than a blank. */
   asked?: string | undefined
+  /**
+   * Stamp `pre_ledger: true`. The BACKFILL sets this and nothing else does --
+   * the engine must never reach for it, because a card the engine is recording
+   * is by definition one the ledger was alive for.
+   */
+  preLedger?: boolean | undefined
+  /** Stamp `inferred: true`. The BACKFILL sets this for a sha it reconstructed
+   *  rather than one anybody recorded. The engine never does -- it writes at the
+   *  one moment the association is a fact. */
+  inferred?: boolean | undefined
 }
 
 /** A sha plus why it exists, so `closes:` reads as history and not as noise. */
@@ -511,6 +612,11 @@ export function renderPromiseBlock(seed: PromiseSeed): string[] {
     `${INDENT}conversation: ${serializeScalar(seed.conversation ?? '')}`,
     `${INDENT}session: ${serializeScalar(seed.session ?? '')}`,
     `${INDENT}asked: ${serializeScalar(seed.asked ?? '')}`,
+    // OMITTED unless true. A `pre_ledger: false` on every card the engine writes
+    // would be 300 lines of noise saying nothing, and it would make the marker
+    // look like a field somebody might flip rather than a one-off amnesty.
+    ...(seed.preLedger === true ? [`${INDENT}pre_ledger: true`] : []),
+    ...(seed.inferred === true ? [`${INDENT}inferred: true`] : []),
     `${INDENT}closes: []`,
   ]
 }

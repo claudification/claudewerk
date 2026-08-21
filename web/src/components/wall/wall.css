@@ -1656,6 +1656,14 @@ button.wall-burn-hit:hover {
 .wall-verdict[data-tone='unclaimed'] {
 	color: var(--comment);
 }
+/* Recedes furthest of all, and that is the point: hundreds of cards were filed
+   before the ledger existed and none of them is news. It still gets a colour of
+   its own rather than sharing `unclaimed`, because the two states differ by
+   exactly what a reader needs -- accused, or excused. */
+.wall-verdict[data-tone='historic'] {
+	color: var(--comment);
+	opacity: 0.65;
+}
 
 /* ---------- THE LOUD TABLE ----------
    Sticky, because the card asks for a table "a person cannot scroll past" and

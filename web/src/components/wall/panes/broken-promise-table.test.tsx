@@ -29,6 +29,8 @@ function row(over: Partial<PromiseRow> & { id: string; verdict: PromiseVerdict }
     conversation: null,
     session: null,
     asked: null,
+    preLedger: false,
+    inferred: false,
     closes: [],
     commits: [],
     ...over,

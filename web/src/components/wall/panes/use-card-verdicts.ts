@@ -17,7 +17,7 @@
  * apart here rather than collapsed into a convenient default.
  */
 
-import type { PromiseRow, PromiseVerdict } from '@shared/promise-ledger'
+import { isBrokenPromise, type PromiseRow, type PromiseVerdict } from '@shared/promise-ledger'
 import { useMemo } from 'react'
 import { usePromiseLedger } from '@/hooks/use-promise-ledger'
 import type { LedgerRow } from '@/lib/wall/card-ledger'
@@ -52,7 +52,7 @@ export function useCardVerdicts(rows: readonly LedgerRow[]): CardVerdicts {
         verdicts.set(`${project}::${row.id}`, row.verdict)
         // The fold already ordered its rows worst-first and already knows which
         // lanes count as filed; re-deriving "done" here would be a second answer.
-        if (isFiled(row.status) && row.verdict !== 'delivered') broken.push({ ...row, project })
+        if (isBrokenPromise(row)) broken.push({ ...row, project })
       }
     }
 
@@ -64,11 +64,4 @@ export function useCardVerdicts(rows: readonly LedgerRow[]): CardVerdicts {
       refused,
     }
   }, [byProject, loading, refused])
-}
-
-/** DONE or ARCHIVED -- the two lanes that assert the work is finished. Matches
- *  `closedWithoutCommit` in the core module; kept to one line here so the wall
- *  never grows a second opinion about what "filed" means. */
-function isFiled(status: string): boolean {
-  return status === 'done' || status === 'archived'
 }
