@@ -568,53 +568,86 @@ interface DispatchTriage {
 }
 
 /**
- * WHO CAN BE SENT WORK, and a named lane for every reason the rest cannot.
+ * EVERY WAY A COHORT MEMBER IS WITHHELD FROM DISPATCH, MOST SPECIFIC FIRST --
+ * first rule that claims the card wins, and everything below it is skipped.
  *
- * ITS OWN FUNCTION BECAUSE THE ORDER IS THE DESIGN. Every `continue` and every
- * push below is placed relative to the ones around it for a stated reason, and a
- * reader auditing that order should be able to see the whole sequence at once
- * rather than scrolling past four selection filters to reach it.
+ * A table rather than an if-chain for `IDLE_RULES`' reason, stated a hundred
+ * lines below this one: THE ORDER IS THE WHOLE DESIGN HERE, and a table makes
+ * that order something you can read, reorder and test rather than something you
+ * reconstruct by tracing `continue`s. This chain had grown a rule per card for
+ * four cards running -- `needsRefine`, then `exhausted`, then `alreadyRun` --
+ * and the fifth author deserves a list to insert a row into.
+ *
+ * `lane: null` means WITHHELD WITHOUT A LANE OF ITS OWN: something else already
+ * names the card, so a second count of it would be double-counting the same
+ * stall. `lane` otherwise names the `DispatchTriage` bucket the card lands in.
  */
-function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates): DispatchTriage {
-  const ready: ProjectTaskMeta[] = []
-  const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
-  const exhausted: ProjectTaskMeta[] = []
-  const alreadyRun: ProjectTaskMeta[] = []
-  for (const child of children) {
-    // LIVENESS FIRST, and it is now the load-bearing half of the predicate rather
+const WITHHOLD_RULES: ReadonlyArray<{
+  claims: (child: EpicChild, gates: DispatchGates) => boolean
+  lane: 'alreadyRun' | 'exhausted' | null
+}> = [
+  {
+    // LIVENESS FIRST, and it is the load-bearing half of the predicate rather
     // than a rider on the bucket: `notStarted` cards were never in flight by
     // construction, whereas a bounced card at `in-progress` is exactly as likely
     // to have a seat on it as not. A live seat needs no bucket of its own -- the
     // aggregate "N card(s) still in flight" already names it.
-    if (gates.inFlight.has(child.card.slug)) continue
-    if (!inDispatchLane(child, gates.bounceLane)) continue
-    if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
-    // A rough card is not ready, and it is refused BEFORE the dependency check
+    claims: (child, gates) => gates.inFlight.has(child.card.slug),
+    lane: null,
+  },
+  { claims: (child, gates) => !inDispatchLane(child, gates.bounceLane), lane: null },
+  // The overseer answers these; nobody implements them. Counted by `questions`.
+  { claims: child => isQuestion(child.card), lane: null },
+  {
+    // A rough card is not ready, and it is withheld BEFORE the dependency check
     // so it never reaches `waitingOnDeps` -- being rough is the story, and a
     // card reported as blocked on a dependency that just landed would send the
-    // engine looking for a graph problem it does not have.
-    if (isRough(child.card)) continue
-    if (gates.dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
+    // engine looking for a graph problem it does not have. Counted by
+    // `needsRefine`.
+    claims: child => isRough(child.card),
+    lane: null,
+  },
+  // The seat cannot launch; another one will not either. Counted by `unspawnable`.
+  { claims: (child, gates) => gates.dead.has(child.card.slug), lane: null },
+  {
     // BEFORE the ceiling, because it is the more specific story of the two and a
     // card that trips both should be reported as the thing that actually happened.
     // A not-started card with a settled seat has been worked once and left where
     // it was; saying "it has cost six seats" instead would be true and useless.
-    if (alreadyRan(child, gates.settled)) {
-      alreadyRun.push(child.card)
-      continue
+    claims: (child, gates) => alreadyRan(child, gates.settled),
+    lane: 'alreadyRun',
+  },
+  {
+    // AFTER the withholdings above and BEFORE the dependency check, for
+    // `isRough`'s reason: "this card has burned six seats" is the story, and
+    // reporting it as blocked on a dependency would send the engine looking for
+    // a graph problem it does not have.
+    claims: (child, gates) => overSeatCeiling(child, gates.dispatches),
+    lane: 'exhausted',
+  },
+]
+
+/**
+ * WHO CAN BE SENT WORK, and a named lane for every reason the rest cannot.
+ *
+ * Its own function because {@link WITHHOLD_RULES} is a table and a table needs
+ * exactly one place that walks it. Everything the reader has to audit is in the
+ * table; this is the two lines that apply it plus the one split the table cannot
+ * express -- a card nothing withheld is `ready` or it is waiting on a dependency.
+ */
+function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates): DispatchTriage {
+  const out: DispatchTriage = { ready: [], waitingOnDeps: [], exhausted: [], alreadyRun: [] }
+  for (const child of children) {
+    const withheld = WITHHOLD_RULES.find(rule => rule.claims(child, gates))
+    if (withheld) {
+      if (withheld.lane) out[withheld.lane].push(child.card)
+    } else if (child.waitingOn.length > 0) {
+      out.waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
+    } else {
+      out.ready.push(child.card)
     }
-    // The ceiling is checked AFTER the refusals above and BEFORE the dependency
-    // check, for `isRough`'s reason: "this card has burned six seats" is the
-    // story, and reporting it as blocked on a dependency would send the engine
-    // looking for a graph problem it does not have.
-    if (overSeatCeiling(child, gates.dispatches)) {
-      exhausted.push(child.card)
-      continue
-    }
-    if (child.waitingOn.length > 0) waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
-    else ready.push(child.card)
   }
-  return { ready, waitingOnDeps, exhausted, alreadyRun }
+  return out
 }
 
 /**
