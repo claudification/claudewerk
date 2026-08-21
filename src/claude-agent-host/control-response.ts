@@ -43,7 +43,7 @@ const CONFIRM_TEXT: Record<string, (detail?: string) => string> = {
 }
 
 /** The line a user sees when CC ACCEPTS a control verb. Never empty. */
-export function controlSuccessText(pending: PendingControl): string {
+function controlSuccessText(pending: PendingControl): string {
   const bespoke = CONFIRM_TEXT[pending.subtype]
   if (bespoke) return bespoke(pending.detail)
   const label = verbLabel(pending.subtype)
@@ -55,7 +55,7 @@ export function controlSuccessText(pending: PendingControl): string {
  * Carries the verb, the value that was requested, and CC's verbatim reason --
  * the three facts needed to know what to do instead.
  */
-export function controlFailureText(pending: PendingControl, error?: string): string {
+function controlFailureText(pending: PendingControl, error?: string): string {
   const label = verbLabel(pending.subtype)
   const target = pending.detail ? ` (${pending.detail})` : ''
   const reason = error?.trim() || 'no reason given'

@@ -421,7 +421,7 @@ describe('stream-handlers control_response', () => {
 
   test('an AWAITED response is diagnosed with its verb and left to the caller to report', () => {
     const { hctx, entries, diags } = createControlCtx()
-    const results: Array<{ ok: boolean; error?: string }> = []
+    const results: Array<{ ok: boolean; subtype?: string; response?: unknown; error?: string }> = []
     hctx.controlRequestResolvers = new Map([['dbg-1', { subtype: 'stop_task', resolve: r => results.push(r) }]])
 
     handleMessage(hctx, {
