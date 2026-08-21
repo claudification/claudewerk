@@ -227,3 +227,25 @@ test('the read-only modes say out loud that they will not move the card', async 
   fireEvent.click(screen.getByRole('radio', { name: 'Work' }))
   await settleUntil(() => screen.queryByText(/status unchanged/) === null, 'Work having no disclaimer')
 })
+
+/**
+ * THE LAUNCH VERB IS ONE OF THE TWO NAMED CONSUMERS of a card's `model:` hint.
+ *
+ * A hint nothing reads is the "enabled, last ran never" failure again, so what
+ * is pinned here is that the field ARRIVES seeded -- and that a card with no
+ * hint still opens on the remembered default, because the hint may not quietly
+ * retarget a launch nobody asked it to.
+ */
+test('a card carrying `model:` seeds the run dialog with it', async () => {
+  render(<RunTaskDialog task={{ ...task(), model: 'opus' }} conversationId="conv-1" onClose={vi.fn()} />)
+
+  await settleUntil(() => screen.queryByText('Work Card') !== null, 'the run dialog')
+  expect(screen.getByLabelText('Model').textContent).toBe('Opus (latest)')
+})
+
+test('a card with no hint leaves the model field where it was', async () => {
+  render(<RunTaskDialog task={task()} conversationId="conv-1" onClose={vi.fn()} />)
+
+  await settleUntil(() => screen.queryByText('Work Card') !== null, 'the run dialog')
+  expect(screen.getByLabelText('Model').textContent).toBe('Default')
+})

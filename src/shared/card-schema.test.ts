@@ -52,6 +52,7 @@ describe('the registry replaces the copies it was built from', () => {
       'archived_reason',
       'archived_by',
       'delete_at',
+      'model',
     ])
   })
 

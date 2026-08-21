@@ -18,7 +18,16 @@ describe('scanTaskToken', () => {
     expect(scan('!hi')).toMatchObject({ kind: 'priority', query: 'hi' })
     expect(scan('+card')).toMatchObject({ kind: 'dependsOn', query: 'card' })
     expect(scan('&card')).toMatchObject({ kind: 'relatesTo', query: 'card' })
+    expect(scan(':opus')).toMatchObject({ kind: 'model', query: 'opus' })
     expect(scan('/claudewerk')).toMatchObject({ kind: 'project', query: 'claudewerk' })
+  })
+
+  /** `:` is the wall's own model sigil (pulse/query-types.ts), and it has to stay
+   *  inert everywhere prose already uses a colon -- which is everywhere. */
+  test('a colon inside prose is not a model hint', () => {
+    expect(scan('note: x', 7)).toBeNull()
+    expect(scan('10:30')).toBeNull()
+    expect(scan('claude://default')).toBeNull()
   })
 
   test('a slash inside prose is not a project switch', () => {
@@ -117,12 +126,33 @@ describe('buildTaskDraft', () => {
     expect(draft?.dependsOn).toBeUndefined()
     expect(draft?.relatesTo).toBeUndefined()
   })
+
+  test('an accepted model chip reaches the draft', () => {
+    const draft = buildTaskDraft('do it', applyChip(emptyChips(), 'model', 'opus'))
+    expect(draft?.model).toBe('opus')
+  })
+
+  /** `#model-opus` is folded on the WRITE side (project-task-input.ts), once, so
+   *  an MCP caller gets the same normalisation. The capture box keeps it as the
+   *  tag it typed and does not grow a second copy of the rule. */
+  test('a `#model-` tag stays a tag here -- the fold belongs to the writer', () => {
+    const draft = buildTaskDraft('do it #model-opus', emptyChips())
+    expect(draft?.tags).toEqual(['model-opus'])
+    expect(draft?.model).toBeUndefined()
+  })
 })
 
 describe('applyChip / removeChip', () => {
   test('epic and priority are single-valued -- picking again replaces', () => {
     const chips = applyChip(applyChip(emptyChips(), 'epic', 'one'), 'epic', 'two')
     expect(chips.epic).toBe('two')
+  })
+
+  test('model is single-valued too, and removable', () => {
+    let chips = applyChip(applyChip(emptyChips(), 'model', 'haiku'), 'model', 'opus')
+    expect(chips.model).toBe('opus')
+    chips = removeChip(chips, 'model')
+    expect(chips.model).toBeUndefined()
   })
 
   test('list kinds append and dedupe', () => {

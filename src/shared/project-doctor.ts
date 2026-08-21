@@ -29,6 +29,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { parseCardFrontmatter } from './card-frontmatter'
 import { readLinkage, readOne } from './card-linkage-read'
+import { checkCardModel } from './card-model'
 import { checkCard } from './project-doctor-cards'
 import { fsStampDeps, type RepairMode, stampMissingCreated } from './project-doctor-created'
 import { checkEpics, type EpicCardView } from './project-doctor-epics'
@@ -91,6 +92,7 @@ function cardFindings(card: LoadedCard, existingIds: ReadonlySet<string>, board:
     ...checkLinkageKeys({ id: card.id, meta }),
     ...checkLinks({ id: card.id, body, refs }, existingIds),
     ...checkLifecycleKeys({ id: card.id, meta }, board),
+    ...checkCardModel({ id: card.id, meta }),
   ]
 }
 

@@ -8,6 +8,7 @@
 
 import { SYSTEM_TAGS } from '@shared/board-system-tags'
 import { buildEpicIndex, type EpicRollup } from '@shared/epic-cards'
+import { DROPDOWN_MODEL_ENTRIES } from '@shared/models'
 import { fuzzyScore } from '@/components/input-editor/autocomplete-shared'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 import { boardTags, PRIORITIES, type ProjectOption, type ScanKind } from './task-tokens'
@@ -68,6 +69,25 @@ function cardRows(tasks: readonly ProjectTaskMeta[], query: string): TokenCandid
   )
 }
 
+/**
+ * Models for `:`.
+ *
+ * DRAWN FROM THE SPAWN DROPDOWN, not from every slug CC accepts. `ALL_CC_SLUGS`
+ * has forty-odd entries including four spellings of the same Opus and two
+ * dynamic aliases that resolve to a different family every week -- a picker is
+ * where you choose, and a list nobody can read is a list you scroll past. The
+ * dropdown rows are the curated set the Spawn/Run surface already offers, so the
+ * two places you pick a model offer the same models.
+ */
+function modelRows(query: string): TokenCandidate[] {
+  return rank(
+    DROPDOWN_MODEL_ENTRIES,
+    query,
+    m => `${m.id} ${m.label}`,
+    m => ({ value: m.id, label: m.id, detail: m.info }),
+  )
+}
+
 function priorityRows(query: string): TokenCandidate[] {
   return rank(
     PRIORITIES,
@@ -122,9 +142,9 @@ export interface CandidateSources {
 
 /**
  * Rows for a trigger. `tag` is not a `ScanKind` because it sets no chip and is
- * never eaten -- it is routed here so all six triggers share one popup.
+ * never eaten -- it is routed here so all seven triggers share one popup.
  *
- * A strategy map rather than a chain: six branches on one key is exactly the
+ * A strategy map rather than a chain: seven branches on one key is exactly the
  * shape the covenant names.
  */
 const ROWS: Record<ScanKind | 'tag', (src: CandidateSources, q: string) => TokenCandidate[]> = {
@@ -132,6 +152,7 @@ const ROWS: Record<ScanKind | 'tag', (src: CandidateSources, q: string) => Token
   priority: (_src, q) => priorityRows(q),
   dependsOn: (src, q) => cardRows(src.tasks, q),
   relatesTo: (src, q) => cardRows(src.tasks, q),
+  model: (_src, q) => modelRows(q),
   project: (src, q) => projectRows(src.projects, q),
   tag: (src, q) => tagRows(src.tasks, q),
 }

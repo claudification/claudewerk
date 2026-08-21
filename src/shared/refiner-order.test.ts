@@ -12,6 +12,7 @@ import { orderRole } from './epic-orders'
 import { validateOrder } from './order'
 import { composeOrderCaps, internalOrderCaller } from './order-caps'
 import { REFINER_INSTRUCTIONS, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
+import { taskMode } from './task-modes'
 
 describe('REFINER@1, the artifact', () => {
   test('is a legal order@1 -- the repo does not exempt its own orders from the validator', () => {
@@ -45,6 +46,31 @@ describe('REFINER@1, the artifact', () => {
     expect(text.toLowerCase()).toContain('remove')
     expect(text).toContain("Do NOT change the card's status")
     expect(text).toContain('do NOT start implementing')
+  })
+
+  /**
+   * A refiner reached from the LAUNCH modal runs `TASK_MODES.refine.single`; one
+   * reached from this seat runs `REFINER_ORDER.instructions`. A hint only one of
+   * them asks for is a hint that appears or vanishes depending on which door the
+   * refine came through, which is the drift `task-modes.ts` exists to record.
+   *
+   * READ OFF THE ORDER. There is no seat wrapper left to read off:
+   * `order-seat-union-is-closed` moved `instructions` from `SeatOrder` onto the
+   * `Order`, and `order-caps-turns-and-reservation` then deleted the `REFINER`
+   * wrapper outright once `maxTurns` and `reservation` followed it. Both of the
+   * assertions below used to read `REFINER.instructions`, which resolved to
+   * `undefined` -- and `toContain` THROWS on `undefined` rather than failing, so
+   * they would have gone quiet instead of red.
+   */
+  test('BOTH copies of the refine prose ask for a `model:` suggestion', () => {
+    const refine = taskMode('refine')
+    for (const text of [REFINER_ORDER.instructions, refine.single, refine.instructions]) {
+      expect(text).toContain('model:')
+    }
+  })
+
+  test('the seat prose says the hint is a hint -- an order may clamp it', () => {
+    expect(REFINER_ORDER.instructions).toContain('clamp')
   })
 
   test('is reachable by id, and an unknown id is absent rather than an error', () => {

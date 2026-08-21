@@ -187,6 +187,74 @@ describe('the lifecycle keys survive a round trip', () => {
   })
 })
 
+describe('the `model:` hint survives a round trip', () => {
+  const cardFile = (id: string) => join(root, `.rclaude/project/cards/${id}.md`)
+
+  test('createProjectTask writes it and getProjectTask reads it back', () => {
+    const meta = createProjectTask(root, { title: 'Design job', body: 'b', model: 'opus' }, 1000)
+
+    expect(meta.model).toBe('opus')
+    expect(readFileSync(cardFile('design-job'), 'utf8')).toContain('model: opus')
+    expect(getProjectTask(root, 'design-job')?.model).toBe('opus')
+  })
+
+  test('a slug nothing can resolve never reaches disk', () => {
+    const meta = createProjectTask(root, { title: 'Bad hint', body: 'b', model: 'gpt-9' }, 1000)
+
+    expect(meta.model).toBeUndefined()
+    expect(readFileSync(cardFile('bad-hint'), 'utf8')).not.toContain('model:')
+  })
+
+  test('`#model-<slug>` is normalised into the key and does NOT stay a tag', () => {
+    createProjectTask(root, { title: 'Typed on an iPad', body: 'b', tags: ['infra', 'model-sonnet'] }, 1000)
+
+    const got = getProjectTask(root, 'typed-on-an-ipad')
+    expect(got?.model).toBe('sonnet')
+    expect(got?.tags).toEqual(['infra'])
+  })
+
+  test('an UNRECOGNISED `#model-` tag stays a tag -- the evidence is not eaten', () => {
+    createProjectTask(root, { title: 'Odd tag', body: 'b', tags: ['model-frobnicate'] }, 1000)
+
+    const got = getProjectTask(root, 'odd-tag')
+    expect(got?.model).toBeUndefined()
+    expect(got?.tags).toEqual(['model-frobnicate'])
+  })
+
+  test('an explicit field beats the tag when a caller says both', () => {
+    createProjectTask(root, { title: 'Both', body: 'b', model: 'haiku', tags: ['model-opus'] }, 1000)
+
+    const got = getProjectTask(root, 'both')
+    expect(got?.model).toBe('haiku')
+    expect(got?.tags).toEqual([])
+  })
+
+  test('a patch that does not mention it leaves it alone', () => {
+    createProjectTask(root, { title: 'Kept hint', body: 'b', model: 'opus' }, 1000)
+    updateProjectTask(root, 'kept-hint', { priority: 'high' })
+
+    expect(getProjectTask(root, 'kept-hint')?.model).toBe('opus')
+  })
+
+  test('patching an unusable slug CLEARS the key rather than leaving the old one', () => {
+    createProjectTask(root, { title: 'Overwritten', body: 'b', model: 'opus' }, 1000)
+    updateProjectTask(root, 'overwritten', { model: 'gpt-9' })
+
+    expect(getProjectTask(root, 'overwritten')?.model).toBeUndefined()
+    expect(readFileSync(cardFile('overwritten'), 'utf8')).not.toContain('model:')
+  })
+
+  test('a card carrying an unusable slug still PROJECTS -- one typo hides no card', () => {
+    createProjectTask(root, { title: 'Still here', body: 'b' }, 1000)
+    const path = cardFile('still-here')
+    writeFileSync(path, readFileSync(path, 'utf8').replace('status:', 'model: gpt-9\nstatus:'), 'utf8')
+
+    const got = getProjectTask(root, 'still-here')
+    expect(got?.title).toBe('Still here')
+    expect(got?.model).toBeUndefined()
+  })
+})
+
 /**
  * The end of the corruption `werk-promise-ledger-card-writer-flattens` names:
  * every board write goes through `serializeCard`, `project_set_status` included,

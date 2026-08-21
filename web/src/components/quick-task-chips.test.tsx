@@ -31,6 +31,14 @@ test('priority renders with its severity glyph', () => {
   expect(screen.getByText('!!! high')).toBeTruthy()
 })
 
+/** `:opus` is eaten on accept like every other chip trigger, so without this row
+ *  a card is filed at a tier with nothing on screen saying so. */
+test('an accepted model hint is labelled, not shown as a bare slug', () => {
+  const chips = applyChip(emptyChips(), 'model', 'opus')
+  render(<QuickTaskChips chips={chips} onRemove={() => {}} />)
+  expect(screen.getByText('model opus')).toBeTruthy()
+})
+
 test('the two link kinds are labelled distinctly, not both as bare ids', () => {
   let chips = applyChip(emptyChips(), 'dependsOn', 'card-a')
   chips = applyChip(chips, 'relatesTo', 'card-b')

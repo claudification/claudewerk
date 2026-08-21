@@ -116,6 +116,21 @@ const STORE_SPECS: Record<string, CardKeySpec> = {
     // clear. Declaring it here instead is what keeps it out of that pass while
     // still teaching the schema prompt, the validator and the doctor about it.
   },
+  model: {
+    key: 'model',
+    // STRING, NOT ENUM, and that is forced by what an enum COSTS here rather
+    // than by any doubt about the value list. `card-schema-prompt.ts` renders
+    // `values` inline -- forty-odd accepted slugs on one line, in the system
+    // prompt of every agent that touches the board. The value IS validated
+    // (card-model.ts, against the same registry the spawn layer uses); the
+    // finding just lives there instead, where it can be phrased in one line.
+    type: 'string',
+    doc: 'model hint for a seat dispatched against this card, e.g. `opus` -- an order may clamp it, never raise it',
+    consequence: 'the seat runs on the project default and the judgement behind the hint is lost',
+    // HUMAN: typed at capture time or suggested by a refiner. The store passes
+    // it through and nothing machine-authors it.
+    owner: 'human',
+  },
   archived_reason: {
     key: 'archived_reason',
     // NOT an enum, and that is forced: two of the three values are the literals
@@ -201,6 +216,10 @@ const ORDER = [
   'archived_reason',
   'archived_by',
   'delete_at',
+  // APPENDED, like every key before it: a key added at the end never reshuffles
+  // the frontmatter of a card that does not carry one, and today that is every
+  // card on the board.
+  'model',
 ] as const
 
 /**

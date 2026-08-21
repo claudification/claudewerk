@@ -11,6 +11,7 @@
 
 import { existsSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { makeBodyPreview } from './body-preview'
+import { readCardModel } from './card-model'
 import { asStatus, readRawCard, serializeCard } from './project-card-file'
 import { getProjectTask, locateCard, readFileOrNull } from './project-card-read'
 import { findLegacyCard, relocateLegacyCard } from './project-legacy'
@@ -73,6 +74,11 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     archived_reason: input.archivedReason,
     archived_by: input.archivedBy,
     delete_at: input.deleteAt,
+    // VALIDATED, not passed through: a free-string model on a card is a spawn
+    // that fails at dispatch time, hours later, with nobody watching. An
+    // unrecognised slug is dropped at the door rather than written and then
+    // ignored by every reader.
+    model: readCardModel(input.model),
     [WALL_PINNED_KEY]: input.wallPinned ? true : undefined,
   }
   // No blocks: a card being created has no prior bytes to preserve. A `promise:`
@@ -93,6 +99,10 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     archivedReason: input.archivedReason,
     archivedBy: input.archivedBy,
     deleteAt: input.deleteAt,
+    // The SAME validated value that was written, never the raw input: a caller
+    // that gets back a slug the file does not carry has been told a lie about
+    // its own write.
+    model: readCardModel(input.model),
     created,
     mtime: nowMs,
     bodyPreview: makeBodyPreview(input.body),
@@ -106,14 +116,14 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
  * whose complexity grew every time the board learned a key, which is a poor
  * reason to think twice about adding one.
  *
- * The four fields NOT here each need a rule of their own: `body` is not
+ * The five fields NOT here each need a rule of their own: `body` is not
  * frontmatter, `status` falls back to a legacy lane, `wallPinned: false` DELETES
- * rather than writes, and `blockedBy` is folded into `dependsOn` before this
- * runs. The `Exclude` is what keeps one of them from being quietly added here
- * and losing its rule.
+ * rather than writes, `blockedBy` is folded into `dependsOn` before this runs,
+ * and `model` is VALIDATED before it is written. The `Exclude` is what keeps one
+ * of them from being quietly added here and losing its rule.
  */
 const OVERLAID_KEYS: readonly [
-  Exclude<keyof ProjectTaskInput, 'body' | 'status' | 'wallPinned' | 'blockedBy'>,
+  Exclude<keyof ProjectTaskInput, 'body' | 'status' | 'wallPinned' | 'blockedBy' | 'model'>,
   string,
 ][] = [
   ['title', 'title'],
@@ -156,6 +166,12 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
   // different from a card that was never pinned. See wall-pin.ts.
   if (patch.wallPinned === true) meta[WALL_PINNED_KEY] = true
   else if (patch.wallPinned === false) delete meta[WALL_PINNED_KEY]
+  // AN UNUSABLE MODEL CLEARS THE KEY rather than leaving the old one standing.
+  // `''` is a real instruction on an ordered key (`serializeCard` drops it), and
+  // it is the honest outcome: a caller that just asked for `gpt-9` did not ask
+  // for whatever the card said before, so answering "which model does this card
+  // want" with the stale value would be answering a question nobody asked.
+  if (patch.model !== undefined) meta.model = readCardModel(patch.model) ?? ''
   if (patch.status !== undefined) meta.status = patch.status
   // A legacy card's lane directory was its only status record -- pin it before
   // the file leaves that directory behind.

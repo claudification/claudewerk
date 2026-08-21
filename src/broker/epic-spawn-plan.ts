@@ -32,7 +32,12 @@ import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { fnv1aHex } from '../shared/fnv1a'
 import { buildGuardPrompt } from '../shared/guard-prompt'
 import type { Order, OrderCaps } from '../shared/order'
-import { type ComposedOrderCaps, composeOrderCapsOrThrow, internalOrderCaller } from '../shared/order-caps'
+import {
+  type ComposedOrderCaps,
+  composeOrderCapsOrThrow,
+  internalOrderCaller,
+  type OrderCapBase,
+} from '../shared/order-caps'
 import type { TrustLevel } from '../shared/spawn-permissions'
 import type { UnattendedPermissionConfig } from '../shared/unattended-permissions'
 import { worktreeBranch } from '../shared/worktree-path'
@@ -240,10 +245,15 @@ function capsFields(caps: ComposedOrderCaps): Partial<EpicSpawnPlan> {
  * and the call agree. A union-typed dispatch here would buy a cast and nothing
  * else.
  */
-function compileSeat(ctx: EpicSpawnCtx, order: Order, cardId?: string): Omit<EpicSpawnPlan, 'prompt'> {
+function compileSeat(
+  ctx: EpicSpawnCtx,
+  order: Order,
+  cardId?: string,
+  base: OrderCapBase = {},
+): Omit<EpicSpawnPlan, 'prompt'> {
   const caps = composeOrderCapsOrThrow(
     order,
-    { ...(ctx.permissions?.deny ? { deny: ctx.permissions.deny } : {}) },
+    { ...base, ...(ctx.permissions?.deny ? { deny: ctx.permissions.deny } : {}) },
     internalOrderCaller(ctx.trustLevel),
   )
   const role = orderRole(order)
@@ -330,14 +340,23 @@ export function cardBranch(epicId: string, cardId: string): string {
  * order a base check. It is only ever data here: this function does not consult
  * it, gate on it, or change the base ref because of it -- readiness stays exactly
  * where it was (see epic-implementer-base-lacks-deps).
+ *
+ * `model` is the card's `model:` hint, and it arrives ALREADY CLAMPED against
+ * `IMPLEMENTER@1`'s cap -- the clamp lives at the dispatch site because that is
+ * where the log line has somewhere to go (card-model.ts). Passing it as the
+ * composition's base is then correct rather than dangerous: an explicit base
+ * wins over an order's selection cap, which is exactly what a value that has
+ * already been narrowed is entitled to do. Omitted by the epic engine, whose
+ * seats keep running on the project default until a card asks otherwise.
  */
 export function planImplementerSpawn(
   ctx: EpicSpawnCtx,
   cardId: string,
   baseRef = 'main',
   dependsOn: readonly string[] = [],
+  model?: string,
 ): EpicSpawnPlan {
-  const seat = compileSeat(ctx, EPIC_ORDERS.implementer, cardId)
+  const seat = compileSeat(ctx, EPIC_ORDERS.implementer, cardId, model ? { model } : {})
   return {
     ...seat,
     prompt: buildImplementerPrompt({

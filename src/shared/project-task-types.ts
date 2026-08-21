@@ -63,6 +63,12 @@ export interface ProjectTaskMeta {
   /** ISO 8601 date after which the card MAY be deleted. A MARKER a human acts
    *  on: nothing deletes on it (F18). Stored as `delete_at:`. */
   deleteAt?: string
+  /** Model HINT for a seat dispatched against this card -- a refiner's judgement
+   *  about how hard the work is, or a slug typed at capture time. Always a slug
+   *  the spawn layer accepts: an unrecognised value reads as absent (see
+   *  `card-model.ts`, which also owns the clamp that stops a card buying a tier
+   *  its seat's order refused it). Stored as `model:`. */
+  model?: string
   created: string
   /** File mtime in ms since epoch -- sort key, also the cache-staleness marker. */
   mtime: number
