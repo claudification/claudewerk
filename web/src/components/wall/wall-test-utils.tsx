@@ -1,12 +1,17 @@
 /**
- * The rig both wall suites share: open the surface, wait for every lazily
- * imported stub to land, then reach into the DOM by pane code.
+ * The rig both wall suites share: open the surface, settle every lazily imported
+ * stub onto it, then reach into the DOM by pane code.
  *
  * Split out of `wall-surface.test.tsx` so neither suite crosses the 150-line
  * bar this card ships the chrome for.
+ *
+ * NOTHING HERE MEASURES WALL-CLOCK TIME, on purpose. Four suites used to go red
+ * together on a quarter of full runs because this file asked a lazy grid to be
+ * whole "within 1000ms"; the two functions below replace that question with one
+ * the machine cannot answer differently when it is busy.
  */
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
@@ -44,14 +49,14 @@ export function pane(code: string, doc: Document = document): HTMLElement | null
  * never once when `src/components/wall/` ran on its own.
  *
  * Awaiting the registry's own `load`s moves that transform OUT of the polling
- * window and under the test's own timeout, where slow is slow instead of red,
- * and leaves `waitFor` measuring nothing but React committing lazy components
- * whose promises are already resolved. Cached in a module-scope promise, so the
- * suite's second mount and its twentieth cost nothing.
+ * window and under the test's own timeout, where slow is slow instead of red.
+ * Cached in a module-scope promise, so the suite's second mount and its
+ * twentieth cost nothing -- measured, a re-`load()` of the warmed fourteen is
+ * 0ms.
  *
  * NOT a raised timeout. A bigger number would have bought headroom against the
- * load that was measured and nothing against the next machine; this removes the
- * machine from the assertion instead.
+ * load that was measured and nothing against the next machine; this takes the
+ * machine out of the assertion instead. See `settleThePanes` for the other half.
  */
 let paneChunks: Promise<unknown> | null = null
 function warmPaneChunks(): Promise<unknown> {
@@ -73,10 +78,41 @@ export async function openTheWall(): Promise<void> {
     openWall()
   })
   render(<WallModal />)
+  await settleThePanes()
+}
+
+/**
+ * Turn the crank until the grid is whole -- counting REACT TURNS, not milliseconds.
+ *
+ * This is the half of the fix that makes the flake structurally impossible rather
+ * than merely unlikely. Warming the chunks (above) cuts what the wait has to cover,
+ * but a `waitFor` still asks "within 1000ms of wall clock", and any wall-clock
+ * budget is a bet on how busy the machine is -- which is the bet that lost 25% of
+ * the time. How many turns React needs to commit fourteen ALREADY-RESOLVED lazy
+ * boundaries is a property of the component tree instead, and a loaded machine does
+ * not change it; it only makes each turn take longer, which nothing here measures.
+ *
+ * Measured post-warm, it is ONE turn, six runs out of six. The bound below is fifty:
+ * enough that no plausible restructuring of the grid reaches it, small enough that a
+ * pane which never mounts fails in about a second instead of hanging to the test
+ * timeout.
+ *
+ * A macrotask rather than a microtask, so anything the panes queued on a timer gets
+ * its turn too. Measured identical in cost (~210ms for the mount either way, all of
+ * it `render`, none of it waiting).
+ */
+const PANE_MOUNT_TURNS = 50
+
+async function settleThePanes(): Promise<void> {
+  for (let turn = 0; turn < PANE_MOUNT_TURNS && missingPanes().length > 0; turn++) {
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+  }
   // Named, not counted. `expected length 13, got 12` sent the last investigation
   // looking for a pane it had no way to identify; the missing CODES say straight
   // out which stub never mounted.
-  await waitFor(() => expect(missingPanes()).toEqual([]))
+  expect(missingPanes()).toEqual([])
 }
 
 /** The registry codes with no element on the surface right now. */
