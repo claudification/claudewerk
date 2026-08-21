@@ -13,6 +13,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   isCommandLineSafe,
   ORDER_FLAG_ALLOWLIST,
+  ORDER_INSTRUCTIONS_MAX,
   ORDER_KIND,
   type Order,
   OrderValidationError,
@@ -57,8 +58,7 @@ describe('the shape', () => {
     expect(field({ ...OK, id: 'reviewer@1' })).toBe('id')
   })
 
-  test('an unknown seat or prompt is refused, not coerced', () => {
-    expect(field({ ...OK, seat: 'root' })).toBe('seat')
+  test('an unknown prompt BUILDER is refused, not coerced -- the four are compiled in', () => {
     expect(field({ ...OK, prompt: 'whatever' })).toBe('prompt')
   })
 
@@ -75,6 +75,98 @@ describe('the shape', () => {
 
   test('an absent optional stays absent rather than becoming an undefined key', () => {
     expect(Object.keys(validateOrder(OK)).sort()).toEqual(['caps', 'id', 'kind', 'prompt', 'seat', 'title'])
+  })
+})
+
+/**
+ * THE PROPERTY `werk-work-orders` CLAIMED AND DID NOT HAVE.
+ *
+ * "New seat types become cheap -- REVIEWER, MERGER, DOC-WRITER, TRIAGE" was
+ * false while `seat` was a closed union over the epic engine's four and `prompt`
+ * had to name one of the broker's four builders. `REFINER@1` is the receipt: it
+ * shipped as `seat: 'implementer', prompt: 'implementer'` with its real
+ * instruction block in a wrapper type beside the order, because there was
+ * nowhere in `order@1` to put either fact.
+ */
+describe('a seat outside the epic engine’s four', () => {
+  const REFINER = {
+    ...OK,
+    id: 'REFINER@1',
+    title: 'Refiner -- drains #needs-refine',
+    seat: 'refiner',
+    prompt: undefined,
+    instructions: 'REFINE this card -- do not implement it.\n1. Read the card file\n2. Remove the `needs-refine` tag',
+  }
+
+  test('validates, and keeps the seat it declared rather than being coerced to implementer', () => {
+    const order = validateOrder(REFINER)
+    expect(order.seat).toBe('refiner')
+    expect(order.prompt).toBeUndefined()
+    expect(order.instructions).toContain('needs-refine')
+  })
+
+  test.each(['refiner', 'doc-writer', 'triage', 'merger', 'reviewer', 'a'])('%s is a legal seat name', seat => {
+    expect(validateOrder({ ...REFINER, seat }).seat).toBe(seat)
+  })
+
+  /**
+   * OPEN IS NOT UNCHECKED. One canonical spelling per seat, or an
+   * `EPIC_ORDERS`-style lookup misses on case and the engine silently does not
+   * dispatch the seat somebody thought they declared.
+   */
+  test.each(['Refiner', 'REFINER', 'refiner_2', '2refiner', '-refiner', 'refiner seat', 'refiner; id', ''])(
+    'a malformed seat name is refused: %j',
+    seat => {
+      expect(field({ ...REFINER, seat })).toBe('seat')
+    },
+  )
+
+  test('a seat name is bounded -- a label in a picker, not a sentence', () => {
+    expect(field({ ...REFINER, seat: 'a'.repeat(33) })).toBe('seat')
+    expect(validateOrder({ ...REFINER, seat: 'a'.repeat(32) }).seat).toHaveLength(32)
+  })
+})
+
+describe('an order says where its prompt comes from -- prompt XOR instructions', () => {
+  test('neither is refused rather than defaulted to implementer', () => {
+    expect(field({ ...OK, prompt: undefined })).toBe('prompt')
+  })
+
+  test('both is refused -- nothing would say which one wins', () => {
+    expect(field({ ...OK, instructions: 'do the thing' })).toBe('instructions')
+  })
+
+  /**
+   * The argv character allowlist is for argv, and AN INSTRUCTION BLOCK IS NOT
+   * ARGV -- it is prompt payload, exactly like the four builders' output, which
+   * is numbered lists, backticks and newlines. Applying `isCommandLineSafe`
+   * here would reject every real instruction block.
+   */
+  test('instructions keep the newlines, backticks and punctuation a prompt is made of', () => {
+    const text = '1. Run `bun test`\n2. Do NOT change status\n3. Ask: "is it done?" -- then stop'
+    expect(validateOrder({ ...OK, prompt: undefined, instructions: text }).instructions).toBe(text)
+  })
+
+  test.each([
+    ['a NUL', `do the thing${String.fromCharCode(0)}rm -rf /`],
+    ['a bare ESC', `do the thing${String.fromCharCode(0x1b)}[2Jdrop everything`],
+    ['a DEL', `do the thing${String.fromCharCode(0x7f)}`],
+  ])('a control character is refused: %s', (_label, text) => {
+    expect(field({ ...OK, prompt: undefined, instructions: text })).toBe('instructions')
+  })
+
+  test('tab, newline and carriage return are ordinary whitespace, not control characters', () => {
+    const text = 'step one\n\tstep two\r\nstep three'
+    expect(validateOrder({ ...OK, prompt: undefined, instructions: text }).instructions).toBe(text)
+  })
+
+  test('instructions are bounded and must be a non-empty string', () => {
+    expect(field({ ...OK, prompt: undefined, instructions: '' })).toBe('instructions')
+    expect(field({ ...OK, prompt: undefined, instructions: 42 })).toBe('instructions')
+    expect(field({ ...OK, prompt: undefined, instructions: 'x'.repeat(ORDER_INSTRUCTIONS_MAX + 1) })).toBe(
+      'instructions',
+    )
+    expect(validateOrder({ ...OK, prompt: undefined, instructions: 'x'.repeat(ORDER_INSTRUCTIONS_MAX) })).toBeTruthy()
   })
 })
 
