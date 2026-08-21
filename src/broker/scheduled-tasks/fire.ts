@@ -93,6 +93,56 @@ export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | 
 
 export type OrderApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The deny rules already in the request's own fragment, or why they cannot be read. */
+type InlineDeny = { ok: true; deny: string[] } | { ok: false; reason: string }
+
+/**
+ * Read the deny rules a caller's `settingsInline` already carries.
+ *
+ * `settingsInline` is an OPAQUE bag by schema (`Record<string, unknown>`), so
+ * every step down into it is a shape that might not be there. A shape a union
+ * cannot be expressed in returns a REASON rather than a guess: silently
+ * treating a malformed `permissions` block as "no deny rules" and writing over
+ * it is exactly the quiet downgrade this whole path exists to prevent.
+ */
+function inlineDeny(settings: Record<string, unknown> | undefined): InlineDeny {
+  if (settings === undefined) return { ok: true, deny: [] }
+  const permissions = settings.permissions
+  if (permissions === undefined || permissions === null) return { ok: true, deny: [] }
+  if (!isPlainObject(permissions)) return { ok: false, reason: 'settingsInline.permissions is not an object' }
+  const deny = permissions.deny
+  if (deny === undefined || deny === null) return { ok: true, deny: [] }
+  if (!Array.isArray(deny) || deny.some(rule => typeof rule !== 'string')) {
+    return { ok: false, reason: 'settingsInline.permissions.deny is not an array of strings' }
+  }
+  return { ok: true, deny: deny as string[] }
+}
+
+/**
+ * The fragment with `deny` in it -- BUILT when the caller had none, PATCHED when
+ * it had one.
+ *
+ * `deny` arrives already unioned (`composeOrderCaps` folded the caller's own
+ * rules in), so assigning it is additive, never a replacement. Everything else
+ * in the caller's fragment -- its allowlist, its hooks, keys this module has
+ * never heard of -- is spread through untouched, because the order is entitled
+ * to add a deny rule and to nothing else.
+ *
+ * A caller with NO fragment gets the full `buildUnattendedSettings` object,
+ * which is also where the deny FLOOR lives. A caller WITH one keeps its own
+ * floor: the order narrows what the caller configured, it does not re-configure
+ * the harness around it (see `sched-settings-inline-deny-floor`).
+ */
+function withDenyRules(settings: Record<string, unknown> | undefined, deny: string[]): Record<string, unknown> {
+  if (settings === undefined) return buildUnattendedSettings({ deny })
+  const permissions = isPlainObject(settings.permissions) ? settings.permissions : {}
+  return { ...settings, permissions: { ...permissions, deny } }
+}
+
 /**
  * Layer a work order's caps onto a spawn request.
  *
@@ -101,14 +151,30 @@ export type OrderApplication = { ok: true; request: SpawnRequest } | { ok: false
  * re-implemented so a scheduled seat gets byte-identical refusals to an epic
  * seat. What is left here is the mapping back onto a `SpawnRequest`.
  *
- * The deny rules go through `buildUnattendedSettings`, which is also where the
- * deny FLOOR lives, so an order's rules land unioned with the floor rather than
- * replacing it. A schedule that already carries its own `settingsInline` keeps
- * it: overwriting a fragment a human configured, to add one deny rule, would be
- * the order rewriting the harness.
+ * THE DENY RULES ARE UNIONED, NEVER SKIPPED. A schedule that already carries
+ * its own `settingsInline` gets the order's rules merged INTO that fragment:
+ * the caller's rules go in as `composeOrderCaps`' base so the union is the same
+ * one every other order path uses, and the result is written back over
+ * `permissions.deny` alone. Leaving the fragment alone instead -- which this
+ * did until `order-deny-union-settings-inline` -- silently downgraded an
+ * order's strongest guarantee to advice: `REFINER@1` denies the status verb so
+ * a refiner CANNOT move a lane, and a refiner that quietly regained that verb
+ * looks exactly like a correct run until a card lands in the wrong lane.
+ *
+ * A fragment whose shape cannot be unioned FAILS THE FIRE, naming the order,
+ * matching what already happens when an order asks for more privilege than its
+ * caller holds. Dispatching a seat with more privilege than its order allows is
+ * the one outcome that must not happen here.
  */
 export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | undefined): OrderApplication {
   if (order === undefined) return { ok: true, request }
+  const existing = inlineDeny(request.settingsInline)
+  if (!existing.ok) {
+    return {
+      ok: false,
+      reason: `order ${order.order.id}: cannot apply its deny rules -- ${existing.reason}`,
+    }
+  }
   const composed = composeOrderCaps(
     order.order,
     {
@@ -118,6 +184,7 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
       mcpConfigPath: request.mcpConfigPath,
       maxBudgetUsd: request.maxBudgetUsd,
       permissionMode: request.permissionMode as never,
+      deny: existing.deny,
     },
     internalOrderCaller(),
   )
@@ -125,8 +192,12 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
 
   const { deny, ...caps } = composed.caps
   const next: SpawnRequest = { ...request, ...caps }
-  if (deny?.length && request.settingsInline === undefined) {
-    next.settingsInline = buildUnattendedSettings({ deny })
+  // Membership, not length: a caller whose own deny list repeats a rule would
+  // make a length comparison read "nothing was added" and drop the order's
+  // rules on the floor -- the exact failure this card exists to close.
+  const alreadyDenied = new Set(existing.deny)
+  if (deny?.some(rule => !alreadyDenied.has(rule))) {
+    next.settingsInline = withDenyRules(request.settingsInline, deny)
   }
   return { ok: true, request: next }
 }
