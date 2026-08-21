@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { clearedReason, RUN_AGE_OUT_MS, runCleared } from './epic-run-cleared'
+import { clearedReason, clearStamps, RUN_AGE_OUT_MS, runCleared } from './epic-run-cleared'
 
 const NOW = Date.parse('2026-08-21T12:00:00.000Z')
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString()
@@ -50,5 +50,31 @@ describe('a dead run leaving the pane', () => {
     expect(clearedReason({ acknowledgedAt: iso(0) }, NOW)).toBe('acknowledged')
     expect(clearedReason({ deadSince: iso(RUN_AGE_OUT_MS + 1) }, NOW)).toBe('aged-out')
     expect(clearedReason({ deadSince: iso(1000) }, NOW)).toBeNull()
+  })
+})
+
+/**
+ * ONE FOLD, TWO SURFACES. The wall builds these stamps from a feed row and the
+ * broker's `epic_run action=list` builds them from a run view; before this
+ * existed only the wall had the chain at all, which is how `clear` came to work
+ * on one surface and be invisible to the other.
+ */
+describe('folding the stamps a surface holds', () => {
+  test("the artifact's `updated` wins over the beat -- a paused run stops beating", () => {
+    expect(clearStamps({ updatedAt: iso(1000), lastBeatAt: iso(RUN_AGE_OUT_MS + 1) }).deadSince).toBe(iso(1000))
+  })
+
+  test('the beat is the fallback, so a row with no readable artifact can still age out', () => {
+    expect(runCleared(clearStamps({ lastBeatAt: iso(RUN_AGE_OUT_MS + 1) }), NOW)).toBe(true)
+  })
+
+  test('neither stamp means the row can never bury itself', () => {
+    expect(clearStamps({}).deadSince).toBeNull()
+    expect(runCleared(clearStamps({}), NOW)).toBe(false)
+  })
+
+  test('the acknowledgement passes straight through, undefined normalised to null', () => {
+    expect(clearStamps({ acknowledgedAt: iso(0) }).acknowledgedAt).toBe(iso(0))
+    expect(clearStamps({}).acknowledgedAt).toBeNull()
   })
 })

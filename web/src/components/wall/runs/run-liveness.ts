@@ -22,7 +22,7 @@
  * unnoticed and not a pane being too busy.
  */
 
-import { runCleared } from '@shared/epic-run-cleared'
+import { clearStamps, type RunClearStamps, runCleared } from '@shared/epic-run-cleared'
 import type { RunVitality } from '@shared/epic-vitality'
 import { runView } from './run-model'
 import type { UnattendedRow } from './use-unattended-runs'
@@ -101,18 +101,18 @@ export interface RunSections {
 }
 
 /**
- * WHAT A DEAD EPIC ROW COUNTS AS DEAD SINCE. The artifact's `updated` is the
- * moment the run last changed -- when it was paused, or aborted. `lastBeatAt` is
- * NOT the same fact: a paused run stops beating and keeps being updated, so
- * ageing off the beat would bury a run the day it paused.
+ * THE STAMPS THIS ROW CARRIES, in the shape `epic-run-cleared.ts` folds. A night
+ * row has none of them and can therefore never be buried -- its own tail rule is
+ * "every worker exited", which is not this question.
+ *
+ * The `updated`-before-beat precedence lives in `clearStamps`, not here: the
+ * broker's `list` folds the same two stamps off a run view, and the version of
+ * this chain that lived in this file was the second copy the shared module
+ * exists to prevent.
  */
-function deadSince(row: UnattendedRow): string | null {
-  if (row.kind !== 'epic') return null
-  return row.entry.updatedAt ?? row.entry.lastBeatAt ?? null
-}
-
-function acknowledgedAt(row: UnattendedRow): string | undefined {
-  return row.kind === 'epic' ? row.entry.acknowledgedAt : undefined
+function stampsOf(row: UnattendedRow): RunClearStamps {
+  if (row.kind !== 'epic') return {}
+  return { acknowledgedAt: row.entry.acknowledgedAt, updatedAt: row.entry.updatedAt, lastBeatAt: row.entry.lastBeatAt }
 }
 
 /**
@@ -136,7 +136,7 @@ export function runSections(rows: readonly UnattendedRow[], nowMs: number = Date
     // carries -- an acknowledgement left on a run that started again would hide
     // it while it was genuinely running, which is the invisibility O2 exists to
     // prevent. (`startEpicRun` also wipes the stamp; this is the second lock.)
-    const buried = runCleared({ acknowledgedAt: acknowledgedAt(row), deadSince: deadSince(row) }, nowMs)
+    const buried = runCleared(clearStamps(stampsOf(row)), nowMs)
     ;(buried ? cleared : tail).push({ row, liveness })
   }
   return { live, tail, cleared }

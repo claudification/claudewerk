@@ -24,7 +24,7 @@
 import { beatStale, isVitallyLive, STALE_BEAT_MS } from '../shared/epic-vitality'
 import { isSameProject } from '../shared/project-uri'
 import type { EpicActivityEntry, EpicRunSnapshot } from '../shared/protocol'
-import { recentBeats } from './epic-beat-log'
+import { lastBeatAt } from './epic-beat-log'
 import { epicIo } from './epic-io'
 import { planProjectQueues, type QueueVerdict, toQueueReading, toQueueScope } from './epic-queue'
 import { listArmedEpics } from './epic-registry'
@@ -39,12 +39,6 @@ export type { EpicActivityEntry }
  * control panel has to reach the same verdict from a beat ring it holds itself.
  */
 export { STALE_BEAT_MS }
-
-/** The last beat's wall clock, or null. The ring keeps newest LAST. */
-function lastBeat(project: string, epicId: string): string | null {
-  const beats = recentBeats(project, epicId, 1)
-  return beats.length > 0 ? (beats[beats.length - 1]?.at ?? null) : null
-}
 
 /**
  * One run read, and whether reading it FAILED -- two different facts.
@@ -88,7 +82,7 @@ async function readRun(deps: SweepDeps, group: EpicGroup): Promise<RunRead> {
  */
 function toEntry(group: EpicGroup, read: RunRead, queue: QueueVerdict, nowMs: number): EpicActivityEntry {
   if (read.failed) return degradedEntry(group)
-  const at = lastBeat(group.project, group.epicId)
+  const at = lastBeatAt(group.project, group.epicId)
   const reading = toQueueReading(queue)
   const run = read.run
   return {

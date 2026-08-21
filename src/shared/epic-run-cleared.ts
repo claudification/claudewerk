@@ -41,6 +41,42 @@ export interface ClearableRun {
   deadSince?: string | null
 }
 
+/** The two stamps every surface actually holds, before they are folded into the
+ *  one question this file answers. */
+export interface RunClearStamps {
+  acknowledgedAt?: string | null
+  /** The run artifact's `updated` -- when a dead run DIED. */
+  updatedAt?: string | null
+  /** The beat ring's newest entry. Only a fallback; see below. */
+  lastBeatAt?: string | null
+}
+
+/**
+ * FOLD THE STAMPS A SURFACE HOLDS INTO THE ONE THIS FILE ASKS ABOUT.
+ *
+ * `updated` FIRST and the beat second, never the other way round: a paused run
+ * stops beating and keeps being updated, so ageing off the beat would bury a run
+ * the day it paused. The beat is the fallback for a row whose artifact could not
+ * be read at all -- without it such a row can never age out, and an unreadable
+ * artifact is exactly the row nobody will ever press CLEAR on.
+ *
+ * HERE and not at each caller: the wall composes these from a feed entry and
+ * `epic_run action=list` composes them from a run view, and a `??` chain written
+ * twice is two surfaces that disagree about when a run died -- the drift this
+ * module was extracted to prevent.
+ */
+export function clearStamps(stamps: RunClearStamps): ClearableRun {
+  return {
+    acknowledgedAt: stamps.acknowledgedAt ?? null,
+    deadSince: stamps.updatedAt ?? stamps.lastBeatAt ?? null,
+  }
+}
+
+/** WHY a run left the pane. Its own name because it crosses the wire now: `list`
+ *  marks a cleared row rather than hiding it, and a bare boolean there would say
+ *  a run is over without saying who decided that. */
+export type ClearedReason = 'acknowledged' | 'aged-out'
+
 /** Milliseconds, or null when the stamp is missing or unparseable. A card
  *  somebody hand-edited must never age out a run by accident. */
 function stampMs(iso: string | null | undefined): number | null {
@@ -62,7 +98,7 @@ export function runCleared(run: ClearableRun, nowMs: number): boolean {
 
 /** WHY it went, for the one line that reports what a pane dropped. Never a bare
  *  count: "3 hidden" with no reason is the shape O3 was rejected for. */
-export function clearedReason(run: ClearableRun, nowMs: number): 'acknowledged' | 'aged-out' | null {
+export function clearedReason(run: ClearableRun, nowMs: number): ClearedReason | null {
   if (run.acknowledgedAt) return 'acknowledged'
   return runCleared(run, nowMs) ? 'aged-out' : null
 }

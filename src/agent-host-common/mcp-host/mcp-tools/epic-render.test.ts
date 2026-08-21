@@ -208,7 +208,19 @@ describe('the other shapes', () => {
   test('a list row carries status, generation and what is in flight', () => {
     const out = renderEpic({
       ok: true,
-      runs: [{ epicId: 'e1', project: 'p', status: 'running', gen: 4, armed: true, inFlight: 2, overseerAlive: true }],
+      runs: [
+        {
+          epicId: 'e1',
+          project: 'p',
+          status: 'running',
+          gen: 4,
+          armed: true,
+          inFlight: 2,
+          overseerAlive: true,
+          cleared: null,
+          clearedAt: null,
+        },
+      ],
     })
     expect(out).toContain('e1: running gen 4 . armed yes . 2 in flight . overseer alive')
   })
@@ -216,9 +228,86 @@ describe('the other shapes', () => {
   test('a run with no artifact still lists, saying so', () => {
     const out = renderEpic({
       ok: true,
-      runs: [{ epicId: 'e1', project: 'p', status: null, gen: 0, armed: false, inFlight: 0, overseerAlive: false }],
+      runs: [
+        {
+          epicId: 'e1',
+          project: 'p',
+          status: null,
+          gen: 0,
+          armed: false,
+          inFlight: 0,
+          overseerAlive: false,
+          cleared: null,
+          clearedAt: null,
+        },
+      ],
     })
     expect(out).toContain('no run artifact')
+  })
+
+  test('a CLEARED row is still printed, and says when and who buried it', () => {
+    const out = renderEpic({
+      ok: true,
+      runs: [
+        {
+          epicId: 'e1',
+          project: 'p',
+          status: 'aborted',
+          gen: 4,
+          armed: false,
+          inFlight: 0,
+          overseerAlive: false,
+          cleared: 'acknowledged',
+          clearedAt: '2026-08-19T10:00:00.000Z',
+        },
+      ],
+    })
+    // NOT hidden: `list` is how an agent finds a run, and a run nothing can name
+    // is a run nothing can resume or abort.
+    expect(out).toContain('e1: aborted')
+    expect(out).toContain('CLEARED 2026-08-19 (acknowledged')
+    expect(out).toContain('(1 cleared, listed last)')
+  })
+
+  test('an AGED-OUT row says nobody acknowledged it, which is a different fact', () => {
+    const out = renderEpic({
+      ok: true,
+      runs: [
+        {
+          epicId: 'e1',
+          project: 'p',
+          status: 'paused',
+          gen: 1,
+          armed: false,
+          inFlight: 0,
+          overseerAlive: false,
+          cleared: 'aged-out',
+          clearedAt: '2026-07-01T10:00:00.000Z',
+        },
+      ],
+    })
+    expect(out).toContain('CLEARED 2026-07-01 (aged out')
+  })
+
+  test('a list with nothing buried does not print a cleared count at all', () => {
+    const out = renderEpic({
+      ok: true,
+      runs: [
+        {
+          epicId: 'e1',
+          project: 'p',
+          status: 'running',
+          gen: 1,
+          armed: true,
+          inFlight: 1,
+          overseerAlive: true,
+          cleared: null,
+          clearedAt: null,
+        },
+      ],
+    })
+    expect(out).toContain('1 epic run(s):')
+    expect(out).not.toContain('CLEARED')
   })
 
   test('a beat reports what it spawned', () => {

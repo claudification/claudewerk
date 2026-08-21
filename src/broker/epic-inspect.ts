@@ -13,6 +13,8 @@
  */
 
 import { planEpic } from '../shared/epic-ready'
+import { clearedReason, clearStamps } from '../shared/epic-run-cleared'
+import { beatStale, isVitallyLive } from '../shared/epic-vitality'
 import { gatedBy } from '../shared/epic-when'
 import { isSameProject } from '../shared/project-uri'
 import type {
@@ -23,9 +25,9 @@ import type {
   EpicRunListEntry,
   EpicRunSnapshot,
 } from '../shared/protocol'
-import { recentBeats } from './epic-beat-log'
-import { fetchBoardCards, fetchEpicRun } from './epic-broker-rpc'
+import { lastBeatAt, recentBeats } from './epic-beat-log'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
+import { epicIo } from './epic-io'
 import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
 import { isArmed, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
@@ -62,11 +64,11 @@ export async function inspectEpic(
   epicId: string,
   opts: InspectOptions = {},
 ): Promise<EpicInspectResult> {
-  const view = await fetchEpicRun(deps, project, epicId, opts.baton)
+  const view = await epicIo().fetchEpicRun(deps, project, epicId, opts.baton)
   const convs = deps.getAllConversations()
   const group = groupFor(convs, deps, project, epicId)
   const queue = await inspectQueue(deps, project, epicId, convs, view.run)
-  const cards = await fetchBoardCards(deps, project)
+  const cards = await epicIo().fetchBoardCards(deps, project)
   const plan = planEpic({
     cards,
     epicId,
@@ -107,6 +109,50 @@ export async function inspectEpic(
     ...(queue ? { queue } : {}),
     ...(view.error ? { error: view.error } : {}),
   }
+}
+
+/** The burial half of a list row: `cleared` and `clearedAt`, which are null
+ *  together or set together. */
+type Burial = Pick<EpicRunListEntry, 'cleared' | 'clearedAt'>
+
+const NOT_BURIED: Burial = { cleared: null, clearedAt: null }
+
+/**
+ * IS THIS ROW OVER, and who decided -- the same question the wall's tail asks,
+ * asked of a list row.
+ *
+ * LIVENESS FIRST, ALWAYS, exactly as `runSections` does it. An acknowledgement
+ * left on a run that started again must never mark it over while it is genuinely
+ * running -- that is the invisibility O2 exists to prevent, and the fact that
+ * `startEpicRun` wipes the stamp makes this the second lock rather than the only
+ * one. Vitality and not `status`: the field is an INTENT nothing writes back
+ * down, so a run whose overseer died still reads `running` forever.
+ *
+ * The rule itself is NOT re-derived here. `runCleared`/`clearedReason` own both
+ * halves -- the explicit stamp and the seven-day age-out -- and a second copy of
+ * that arithmetic at this surface is precisely the drift `epic-run-cleared.ts`
+ * was extracted to prevent, and precisely why this function was missing in the
+ * first place.
+ */
+function burialOf(
+  row: Omit<EpicRunListEntry, 'cleared' | 'clearedAt'>,
+  run: EpicRunSnapshot | null,
+  beatAt: string | null,
+  nowMs: number,
+): Burial {
+  const live = isVitallyLive({
+    status: row.status,
+    inFlight: row.inFlight,
+    overseerAlive: row.overseerAlive,
+    armed: row.armed,
+    lastBeatAt: beatAt,
+    stale: beatStale(beatAt, nowMs),
+  })
+  if (live) return NOT_BURIED
+  const stamps = clearStamps({ acknowledgedAt: run?.acknowledgedAt, updatedAt: run?.updated, lastBeatAt: beatAt })
+  const cleared = clearedReason(stamps, nowMs)
+  if (!cleared) return NOT_BURIED
+  return { cleared, clearedAt: (cleared === 'acknowledged' ? stamps.acknowledgedAt : stamps.deadSince) ?? null }
 }
 
 /**
@@ -164,7 +210,7 @@ function projectPeers(groups: Map<string, EpicGroup>, project: string, epicId: s
  *  artifact could not be read -- the queue line degrades, the read does not. */
 async function peerRun(deps: SweepDeps, project: string, epicId: string): Promise<EpicRunSnapshot | null> {
   try {
-    return (await fetchEpicRun(deps, project, epicId, { limit: 1 })).run ?? null
+    return (await epicIo().fetchEpicRun(deps, project, epicId, { limit: 1 })).run ?? null
   } catch {
     return null
   }
@@ -178,8 +224,20 @@ async function peerRun(deps: SweepDeps, project: string, epicId: string): Promis
  * armed run has no conversations yet, and a run whose broker restarted has
  * conversations but is no longer armed. Either half alone lies about a real
  * state the engine passes through.
+ *
+ * A BURIED RUN IS STILL RETURNED. `clear` had exactly one consumer -- the wall's
+ * tail -- so a run a human had explicitly acknowledged kept coming back from
+ * here for as long as one of its conversations was in the registry, and `clear`
+ * read as broken from this surface. It is not; it was only ever wired to one of
+ * the two. This one MARKS and sorts last instead of hiding, because `list` is
+ * how an agent FINDS a run and a verb that makes a run invisible to the finder
+ * is how a run gets stranded. See `EpicRunListEntry.cleared`.
  */
-export async function listEpicRuns(deps: SweepDeps, project: string): Promise<EpicRunListEntry[]> {
+export async function listEpicRuns(
+  deps: SweepDeps,
+  project: string,
+  nowMs: number = Date.now(),
+): Promise<EpicRunListEntry[]> {
   const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
   const ids = new Set<string>()
   // BY PROJECT IDENTITY, never by raw string. The caller types
@@ -195,9 +253,9 @@ export async function listEpicRuns(deps: SweepDeps, project: string): Promise<Ep
 
   const rows = await Promise.all(
     [...ids].map(async (epicId): Promise<EpicRunListEntry> => {
-      const view = await fetchEpicRun(deps, project, epicId, { limit: 1 })
+      const view = await epicIo().fetchEpicRun(deps, project, epicId, { limit: 1 })
       const group = groups.get(epicId) ?? emptyGroup(epicId, project)
-      return {
+      const row = {
         epicId,
         project,
         status: view.run?.status ?? null,
@@ -206,7 +264,17 @@ export async function listEpicRuns(deps: SweepDeps, project: string): Promise<Ep
         inFlight: group.inFlight.length,
         overseerAlive: group.overseerAlive,
       }
+      // THE RING'S OWN SPELLING of the project, not the caller's. The beat log is
+      // keyed by the project string the sweep recorded, which is the store's form
+      // -- looking it up under the URI the caller typed finds nothing and dates
+      // every artifact-less run to "never beaten".
+      return { ...row, ...burialOf(row, view.run, lastBeatAt(group.project, epicId), nowMs) }
     }),
   )
-  return rows.sort((a, b) => a.epicId.localeCompare(b.epicId))
+  // CLEARED LAST, then by id. A stable order inside each half for the same reason
+  // the wall partitions rather than sorts: a row that jumped position the moment
+  // somebody acknowledged it would make the tidy-up read as an event.
+  return rows.sort(
+    (a, b) => Number(a.cleared !== null) - Number(b.cleared !== null) || a.epicId.localeCompare(b.epicId),
+  )
 }
