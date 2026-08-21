@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
 import type { CommitRow } from '../shared/commit-ledger'
+import { evaluateLease } from '../shared/epic-lease'
 import { acknowledgedCardIds, dispatchCountsByCard, readEpicLog } from '../shared/epic-log'
 import { SEAT_ATTACH_GRACE_MS } from '../shared/epic-pending-seats'
 import { MAX_CARD_SEATS } from '../shared/epic-ready'
@@ -64,6 +65,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
+    abandonedOverseers: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -311,6 +313,145 @@ describe('runEpicBeat', () => {
   test('with no holder on the board it falls back to the conservative group-wide answer', async () => {
     await runEpicBeat(deps(), group({ settled: ['t1'], overseerAlive: false, liveOverseers: [] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
+  })
+
+  /**
+   * THE FROZEN RUN, END TO END.
+   *
+   * An overseer whose agent host died without recording an end sits at `idle`
+   * forever, holds `overseerAlive`, and `guardBeat` writes `overseer alive at gen
+   * N; holding the beat` every 45 seconds for the life of the broker. The fold
+   * reaps it (`epic-sweep.ts`); these are the consequences that reap must have.
+   *
+   * The group here is what `groupEpicConversations` produces AFTER a reap: the
+   * live lanes are empty and the corpse is named in `abandonedOverseers`. That
+   * split is the fix -- see `epic-sweep.test.ts` for the fold that makes it.
+   */
+  describe('a reaped overseer is replaced, and the baton says which kind of generation this is', () => {
+    const DEAD = {
+      convId: 'conv_dead_overseer',
+      gen: 3,
+      lastActivity: NOW_0 - 20 * 60_000,
+      silentForMs: 20 * 60_000,
+      status: 'idle' as const,
+    }
+
+    /** The board still names the corpse as the holder -- that is the freeze. */
+    const holdingTheLease = (lease: { convId: string; gen: number } = { convId: DEAD.convId, gen: 3 }) => {
+      configureEpicIo({
+        fetchEpicRun: async () => ({
+          run,
+          baton,
+          acknowledgedCardIds: acknowledgedCardIds(baton),
+          dispatchCounts: dispatchCountsByCard(baton),
+          lease: { ...lease, at: '' },
+        }),
+      })
+    }
+
+    const reaped = () => group({ abandonedOverseers: [DEAD], overseerAlive: false, liveOverseers: [] })
+
+    test('the beat WAKES rather than logging another `overseer alive` line', async () => {
+      holdingTheLease()
+      const out = await runEpicBeat(deps(), reaped())
+      expect(out.spawned).toHaveLength(1)
+      expect(out.note).toContain('REAPED')
+    })
+
+    /**
+     * THE HALF THE CARD WAS FILED FOR. Unfreezing `guardBeat` without reaping
+     * `liveOverseers` in the same pass would hand the CAS `holderAlive: true` for
+     * the corpse -- and `evaluateLease` refuses a wake whose holder is alive, so
+     * the run would be frozen by a second mechanism instead of the first.
+     */
+    test('and the CAS is told the holder is DEAD, so the lease can be granted', async () => {
+      holdingTheLease()
+      await runEpicBeat(deps(), reaped())
+      expect(ops.find(o => o.op === 'lease')?.lease).toMatchObject({ holderAlive: false, expectGen: 3 })
+    })
+
+    /** Against the REAL lease module, not the stub: the stub grants whatever it is
+     *  asked, and "the CAS grants it" is precisely the claim under test. */
+    test('the REAL `evaluateLease` grants the request the beat actually sent', async () => {
+      holdingTheLease()
+      await runEpicBeat(deps(), reaped())
+      const req = ops.find(o => o.op === 'lease')?.lease
+      const decision = evaluateLease(
+        { convId: DEAD.convId, gen: 3, at: new Date(NOW_0 - 60_000).toISOString() },
+        { convId: req?.convId ?? '', expectGen: req?.expectGen ?? -1, holderAlive: req?.holderAlive ?? true },
+        NOW_0,
+      )
+      expect(decision.grant).toBe(true)
+    })
+
+    test('the generation is woken as `overseer-lost`, not as a settle or a fresh start', async () => {
+      holdingTheLease()
+      let prompt = ''
+      configureEpicIo({
+        dispatchSpawn: (async (req: { prompt: string }) => {
+          prompt = req.prompt
+          return { ok: true, conversationId: 'conv_new_overseer', jobId: 'j' }
+        }) as never,
+      })
+      await runEpicBeat(deps(), reaped())
+      expect(prompt).toContain('Woken by: overseer-lost')
+    })
+
+    /**
+     * THE BATON, NOT ONLY THE BROKER LOG. The baton is the only thing a fresh
+     * overseer reads about the past, so without an entry here generation N+1 is
+     * indistinguishable from one that followed a finished turn.
+     */
+    test('the reap reaches the baton with its evidence', async () => {
+      holdingTheLease()
+      await runEpicBeat(deps(), reaped())
+      const entry = baton.find(e => e.kind === 'overseer-lost')
+      expect(entry).toMatchObject({ convId: DEAD.convId })
+      expect(entry?.body).toContain('generation 3')
+      expect(entry?.body).toContain('`idle`')
+      expect(entry?.body).toContain('20 minute(s)')
+    })
+
+    test('the entry is written once, not appended on every tick from a registry that never forgets', async () => {
+      holdingTheLease()
+      await runEpicBeat(deps(), reaped())
+      await runEpicBeat(deps(), reaped())
+      expect(baton.filter(e => e.kind === 'overseer-lost')).toHaveLength(1)
+    })
+
+    /** `overseer-lost` is a fact about a SEAT. Folding it into the acknowledged
+     *  set would settle a card nobody has settled. */
+    test('and it acknowledges nothing -- no cardId, and outside ACKNOWLEDGING_KINDS', async () => {
+      holdingTheLease()
+      await runEpicBeat(deps(), reaped())
+      expect(baton.find(e => e.kind === 'overseer-lost')?.cardId).toBeUndefined()
+      expect(acknowledgedCardIds(baton)).toEqual([])
+    })
+
+    test('every reaped overseer reaches the broker log, holder or not', async () => {
+      holdingTheLease({ convId: 'conv_someone_current', gen: 3 })
+      await runEpicBeat(deps(), reaped())
+      expect(log.join('\n')).toContain('REAPED')
+    })
+
+    /**
+     * An ex-overseer from two generations ago is dead and stays dead in the
+     * registry. It is not the reason THIS beat is stuck, and waking for it would
+     * bill a generation every 45 seconds for the life of the broker.
+     */
+    test('a corpse that does NOT hold the lease writes no baton entry and wakes nobody for it', async () => {
+      holdingTheLease({ convId: 'conv_live_holder', gen: 3 })
+      await runEpicBeat(deps(), reaped())
+      expect(baton.filter(e => e.kind === 'overseer-lost')).toHaveLength(0)
+    })
+
+    test('with no reap at all the beat is exactly what it always was', async () => {
+      holdingTheLease()
+      const out = await runEpicBeat(deps(), group({ overseerAlive: true }))
+      expect(out.spawned).toHaveLength(0)
+      expect(out.note).toContain('overseer alive')
+      expect(baton).toHaveLength(0)
+    })
   })
 
   test('a spawn that never happened leaves the placeholder alone rather than adopting nothing', async () => {

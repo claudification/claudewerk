@@ -3,6 +3,7 @@ import { acknowledgedCardIds } from '../shared/epic-log'
 import type { EpicLaunchTag, EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
+import { buildOverseerReaper, OVERSEER_SILENCE_MS } from './epic-overseer-vitality'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
 import type { SeatReaper } from './epic-seat-vitality'
 import {
@@ -10,6 +11,7 @@ import {
   generationMismatch,
   groupEpicConversations,
   isReservedScannerLane,
+  lostOverseer,
   MAX_LAUNCH_ATTEMPTS,
   unacknowledgedCards,
   unacknowledgedFailedLegs,
@@ -399,6 +401,153 @@ describe('unacknowledgedCards -- the standing question the wake is built on', ()
   })
 })
 
+/**
+ * THE OVERSEER WHOSE END WAS NEVER RECORDED.
+ *
+ * `werkLiveness` reads "live unless the row says `ended`", and nothing writes
+ * `ended` on a clock -- so a supervisor whose agent host died sits at `idle`
+ * forever, holds `overseerAlive`, and `guardBeat` returns `overseer alive at gen
+ * N; holding the beat` every 45 seconds for the life of the broker. Nothing
+ * dispatches, nothing verifies, nothing parks, and the line is indistinguishable
+ * from the healthy case it exists to describe.
+ *
+ * The reaper is the second opinion. These tests drive the FOLD; the rule itself
+ * is `epic-overseer-vitality.test.ts`.
+ */
+describe('an overseer whose end was never recorded is reaped', () => {
+  const T0 = 1_700_000_000_000
+  /** A seat the registry still calls live: `idle`, no recorded end, a
+   *  `lastActivity` the test moves around. */
+  const seat = (lastActivity: number, gen = 4): Conversation =>
+    ({
+      id: 'conv_overseer',
+      project: 'claude://s/p',
+      status: 'idle',
+      lastActivity,
+      launchConfig: { epic: { epicId: 'e1', role: 'overseer', gen } },
+    }) as unknown as Conversation
+
+  /** The registry says LIVE for every one of these -- that is the lie. */
+  const registryClaimsLive = () => true
+  const reaperAt = (nowMs: number, socket = false) => buildOverseerReaper({ hasSocket: () => socket, now: () => nowMs })
+
+  const fold = (conv: Conversation, nowMs: number, socket = false) =>
+    groupEpicConversations([conv], registryClaimsLive, undefined, reaperAt(nowMs, socket)).get('e1')
+
+  test('a silent, socketless overseer stops holding `overseerAlive`', () => {
+    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
+    expect(group?.overseerAlive).toBe(false)
+  })
+
+  /**
+   * THE HALF THAT IS NOT COSMETIC. `liveOverseers` is `holderAlive`'s input at
+   * the lease CAS, so reaping `overseerAlive` alone would unfreeze `guardBeat`
+   * only for the replacement wake to be refused by a holder the same fold had
+   * just declared dead -- the run frozen by a second mechanism instead of the
+   * first.
+   */
+  test('and leaves `liveOverseers` in the SAME pass, so the lease CAS agrees', () => {
+    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
+    expect(group?.liveOverseers).toEqual([])
+  })
+
+  test('the reap is reported with its evidence, not merely applied', () => {
+    const group = fold(seat(T0, 7), T0 + OVERSEER_SILENCE_MS + 60_000)
+    expect(group?.abandonedOverseers).toEqual([
+      {
+        convId: 'conv_overseer',
+        gen: 7,
+        lastActivity: T0,
+        silentForMs: OVERSEER_SILENCE_MS + 60_000,
+        status: 'idle',
+      },
+    ])
+  })
+
+  test('a working overseer is never reaped, however long its turn takes -- recent activity', () => {
+    const group = fold(seat(T0 + OVERSEER_SILENCE_MS * 9), T0 + OVERSEER_SILENCE_MS * 9 + 1_000)
+    expect(group?.overseerAlive).toBe(true)
+    expect(group?.liveOverseers).toEqual(['conv_overseer'])
+    expect(group?.abandonedOverseers).toEqual([])
+  })
+
+  test('nor one holding a socket, silent or not', () => {
+    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS * 100, true)
+    expect(group?.overseerAlive).toBe(true)
+    expect(group?.abandonedOverseers).toEqual([])
+  })
+
+  /** An overseer that ENDED properly is dead by `werkLiveness` and never reaches
+   *  the reaper. Reporting it here would wake a replacement for a supervisor that
+   *  simply went home -- once per sweep, forever. */
+  test('an overseer that ended cleanly is dead but NOT reported as abandoned', () => {
+    const group = groupEpicConversations(
+      [seat(T0)],
+      () => false,
+      undefined,
+      reaperAt(T0 + OVERSEER_SILENCE_MS + 1),
+    ).get('e1')
+    expect(group?.overseerAlive).toBe(false)
+    expect(group?.abandonedOverseers).toEqual([])
+  })
+
+  test('with no reaper wired the fold behaves exactly as it always did', () => {
+    const group = groupEpicConversations([seat(T0)], registryClaimsLive).get('e1')
+    expect(group?.overseerAlive).toBe(true)
+    expect(group?.abandonedOverseers).toEqual([])
+  })
+
+  /** A CARD seat is not this card's business: reaping one settles a card and
+   *  costs a concurrency slot, which is `epic-dead-seat-never-settles`. */
+  test('the reaper is asked of the overseer seat only', () => {
+    const implSeat = {
+      id: 'conv_impl',
+      project: 'claude://s/p',
+      status: 'idle',
+      lastActivity: T0,
+      launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 4 } },
+    } as unknown as Conversation
+    const group = groupEpicConversations(
+      [implSeat],
+      registryClaimsLive,
+      undefined,
+      reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
+    ).get('e1')
+    expect(group?.inFlight).toEqual(['t1'])
+  })
+})
+
+/**
+ * WHY THE WAKE IS KEYED ON THE LEASE HOLDER.
+ *
+ * `abandonedOverseers` is re-derived from a registry that never forgets, so it
+ * never empties -- a wake fired from the lane itself would fire again every 45
+ * seconds for the life of the broker. The lease moves; the lane does not.
+ */
+describe('lostOverseer', () => {
+  const dead = { convId: 'conv_dead', gen: 3, lastActivity: 0, silentForMs: 1, status: 'idle' as const }
+  const group = (over = {}) =>
+    ({ abandonedOverseers: [dead], ...over }) as unknown as Parameters<typeof lostOverseer>[0]
+  const lease = (convId: string) => ({ convId, gen: 3, at: '' })
+
+  test('the holder is one of the corpses -- the fact the replacement wake is fired from', () => {
+    expect(lostOverseer(group(), lease('conv_dead'))).toEqual(dead)
+  })
+
+  test('a DIFFERENT holder is not: an ex-overseer that died two generations ago is not news', () => {
+    expect(lostOverseer(group(), lease('conv_current'))).toBeNull()
+  })
+
+  test('a released lease holds nothing, so nothing was lost', () => {
+    expect(lostOverseer(group(), lease(''))).toBeNull()
+    expect(lostOverseer(group(), null)).toBeNull()
+  })
+
+  test('no corpses at all', () => {
+    expect(lostOverseer(group({ abandonedOverseers: [] }), lease('conv_dead'))).toBeNull()
+  })
+})
+
 describe('generationMismatch', () => {
   const group = {
     epicId: 'e1',
@@ -407,6 +556,7 @@ describe('generationMismatch', () => {
     inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
+    abandonedOverseers: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],

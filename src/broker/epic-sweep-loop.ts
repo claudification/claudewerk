@@ -16,6 +16,7 @@ import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
+import { buildOverseerReaper, type OverseerReaper } from './epic-overseer-vitality'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
 import { buildSeatReaper, type SeatReaper } from './epic-seat-vitality'
 import { type EpicGroup, emptyGroup, type IsLive, type ProducedOutput } from './epic-sweep'
@@ -89,6 +90,16 @@ export interface SweepDeps extends BeatDeps {
    * store always supplies it.
    */
   producedOutput?: ProducedOutput
+  /**
+   * Reaps an overseer whose end was never recorded -- no socket, silent past the
+   * grace (`epic-overseer-vitality.ts`). Without it `overseerAlive` is whatever
+   * the registry's `status` field happens to say, and a supervisor whose agent
+   * host died holds `guardBeat` -- and therefore the entire run -- forever.
+   *
+   * Optional so the tests that build deps by hand keep their old meaning (nothing
+   * is ever reaped); `buildSweepDeps` always installs the real one.
+   */
+  overseerReaper?: OverseerReaper
   /**
    * Publish the activity feed to the control panel. Optional because every test
    * in this file builds deps by hand and none of them cares; absent means the
@@ -242,8 +253,14 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   // THE EXPIRY ON "THIS CARD IS IN FLIGHT", bound to the FINAL clock for the
   // reason above: a caller that overrode `now` and then found the reaper judging
   // silence against the wall clock would get a group whose lanes disagree with
-  // every other number in the same beat.
+  // every other number in the same beat. `??=` rather than an assignment so a
+  // test may still install the zero value and get exactly the old behaviour.
   deps.seatReaper ??= buildSeatReaper({
+    hasSocket: id => s.getActiveConversationCount(id) > 0,
+    now: () => deps.now(),
+  })
+  // Same rule, same clock, a longer grace -- see `OVERSEER_SILENCE_MS`.
+  deps.overseerReaper ??= buildOverseerReaper({
     hasSocket: id => s.getActiveConversationCount(id) > 0,
     now: () => deps.now(),
   })
@@ -378,8 +395,9 @@ export function resolveBeatGroup(deps: SweepDeps, project: string, epicId: strin
  */
 function pickBeatGroup(watched: readonly EpicGroup[], project: string, epicId: string): EpicGroup {
   // `emptyGroup` rather than a literal, for the reason stated on it: a hand-rolled
-  // second zero value goes stale the moment `EpicGroup` gains a field, and the
-  // reader that got the stale one then reports a shape the other cannot.
+  // second zero value goes stale the moment `EpicGroup` gains a field -- as it just
+  // did, twice -- and the reader that got the stale one then reports a shape the
+  // other cannot.
   return watched.find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? emptyGroup(epicId, project)
 }
 
