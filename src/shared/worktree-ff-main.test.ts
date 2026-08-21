@@ -66,86 +66,110 @@ function runRemove(script: string, wtPath: string) {
 describe.each(COPIES)('worktree-finish.sh (%s)', (_label, resolve) => {
   const script = () => resolve('worktree-finish.sh')
 
-  test('fast-forwards main and leaves its checkout CONSISTENT', () => {
-    const fx = makeFixture()
-    const { code, out } = runFinish(script(), fx.wt)
+  test(
+    'fast-forwards main and leaves its checkout CONSISTENT',
+    () => {
+      const fx = makeFixture()
+      const { code, out } = runFinish(script(), fx.wt)
 
-    // The regression signature, asserted by name so a failure reads as itself.
-    expect(out).not.toContain('refusing to fetch')
-    expect(out).not.toContain('Manual merge needed')
-    expect(code).toBe(0)
-    expect(fx.mainRef()).toBe(fx.wtHead)
+      // The regression signature, asserted by name so a failure reads as itself.
+      expect(out).not.toContain('refusing to fetch')
+      expect(out).not.toContain('Manual merge needed')
+      expect(code).toBe(0)
+      expect(fx.mainRef()).toBe(fx.wtHead)
 
-    // The whole point of git's guard: main's index and working tree must agree
-    // with the ref afterwards. A stale checkout shows the merged files as
-    // uncommitted REVERSALS, which is worse than the failure it replaced.
-    expect(fx.baseStatus()).toBe('')
-    expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('one\ntwo\n')
-  }, GIT_HANG_TIMEOUT_MS)
+      // The whole point of git's guard: main's index and working tree must agree
+      // with the ref afterwards. A stale checkout shows the merged files as
+      // uncommitted REVERSALS, which is worse than the failure it replaced.
+      expect(fx.baseStatus()).toBe('')
+      expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('one\ntwo\n')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('refuses LOUDLY when main has local edits the merge would overwrite', () => {
-    const fx = makeFixture()
-    const before = fx.mainRef()
-    dirtyMain(fx, true)
+  test(
+    'refuses LOUDLY when main has local edits the merge would overwrite',
+    () => {
+      const fx = makeFixture()
+      const before = fx.mainRef()
+      dirtyMain(fx, true)
 
-    const { code, out } = runFinish(script(), fx.wt)
+      const { code, out } = runFinish(script(), fx.wt)
 
-    expect(code).toBe(1)
-    // git's own reason must survive to the user, naming the blocking file.
-    expect(out).toContain('f.txt')
-    expect(fx.mainRef()).toBe(before)
-    expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('locally edited\n')
-  }, GIT_HANG_TIMEOUT_MS)
+      expect(code).toBe(1)
+      // git's own reason must survive to the user, naming the blocking file.
+      expect(out).toContain('f.txt')
+      expect(fx.mainRef()).toBe(before)
+      expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('locally edited\n')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('merges anyway when main is dirty on a file the merge does not touch', () => {
-    // With a dozen live agents the root tree is almost always dirty on
-    // something. Blocking on ANY dirt would make merge-back unusable, so only a
-    // real collision may stop it.
-    const fx = makeFixture()
-    dirtyMain(fx, false)
+  test(
+    'merges anyway when main is dirty on a file the merge does not touch',
+    () => {
+      // With a dozen live agents the root tree is almost always dirty on
+      // something. Blocking on ANY dirt would make merge-back unusable, so only a
+      // real collision may stop it.
+      const fx = makeFixture()
+      dirtyMain(fx, false)
 
-    const { code } = runFinish(script(), fx.wt)
+      const { code } = runFinish(script(), fx.wt)
 
-    expect(code).toBe(0)
-    expect(fx.mainRef()).toBe(fx.wtHead)
-    expect(readFileSync(join(fx.base, 'other.txt'), 'utf8')).toBe('locally edited\n')
-  }, GIT_HANG_TIMEOUT_MS)
+      expect(code).toBe(0)
+      expect(fx.mainRef()).toBe(fx.wtHead)
+      expect(readFileSync(join(fx.base, 'other.txt'), 'utf8')).toBe('locally edited\n')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('is a no-op when the branch is already merged', () => {
-    const fx = makeFixture()
-    expect(runFinish(script(), fx.wt).code).toBe(0)
-    const { code, out } = runFinish(script(), fx.wt)
-    expect(code).toBe(0)
-    expect(out).toContain('Nothing to merge')
-  }, GIT_HANG_TIMEOUT_MS)
+  test(
+    'is a no-op when the branch is already merged',
+    () => {
+      const fx = makeFixture()
+      expect(runFinish(script(), fx.wt).code).toBe(0)
+      const { code, out } = runFinish(script(), fx.wt)
+      expect(code).toBe(0)
+      expect(out).toContain('Nothing to merge')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 })
 
 describe.each(COPIES)('worktree-remove.sh (%s)', (_label, resolve) => {
   const script = () => resolve('worktree-remove.sh')
 
-  test('does not report a MERGEABLE worktree as unmergeable', () => {
-    const fx = makeFixture()
-    const { code, out } = runRemove(script(), fx.wt)
+  test(
+    'does not report a MERGEABLE worktree as unmergeable',
+    () => {
+      const fx = makeFixture()
+      const { code, out } = runRemove(script(), fx.wt)
 
-    // This was the lie: a clean, trivially-mergeable branch reported as
-    // "N unmerged commits that cannot be fast-forwarded", refusing removal.
-    expect(out).not.toContain('unmerged commits')
-    expect(out).toContain('Auto-merged')
-    expect(code).toBe(0)
-    expect(fx.mainRef()).toBe(fx.wtHead)
-  }, GIT_HANG_TIMEOUT_MS)
+      // This was the lie: a clean, trivially-mergeable branch reported as
+      // "N unmerged commits that cannot be fast-forwarded", refusing removal.
+      expect(out).not.toContain('unmerged commits')
+      expect(out).toContain('Auto-merged')
+      expect(code).toBe(0)
+      expect(fx.mainRef()).toBe(fx.wtHead)
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('blocks on a real collision AND prints git’s reason instead of swallowing it', () => {
-    const fx = makeFixture()
-    dirtyMain(fx, true)
+  test(
+    'blocks on a real collision AND prints git’s reason instead of swallowing it',
+    () => {
+      const fx = makeFixture()
+      dirtyMain(fx, true)
 
-    const { code, out } = runRemove(script(), fx.wt)
+      const { code, out } = runRemove(script(), fx.wt)
 
-    expect(code).toBe(1)
-    expect(out).toContain('BLOCKED')
-    // The `2>/dev/null` that made every failure look identical is gone.
-    expect(out).toContain('f.txt')
-  }, GIT_HANG_TIMEOUT_MS)
+      expect(code).toBe(1)
+      expect(out).toContain('BLOCKED')
+      // The `2>/dev/null` that made every failure look identical is gone.
+      expect(out).toContain('f.txt')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 })
 
 describe('the four shell copies do not drift', () => {
@@ -179,12 +203,16 @@ describe('the four shell copies do not drift', () => {
 })
 
 describe('the fixture proves the bug is real', () => {
-  test('git still refuses a direct fetch into main from the worktree', () => {
-    const fx = makeFixture()
-    const res = git(['fetch', '.', 'HEAD:main'], fx.wt)
-    // If this ever starts passing, git relaxed the guard and the fallback path
-    // could be widened again -- but the merge path stays correct either way.
-    expect(res.code).not.toBe(0)
-    expect(res.output).toContain('refusing to fetch')
-  }, GIT_HANG_TIMEOUT_MS)
+  test(
+    'git still refuses a direct fetch into main from the worktree',
+    () => {
+      const fx = makeFixture()
+      const res = git(['fetch', '.', 'HEAD:main'], fx.wt)
+      // If this ever starts passing, git relaxed the guard and the fallback path
+      // could be widened again -- but the merge path stays correct either way.
+      expect(res.code).not.toBe(0)
+      expect(res.output).toContain('refusing to fetch')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 })
