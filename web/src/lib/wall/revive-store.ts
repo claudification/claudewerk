@@ -62,6 +62,10 @@ interface FeedRecord {
   freshAt: number | null
   /** Poll timer, owned by the first holder and stopped by the last. */
   timer: ReturnType<typeof setInterval> | null
+  /** The interval `timer` is currently running at. `null` = no clock. Kept so a
+   *  pane can CHANGE its clock without the store having to re-arm a timer that
+   *  is already ticking at the right rate. */
+  everyMs: number | null
   /** How many times this feed has been pulled. The exactly-once test reads it. */
   pulls: number
 }
@@ -72,7 +76,16 @@ const signal = createExternalStoreSignal()
 function record(feed: WallFeedId): FeedRecord {
   let rec = feeds.get(feed)
   if (!rec) {
-    rec = { holders: 0, reload: null, issuedSeq: null, freshSeq: null, freshAt: null, timer: null, pulls: 0 }
+    rec = {
+      holders: 0,
+      reload: null,
+      issuedSeq: null,
+      freshSeq: null,
+      freshAt: null,
+      timer: null,
+      everyMs: null,
+      pulls: 0,
+    }
     feeds.set(feed, rec)
   }
   return rec
@@ -103,6 +116,7 @@ export function releaseFeed(feed: WallFeedId): void {
   if (rec.holders === 0 && rec.timer) {
     clearInterval(rec.timer)
     rec.timer = null
+    rec.everyMs = null
   }
   signal.bump()
 }
@@ -136,17 +150,40 @@ export async function pullFeed(feed: WallFeedId, seq: number, force = false): Pr
 }
 
 /**
- * Drive the feed's own poll clock, if it has one. Idempotent: ten panes calling
- * it means one timer.
+ * Set the feed's poll clock. `undefined` means it has none.
+ *
+ * IDEMPOTENT AT THE SAME RATE: ten panes asking for a 60s clock means one timer,
+ * and the tenth call does not restart the ninth's countdown.
+ *
+ * RE-ARMS AT A DIFFERENT RATE, and that is what this function exists for. It
+ * used to be `ensureFeedPoll` and it bailed on `if (rec.timer) return`, so a
+ * pane that changed its interval kept polling at whatever rate it happened to
+ * mount with -- the new number was simply ignored. A2's window selector needs a
+ * clock that scales with the window (`use-burn-feed.ts`), so the store has to be
+ * able to hear the second number.
+ *
+ * IT NEVER PULLS. Changing how often a feed re-reads itself is not a reason to
+ * re-read it: the rows on screen are the same rows. This is the whole separation
+ * the poll clock and the re-pull trigger needed -- see `use-wall-revive.ts`,
+ * where they are now two effects because they were one, and one click on the
+ * period control fired two fetches.
  *
  * The timer's life is tied to the HOLDERS, not to whoever happened to start it --
  * `releaseFeed` stops it at zero. Tying it to a single pane's effect would stop
  * the sheaf's minute clock the moment A6 unmounted and leave A4 polling nothing.
  */
-export function ensureFeedPoll(feed: WallFeedId, everyMs: number, seqOf: () => number): void {
+export function setFeedPoll(feed: WallFeedId, everyMs: number | undefined, seqOf: () => number): void {
   const rec = record(feed)
-  if (rec.timer) return
-  rec.timer = setInterval(() => void pullFeed(feed, seqOf(), true), everyMs)
+  if (rec.everyMs === (everyMs ?? null) && Boolean(rec.timer) === Boolean(everyMs)) return
+  if (rec.timer) clearInterval(rec.timer)
+  rec.timer = everyMs ? setInterval(() => void pullFeed(feed, seqOf(), true), everyMs) : null
+  rec.everyMs = everyMs ?? null
+}
+
+/** The interval a feed is polling at right now, or `null`. Test seam: an
+ *  interval that changed is only observable from outside as this number. */
+export function feedPollMs(feed: WallFeedId): number | null {
+  return feeds.get(feed)?.everyMs ?? null
 }
 
 export interface WallFreshness {
