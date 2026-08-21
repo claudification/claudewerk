@@ -208,17 +208,22 @@ export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx)
 }
 
 /**
- * A dependency card id -> the git branch its work is on.
+ * A card id -> the git branch its work is on.
  *
  * TWO transforms, and skipping either one names a branch that does not exist:
- * `seatBranch` is what named the dependency's worktree (including the hash
- * shortening a long card id gets), and `worktreeBranch` is the `worktree-`
- * prefix `scripts/worktree-create.sh` puts on the branch it cuts. The seat plan
- * carries the WORKTREE name, which is the un-prefixed half -- so a prompt that
- * quoted `plan.worktree` at an implementer would hand it an unmergeable ref.
+ * `seatBranch` is what named the card's worktree (including the hash shortening
+ * a long card id gets), and `worktreeBranch` is the `worktree-` prefix
+ * `scripts/worktree-create.sh` puts on the branch it cuts. The seat plan carries
+ * the WORKTREE name, which is the un-prefixed half -- so a prompt that quoted
+ * `plan.worktree` at an implementer would hand it an unmergeable ref.
+ *
+ * EXPORTED because the promise ledger asks the same question from the other end:
+ * given a settled card, which branch's commits delivered it. Two callers
+ * deriving that string independently is exactly how one of them ends up looking
+ * up a branch nobody ever cut.
  */
-function dependencyBranch(epicId: string, depCardId: string): string {
-  return worktreeBranch(seatBranch(epicId, depCardId))
+export function cardBranch(epicId: string, cardId: string): string {
+  return worktreeBranch(seatBranch(epicId, cardId))
 }
 
 /**
@@ -257,7 +262,7 @@ export function planImplementerSpawn(
       cardId,
       branch: worktreeBranch(worktree),
       base: baseRef,
-      dependsOn: dependsOn.map(id => ({ id, branch: dependencyBranch(ctx.epicId, id) })),
+      dependsOn: dependsOn.map(id => ({ id, branch: cardBranch(ctx.epicId, id) })),
     }),
   }
 }

@@ -31,6 +31,7 @@ const KINDS: readonly EpicLogKind[] = [
   'merge',
   'steering',
   'checkpoint',
+  'record',
 ]
 
 function asEpicLogKind(v: unknown): EpicLogKind {

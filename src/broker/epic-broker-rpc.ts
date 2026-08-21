@@ -17,6 +17,8 @@ import type {
   EpicRunPatchInput,
   EpicRunSnapshot,
   ProjectBoardResult,
+  ProjectReadFileResult,
+  ProjectWriteFileResult,
 } from '../shared/protocol'
 import { type SentinelRpcDeps, sendSentinelOp } from './broker-sentinel-rpc'
 
@@ -42,6 +44,64 @@ const BOARD_SPEC = {
     ok: false,
     error,
   }),
+}
+
+/**
+ * RAW CARD TEXT, both ways. The board's own `update` op is not an option here
+ * and the reason is a live bug, not a preference: every write through
+ * `serializeCard` round-trips the front matter through `parseFrontmatter`, which
+ * is deliberately flat, so a nested `promise:` block comes back as top-level
+ * keys with `closes:` emptied (filed as
+ * `werk-promise-ledger-card-writer-flattens`, pinned by a test in
+ * promise-ledger.test.ts). The promise ledger writes by LINE SURGERY, and line
+ * surgery needs the bytes.
+ *
+ * Still not the broker touching a filesystem: `projectRoot` is filled in by
+ * `sendSentinelOp` from the project URI and the SENTINEL resolves and jails it
+ * (src/shared/project-store.ts). The broker sends a project-relative path and
+ * never learns where it landed.
+ */
+const READ_FILE_SPEC = {
+  opType: 'project_read_file',
+  idPrefix: 'epic-read',
+  fail: (requestId: string, error: string): ProjectReadFileResult => ({
+    type: 'project_read_file_result',
+    requestId,
+    ok: false,
+    error,
+  }),
+}
+
+const WRITE_FILE_SPEC = {
+  opType: 'project_write_file',
+  idPrefix: 'epic-write',
+  fail: (requestId: string, error: string): ProjectWriteFileResult => ({
+    type: 'project_write_file_result',
+    requestId,
+    ok: false,
+    error,
+  }),
+}
+
+/** A card's raw markdown. `maxBytes` is deliberately generous -- a TRUNCATED
+ *  read that got written back would delete the tail of somebody's card, so the
+ *  caller must refuse on `truncated` rather than trim the cap here. */
+export function readProjectFile(
+  deps: SentinelRpcDeps,
+  project: string,
+  relPath: string,
+  maxBytes: number,
+): Promise<ProjectReadFileResult> {
+  return sendSentinelOp(READ_FILE_SPEC, deps, project, { relPath, maxBytes })
+}
+
+export function writeProjectFile(
+  deps: SentinelRpcDeps,
+  project: string,
+  relPath: string,
+  content: string,
+): Promise<ProjectWriteFileResult> {
+  return sendSentinelOp(WRITE_FILE_SPEC, deps, project, { relPath, content })
 }
 
 export interface EpicOpInput {

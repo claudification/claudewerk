@@ -11,7 +11,15 @@
  * of them would make the other import from its own caller.
  */
 
-import { appendBaton, fetchBoardCards, fetchEpicRun, sendEpicOp } from './epic-broker-rpc'
+import { commitsForBranch } from './commit-ledger/branch'
+import {
+  appendBaton,
+  fetchBoardCards,
+  fetchEpicRun,
+  readProjectFile,
+  sendEpicOp,
+  writeProjectFile,
+} from './epic-broker-rpc'
 import { dispatchSpawn } from './spawn-dispatch'
 
 export interface EpicIo {
@@ -20,9 +28,28 @@ export interface EpicIo {
   fetchEpicRun: typeof fetchEpicRun
   fetchBoardCards: typeof fetchBoardCards
   appendBaton: typeof appendBaton
+  /** Raw card text, for the promise ledger's line surgery. */
+  readProjectFile: typeof readProjectFile
+  writeProjectFile: typeof writeProjectFile
+  /**
+   * WHICH COMMITS DELIVERED A BRANCH. An effect like the rest, even though it is
+   * a synchronous local query rather than a round trip: `commits.db` is opened
+   * once per broker process and a test that had to init a real ledger to run one
+   * beat would be a test about sqlite.
+   */
+  commitsForBranch: typeof commitsForBranch
 }
 
-const REAL_IO: EpicIo = { dispatchSpawn, sendEpicOp, fetchEpicRun, fetchBoardCards, appendBaton }
+const REAL_IO: EpicIo = {
+  dispatchSpawn,
+  sendEpicOp,
+  fetchEpicRun,
+  fetchBoardCards,
+  appendBaton,
+  readProjectFile,
+  writeProjectFile,
+  commitsForBranch,
+}
 let current: EpicIo = REAL_IO
 
 /** The effects in force right now. A getter rather than an exported binding so

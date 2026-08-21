@@ -7,9 +7,12 @@
  *
  * Order is the whole contract here:
  *   1. read the run + baton + board,
- *   2. acknowledge every settled card into the baton BEFORE anything else,
- *   3. take the lease (CAS) and spawn the overseer, or
- *   4. dispatch/verify, or park/complete.
+ *   2. acknowledge every settled card into the baton BEFORE anything else, and
+ *      record its `closes:` in the same pass,
+ *   3. if this beat is going to park or complete, take the promise ledger's LAST
+ *      CALL -- there is no beat after an inert run,
+ *   4. take the lease (CAS) and spawn the overseer, or
+ *   5. dispatch/verify, or park/complete.
  *
  * Step 2 comes first because a settle that is not written down is a settle the
  * next sweep re-discovers forever: `unacknowledgedCards` would keep returning
@@ -28,6 +31,7 @@ import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-act
 import { recordBeat } from './epic-beat-log'
 import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
 import { epicIo, tag } from './epic-io'
+import { recordFinalPromises, recordSettledPromises } from './epic-promise'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
 
@@ -139,6 +143,16 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
   const pending = unacknowledgedCards(group.settled, renameAwareAcks(view.acknowledgedCardIds, renames))
   if (pending.length > 0) await acknowledge(deps, group, pending)
 
+  // THE PROMISE LEDGER, in the same region and for the same reason: a fact the
+  // engine learned and did not write down is a fact the next sweep rediscovers
+  // forever. A settled card gets the sha that delivered it written into its
+  // `closes:` -- by the executor, never by the seat that did the work, which is
+  // the whole point of the ledger. Its own standing question rather than a rider
+  // on `pending`, because `pending` is the not-yet-acknowledged subset and a
+  // promise that failed to resolve has to be askable again. Lane-agnostic; the
+  // second and final chance is at LAST CALL below. Never blocks, never throws.
+  await recordSettledPromises(deps, group, cards)
+
   // BEFORE the plan is computed, for `acknowledge`'s reason: a fact the baton
   // never records is a fact the next sweep rediscovers forever. A failed launch
   // does NOT wake the overseer, though -- the card simply stays dispatchable,
@@ -185,6 +199,25 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     spentUsd: deps.epicSpendUsd(group.convIds),
     nowMs: deps.now(),
   })
+
+  // LAST CALL FOR THE PROMISE LEDGER. `park` and `complete` both flip the run to
+  // an inert status, and `runEpicBeat` returns at `isInertRun` above before it
+  // reads a single card -- so a beat carrying either is the last time any card
+  // under this epic is looked at, ever. The race that makes this necessary:
+  // `planEpic` completes a run off card LANES alone, without waiting for the
+  // conversations behind them, so the last child's verifier can still be alive
+  // (card not settled, pass above skips it) on the very beat that ends the run.
+  // Still BEFORE the actions -- `b766b75e`'s rule -- so the write happens while
+  // there is still a beat to do it in.
+  //
+  // `plan-checkpoint` pauses the run too and is deliberately NOT here: it fires
+  // on generation 0, before anything has been dispatched, so no card has a
+  // `worktree-epic/<epic>/<card>` branch for the ledger to resolve and every
+  // card would buy a refusal entry for nothing. A checkpoint is also resumed
+  // rather than ended -- beats follow it. Park and complete do not.
+  if (beat.actions.some(a => a.kind === 'park' || a.kind === 'complete')) {
+    await recordFinalPromises(deps, group, plan.rollup?.children.map(c => c.card) ?? [])
+  }
 
   await applyBeatPatch(deps, group, run.gen, beat.patch)
 

@@ -32,6 +32,9 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   merge: 'var(--event-prompt)',
   steering: 'var(--warning)',
   checkpoint: 'var(--comment)',
+  // Bookkeeping, not an event: the engine writing a sha into a card's `closes:`
+  // must never out-shout a dispatch or a bounce at four feet.
+  record: 'var(--comment)',
 }
 
 /** Bucket -> label + tone. A list rather than six ternaries in JSX, and in the
