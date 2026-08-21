@@ -261,15 +261,28 @@ describe('the run artifact', () => {
      * would have its prose written back stale -- the same collision in the other
      * direction. A patch that does not name `digest` therefore does not touch
      * the digest file at all.
+     *
+     * THE TRAILING BLANK LINES ARE THE ASSERTION, not sloppy fixture bytes.
+     * `writeRun` normalises prose to `${digest.trim()}\n`, so bytes that are NOT
+     * in that canonical form are the only evidence available from outside that
+     * the writer never opened the file. Round-tripping the same string through
+     * a re-write is a no-op on disk, and `patchEpicRun` re-reads internally --
+     * so a merged struct carrying the prose back to `writeRun` reproduces
+     * canonical bytes byte-for-byte and reads as "untouched". Written this way
+     * the test fails the moment `patchEpicRun` stops forwarding `patch.digest`
+     * and lets the merged run carry it instead.
      */
-    test('a patch that does not name the digest leaves the digest file alone', () => {
+    test('a patch that does not name the digest does not WRITE the digest file', () => {
       startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
       const current = readEpicRun(root, 'e1')
+      const asWritten = 'written by the overseer mid-beat\n\n\n'
 
-      writeFileSync(epicDigestFile(root, 'e1'), 'written by the overseer mid-beat\n')
+      writeFileSync(epicDigestFile(root, 'e1'), asWritten)
       patchEpicRun(root, 'e1', { gen: current!.gen + 1 }, T0 + 1)
 
-      expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toBe('written by the overseer mid-beat\n')
+      expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toBe(asWritten)
+      // ...and the prose still reads back, so this is not "untouched because empty".
+      expect(readEpicRun(root, 'e1')?.digest).toBe('written by the overseer mid-beat')
     })
 
     /** A resume must not reset the prose either -- same argument as `gen`. */
