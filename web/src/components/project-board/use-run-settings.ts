@@ -12,6 +12,7 @@
  */
 
 import type { EpicCadence } from '@shared/epic-run-types'
+import { parseWhen } from '@shared/epic-when'
 import { useMemo, useState } from 'react'
 import type { EpicRunState, StartEpicOptions } from '@/lib/epic-run-api'
 
@@ -34,7 +35,10 @@ export interface RunSettings {
 }
 
 export function useRunSettings(existing: EpicRunState | null): RunSettings {
-  const [cadence, setGates] = useState<EpicCadence[]>(existing?.cadence ?? ['now'])
+  // PARSED, not indexed: a broker talking to an older sentinel can hand back
+  // `cadence` as the bare string this field used to be, and `.join` on a string
+  // is a crashed dialog rather than a wrong label.
+  const [cadence, setGates] = useState<EpicCadence[]>(parseWhen(existing?.cadence))
   const [target, setTarget] = useState<StartEpicOptions['target']>(existing?.target ?? 'merged')
   const [concurrency, setConcurrency] = useState(existing?.concurrency ?? 3)
   const [plan, setPlan] = useState(true)

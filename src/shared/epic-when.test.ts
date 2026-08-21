@@ -63,6 +63,19 @@ describe('gatedBy / formatWhen', () => {
     expect(gatedBy(undefined, 'queue')).toBe(false)
   })
 
+  /**
+   * VERSION SKEW. Broker and sentinel deploy separately, so a run snapshot can
+   * arrive with `cadence` as the bare string it was before this field could hold
+   * a list. Both readers must answer about it correctly rather than by whatever
+   * `String.prototype.includes` happens to say.
+   */
+  it('takes the wire value in the shape an OLDER sentinel sends it', () => {
+    expect(gatedBy('window' as never, 'window')).toBe(true)
+    expect(gatedBy('window' as never, 'queue')).toBe(false)
+    expect(gatedBy('now' as never, 'now')).toBe(true)
+    expect(formatWhen('window' as never)).toBe('window')
+  })
+
   it('reads as one phrase for a human', () => {
     expect(formatWhen(['window', 'queue'])).toBe('window + queue')
     expect(formatWhen(['now'])).toBe('now')

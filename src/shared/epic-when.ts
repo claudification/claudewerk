@@ -79,12 +79,22 @@ export function serializeWhen(gates: readonly EpicCadence[]): string | string[] 
   return list.length === 1 ? list[0] : [...list]
 }
 
-/** Does this run carry this gate? */
-export function gatedBy(gates: readonly EpicCadence[] | undefined, gate: EpicCadence): boolean {
-  return (gates ?? []).includes(gate)
+/**
+ * Does this run carry this gate?
+ *
+ * PARSES RATHER THAN INDEXES, because the value may not be a list. Broker and
+ * sentinel deploy separately, and a sentinel running the older bundle reads
+ * `cadence` through a scalar `pick()` -- so a run snapshot can arrive over the
+ * wire as the bare string it always used to be. Asking `.includes` of that would
+ * answer by SUBSTRING, which is right by accident for `window` and wrong the
+ * moment a gate name contains another.
+ */
+export function gatedBy(gates: readonly EpicCadence[] | string | undefined, gate: EpicCadence): boolean {
+  return parseWhen(gates).includes(gate)
 }
 
-/** For a human or an agent: `now`, `window`, `window + queue`. */
-export function formatWhen(gates: readonly EpicCadence[] | undefined): string {
+/** For a human or an agent: `now`, `window`, `window + queue`. Takes the wire
+ *  value in whatever shape it arrived, for `gatedBy`'s reason. */
+export function formatWhen(gates: readonly EpicCadence[] | string | undefined): string {
   return parseWhen(gates).join(' + ')
 }
