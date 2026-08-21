@@ -167,8 +167,24 @@ const BUCKET_ORDER: EpicBucket[] = ['notStarted', 'inProgress', 'done', 'dropped
  *  mtime order buries the high-priority card under whatever was touched last. */
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
+/**
+ * The human's declared urgency as a number, LOWEST FIRST.
+ *
+ * Exported at the CARD level rather than the child level because the dispatch
+ * order (`epic-ready-order.ts`) ranks `ProjectTaskMeta` and never builds an
+ * `EpicChild` to do it. Two copies of "which spelling of `priority:` beats
+ * which" is exactly the drift that would let a board surface and the engine
+ * disagree about what `high` means on the same card.
+ *
+ * An absent or unrecognised value reads as `medium` -- the neutral middle, so a
+ * card nobody triaged neither jumps the queue nor starves behind one.
+ */
+export function cardPriorityRank(card: ProjectTaskMeta): number {
+  return PRIORITY_ORDER[card.priority ?? 'medium'] ?? 1
+}
+
 function priorityRank(child: EpicChild): number {
-  return PRIORITY_ORDER[child.card.priority ?? 'medium'] ?? 1
+  return cardPriorityRank(child.card)
 }
 
 function byBucketOrder(a: EpicChild, b: EpicChild): number {

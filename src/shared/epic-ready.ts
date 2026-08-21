@@ -117,6 +117,7 @@ import {
   type EpicRollup,
   toEpicChild,
 } from './epic-cards'
+import { orderReady } from './epic-ready-order'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 
@@ -283,7 +284,18 @@ export interface TaggedPlanInput extends PlanCohortInput {
 
 export interface EpicPlan {
   rollup: EpicRollup | null
-  /** Cards to hand to an implementer, most important first, already slot-capped. */
+  /**
+   * Cards to hand to an implementer, already slot-capped, ORDERED BY
+   * {@link orderReady}: most transitive dependents first, then `priority:`, then
+   * oldest `created:`, then slug.
+   *
+   * This sentence used to say "most important first" and mean nothing -- the
+   * order was whatever order the board was enumerated in. Naming the key here is
+   * the point: the field is read by the executor, the inspect RPC and the
+   * overseer pane, and a comment that describes an intention rather than a
+   * comparator is how the head of a six-card chain sat in `heldBack` for four
+   * generations while leaves took the seats.
+   */
   dispatch: ProjectTaskMeta[]
   /**
    * Cards awaiting an independent verdict, EXCLUDING any that already have a
@@ -301,7 +313,9 @@ export interface EpicPlan {
    *  implementer is how you get two agents guessing instead of one asking. */
   questions: ProjectTaskMeta[]
   /** Ready but over the concurrency ceiling. Named so the ceiling is VISIBLE
-   *  rather than silently truncating -- "3 of 7 running" is the honest render. */
+   *  rather than silently truncating -- "3 of 7 running" is the honest render.
+   *  The exact complement of `dispatch` under the SAME order, so the pane's
+   *  held-back list explains the choice instead of contradicting it. */
   heldBack: ProjectTaskMeta[]
   /** Not-started cards still waiting on an unfinished dependency. */
   waitingOnDeps: Array<{ card: ProjectTaskMeta; waitingOn: string[] }>
@@ -557,9 +571,10 @@ interface DispatchGates {
   bounceLane: boolean
 }
 
-/** The dispatch lane, split four ways. `ready` is pre-ceiling: the concurrency
- *  slice happens in `foldCohort`, which is the only place that knows how many
- *  seats are already out. */
+/** The dispatch lane, split four ways. `ready` is pre-ORDER and pre-ceiling:
+ *  both the sort ({@link orderReady}) and the concurrency slice happen in
+ *  `foldCohort`, which is the only place that holds the whole board and knows
+ *  how many seats are already out. Cohort read order is all this bucket means. */
 interface DispatchTriage {
   ready: ProjectTaskMeta[]
   waitingOnDeps: EpicPlan['waitingOnDeps']
@@ -664,14 +679,20 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
   const inFlight = new Set(input.inFlight)
   const dead = new Set(input.unspawnable ?? [])
   const { verify, questions, unspawnable, needsRefine } = attentionLanes(cohort.children, new Set(input.inVerify), dead)
-  const { ready, waitingOnDeps, exhausted, alreadyRun } = triageDispatchLane(cohort.children, {
+  const triaged = triageDispatchLane(cohort.children, {
     inFlight,
     dead,
     settled: new Set(input.settled ?? []),
     dispatches: input.dispatches ?? {},
     bounceLane: cohort.bounceLane,
   })
+  const { waitingOnDeps, exhausted, alreadyRun } = triaged
 
+  // THE SORT KEY, and it is applied HERE rather than inside the triage for the
+  // ceiling's reason: `dispatch` and `heldBack` are one list cut in two, so the
+  // order and the cut have to be decided in the same place or the pane's
+  // held-back list contradicts the choice it is meant to explain.
+  const ready = orderReady(triaged.ready, input.cards)
   const slots = Math.max(0, input.concurrency - inFlight.size)
   const dispatch = ready.slice(0, slots)
   const heldBack = ready.slice(slots)
