@@ -1,9 +1,23 @@
 import { describe, expect, test } from 'bun:test'
+import { EPIC_ORDERS } from '../shared/epic-orders'
+import { buildImplementerPrompt } from '../shared/epic-prompt-implementer'
+import type { OverseerPromptCtx } from '../shared/epic-prompt-overseer'
 import type { EpicPlan } from '../shared/epic-ready'
+import type { EpicRole } from '../shared/epic-run-types'
+import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
+import { buildGuardPrompt } from '../shared/guard-prompt'
+import { OrderCapsError } from '../shared/order-caps'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
 import { worktreeBranch } from '../shared/worktree-path'
-import { type EpicSpawnCtx, planImplementerSpawn, planOverseerSpawn, planVerifierSpawn } from './epic-spawn-plan'
+import {
+  type EpicSpawnCtx,
+  type EpicSpawnPlan,
+  planImplementerSpawn,
+  planOverseerSpawn,
+  planPlannerSpawn,
+  planVerifierSpawn,
+} from './epic-spawn-plan'
 
 const CTX: EpicSpawnCtx = {
   project: 'claude://sentinel/Users/jonas/projects/remote-claude',
@@ -43,16 +57,17 @@ const PLAN: EpicPlan = {
   complete: false,
 }
 
-const overseer = () =>
-  planOverseerSpawn(CTX, {
-    projectUri: CTX.project,
-    projectRoot: CTX.projectRoot,
-    run: { ...RUN, digest: 'x' },
-    plan: PLAN,
-    batonTail: '_(empty)_',
-    wake: 'card-settled',
-    settled: ['t1 landed'],
-  })
+const PROMPT_CTX: OverseerPromptCtx = {
+  projectUri: CTX.project,
+  projectRoot: CTX.projectRoot,
+  run: { ...RUN, digest: 'x' },
+  plan: PLAN,
+  batonTail: '_(empty)_',
+  wake: 'card-settled',
+  settled: ['t1 landed'],
+}
+
+const overseer = () => planOverseerSpawn(CTX, PROMPT_CTX)
 
 /** The mute is a second PreToolUse hook keyed on tool name. */
 const hookCount = (s: Record<string, unknown>) => (s.hooks as { PreToolUse: unknown[] }).PreToolUse.length
@@ -348,5 +363,139 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
     const name = planImplementerSpawn(ctx(6), 'wall-filter-store').name
     expect(name).toContain(CTX.epicId)
     expect(name).toContain('wall-filter-store')
+  })
+})
+
+/**
+ * STEP 2's ACCEPTANCE TEST, and the only one that can fail it.
+ *
+ * The seats moved out of this file into `order@1` artifacts (`epic-orders.ts`)
+ * and the planners now COMPILE card + order. That is a refactor, so the bar is
+ * that the engine emits what it emitted before -- if seat behaviour changed too,
+ * two things moved at once and nobody can say which one moved the run.
+ *
+ * The expected values below are HAND-WRITTEN from the pre-refactor code, not
+ * derived from the orders. Deriving them would prove only that the compile
+ * agrees with itself, which is the shape of assertion that let a `dontAsk` that
+ * never reached CC pass its own test for the life of the feature.
+ */
+describe('compiling card + order emits EXACTLY what the hardcoded seats emitted', () => {
+  const planner = () =>
+    planPlannerSpawn(CTX, {
+      projectUri: CTX.project,
+      projectRoot: CTX.projectRoot,
+      run: { ...RUN, digest: 'x' },
+      plan: PLAN,
+      cardLines: [],
+      epicBody: '# epic',
+    })
+
+  /** One seat, and the exact plan it produced before orders existed. */
+  interface SeatCase {
+    seat: string
+    plan: () => EpicSpawnPlan
+    role: EpicRole
+    name: string
+    worktree?: string
+    cardId?: string
+  }
+
+  const SEATS: SeatCase[] = [
+    { seat: 'overseer', plan: overseer, role: 'overseer', name: '[werk-epic] overseer g4' },
+    { seat: 'planner', plan: planner, role: 'overseer', name: '[werk-epic] planner overseer g4' },
+    {
+      seat: 'implementer',
+      plan: () => planImplementerSpawn(CTX, 't1'),
+      role: 'implementer',
+      name: '[werk-epic] t1 g4',
+      worktree: 'epic/werk-epic/t1',
+      cardId: 't1',
+    },
+    {
+      seat: 'verifier',
+      plan: () => planVerifierSpawn(CTX, 't1'),
+      role: 'verifier',
+      name: '[werk-epic] verify t1 g4',
+      worktree: 'epic/werk-epic/verify-t1',
+      cardId: 't1',
+    },
+  ]
+
+  test.each(SEATS)('$seat: every field except the prompt is byte-identical', s => {
+    const { prompt, ...rest } = s.plan()
+    expect(prompt.length).toBeGreaterThan(0)
+    expect(rest).toEqual({
+      cwd: CTX.project,
+      headless: true,
+      adHoc: true,
+      permissionMode: 'bypassPermissions',
+      settingsInline: buildEpicWorkerSettings(s.role, undefined),
+      epic: { epicId: 'werk-epic', role: s.role, gen: 4, ...(s.cardId ? { cardId: s.cardId } : {}) },
+      name: s.name,
+      failOnNameCollision: false,
+      ...(s.worktree ? { worktree: s.worktree } : {}),
+    })
+  })
+
+  /**
+   * `order@1` can pin a model, an effort tier, an agent, a per-seat budget and
+   * an MCP config, and no shipped order does. An extra key here is not cosmetic:
+   * `spawn-launch-config.test.ts` walks the plan through the real spawn schema,
+   * so a caps key that appears is a value that reaches CC.
+   */
+  test.each(SEATS)('$seat: no per-order cap leaked into the spawn', s => {
+    const keys = Object.keys(s.plan())
+    for (const cap of ['model', 'effort', 'agent', 'maxBudgetUsd', 'mcpConfigPath']) {
+      expect(keys).not.toContain(cap)
+    }
+  })
+
+  /**
+   * The order NAMES its prompt builder rather than referencing one (four
+   * builders, four context types). That declaration is only worth anything if
+   * something checks it against the call the planner actually makes.
+   */
+  test('each order’s declared prompt builder is the one the planner calls', () => {
+    expect(EPIC_ORDERS.implementer.prompt).toBe('implementer')
+    expect(planImplementerSpawn(CTX, 't1').prompt).toBe(
+      buildImplementerPrompt({
+        projectUri: CTX.project,
+        projectRoot: CTX.projectRoot,
+        epicId: CTX.epicId,
+        cardId: 't1',
+        branch: worktreeBranch('epic/werk-epic/t1'),
+        base: 'main',
+        dependsOn: [],
+      }),
+    )
+    expect(EPIC_ORDERS.verifier.prompt).toBe('guard')
+    expect(planVerifierSpawn(CTX, 't1').prompt).toBe(
+      buildGuardPrompt({ projectUri: CTX.project, projectRoot: CTX.projectRoot, cardId: 't1' }),
+    )
+  })
+})
+
+/**
+ * STEP 3, at the seam the engine actually uses.
+ *
+ * `order-caps.test.ts` proves the composition; this proves the PLANNER is wired
+ * to it -- that a seat whose order asks for more privilege than the caller holds
+ * fails at plan time instead of being quietly dispatched at whatever the caller
+ * happened to hold.
+ */
+describe('an order can never widen the trust of whoever runs it', () => {
+  test('the shipped seats plan fine under the benevolent default', () => {
+    expect(() => planImplementerSpawn(CTX, 't1')).not.toThrow()
+    expect(() => planVerifierSpawn({ ...CTX, trustLevel: 'benevolent' }, 't1')).not.toThrow()
+  })
+
+  test('bypassPermissions from a merely-trusted caller is REFUSED, not downgraded', () => {
+    const ctx: EpicSpawnCtx = { ...CTX, trustLevel: 'trusted' }
+    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(OrderCapsError)
+    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(/bypassPermissions mode requires benevolent trust/)
+  })
+
+  test('the refusal names the order, so a log line says WHICH seat asked', () => {
+    expect(() => planOverseerSpawn({ ...CTX, trustLevel: 'untrusted' }, PROMPT_CTX)).toThrow(/OVERSEER@1/)
   })
 })

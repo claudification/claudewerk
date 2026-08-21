@@ -2,23 +2,38 @@
  * The spawn payload for one epic seat -- pure, so what a role is ALLOWED to do
  * is inspectable without spawning anything.
  *
- * This is where the three roles stop being vocabulary and start being different
+ * This is where the four seats stop being vocabulary and start being different
  * processes: a different prompt, a different settings blob (the mute), and a
  * different worktree. The role tag rides along on `epic` for grouping, but
  * nothing downstream re-reads it to grant a capability -- if the mute is missing
  * here it is missing at runtime, which is exactly the property the tests assert.
  *
+ * WHAT A SEAT *IS* NO LONGER LIVES IN THIS FILE. It lives in `epic-orders.ts`
+ * as four `order@1` artifacts, and this file COMPILES them:
+ *
+ *     CARD (what to build) + ORDER (who builds it) => the dispatched seat
+ *
+ * The planners below are the compile sites. Their exported signatures are
+ * unchanged and so is every byte they emit -- the orders were written to
+ * reproduce what was hardcoded here, and `epic-spawn-plan.test.ts` is what says
+ * so. What changed is that a fifth seat is now a file rather than an edit to
+ * this one.
+ *
  * Shape mirrors the nightshift dispatch call (`dispatchSpawn` input) so the two
  * engines stay one engine.
  */
 
+import { EPIC_ORDERS, orderRole } from '../shared/epic-orders'
 import { buildImplementerPrompt } from '../shared/epic-prompt-implementer'
 import { buildOverseerPrompt, type OverseerPromptCtx } from '../shared/epic-prompt-overseer'
 import { buildPlannerPrompt, type PlannerPromptCtx } from '../shared/epic-prompt-planner'
-import type { EpicLaunchTag, EpicRole } from '../shared/epic-run-types'
+import type { EpicLaunchTag } from '../shared/epic-run-types'
 import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { fnv1aHex } from '../shared/fnv1a'
 import { buildGuardPrompt } from '../shared/guard-prompt'
+import type { Order, OrderCaps } from '../shared/order'
+import { type ComposedOrderCaps, composeOrderCapsOrThrow, internalOrderCaller } from '../shared/order-caps'
+import type { TrustLevel } from '../shared/spawn-permissions'
 import type { UnattendedPermissionConfig } from '../shared/unattended-permissions'
 import { worktreeBranch } from '../shared/worktree-path'
 
@@ -44,8 +59,15 @@ import { worktreeBranch } from '../shared/worktree-path'
  *     external send, rm outside the worktree). A hook runs in EVERY mode.
  *   - the mute hook, for every seat that is not the overseer.
  *   - worktree isolation: worst case a worker dirties its own branch.
+ *
+ * THE VALUE NOW COMES FROM THE ORDER, not from this file. All four shipped
+ * orders declare `bypassPermissions`, so the emitted value is what it always
+ * was -- but the type is the order's, because narrowing ONE seat is now a
+ * one-line edit to that seat's order and must not require widening a type here
+ * to express it. `order-caps.ts` guarantees the direction: an order can move a
+ * seat DOWN the privilege ladder and never up.
  */
-export type EpicPermissionMode = 'bypassPermissions'
+export type EpicPermissionMode = NonNullable<OrderCaps['permissionMode']>
 
 export interface EpicSpawnPlan {
   cwd: string
@@ -66,6 +88,20 @@ export interface EpicSpawnPlan {
    * characters at the same generation.
    */
   failOnNameCollision: false
+  /**
+   * PER-SEAT CAPS, from the order, composed through `order-caps.ts`.
+   *
+   * All five are ABSENT for every seat the engine dispatches today, because no
+   * shipped order sets them -- and an absent key is not the same as an explicit
+   * `undefined` here: `spawn-launch-config.test.ts` asserts that every field the
+   * plan sets survives the spawn schema, so a key that appears must be a key the
+   * wire carries. Each of these is a real `SpawnRequest` field.
+   */
+  model?: string
+  effort?: OrderCaps['effort']
+  agent?: string
+  maxBudgetUsd?: number
+  mcpConfigPath?: string
 }
 
 export interface EpicSpawnCtx {
@@ -77,6 +113,19 @@ export interface EpicSpawnCtx {
   gen: number
   /** Per-project extra allow/deny rules layered on the unattended defaults. */
   permissions?: UnattendedPermissionConfig
+  /**
+   * Trust the ORDER's caps are composed against. Defaults to `benevolent`.
+   *
+   * WHY THE DEFAULT IS THE PERMISSIVE ONE, said out loud: this is a PLANNING
+   * step, and the real gate runs later. `epic-beat-actions.ts` hands the plan to
+   * `dispatchSpawn`, which evaluates the caller's ACTUAL `SpawnCallerContext`
+   * through the very same `evaluateSpawnPermission` -- so a seat a non-benevolent
+   * project may not spawn is refused there, exactly as it was before orders
+   * existed. Composing at plan time is the ADDITIONAL narrowing layer that
+   * matters when an order did not come from this repo (`werk-work-orders-share`),
+   * and a caller that knows its trust can pass it here to get the refusal early.
+   */
+  trustLevel?: TrustLevel
 }
 
 /**
@@ -158,21 +207,58 @@ function seatBranch(epicId: string, cardId: string, prefix = ''): string {
   return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
 }
 
-function base(
-  ctx: EpicSpawnCtx,
-  role: EpicRole,
-  cardId: string | undefined,
-  name: string,
-): Omit<EpicSpawnPlan, 'prompt'> {
+/**
+ * The order's deny rules, folded onto the project's own.
+ *
+ * ADD-ONLY, and `order@1` has no `allow` field at all, so this is the only
+ * direction that exists. When no order contributes a deny -- which is every
+ * seat today -- the project's config is passed through by reference and
+ * `buildEpicWorkerSettings` sees exactly what it saw before.
+ */
+function seatPermissions(ctx: EpicSpawnCtx, caps: ComposedOrderCaps): UnattendedPermissionConfig | undefined {
+  if (!caps.deny) return ctx.permissions
+  return { ...ctx.permissions, deny: caps.deny }
+}
+
+/** Only ever set a caps key the composition produced -- see `EpicSpawnPlan`. */
+function capsFields(caps: ComposedOrderCaps): Partial<EpicSpawnPlan> {
+  const out: Partial<EpicSpawnPlan> = {}
+  if (caps.model !== undefined) out.model = caps.model
+  if (caps.effort !== undefined) out.effort = caps.effort
+  if (caps.agent !== undefined) out.agent = caps.agent
+  if (caps.maxBudgetUsd !== undefined) out.maxBudgetUsd = caps.maxBudgetUsd
+  if (caps.mcpConfigPath !== undefined) out.mcpConfigPath = caps.mcpConfigPath
+  return out
+}
+
+/**
+ * THE COMPILE STEP: card + order -> everything about the seat except its prompt.
+ *
+ * The prompt is left to the caller because the four builders take four
+ * different context types; the order NAMES its builder (`order.prompt`) so the
+ * artifact is still readable, and `epic-orders.test.ts` asserts the declaration
+ * and the call agree. A union-typed dispatch here would buy a cast and nothing
+ * else.
+ */
+function compileSeat(ctx: EpicSpawnCtx, order: Order, cardId?: string): Omit<EpicSpawnPlan, 'prompt'> {
+  const caps = composeOrderCapsOrThrow(
+    order,
+    { ...(ctx.permissions?.deny ? { deny: ctx.permissions.deny } : {}) },
+    internalOrderCaller(ctx.trustLevel),
+  )
+  const role = orderRole(order)
+  const worktree = order.worktree && cardId ? seatBranch(ctx.epicId, cardId, order.worktree.prefix) : undefined
   return {
     cwd: ctx.project,
     headless: true,
     adHoc: true,
-    permissionMode: 'bypassPermissions',
-    settingsInline: buildEpicWorkerSettings(role, ctx.permissions),
+    permissionMode: caps.permissionMode ?? 'bypassPermissions',
+    settingsInline: buildEpicWorkerSettings(role, seatPermissions(ctx, caps)),
     epic: { epicId: ctx.epicId, role, gen: ctx.gen, ...(cardId ? { cardId } : {}) },
-    name,
+    name: seatName(ctx.epicId, ctx.gen, cardId, order.namePrefix),
     failOnNameCollision: false,
+    ...(worktree ? { worktree } : {}),
+    ...capsFields(caps),
   }
 }
 
@@ -183,7 +269,7 @@ function base(
  */
 export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCtx): EpicSpawnPlan {
   return {
-    ...base(ctx, 'overseer', undefined, seatName(ctx.epicId, ctx.gen, undefined)),
+    ...compileSeat(ctx, EPIC_ORDERS.overseer),
     prompt: buildOverseerPrompt(promptCtx),
   }
 }
@@ -202,7 +288,7 @@ export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCt
  */
 export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx): EpicSpawnPlan {
   return {
-    ...base(ctx, 'overseer', undefined, seatName(ctx.epicId, ctx.gen, undefined, 'planner ')),
+    ...compileSeat(ctx, EPIC_ORDERS.planner),
     prompt: buildPlannerPrompt(promptCtx),
   }
 }
@@ -251,16 +337,15 @@ export function planImplementerSpawn(
   baseRef = 'main',
   dependsOn: readonly string[] = [],
 ): EpicSpawnPlan {
-  const worktree = seatBranch(ctx.epicId, cardId)
+  const seat = compileSeat(ctx, EPIC_ORDERS.implementer, cardId)
   return {
-    ...base(ctx, 'implementer', cardId, seatName(ctx.epicId, ctx.gen, cardId)),
-    worktree,
+    ...seat,
     prompt: buildImplementerPrompt({
       projectUri: ctx.project,
       projectRoot: ctx.projectRoot,
       epicId: ctx.epicId,
       cardId,
-      branch: worktreeBranch(worktree),
+      branch: worktreeBranch(seat.worktree as string),
       base: baseRef,
       dependsOn: dependsOn.map(id => ({ id, branch: cardBranch(ctx.epicId, id) })),
     }),
@@ -275,8 +360,7 @@ export function planImplementerSpawn(
  */
 export function planVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
   return {
-    ...base(ctx, 'verifier', cardId, seatName(ctx.epicId, ctx.gen, cardId, 'verify ')),
-    worktree: seatBranch(ctx.epicId, cardId, 'verify-'),
+    ...compileSeat(ctx, EPIC_ORDERS.verifier, cardId),
     prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId }),
   }
 }
