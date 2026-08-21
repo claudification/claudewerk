@@ -14,6 +14,11 @@ import { type Priority, parseTags, stripTags, type TokenKind } from './task-toke
 export interface TaskChips {
   epic?: string
   priority?: Priority
+  /** Model hint. A slug, unvalidated here on purpose: the popup only ever offers
+   *  real ones, and the card writer validates again before anything reaches
+   *  disk. A second copy of the registry in the capture box would be one more
+   *  place to forget when a model ships. */
+  model?: string
   dependsOn: string[]
   relatesTo: string[]
 }
@@ -27,6 +32,7 @@ export interface TaskDraft {
   tags: string[]
   epic?: string
   priority?: Priority
+  model?: string
   dependsOn?: string[]
   relatesTo?: string[]
 }
@@ -56,6 +62,10 @@ export function buildTaskDraft(text: string, chips: TaskChips): TaskDraft | null
     tags: parseTags(trimmed),
     epic: chips.epic,
     priority: chips.priority,
+    // The `#model-<slug>` spelling is NOT folded here. It is folded once, on the
+    // write side (`foldAliases`), so an MCP caller and an agent hand-editing a
+    // card get the same normalisation this box does -- see project-task-input.ts.
+    model: chips.model,
     dependsOn: chips.dependsOn.length ? chips.dependsOn : undefined,
     relatesTo: chips.relatesTo.length ? chips.relatesTo : undefined,
   }
@@ -65,6 +75,7 @@ export function buildTaskDraft(text: string, chips: TaskChips): TaskDraft | null
 export function applyChip(chips: TaskChips, kind: TokenKind, value: string): TaskChips {
   if (kind === 'epic') return { ...chips, epic: value }
   if (kind === 'priority') return { ...chips, priority: value as Priority }
+  if (kind === 'model') return { ...chips, model: value }
   const key = kind === 'dependsOn' ? 'dependsOn' : 'relatesTo'
   return { ...chips, [key]: [...new Set([...chips[key], value])] }
 }
@@ -73,6 +84,7 @@ export function applyChip(chips: TaskChips, kind: TokenKind, value: string): Tas
 export function removeChip(chips: TaskChips, kind: TokenKind, value?: string): TaskChips {
   if (kind === 'epic') return { ...chips, epic: undefined }
   if (kind === 'priority') return { ...chips, priority: undefined }
+  if (kind === 'model') return { ...chips, model: undefined }
   const key = kind === 'dependsOn' ? 'dependsOn' : 'relatesTo'
   return { ...chips, [key]: chips[key].filter(v => v !== value) }
 }

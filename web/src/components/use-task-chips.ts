@@ -32,11 +32,12 @@ export function useTaskChips() {
   /**
    * A board switch invalidates every card-shaped chip: an epic id and a card id
    * are only meaningful on the board they came from, so carrying them across
-   * would write a dangling `epic:` the target has never heard of. Priority is
-   * board-independent and survives.
+   * would write a dangling `epic:` the target has never heard of. Priority and
+   * the model hint are board-independent and survive -- a model slug names an
+   * Anthropic model, not a row on this board.
    */
   const keepOnlyPortable = useCallback(() => {
-    setChips(prev => ({ ...emptyChips(), priority: prev.priority }))
+    setChips(prev => ({ ...emptyChips(), priority: prev.priority, model: prev.model }))
   }, [])
 
   const clear = useCallback(() => setChips(emptyChips()), [])

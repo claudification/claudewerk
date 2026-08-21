@@ -47,7 +47,14 @@ export function RunTaskDialog({
     return s ? projectPath(s.project) : ''
   })
   const savedDefaults = useMemo(() => loadRunTaskDefaults(), [])
-  const [model, setModel] = useState(savedDefaults.model)
+  // THE CARD'S `model:` HINT SEEDS THE FIELD, and stops there. It outranks the
+  // remembered default because it is a judgement about THIS card rather than a
+  // memory of the last launch -- but it is a seed, not a lock: the dropdown is
+  // right there and the human at this dialog is the one authority the hint does
+  // not get to overrule. Nothing clamps it here either, because no order is in
+  // play: LAUNCH spawns one conversation a human drives, at whatever tier that
+  // human picks.
+  const [model, setModel] = useState(task.model ?? savedDefaults.model)
   const [effort, setEffort] = useState<string>(savedDefaults.effort)
   const [useWorktree, setUseWorktree] = useState(savedDefaults.useWorktree)
   const [branchName, setBranchName] = useState(task.slug)

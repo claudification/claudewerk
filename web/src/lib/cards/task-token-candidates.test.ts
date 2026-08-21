@@ -1,3 +1,4 @@
+import { DROPDOWN_MODEL_ENTRIES } from '@shared/models'
 import { describe, expect, test } from 'vitest'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 import { candidatesFor } from './task-token-candidates'
@@ -40,6 +41,30 @@ describe('project candidates', () => {
 
   test('matches on path as well as name, so a half-remembered folder finds it', () => {
     expect(candidatesFor('project', src(), 'yemaya').map(r => r.label)).toEqual(['YEMAYA'])
+  })
+})
+
+describe('model candidates', () => {
+  test('offers the same models the Spawn/Run dropdown does', () => {
+    const rows = candidatesFor('model', src(), '')
+    expect(rows.map(r => r.value)).toContain('opus')
+    expect(rows.every(r => DROPDOWN_MODEL_ENTRIES.some(m => m.id === r.value))).toBe(true)
+  })
+
+  test('the VALUE is the slug handed to CC, and the detail explains it', () => {
+    const [row] = candidatesFor('model', src(), 'haiku')
+    expect(row.value).toBe('haiku')
+    expect(row.detail).toBeTruthy()
+  })
+
+  test('does not offer a dynamic alias whose family changes week to week', () => {
+    const values = candidatesFor('model', src(), '').map(r => r.value)
+    expect(values).not.toContain('best')
+    expect(values).not.toContain('opusplan')
+  })
+
+  test('draws on nothing from the board -- a model is not a card', () => {
+    expect(candidatesFor('model', { tasks: [], projects: [] }, '').length).toBeGreaterThan(0)
   })
 })
 

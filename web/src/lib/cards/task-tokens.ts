@@ -3,7 +3,7 @@
  *
  * TWO CLASSES OF TOKEN, and the difference is the whole design:
  *
- *   EATEN (`@epic`, `!priority`, `+depends-on`, `&relates-to`)
+ *   EATEN (`@epic`, `!priority`, `+depends-on`, `&relates-to`, `:model`)
  *     Committed only when the user ACCEPTS one from the autocomplete popup.
  *     On accept the text is removed from the doc and becomes a chip. Nothing
  *     is ever parsed out of the prose at submit time, so `&amp;` and
@@ -28,7 +28,7 @@
 import type { ProjectTaskMeta } from '@/hooks/use-project'
 
 /** The frontmatter key a token feeds. These become chips. */
-export type TokenKind = 'epic' | 'priority' | 'dependsOn' | 'relatesTo'
+export type TokenKind = 'epic' | 'priority' | 'dependsOn' | 'relatesTo' | 'model'
 
 /**
  * Everything a trigger can mean. `project` is the odd one: it sets no
@@ -44,12 +44,20 @@ export type ScanKind = TokenKind | 'project'
  * `/` reads like a path and matches the `claude://` model, and this surface has
  * no slash commands for it to collide with. Prose like "and/or" stays inert
  * because every trigger must sit at doc start or after whitespace.
+ *
+ * `:` IS THE MODEL TRIGGER BECAUSE THE WALL ALREADY SAYS SO. `:opus` means
+ * exactly this in the pulse query grammar (`web/src/lib/pulse/query-types.ts`),
+ * and inventing a second sigil for one axis is how a surface ends up teaching
+ * two things for one concept. It stays inert in prose for the reason every
+ * trigger does -- `note: x`, `10:30` and `claude://default` all have a non-space
+ * character to the left of the colon.
  */
 const TOKEN_TRIGGERS: Record<string, ScanKind> = {
   '@': 'epic',
   '!': 'priority',
   '+': 'dependsOn',
   '&': 'relatesTo',
+  ':': 'model',
   '/': 'project',
 }
 

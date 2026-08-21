@@ -62,7 +62,7 @@ interface QuickTaskChipsProps {
 }
 
 export function QuickTaskChips({ chips, onRemove }: QuickTaskChipsProps) {
-  const has = chips.epic || chips.priority || chips.dependsOn.length > 0 || chips.relatesTo.length > 0
+  const has = chips.epic || chips.priority || chips.model || chips.dependsOn.length > 0 || chips.relatesTo.length > 0
   if (!has) return null
 
   const remove = (kind: TokenKind, value: string) => onRemove(kind, value)
@@ -80,6 +80,7 @@ export function QuickTaskChips({ chips, onRemove }: QuickTaskChipsProps) {
           onRemove={remove}
         />
       )}
+      {chips.model && <Chip kind="model" value={chips.model} label={`model ${chips.model}`} onRemove={remove} />}
       {chips.dependsOn.map(id => (
         <Chip key={`dep-${id}`} kind="dependsOn" value={id} label={`waits on ${id}`} onRemove={remove} />
       ))}
