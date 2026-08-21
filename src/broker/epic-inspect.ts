@@ -13,6 +13,7 @@
  */
 
 import { planEpic } from '../shared/epic-ready'
+import { isSameProject } from '../shared/project-uri'
 import type { Conversation, EpicBatonQuery, EpicInspectResult, EpicRunListEntry } from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { fetchBoardCards, fetchEpicRun } from './epic-broker-rpc'
@@ -109,11 +110,15 @@ export async function inspectEpic(
 export async function listEpicRuns(deps: SweepDeps, project: string): Promise<EpicRunListEntry[]> {
   const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
   const ids = new Set<string>()
+  // BY PROJECT IDENTITY, never by raw string. The caller types
+  // `claude:///path` while the conversation store holds `claude://default/path`
+  // (and pre-2026-04-25 rows hold the quad-slash scar); raw equality here made
+  // `list` answer "no runs" for a project `inspect` could see running.
   for (const [epicId, group] of groups) {
-    if (group.project === project) ids.add(epicId)
+    if (isSameProject(group.project, project)) ids.add(epicId)
   }
   for (const armed of listArmedEpics()) {
-    if (armed.project === project) ids.add(armed.epicId)
+    if (isSameProject(armed.project, project)) ids.add(armed.epicId)
   }
 
   const rows = await Promise.all(
