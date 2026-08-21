@@ -21,6 +21,7 @@ import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
 import { patchCardMeta, readCardMeta } from './epic-card-meta'
+import { SEAT_HANDLERS } from './epic-seat-handlers'
 
 type OpOutcome = Omit<EpicResult, 'type' | 'requestId' | 'op'>
 type EpicOpHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
@@ -39,6 +40,10 @@ function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
 }
 
 const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
+  // The three CARD-scoped ops. Spread in rather than written here: they share
+  // none of the epic-scoped helpers below and they address a different file.
+  ...(SEAT_HANDLERS as Record<'seat_get' | 'seat_claim' | 'seat_release', EpicOpHandler>),
+
   /**
    * Arm / resume / reconfigure. Carries the LEASE back for the same reason `get`
    * does: a start reply is now read as the run's status block, and a status

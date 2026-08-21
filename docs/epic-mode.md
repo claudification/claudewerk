@@ -221,9 +221,14 @@ moving the question card to `done` -- unblocks the original with no special case
 
 ```
 <project>/.rclaude/project/
-  cards/<epicId>.md          the epic card. Carries the LEASE:
+  cards/<epicId>.md          the epic card. Carries the OVERSEER LEASE:
                                overseer: conv_...   overseer_gen: 7
                                overseer_at: <iso>
+  cards/<cardId>.md          a work card. Carries the SEAT LEASES, one per role:
+                               seat_implementer: conv_...  seat_implementer_gen: 1
+                               seat_implementer_at: <iso>
+                               seat_verifier: conv_...     seat_verifier_gen: 1
+                               seat_verifier_at: <iso>
   epics/<epicId>/
     run.md                   EpicRunMeta frontmatter + the overseer's digest
     log.md                   THE BATON -- append-only, never rewritten
@@ -237,6 +242,49 @@ a number would put two different beats in the baton under one id.
 The baton is the overseer's entire memory. Every generation is a fresh
 conversation with no transcript from the last one -- which is what lets an epic
 run past any context horizon.
+
+### 6a. The seat lease -- one writer per `(epic, card, role)`
+
+The engine's dispatch guards (`inFlight`, `inVerify`, the just-dispatched pending
+set) are all guesses made by the party that is **not** holding the worktree: the
+broker reasons from a registry it knows is behind, plus a log. Every guard of
+that shape is wrong at exactly the moment its inputs are stale, which is the same
+moment a duplicate happens. On 2026-08-21 two implementers were dispatched onto
+one card and, because `cardBranch` derives the worktree name from the card id,
+they shared **one worktree** -- the loser's edits were staged into the winner's
+commit with no conflict and no signal.
+
+So a seat claims its own lease when it connects, `epic_seat(action="claim")`,
+before it reads the card or touches git. It is the same CAS as the overseer lease
+(`evaluateLease`), at a different scope:
+
+| | Overseer lease | Seat lease |
+|---|---|---|
+| Key | the epic | `(epicId, cardId, role)` |
+| Lives on | the epic card | the **work** card |
+| Claimed by | the beat, before it spawns | the **seat itself**, on connect |
+| Refusal means | this beat does not wake an overseer | this conversation **exits non-zero** |
+
+**Role is part of the key**, so an implementer and a verifier on one card both
+proceed -- that is the whole reason `inVerify` is a separate lane from
+`inFlight`. Only a same-role collision is a collision.
+
+**Three releases, and the third is the one that matters.** The seat releases
+explicitly when it finishes; a seat that dies without releasing loses the lease
+to the registry-liveness check; and a holder that is **alive but wedged** (the
+classic case is blocking in a Bash call, which emits nothing and reads as idle)
+loses it after `LEASE_STALE_MS`. That last one only works because the claim path
+has **no early return above the CAS** -- the defect in `epic-beat.ts:251` that
+deadlocks the overseer lease is exactly a return placed above the question.
+
+**It is a mutex between seats, never an authorisation gate.** If the claim cannot
+reach the broker at all, the seat is told to PROCEED and note it; the dispatch
+guard above is the protection for that beat. A lease that becomes a precondition
+for working is a new way for the whole engine to stop.
+
+Every collision -- a refusal, and a takeover of a dead or wedged holder -- is
+written to the baton as `dispatch-failed`, naming both conversations. A belt that
+fires invisibly teaches nobody that the guard above it has a hole.
 
 ---
 
@@ -375,7 +423,10 @@ or the **RUN** button on any epic card in the EPICS view.
 ### The verbs
 
 Everything an epic run can be driven, inspected or debugged by is one MCP tool,
-`epic_run`, and one route, `POST /api/epic`.
+`epic_run`, and one route, `POST /api/epic`. (The one exception is `epic_seat` /
+`POST /api/epic-seat` -- §6a -- and it is an exception for a reason: every action
+below names a `project` and an `epicId`, and a seat knows neither. It knows only
+that it is itself.)
 
 | Action | Does | Costs |
 |---|---|---|
@@ -389,9 +440,11 @@ Everything an epic run can be driven, inspected or debugged by is one MCP tool,
 | `inspect` | **everything at once** (below) | broker |
 | `break_lease` | release a stuck overseer so the next beat wakes a fresh one | broker |
 
-`lease`, `patch`, `log_append` and `release` stay ENGINE-INTERNAL and are refused
-over HTTP: exposing them would let a caller forge a generation or hand-edit the
-append-only baton, which is the one thing the baton exists to prevent.
+`lease`, `patch`, `log_append`, `release` and the three `seat_*` ops stay
+ENGINE-INTERNAL and are refused over `/api/epic`: exposing them would let a caller
+forge a generation, hand-edit the append-only baton, or evict a live worker from
+its own card. The seat ops are reached only through `/api/epic-seat`, which never
+takes a card from the request -- it reads one from the caller's own launch tag.
 `break_lease` is `release`'s audited public face -- it refuses a live holder
 unless forced, and writes who broke it and why into the baton.
 

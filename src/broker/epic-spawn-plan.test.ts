@@ -473,7 +473,9 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
     )
     expect(EPIC_ORDERS.verifier.prompt).toBe('guard')
     expect(planVerifierSpawn(CTX, 't1').prompt).toBe(
-      buildGuardPrompt({ projectUri: CTX.project, projectRoot: CTX.projectRoot, cardId: 't1' }),
+      // `epicId` and nothing else: it is what switches the seat-lease order on,
+      // and a Guard dispatched by the epic engine is a WERK seat.
+      buildGuardPrompt({ projectUri: CTX.project, projectRoot: CTX.projectRoot, cardId: 't1', epicId: CTX.epicId }),
     )
   })
 })

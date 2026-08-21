@@ -361,6 +361,8 @@ export function planImplementerSpawn(
 export function planVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
   return {
     ...compileSeat(ctx, EPIC_ORDERS.verifier, cardId),
-    prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId }),
+    // `epicId` is what switches the seat-lease order on: this Guard is a WERK
+    // seat, unlike the quest engine's, so `epic_seat` will answer it.
+    prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId, epicId: ctx.epicId }),
   }
 }

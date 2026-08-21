@@ -4994,6 +4994,9 @@ export type EpicOpKind =
   | 'log_append' // append-only baton entry (NEVER rewrites)
   | 'lease' // compare-and-swap the overseer singleton on the epic card
   | 'release' // drop the lease, keeping the generation counter
+  | 'seat_get' // read one (card, role) seat lease off the WORK card
+  | 'seat_claim' // compare-and-swap that seat lease -- the per-card mutex
+  | 'seat_release' // drop it, keeping the generation counter
   | 'pause'
   | 'abort'
   | 'clear' // acknowledge a run that has ENDED, so it leaves the wall's tail
@@ -5026,6 +5029,30 @@ export interface EpicLeaseInput {
   /** Swap the real conversation id in over a `pending-` placeholder, same
    *  generation. See `EpicLeaseRequest.adopt` in epic-lease.ts. */
   adopt?: boolean
+}
+
+/**
+ * seat_get / seat_claim / seat_release payload -- the PER-CARD mutex between
+ * seats (epic-seat-lease.ts).
+ *
+ * Addressed by `(cardId, role)` and written to the WORK CARD's frontmatter, not
+ * the epic's: the envelope's `epicId` still says which run this belongs to, but
+ * the lease itself belongs to the card whose worktree is at stake. Role is part
+ * of the key because an implementer and a verifier on one card are two
+ * legitimate concurrent seats.
+ */
+export interface EpicSeatInput {
+  cardId: string
+  role: EpicRole
+  /** seat_claim / seat_release: the claimant. */
+  convId?: string
+  /** seat_claim: the generation the claimant's broker read a moment ago. THE
+   *  CAS -- two seats racing a free card both expect the same number and only
+   *  one of them is still right by the time the sentinel evaluates it. */
+  expectGen?: number
+  /** seat_claim: broker-supplied, exactly as `EpicLeaseInput.holderAlive`. The
+   *  sentinel cannot know it and must not guess. */
+  holderAlive?: boolean
 }
 
 /** log_append payload. */
@@ -5062,6 +5089,7 @@ export interface EpicRequest {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  seat?: EpicSeatInput
   baton?: EpicBatonQuery
   reason?: string
 }
@@ -5099,6 +5127,7 @@ export interface EpicOp {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  seat?: EpicSeatInput
   baton?: EpicBatonQuery
   reason?: string
 }
@@ -5145,12 +5174,19 @@ export interface EpicResult {
   dispatchCounts?: Record<string, number>
   /** log_append -- the persisted entry. */
   logEntry?: EpicLogEntry
-  /** lease -- granted or refused, with the holder either way. */
-  lease?: { granted: boolean; convId: string; gen: number; at: string; reason?: string }
-  /** get -- the lease as it stands, read off the epic card. A SEPARATE field
-   *  from `lease` above on purpose: that one is a VERDICT on a CAS attempt, this
-   *  one is a fact about the world, and collapsing them would make `granted`
-   *  mean two different things depending on which op you asked. */
+  /**
+   * lease / seat_claim -- granted or refused, with the holder either way.
+   *
+   * `replaced` is the holder a GRANT displaced (dead, or wedged past the stale
+   * window). It is not decoration: a grant that displaced somebody is still a
+   * collision, and the caller writes a different baton line for it than for an
+   * uncontested claim. Absent means nobody was displaced.
+   */
+  lease?: { granted: boolean; convId: string; gen: number; at: string; reason?: string; replaced?: EpicLease }
+  /** get / seat_get -- the lease as it stands, read off the card. A SEPARATE
+   *  field from `lease` above on purpose: that one is a VERDICT on a CAS
+   *  attempt, this one is a fact about the world, and collapsing them would make
+   *  `granted` mean two different things depending on which op you asked. */
   currentLease?: EpicLease | null
   error?: string
 }

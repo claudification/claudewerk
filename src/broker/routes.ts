@@ -29,6 +29,7 @@ import { createCommitsRouter } from './routes/commits'
 import { createConversationsRouter } from './routes/conversations'
 import { createDeskDebugRouter } from './routes/desk-debug'
 import { createEpicRouter } from './routes/epic'
+import { createEpicSeatRouter } from './routes/epic-seat'
 import { createForkRouter } from './routes/fork'
 import { createGatewayRouter } from './routes/gateways'
 import { createMcpRouter } from './routes/mcp-server'
@@ -314,6 +315,7 @@ export function createRouter(options: RouteOptions): Hono {
   app.route('/', createPermissionsRouter(conversationStore, helpers))
   app.route('/', createQuestRouter(conversationStore, helpers))
   app.route('/', createEpicRouter(conversationStore, helpers))
+  app.route('/', createEpicSeatRouter(conversationStore, helpers))
   app.route('/', createSpawnRouter(conversationStore, helpers))
   app.route('/', createForkRouter(conversationStore, helpers))
   app.route('/', createChatApiRouter(conversationStore, store.kv, helpers))

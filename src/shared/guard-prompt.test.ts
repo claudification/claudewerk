@@ -33,3 +33,32 @@ describe('buildGuardPrompt', () => {
     expect(buildGuardPrompt(base)).not.toContain('belongs to quest')
   })
 })
+
+/**
+ * THE SEAT LEASE IS EPIC-ONLY. `epic_seat` is gated to WERK-launched seats, so
+ * ordering a QUEST Guard to call it would hand every quest verification a 403 it
+ * can do nothing about -- and an instruction that reliably fails is how an agent
+ * learns to ignore instructions.
+ */
+describe('the seat-lease order rides on epicId', () => {
+  const epic = buildGuardPrompt({ ...base, epicId: 'epic-project-runner' })
+
+  it('a QUEST Guard is never told to claim a seat', () => {
+    const quest = buildGuardPrompt({ ...base, quest: 'floppy-panda' })
+    expect(quest).not.toContain('epic_seat')
+  })
+
+  it('an EPIC Guard claims its VERIFIER seat, before it checks anything out', () => {
+    expect(epic).toContain('epic_seat(action="claim")')
+    expect(epic).toContain('verifier seat')
+    expect(epic.indexOf('CLAIM YOUR SEAT FIRST')).toBeLessThan(epic.indexOf('INDEPENDENT VERIFICATION'))
+  })
+
+  it('and it is told the implementer on the same card is NOT a collision', () => {
+    expect(epic).toContain('two DIFFERENT seats')
+  })
+
+  it('it gives the seat back once the verdict is written', () => {
+    expect(epic).toContain('epic_seat(action="release")')
+  })
+})
