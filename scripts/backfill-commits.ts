@@ -34,6 +34,12 @@
  *   --broker <url>      broker origin                    (default: $RCLAUDE_BROKER)
  *   --concurrency <n>   in-flight POSTs                  (default: 16)
  *   --dry-run           read + report, POST nothing
+ *
+ * CRAP RULING for the two suppressions below: both are flagged on CRAP only, on
+ * an ESTIMATED coverage tier, and both sit at or under the cognitive threshold.
+ * What fallow is pricing is that a `scripts/` file has no coverage map -- not
+ * that a CLI entry point branches badly. Splitting the flag table or the repo
+ * loop further would relocate those decisions rather than remove them.
  */
 
 import { hostname, userInfo } from 'node:os'
@@ -43,6 +49,7 @@ import { type BackfillTally, postCommits, resolveBrokerOrigin } from './backfill
 
 const DEFAULT_AUTHORS = ['j@duplo.org', 'jonas@duplo.org']
 const DEFAULT_SINCE = '13 months ago'
+const DEFAULT_CONCURRENCY = 16
 
 interface Options {
   repos: string[]
@@ -54,38 +61,80 @@ interface Options {
   dryRun: boolean
 }
 
+/** Everything the flags can set, before defaults are resolved. */
+interface Draft {
+  repos: string[]
+  authors: string[]
+  since: string
+  allAuthors: boolean
+  sentinel: string
+  broker: string
+  concurrency: number
+  dryRun: boolean
+}
+
+/**
+ * One handler per flag, keyed by the flag itself -- a `Record` rather than the
+ * else-if ladder this started as (STRATEGY MAPS OVER CHAINS). `value` is the
+ * next argv entry, already consumed by the caller for the flags that take one;
+ * membership in `TAKES_VALUE` is what decides that, so the two never disagree.
+ */
+const FLAGS: Record<string, (draft: Draft, value: string) => void> = {
+  '--since': (d, v) => {
+    d.since = v
+  },
+  '--author': (d, v) => d.authors.push(v),
+  '--all-authors': d => {
+    d.allAuthors = true
+  },
+  '--sentinel': (d, v) => {
+    d.sentinel = v
+  },
+  '--broker': (d, v) => {
+    d.broker = v
+  },
+  '--concurrency': (d, v) => {
+    d.concurrency = Number(v) || DEFAULT_CONCURRENCY
+  },
+  '--dry-run': d => {
+    d.dryRun = true
+  },
+}
+
+const TAKES_VALUE = new Set(['--since', '--author', '--sentinel', '--broker', '--concurrency'])
+
+// See CRAP RULING in the header.
+// fallow-ignore-next-line complexity
 function parseArgs(argv: string[]): Options {
-  const repos: string[] = []
-  const authors: string[] = []
-  let since = DEFAULT_SINCE
-  let allAuthors = false
-  let sentinel = process.env.CLAUDWERK_SENTINEL_NAME || 'default'
-  let broker = process.env.RCLAUDE_BROKER || ''
-  let concurrency = 16
-  let dryRun = false
+  const draft: Draft = {
+    repos: [],
+    authors: [],
+    since: DEFAULT_SINCE,
+    allAuthors: false,
+    sentinel: process.env.CLAUDWERK_SENTINEL_NAME || 'default',
+    broker: process.env.RCLAUDE_BROKER || '',
+    concurrency: DEFAULT_CONCURRENCY,
+    dryRun: false,
+  }
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] ?? ''
-    const next = (): string => argv[++i] ?? ''
-    if (arg === '--since') since = next()
-    else if (arg === '--author') authors.push(next())
-    else if (arg === '--all-authors') allAuthors = true
-    else if (arg === '--sentinel') sentinel = next()
-    else if (arg === '--broker') broker = next()
-    else if (arg === '--concurrency') concurrency = Number(next()) || 16
-    else if (arg === '--dry-run') dryRun = true
-    else if (arg.startsWith('--')) throw new Error(`unknown flag ${arg}`)
-    else repos.push(arg)
+    const handler = FLAGS[arg]
+    if (handler) {
+      handler(draft, TAKES_VALUE.has(arg) ? (argv[++i] ?? '') : '')
+    } else if (arg.startsWith('--')) {
+      throw new Error(`unknown flag ${arg}`)
+    } else {
+      draft.repos.push(arg)
+    }
   }
 
   return {
-    repos,
-    since,
-    authors: allAuthors ? [] : authors.length > 0 ? authors : DEFAULT_AUTHORS,
-    sentinel,
-    broker,
-    concurrency,
-    dryRun,
+    ...draft,
+    // `--all-authors` beats an explicit `--author`: asking for everyone and then
+    // filtering to one would be a contradiction, and the wider read is the safer
+    // way to resolve it -- it shows MORE, it does not silently hide a repo.
+    authors: draft.allAuthors ? [] : draft.authors.length > 0 ? draft.authors : DEFAULT_AUTHORS,
   }
 }
 
@@ -136,6 +185,8 @@ function report(label: string, tally: BackfillTally): void {
   )
 }
 
+// See CRAP RULING in the header.
+// fallow-ignore-next-line complexity
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2))
   if (opts.repos.length === 0) {

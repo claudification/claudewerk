@@ -38,6 +38,50 @@ function logIngest(commit: ReturnType<typeof normalizeCommit>, inserted: boolean
   )
 }
 
+/**
+ * Everything that follows a commit actually landing: the counters it moves and
+ * the frames it sends. Split out of `ingestCommit` because that function was
+ * already at the edge and `announce` pushed it over -- and because the two
+ * halves answer different questions ("did the row go in" vs "who hears about
+ * it"), which is the seam worth having anyway.
+ *
+ * `announce` is FALSE for a git backfill. Every frame here says a commit just
+ * happened; a `git log` walk inserts tens of thousands from last year, and
+ * sending them would fill the COMMIT RIVER with 2025 as though it were the last
+ * two minutes and hand the wall's pulse a spike that never occurred. The COUNTERS
+ * still move either way -- a backfilled commit really is in that project's
+ * history and the total must say so. Only the announcement is suppressed.
+ */
+function recordSideEffects(
+  conversationStore: ConversationStore,
+  enriched: ReturnType<typeof normalizeCommit> & { conversationName: string | null },
+  row: CommitRow,
+  announce: boolean,
+): void {
+  // TWO TIERS, deliberately. The count is safe for anyone who can read the
+  // conversation; the full row carries host disk paths and is gated harder (see
+  // commit-ledger/broadcast.ts). The first version of this shipped through an
+  // unscoped broadcast -- do not collapse them back together.
+  if (announce) broadcastCommitRecorded(conversationStore, row)
+
+  // The PLACE tier. A commit with no conversation still lands in a project, so
+  // this bump is OUTSIDE the conversation branch below -- a human commit must
+  // move the project card too.
+  for (const project of bumpProjectCommitStats(enriched)) {
+    if (announce) broadcastProjectCommitStats(conversationStore, project, { ...getProjectCommitStats(project) })
+  }
+
+  if (!enriched.conversationId) return
+  const next = bumpCommitCount(enriched.conversationId)
+  // The count lives OUTSIDE the conversation record, so nothing in the store's
+  // own mutation paths knows it changed. Without this, a cached summary keeps
+  // serving the pre-commit number to every `conversations_list` -- i.e. correct
+  // while you stay connected (the frame below patches the client) and stale the
+  // moment you reload.
+  conversationStore.invalidateSummaryFor(enriched.conversationId)
+  if (announce) broadcastCommitCount(conversationStore, enriched.conversationId, enriched.repoUri, next)
+}
+
 export function ingestCommit(conversationStore: ConversationStore, payload: CommitIngestPayload): IngestOutcome {
   if (!isCommitLedgerReady()) return { status: 503, body: { error: 'Ledger unavailable' } }
 
@@ -60,36 +104,7 @@ export function ingestCommit(conversationStore: ConversationStore, payload: Comm
 
     if (result.inserted) {
       const row = { ...enriched, id: result.id, profile, supersededBy: null } as CommitRow
-      // A BACKFILL IS HISTORY, NOT NEWS. Every frame below announces a commit as
-      // something that just happened; a `git log` walk inserts tens of thousands
-      // of commits from last year, and broadcasting them would fill the COMMIT
-      // RIVER with 2025 as though it were the last two minutes -- and hand the
-      // wall's pulse a spike that never occurred. The rows still land, and a
-      // reader still finds them; nothing is told they are new.
-      const announce = !payload.backfill
-      // TWO TIERS, deliberately. The count is safe for anyone who can read the
-      // conversation; the full row carries host disk paths and is gated harder
-      // (see commit-ledger/broadcast.ts). The first version of this shipped
-      // through an unscoped broadcast -- do not collapse them back together.
-      if (announce) broadcastCommitRecorded(conversationStore, row)
-      // The PLACE tier. A commit with no conversation still lands in a project,
-      // so this bump is OUTSIDE the conversation branch below -- a human commit
-      // must move the project card too. The BUMP happens either way (a backfilled
-      // commit really is in that project's history and the total must say so);
-      // only the announcement is suppressed.
-      for (const project of bumpProjectCommitStats(enriched)) {
-        if (announce) broadcastProjectCommitStats(conversationStore, project, { ...getProjectCommitStats(project) })
-      }
-      if (enriched.conversationId) {
-        const next = bumpCommitCount(enriched.conversationId)
-        // The count lives OUTSIDE the conversation record, so nothing in the
-        // store's own mutation paths knows it changed. Without this, a cached
-        // summary keeps serving the pre-commit number to every `conversations_list`
-        // -- i.e. correct while you stay connected (the frame below patches the
-        // client) and stale the moment you reload.
-        conversationStore.invalidateSummaryFor(enriched.conversationId)
-        broadcastCommitCount(conversationStore, enriched.conversationId, enriched.repoUri, next)
-      }
+      recordSideEffects(conversationStore, enriched, row, !payload.backfill)
     }
     return {
       status: result.inserted ? 202 : 200,

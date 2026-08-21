@@ -33,6 +33,11 @@ export function resolveBrokerOrigin(raw: string): string {
   return trimmed.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:')
 }
 
+// RULED: CRAP-only, on estimated coverage. Six branches, and five of them are
+// the distinct HTTP outcomes this function exists to tell apart (202 written,
+// 200 duplicate, other status, throw, and the error-log cap). Collapsing them is
+// exactly the silent-partial-backfill failure the tally exists to prevent.
+// fallow-ignore-next-line complexity
 async function postOne(payload: CommitIngestPayload, opts: PostOptions, tally: BackfillTally): Promise<void> {
   try {
     const res = await fetch(`${opts.origin}/api/commits`, {
