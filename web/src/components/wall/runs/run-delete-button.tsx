@@ -12,18 +12,17 @@
  * which is stricter than `clear` and deliberately so: this one moves the file
  * those seats are writing to.
  *
- * VISUALLY DISTINCT FROM `clear`, because it sits directly beside it and the two
- * are not interchangeable -- a click that lands one button over must not read as
- * the same gesture. Same arm-then-confirm as everything else on this pane (a
- * wall is often a detached window where a native confirm steals focus), with the
- * armed label carrying the one fact a human will otherwise get wrong: the CARDS
+ * SAME MACHINE AS `clear`, DIFFERENT FACE. The arm-then-confirm behaviour is
+ * `useArmedAction`, shared with the button next door; what is NOT shared is how
+ * it looks, because the two sit side by side and are not interchangeable -- a
+ * click that lands one button over must not read as the same gesture. The armed
+ * label carries the one fact a human will otherwise get wrong: the CARDS
  * survive.
  */
 
-import { useEffect, useState } from 'react'
 import { deleteEpicRun } from '@/lib/epic-inspect-api'
-import { cn, haptic } from '@/lib/utils'
-import { ARM_TIMEOUT_MS } from './run-actions'
+import { cn } from '@/lib/utils'
+import { useArmedAction } from './use-armed-action'
 
 const TITLE =
   'Remove this run from the record. The run file and its baton are MOVED to ' +
@@ -31,33 +30,11 @@ const TITLE =
   'Refused while the run is armed or running, or while any of its conversations is still live.'
 
 export function RunDeleteButton({ project, epicId, onDone }: { project: string; epicId: string; onDone: () => void }) {
-  const [armed, setArmed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!armed) return
-    const timer = setTimeout(() => setArmed(false), ARM_TIMEOUT_MS)
-    return () => clearTimeout(timer)
-  }, [armed])
-
-  async function press(): Promise<void> {
-    if (!armed) {
-      setArmed(true)
-      setNote(null)
-      return
-    }
-    setArmed(false)
-    haptic('tap')
-    setBusy(true)
-    const reply = await deleteEpicRun(project, epicId, 'deleted from the wall')
-    setBusy(false)
-    // A REFUSAL IS THE INTERESTING ANSWER, exactly as it is for `clear`: the two
-    // refusals here name a live seat or a live run, and a button that swallowed
-    // them would leave the row on the pane with no reason given.
-    setNote(reply.ok ? null : reply.error || 'delete failed')
-    if (reply.ok) onDone()
-  }
+  const { armed, busy, note, press } = useArmedAction(
+    () => deleteEpicRun(project, epicId, 'deleted from the wall'),
+    onDone,
+    'delete failed',
+  )
 
   return (
     <>
@@ -66,7 +43,7 @@ export function RunDeleteButton({ project, epicId, onDone }: { project: string; 
         title={TITLE}
         disabled={busy}
         aria-pressed={armed}
-        onClick={() => void press()}
+        onClick={press}
         className={cn('wall-run-act wall-run-act-danger', armed && 'wall-run-act-danger-armed')}
       >
         {busy ? '...' : armed ? 'delete run, keep cards -- sure?' : 'delete'}
