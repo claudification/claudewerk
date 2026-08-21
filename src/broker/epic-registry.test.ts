@@ -2,10 +2,14 @@ import { Database } from 'bun:sqlite'
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   forgetArmedEpic,
+  forgetDeletedEpic,
   initArmedEpics,
   isArmed,
+  isDeletedEpic,
   listArmedEpics,
+  listDeletedEpics,
   noteArmedEpic,
+  noteDeletedEpic,
   resetArmedEpics,
 } from './epic-registry'
 import { epicsToWatch } from './epic-sweep'
@@ -220,5 +224,66 @@ describe('the armed set survives a broker restart', () => {
     resetArmedEpics()
     expect(() => noteArmedEpic(P, 'e1')).not.toThrow()
     expect(isArmed(P, 'e1')).toBe(true)
+  })
+
+  /**
+   * A DELETED RUN MUST NOT COME BACK ON THE NEXT BOOT -- the same durability
+   * question as the armed set, asked the other way round.
+   *
+   * The broker does not find runs on disk, so moving the artifact away is not
+   * enough on its own: the conversation registry keeps a seat long after it
+   * ends, which would rebuild the group forever. An in-memory-only tombstone
+   * would work exactly until the next restart and then resurrect every deleted
+   * run at once.
+   */
+  test('a deleted run stays deleted across a restart', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteDeletedEpic(P, 'e1')
+
+    restart(kv)
+
+    expect(isDeletedEpic(P, 'e1')).toBe(true)
+    expect(listDeletedEpics()).toEqual([{ project: P, epicId: 'e1' }])
+  })
+
+  test('and the sweep therefore does NOT find it, even with a seat still in the registry', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteDeletedEpic(P, 'e1')
+    restart(kv)
+
+    const seats = [{ id: 'c1', project: P, status: 'ended', launchConfig: { epic: { epicId: 'e1', role: 'implementer', gen: 1 } } }]
+
+    expect(epicsToWatch(seats as never, () => false).map(g => g.epicId)).toEqual([])
+  })
+
+  test('the tombstone is spelling-blind, exactly as the armed set is', () => {
+    noteDeletedEpic('claude:///Users/jonas/projects/remote-claude', 'e1')
+    expect(isDeletedEpic('claude://default/Users/jonas/projects/remote-claude', 'e1')).toBe(true)
+  })
+
+  /** ARMING UN-DELETES. A `start` writes a fresh run.md, so leaving the
+   *  tombstone would keep a genuinely running run off every surface. */
+  test('forgetting the tombstone brings the epic back into the sweep', () => {
+    const kv = freshKv()
+    initArmedEpics(kv)
+    noteDeletedEpic(P, 'e1')
+    noteArmedEpic(P, 'e1')
+    expect(epicsToWatch([], () => false)).toEqual([])
+
+    forgetDeletedEpic(P, 'e1')
+
+    expect(epicsToWatch([], () => false).map(g => g.epicId)).toEqual(['e1'])
+    // ...and it stays back after a restart, rather than being re-buried.
+    restart(kv)
+    expect(isDeletedEpic(P, 'e1')).toBe(false)
+  })
+
+  test('a store holding tombstone garbage boots empty instead of throwing', () => {
+    const kv = freshKv()
+    kv.set('epic:deleted', [{ project: 'claude://s/p' }, null, 'nonsense'])
+    expect(() => initArmedEpics(kv)).not.toThrow()
+    expect(listDeletedEpics()).toEqual([])
   })
 })

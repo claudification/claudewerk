@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseFrontmatter } from '../shared/frontmatter'
@@ -347,5 +347,143 @@ describe('clear -- acknowledging a run that has ended', () => {
     op('start')
 
     expect(op('get').run?.acknowledgedAt).toBeUndefined()
+  })
+})
+
+/**
+ * DELETE -- removing a run from the record, RECOVERABLY.
+ *
+ * Three properties, and they are the three the 2026-08-20 refusal demanded:
+ * nothing is destroyed (it is a `mv`, and the files must still be there
+ * afterwards), a live run cannot be tidied away (the allowlist), and the run's
+ * own account of why it went travels INTO the tombstone rather than being lost
+ * with it.
+ */
+describe('delete -- removing a run from the record', () => {
+  const deletedYard = () => join(root, '.rclaude', 'project', 'epics', '.deleted')
+
+  /** The one tombstone under `.deleted/`, or null. Named rather than globbed at
+   *  the call site: every assertion below is about the SAME directory. */
+  function tombstone(): string | null {
+    if (!existsSync(deletedYard())) return null
+    const [dir] = readdirSync(deletedYard())
+    return dir ? join(deletedYard(), dir) : null
+  }
+
+  test('an ENDED run is moved out of the live tree, not removed from disk', () => {
+    op('start')
+    op('abort', { reason: 'armed the wrong card' })
+
+    const res = op('delete', { reason: 'duplicate run' }, T0 + 5_000)
+
+    expect(res.ok).toBe(true)
+    // GONE from where every surface looks...
+    expect(op('get').run).toBeNull()
+    expect(existsSync(join(root, '.rclaude', 'project', 'epics', EPIC))).toBe(false)
+    // ...and STILL THERE where a human can put it back. This assertion IS the
+    // answer to "deleting the artifact destroys the run's history".
+    const grave = tombstone()
+    expect(grave).toBeTruthy()
+    expect(existsSync(join(grave as string, 'run.md'))).toBe(true)
+    expect(existsSync(join(grave as string, 'log.md'))).toBe(true)
+  })
+
+  test('the reply names where the tree went, relative to the project', () => {
+    op('start')
+    op('pause')
+
+    const res = op('delete', {}, T0 + 5_000)
+
+    expect(res.deletedTo).toBe(join('.rclaude', 'project', 'epics', '.deleted', `${EPIC}-2026-08-17T10-00-05-000Z`))
+    // Relative, so a wall row can print it without publishing the box's layout.
+    expect(res.deletedTo?.startsWith('/')).toBe(false)
+  })
+
+  test('the WHOLE tree travels, including whatever a later card puts beside run.md', () => {
+    op('start')
+    op('pause')
+    writeFileSync(join(root, '.rclaude', 'project', 'epics', EPIC, 'notes.md'), 'a later artifact\n', 'utf8')
+
+    op('delete')
+
+    expect(existsSync(join(tombstone() as string, 'notes.md'))).toBe(true)
+  })
+
+  test('the delete is recorded in the baton BEFORE the move, so the tombstone explains itself', () => {
+    op('start')
+    op('abort', { reason: 'scope changed' })
+
+    op('delete', { reason: 'armed by mistake' })
+
+    const log = readFileSync(join(tombstone() as string, 'log.md'), 'utf8')
+    expect(log).toContain('DELETED')
+    expect(log).toContain('armed by mistake')
+    // Everything the run ever said is still in there beside it.
+    expect(log).toContain('scope changed')
+  })
+
+  /**
+   * THE ALLOWLIST, and it is stricter than `clear`'s denylist on purpose: an
+   * acknowledgement written to the wrong run is one click from being undone, a
+   * delete moves the artifact.
+   */
+  test('IT REFUSES AN ARMED RUN -- a tidy-up control can never stop live work', () => {
+    op('start')
+
+    const res = op('delete')
+
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('armed')
+    expect(op('get').run?.status).toBe('armed')
+    expect(existsSync(deletedYard())).toBe(false)
+  })
+
+  test('it refuses a RUNNING run for the same reason', () => {
+    op('start')
+    op('lease', { lease: { convId: 'conv_a', expectGen: 0, holderAlive: false } })
+
+    expect(op('get').run?.status).toBe('running')
+    expect(op('delete').ok).toBe(false)
+    expect(op('get').run?.status).toBe('running')
+  })
+
+  test.each(['paused', 'aborted', 'complete'])('a %s run is deletable', status => {
+    op('start')
+    op('patch', { patch: { status } as never })
+
+    expect(op('delete').ok).toBe(true)
+  })
+
+  test('a run that was never started cannot be deleted', () => {
+    const res = op('delete')
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('not found')
+    expect(existsSync(deletedYard())).toBe(false)
+  })
+
+  /** Deleting the same epic twice must never clobber the first tombstone -- that
+   *  would be an `rm` wearing a `mv`'s clothes. */
+  test('deleting the same epic twice keeps BOTH tombstones', () => {
+    op('start')
+    op('pause')
+    op('delete', {}, T0 + 1_000)
+    op('start', {}, T0 + 2_000)
+    op('pause', {}, T0 + 3_000)
+    op('delete', {}, T0 + 4_000)
+
+    expect(readdirSync(deletedYard()).length).toBe(2)
+  })
+
+  /** The epic CARD is not the run. Cards outlive runs by design -- it is what
+   *  lets an epic adopt work that already exists -- and a delete that quietly
+   *  took the card with it would destroy the actual work. */
+  test('the epic CARD is untouched', () => {
+    op('start')
+    op('pause')
+
+    op('delete')
+
+    expect(existsSync(cardPath(root, EPIC, false))).toBe(true)
+    expect(cardMeta().title).toBe('The epic')
   })
 })
