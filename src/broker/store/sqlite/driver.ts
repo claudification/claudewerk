@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { openStoreDatabase } from '../../sqlite-open'
+import { openStoreDatabase, startWalCheckpointLoop } from '../../sqlite-open'
 import type { StoreConfig, StoreDriver } from '../types'
 import { createSqliteAddressBookStore } from './address-book'
 import { createSqliteConversationStore } from './conversations'
@@ -37,6 +37,11 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
   }
   const stopSummary = startQueryStatsSummary(stats, queryStatsIntervalMs())
 
+  // Autocheckpoint is off (see sqlite-open.ts), so this loop is what keeps the
+  // WAL bounded. Raw handle on purpose: a checkpoint is not a query and logging
+  // it every 30s would bury the statements the slow-query log exists to surface.
+  const stopCheckpoints = startWalCheckpointLoop(rawDb)
+
   return {
     conversations: createSqliteConversationStore(db),
     transcripts: createSqliteTranscriptStore(db),
@@ -55,6 +60,7 @@ export function createSqliteDriver(config: StoreConfig): StoreDriver {
 
     close() {
       stopSummary?.()
+      stopCheckpoints()
       rawDb.close()
     },
 
