@@ -41,7 +41,13 @@ const EPIC_REFUSAL_BUCKETS: readonly EpicRefusalBucket[] = ['idle', 'beat-crashe
 /** Every epic worth a beat this tick. The SAME set the activity feed reports --
  *  see `epicsToWatch`, which is shared precisely so the two cannot drift. */
 export function epicsToBeat(deps: SweepDeps): EpicGroup[] {
-  return epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.seatReaper, deps.overseerReaper)
+  return epicsToWatch(
+    deps.getAllConversations(),
+    deps.isLive,
+    deps.producedOutput,
+    deps.seatReaper,
+    deps.overseerReaper,
+  )
 }
 
 /** `${project}\0${epicId}`, so two projects may carry an epic of the same name. */
