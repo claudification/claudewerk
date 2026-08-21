@@ -9,7 +9,7 @@
  */
 
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { useConversationsStore } from '@/hooks/use-conversations'
+import { useSelectedConversation } from '@/hooks/use-selected-conversation'
 import { cn, haptic } from '@/lib/utils'
 import { quickSwitchConversation } from '@/lib/workspace-switch'
 import { buildActions, type FanAction } from './action-fab-actions'
@@ -22,10 +22,7 @@ export function ActionFab() {
   // instead of syncing via useEffect (react-doctor/no-derived-state).
   const confirmId = expanded ? rawConfirmId : null
   const lastTapRef = useRef(0)
-  const selectedConversationId = useConversationsStore(state => state.selectedConversationId)
-  const conversation = useConversationsStore(state =>
-    state.selectedConversationId ? state.conversationsById[state.selectedConversationId] : undefined,
-  )
+  const { selectedConversationId, conversation } = useSelectedConversation()
 
   const actions = buildActions(conversation, selectedConversationId)
 

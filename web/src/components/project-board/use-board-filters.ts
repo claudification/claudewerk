@@ -10,6 +10,7 @@
 
 import type { ProjectTaskMeta } from '@shared/project-task-types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { publishEpicFocus } from '@/lib/cards/epic-focus'
 import { haptic } from '@/lib/utils'
 
 function matchesTextFilter(query: string, task: ProjectTaskMeta): boolean {
@@ -46,6 +47,14 @@ export function useBoardFilters(tasks: ProjectTaskMeta[]) {
   const [selectedPriority, setSelectedPriority] = useState<string | null>(null)
   const [selectedEpic, setSelectedEpic] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // Tell Quick Task which epic is on screen, so a capture taken while an epic
+  // is open inherits it. Clearing on unmount is the important half: a closed
+  // board that kept donating a stale epic would mis-file every later capture.
+  useEffect(() => {
+    publishEpicFocus(selectedEpic)
+    return () => publishEpicFocus(null)
+  }, [selectedEpic])
 
   const tagFreqs = useMemo(() => tagFrequencies(tasks), [tasks])
 

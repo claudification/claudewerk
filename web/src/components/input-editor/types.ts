@@ -8,6 +8,8 @@
  * Backend chosen via controlPanelPrefs.inputBackend. Same props for both.
  */
 
+import type { TaskTokenContext } from '@/lib/cards/task-tokens'
+
 export interface InputEditorProps {
   value: string
   onChange: (value: string) => void
@@ -27,4 +29,8 @@ export interface InputEditorProps {
   /** Custom slash commands for the autocomplete popup. When set, these replace
    *  the conversation's slashCommands (used by the dispatcher overlay). */
   customSlashCommands?: Array<{ name: string; detail?: string }>
+  /** Quick Task token completion (`@epic`, `!priority`, `+dep`, `&rel`, `#tag`).
+   *  OPT-IN per instance: absent everywhere but the Quick Task modal, because
+   *  `@` already means skills+agents in the prompt input. */
+  taskTokens?: TaskTokenContext
 }

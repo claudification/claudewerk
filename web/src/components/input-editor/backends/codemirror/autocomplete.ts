@@ -39,6 +39,7 @@ import { type Extension, Prec } from '@codemirror/state'
 // react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { type EditorView, keymap, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import { useConversationsStore } from '@/hooks/use-conversations'
+import type { TaskTokenContext } from '@/lib/cards/task-tokens'
 import { buildConversationRef } from '@/lib/conversation-refs'
 import { selectConversations } from '@/lib/slim-conversation'
 import { projectPath } from '@/lib/types'
@@ -47,6 +48,7 @@ import { BUILTIN_COMMAND_NAMES, BUILTIN_SCORE_BOOST, fuzzyScore } from '../../au
 import { getSubCommand, type SubCommandContext, type SubCommandDef } from '../../sub-commands'
 import { canvasCompletionSource } from './canvas-complete'
 import { composingField } from './composition'
+import { makeTaskTokenSource } from './task-token-complete'
 
 interface SourceInfo {
   slashCommands: string[]
@@ -444,16 +446,38 @@ interface AutocompleteOptions {
   /** Custom slash commands (e.g. dispatcher overlay). When set, these replace
    *  the conversation's slashCommands + builtins for `/` completions. */
   customSlashCommands?: Array<{ name: string; detail?: string }>
+  /** Enable the prose sources (slash / `@` skills / `:` conversations / canvas). */
+  enableProseSources?: boolean
+  /** Quick Task token context provider. See task-token-complete.ts. */
+  getTaskTokenContext?: () => TaskTokenContext | null
 }
 
+/**
+ * SOURCE SELECTION IS A CORRECTNESS GATE, not a bundle optimisation.
+ *
+ * `@` means two different things on two different surfaces: skills+agents in
+ * the prompt input, an epic in the Quick Task box. Registering both sources at
+ * once would MERGE their options into one popup and offer skills as epics.
+ * So the prose sources are only mounted for surfaces that asked for them, and
+ * a Quick Task editor gets the token source alone.
+ */
 export function autocompleteExtension(opts: AutocompleteOptions): Extension {
+  const override = []
+  if (opts.enableProseSources || opts.customSlashCommands) {
+    override.push(
+      makeCompletionSource(opts.getSubCommandContext, opts.customSlashCommands),
+      // canvasCompletionSource is independent (own `!c:` trigger, async fetch) so
+      // it never touches the slash/@/`:` conversation source's logic.
+      canvasCompletionSource,
+    )
+  }
+  if (opts.getTaskTokenContext) override.push(makeTaskTokenSource(opts.getTaskTokenContext))
+
   return [
     tabAcceptKeymap,
     colonDelayTracker,
     autocompletion({
-      // canvasCompletionSource is independent (own `!c:` trigger, async fetch) so
-      // it never touches the slash/@/`:` conversation source's logic.
-      override: [makeCompletionSource(opts.getSubCommandContext, opts.customSlashCommands), canvasCompletionSource],
+      override,
       activateOnTyping: true,
       closeOnBlur: true,
       icons: false,
