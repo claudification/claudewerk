@@ -75,51 +75,61 @@ interface SeatReply {
   error?: string
 }
 
+/** The call itself. `SeatReply` on success, the reason it could not be made
+ *  otherwise -- the two are told apart by the caller, not conflated here. */
+async function ask(ctx: McpToolContext, action: 'claim' | 'release'): Promise<SeatReply | { unreachable: string }> {
+  const conversationId = ctx.getIdentity()?.conversationId
+  if (!conversationId) return { unreachable: 'this host does not know its own conversation id yet' }
+  if (ctx.noBroker || !ctx.brokerUrl) return { unreachable: 'no broker connection' }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (ctx.brokerSecret) headers.Authorization = `Bearer ${ctx.brokerSecret}`
+
+  try {
+    const res = await fetch(`${wsToHttpUrl(ctx.brokerUrl)}/api/epic-seat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ conversationId, action }),
+    })
+    return (await res.json()) as SeatReply
+  } catch (e) {
+    // The one branch the "do not make the lease a precondition" rule is about.
+    return { unreachable: (e as Error).message }
+  }
+}
+
+/**
+ * The broker's answer, turned into what the seat does about it.
+ *
+ * A SUBSTRATE failure reads as unreachable: there is no holder in that answer,
+ * only an unanswered question. A 4xx is the opposite -- the caller is not
+ * entitled to ask, which is a fact it should report rather than a reason to
+ * carry on unprotected. Both arrive as `outcome: 'error'`, so the status is what
+ * separates them; an answer with no status at all is treated as unreachable,
+ * which is the survivable half of the guess.
+ */
+function interpret(ctx: McpToolContext, json: SeatReply, note: string): ToolResult {
+  if (json.outcome === 'error' && !json.ok) {
+    return (json.status ?? 502) >= 500 ? unreachable(note) : text(note, true)
+  }
+  if (json.exit) {
+    // NON-ZERO, and not a request. The refusal is already in the epic baton
+    // naming both conversations, so the run's own log shows the belt fired.
+    ctx.callbacks.onExitConversation?.('error', 'seat lease refused -- another conversation holds this card')
+    return text(note, true)
+  }
+  return text(note, !json.ok)
+}
+
 export function registerEpicSeatTools(ctx: McpToolContext): Record<string, ToolDef> {
   const post = async (action: 'claim' | 'release'): Promise<ToolResult> => {
-    const conversationId = ctx.getIdentity()?.conversationId
-    if (!conversationId) return unreachable('this host does not know its own conversation id yet')
-    if (ctx.noBroker || !ctx.brokerUrl) return unreachable('no broker connection')
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (ctx.brokerSecret) headers.Authorization = `Bearer ${ctx.brokerSecret}`
-
-    let json: SeatReply
-    try {
-      const res = await fetch(`${wsToHttpUrl(ctx.brokerUrl)}/api/epic-seat`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ conversationId, action }),
-      })
-      json = (await res.json()) as SeatReply
-    } catch (e) {
-      // The one branch the "do not make the lease a precondition" rule is about.
-      return unreachable((e as Error).message)
-    }
+    const json = await ask(ctx, action)
+    if ('unreachable' in json) return unreachable(json.unreachable)
 
     const note = json.note || json.error || 'the broker gave no answer'
     ctx.elog(`[epic-seat] ${action} -> ${json.outcome ?? 'unknown'}${json.exit ? ' EXIT' : ''}: ${note}`)
     debug(`[channel] epic_seat ${action}: ${json.outcome ?? 'unknown'}`)
-
-    // A SUBSTRATE failure reads as unreachable: there is no holder in that
-    // answer, only an unanswered question. A 4xx is the opposite -- the caller
-    // is not entitled to ask, which is a fact it should report rather than a
-    // reason to carry on unprotected. Both arrive as `outcome: 'error'`, so the
-    // status is what separates them. An answer with no status at all is treated
-    // as unreachable, which is the survivable half of the guess.
-    if (json.outcome === 'error' && !json.ok) {
-      const status = json.status ?? 502
-      return status >= 500 ? unreachable(note) : text(note, true)
-    }
-
-    if (json.exit) {
-      // NON-ZERO, and not a request. The refusal is already in the epic baton
-      // naming both conversations, so the run's own log shows the belt fired.
-      ctx.callbacks.onExitConversation?.('error', `seat lease refused -- another conversation holds this card`)
-      return text(note, true)
-    }
-
-    return text(note, !json.ok)
+    return interpret(ctx, json, note)
   }
 
   return {

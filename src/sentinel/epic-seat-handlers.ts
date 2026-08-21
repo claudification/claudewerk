@@ -13,29 +13,45 @@
  * map. These three are card-scoped and share none of its helpers.
  */
 
-import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
+import { readLease, releasePatch } from '../shared/epic-lease'
 import { safeCardId } from '../shared/epic-paths'
 import { seatLeaseKeyPrefix } from '../shared/epic-seat-lease'
 import type { EpicOp, EpicResult, EpicSeatInput } from '../shared/protocol'
-import { patchCardMeta, readCardMeta } from './epic-card-meta'
+import { casLeaseOnCard, patchCardMeta, readCardMeta } from './epic-card-meta'
 
 type OpOutcome = Omit<EpicResult, 'type' | 'requestId' | 'op'>
 type SeatHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
 
 const fail = (error: string): OpOutcome => ({ ok: false, error })
 
-/** The seat payload, validated. Returns the error text instead of throwing so
- *  every caller answers rather than leaving the broker waiting for a reply. */
-function seatOf(msg: EpicOp): EpicSeatInput | string {
+/** Everything all three ops need: a validated payload, the card's frontmatter,
+ *  and the key prefix the role writes under. */
+interface SeatContext {
+  seat: EpicSeatInput
+  meta: Record<string, unknown>
+  prefix: string
+}
+
+/**
+ * Validate, resolve, read. Returns the ERROR TEXT rather than throwing, so every
+ * op answers instead of leaving the broker waiting for a reply that never comes.
+ *
+ * `needsConvId` because `seat_get` is the one op with no claimant: it is the
+ * question the broker asks BEFORE it has decided who is asking.
+ */
+function seatContext(root: string, msg: EpicOp, needsConvId: boolean): SeatContext | string {
   const seat = msg.seat
   if (!seat?.cardId) return 'seat.cardId required'
   if (!seat.role) return 'seat.role required'
+  if (needsConvId && !seat.convId) return 'seat.convId required'
   try {
     safeCardId(seat.cardId)
   } catch (err) {
     return err instanceof Error ? err.message : String(err)
   }
-  return seat
+  const meta = readCardMeta(root, seat.cardId)
+  if (!meta) return `card not found: ${seat.cardId}`
+  return { seat, meta, prefix: seatLeaseKeyPrefix(seat.role) }
 }
 
 export const SEAT_HANDLERS: Record<string, SeatHandler> = {
@@ -45,44 +61,29 @@ export const SEAT_HANDLERS: Record<string, SeatHandler> = {
    * state one in the CAS. `null` means nobody has ever claimed this seat.
    */
   seat_get(root, msg) {
-    const seat = seatOf(msg)
-    if (typeof seat === 'string') return fail(seat)
-    const meta = readCardMeta(root, seat.cardId)
-    if (!meta) return fail(`card not found: ${seat.cardId}`)
-    return { ok: true, currentLease: readLease(meta, seatLeaseKeyPrefix(seat.role)) }
+    const ctx = seatContext(root, msg, false)
+    if (typeof ctx === 'string') return fail(ctx)
+    return { ok: true, currentLease: readLease(ctx.meta, ctx.prefix) }
   },
 
   /**
-   * THE CLAIM. Every refusal path lives inside `evaluateLease` and there is no
-   * early return above it -- that is deliberate and it is the whole of Done-when
-   * 4. The overseer beat's own deadlock on 2026-08-20 was not a missing TTL: the
-   * TTL existed and worked, and `epic-beat.ts:251` returned "overseer alive;
-   * holding the beat" above the CAS so the question was never put. A wedged
-   * holder is displaced here because the CAS is REACHED.
+   * THE CLAIM. Every refusal path lives inside `evaluateLease` and there is NO
+   * EARLY RETURN ABOVE THE CAS -- that is deliberate and it is the whole of
+   * Done-when 4. The overseer beat's own deadlock on 2026-08-20 was not a
+   * missing TTL: the TTL existed and worked, and `epic-beat.ts:251` returned
+   * "overseer alive; holding the beat" above the CAS so the question was never
+   * put. A wedged holder is displaced here because the CAS is REACHED.
    */
   seat_claim(root, msg, nowMs) {
-    const seat = seatOf(msg)
-    if (typeof seat === 'string') return fail(seat)
-    if (!seat.convId) return fail('seat.convId required')
-    const meta = readCardMeta(root, seat.cardId)
-    if (!meta) return fail(`card not found: ${seat.cardId}`)
-
-    const prefix = seatLeaseKeyPrefix(seat.role)
-    // No await between this read and the write below -- that is the CAS.
-    const decision = evaluateLease(
-      readLease(meta, prefix),
-      { convId: seat.convId, expectGen: seat.expectGen ?? 0, holderAlive: seat.holderAlive ?? false },
-      nowMs,
-    )
-    if (!decision.grant) {
-      const h = decision.holder
-      return { ok: true, lease: { granted: false, convId: h.convId, gen: h.gen, at: h.at, reason: decision.reason } }
+    const ctx = seatContext(root, msg, true)
+    if (typeof ctx === 'string') return fail(ctx)
+    const { seat, meta, prefix } = ctx
+    const req = {
+      convId: seat.convId as string,
+      expectGen: seat.expectGen ?? 0,
+      holderAlive: seat.holderAlive ?? false,
     }
-    patchCardMeta(root, seat.cardId, leasePatch(decision.lease, prefix))
-    return {
-      ok: true,
-      lease: { granted: true, ...decision.lease, ...(decision.replaced ? { replaced: decision.replaced } : {}) },
-    }
+    return { ok: true, lease: casLeaseOnCard(root, seat.cardId, prefix, meta, req, nowMs) }
   },
 
   /**
@@ -99,13 +100,10 @@ export const SEAT_HANDLERS: Record<string, SeatHandler> = {
    * finish tidying up without its exit path failing.
    */
   seat_release(root, msg) {
-    const seat = seatOf(msg)
-    if (typeof seat === 'string') return fail(seat)
-    if (!seat.convId) return fail('seat.convId required')
-    const meta = readCardMeta(root, seat.cardId)
-    if (!meta) return fail(`card not found: ${seat.cardId}`)
+    const ctx = seatContext(root, msg, true)
+    if (typeof ctx === 'string') return fail(ctx)
+    const { seat, meta, prefix } = ctx
 
-    const prefix = seatLeaseKeyPrefix(seat.role)
     const held = readLease(meta, prefix)
     if (!held?.convId) return { ok: true, currentLease: held }
     if (held.convId !== seat.convId) {

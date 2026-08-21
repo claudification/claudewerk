@@ -183,6 +183,75 @@ async function runRelease(
   return { ok: true, outcome: 'released', note: `Released the ${key.role} seat on \`${key.cardId}\`.`, seat: key }
 }
 
+/** The CAS said no. Audit it, then hand the loser its exit. */
+async function refusedBy(
+  deps: SeatClaimDeps,
+  io: SeatClaimIo,
+  project: string,
+  key: SeatLeaseKey,
+  convId: string,
+  lost: EpicLease,
+  reason: string,
+): Promise<SeatClaimReply> {
+  await auditCollision(
+    deps,
+    io,
+    project,
+    key,
+    seatClaimBaton({ key, convId, outcome: 'refused', holder: lost, reason }),
+    convId,
+  )
+  return {
+    ok: false,
+    outcome: 'refused',
+    exit: true,
+    note: seatRefusalNotice(key, convId, lost, reason),
+    seat: key,
+    lease: lost,
+    status: 409,
+  }
+}
+
+/** The CAS said yes. `replaced` is what makes this a takeover rather than a
+ *  first claim, and a takeover is a collision that happens to have been won. */
+async function grantedTo(
+  deps: SeatClaimDeps,
+  io: SeatClaimIo,
+  project: string,
+  key: SeatLeaseKey,
+  convId: string,
+  granted: EpicLease,
+  replaced: EpicLease | undefined,
+): Promise<SeatClaimReply> {
+  const seat = `${key.role} seat on \`${key.cardId}\` (generation ${granted.gen})`
+  if (!replaced?.convId) {
+    return {
+      ok: true,
+      outcome: 'granted',
+      note: `You hold the ${seat}. Seat: ${seatSlug(key)}`,
+      seat: key,
+      lease: granted,
+    }
+  }
+  await auditCollision(
+    deps,
+    io,
+    project,
+    key,
+    seatClaimBaton({ key, convId, outcome: 'broke', holder: replaced }),
+    convId,
+  )
+  return {
+    ok: true,
+    outcome: 'broke',
+    note:
+      `You hold the ${seat}. It was taken over from \`${replaced.convId}\`, which was dead or wedged past the ` +
+      'stale window. That is recorded in the baton.',
+    seat: key,
+    lease: granted,
+  }
+}
+
 async function runClaim(
   deps: SeatClaimDeps,
   io: SeatClaimIo,
@@ -203,13 +272,8 @@ async function runClaim(
   // beat of its own prompt -- must not be told it lost to itself and killed by
   // its own belt. Answered before the CAS, because the CAS would refuse it.
   if (holder?.convId === convId) {
-    return {
-      ok: true,
-      outcome: 'held',
-      note: `You already hold the ${key.role} seat on \`${key.cardId}\`.`,
-      seat: key,
-      lease: holder,
-    }
+    const note = `You already hold the ${key.role} seat on \`${key.cardId}\`.`
+    return { ok: true, outcome: 'held', note, seat: key, lease: holder }
   }
 
   const res = await io.sendEpicOp(deps, project, {
@@ -225,57 +289,10 @@ async function runClaim(
   })
   if (!res.ok || !res.lease) return errorReply(`seat claim failed: ${res.error ?? 'unknown error'}`, 502)
 
-  if (!res.lease.granted) {
-    const lost: EpicLease = { convId: res.lease.convId, gen: res.lease.gen, at: res.lease.at }
-    const reason = res.lease.reason ?? 'the seat is held'
-    await auditCollision(
-      deps,
-      io,
-      project,
-      key,
-      seatClaimBaton({ key, convId, outcome: 'refused', holder: lost, reason }),
-      convId,
-    )
-    return {
-      ok: false,
-      outcome: 'refused',
-      exit: true,
-      note: seatRefusalNotice(key, convId, lost, reason),
-      seat: key,
-      lease: lost,
-      status: 409,
-    }
-  }
-
-  const granted: EpicLease = { convId: res.lease.convId, gen: res.lease.gen, at: res.lease.at }
-  const replaced = res.lease.replaced
-  if (replaced?.convId) {
-    await auditCollision(
-      deps,
-      io,
-      project,
-      key,
-      seatClaimBaton({ key, convId, outcome: 'broke', holder: replaced }),
-      convId,
-    )
-    return {
-      ok: true,
-      outcome: 'broke',
-      note:
-        `You hold the ${key.role} seat on \`${key.cardId}\` (generation ${granted.gen}). It was taken over from ` +
-        `\`${replaced.convId}\`, which was dead or wedged past the stale window. That is recorded in the baton.`,
-      seat: key,
-      lease: granted,
-    }
-  }
-
-  return {
-    ok: true,
-    outcome: 'granted',
-    note: `You hold the ${key.role} seat on \`${key.cardId}\` (generation ${granted.gen}). Seat: ${seatSlug(key)}`,
-    seat: key,
-    lease: granted,
-  }
+  const decided: EpicLease = { convId: res.lease.convId, gen: res.lease.gen, at: res.lease.at }
+  return res.lease.granted
+    ? grantedTo(deps, io, project, key, convId, decided, res.lease.replaced)
+    : refusedBy(deps, io, project, key, convId, decided, res.lease.reason ?? 'the seat is held')
 }
 
 /** One claim or release, end to end. Never throws: every failure is a reply. */
