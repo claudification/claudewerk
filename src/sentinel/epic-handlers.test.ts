@@ -76,7 +76,7 @@ describe('handleEpicOp', () => {
   })
 
   test('patching a run that was never started fails instead of creating one', () => {
-    expect(op('patch', { patch: { gen: 4 } }).ok).toBe(false)
+    expect(op('patch', { patch: { dryGens: 4 } }).ok).toBe(false)
   })
 
   /**
@@ -223,6 +223,60 @@ describe('the lease op -- the singleton, under contention', () => {
     const next = op('lease', { lease: { convId: 'conv_b', expectGen: 1, holderAlive: false } }, T0 + 500)
     expect(next.lease?.granted).toBe(true)
     expect(next.lease?.gen).toBe(2)
+  })
+
+  /**
+   * THE 2026-08-20 DEADLOCK, AT ITS SOURCE.
+   *
+   * `run.md` used to carry a MIRROR of `overseer_gen` and nothing reconciled the
+   * two, so a rewrite of the artifact -- by a hand, by an overseer carrying the
+   * frontmatter along with the digest it was told to rewrite -- moved a number
+   * the CAS was still comparing against the card. `epic-the-wall-ii` then beat
+   * every 45 seconds for hours on `stale wake: expected gen 12, epic is at gen
+   * 11`, spawning nothing, while every panel surface said RUNNING.
+   *
+   * The mirror is gone. This is what "gone" has to mean: a run file claiming
+   * generation 99 is not reconciled, not logged as drift and not repaired -- it
+   * is simply not read, so it changes NOTHING the engine does.
+   */
+  describe('a `gen` hand-edited into run.md', () => {
+    /** Arms a run at lease generation 1, then vandalises the artifact. */
+    function vandalise(): void {
+      op('start')
+      op('lease', { lease: { convId: 'conv_a', expectGen: 0, holderAlive: false } })
+      const file = join(root, '.rclaude', 'project', 'epics', EPIC, 'run.md')
+      writeFileSync(file, readFileSync(file, 'utf8').replace('status: running', 'status: running\ngen: 99'), 'utf8')
+    }
+
+    test('does not move the generation a `get` reports -- that comes off the CARD', () => {
+      vandalise()
+      expect(op('get').run?.gen).toBe(1)
+      expect(op('get').currentLease?.gen).toBe(1)
+    })
+
+    test('does not break the next wake: the CAS still agrees with the number it published', () => {
+      vandalise()
+      const next = op('lease', { lease: { convId: 'conv_b', expectGen: 1, holderAlive: false } }, T0 + 500)
+      expect(next.lease?.granted).toBe(true)
+      expect(next.lease?.gen).toBe(2)
+    })
+
+    test('and is erased from the artifact by the next write, rather than lingering as a second answer', () => {
+      vandalise()
+      op('patch', { patch: { dryGens: 1 } })
+      const file = join(root, '.rclaude', 'project', 'epics', EPIC, 'run.md')
+      expect(readFileSync(file, 'utf8')).not.toContain('gen: 99')
+    })
+  })
+
+  /** The counter belongs to the CARD, so a granted lease must not write one into
+   *  the artifact -- a second copy is the whole defect above. */
+  test('a granted lease writes the generation to the card and NOWHERE else', () => {
+    op('start')
+    op('lease', { lease: { convId: 'conv_a', expectGen: 0, holderAlive: false } })
+    expect(String(cardMeta().overseer_gen)).toBe('1')
+    const file = join(root, '.rclaude', 'project', 'epics', EPIC, 'run.md')
+    expect(readFileSync(file, 'utf8')).not.toContain('gen:')
   })
 
   test('force breaks a live lease -- the human override', () => {

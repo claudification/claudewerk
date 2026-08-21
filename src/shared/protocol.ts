@@ -16,7 +16,7 @@ import type {
   EpicLogEntry,
   EpicLogKind,
   EpicRole,
-  EpicRunFull,
+  EpicRunReading,
   EpicRunStatus,
 } from './epic-run-types'
 import type { CutBoundary } from './fork-cut'
@@ -5115,7 +5115,9 @@ export interface EpicRequest {
  *  is derived from the board, and a writable copy would only drift from it. */
 export interface EpicRunPatchInput {
   status?: EpicRunStatus
-  gen?: number
+  /** NO `gen`. The generation is the epic card's lease and is moved only by a
+   *  granted CAS (`op: 'lease'`); a patchable copy is the mirror this engine
+   *  deadlocked on -- see `EpicRunMeta`. */
   dryGens?: number
   /** Cumulative USD, folded by the executor each beat. STICKY -- see
    *  `EpicRunMeta.spentUsd`; nothing may lower it. */
@@ -5216,11 +5218,12 @@ export interface EpicResult {
   error?: string
 }
 
-/** The run as it crosses the wire: `run.md`'s frontmatter plus the digest from
- *  `digest.md` beside it (two files on disk, one struct here -- see
- *  `epic-run-store.ts` for why they were split). An ALIAS, not a copy: the store
- *  and the wire must not be able to disagree. */
-export type EpicRunSnapshot = EpicRunFull
+/** The run as it crosses the wire: `run.md`'s frontmatter, the digest from
+ *  `digest.md` beside it, and `gen` read off the epic CARD's lease (three
+ *  sources on disk, one struct here -- see `epic-run-store.ts` for why the first
+ *  two were split and `EpicRunReading` for why the third is not stored at all).
+ *  An ALIAS, not a copy: the store and the wire must not be able to disagree. */
+export type EpicRunSnapshot = EpicRunReading
 
 /**
  * Broker -> Dashboard broadcast (permission-scoped by project URI): one epic

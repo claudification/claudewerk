@@ -132,7 +132,7 @@ describe('epicConversations', () => {
 })
 
 describe('toInspectLive', () => {
-  const base = { armed: true, unacknowledged: [], runGen: 5, conversations: [] }
+  const base = { armed: true, unacknowledged: [], leaseGen: 5, conversations: [] }
 
   test('the lanes and the armed flag come through', () => {
     const out = toInspectLive({
@@ -143,30 +143,30 @@ describe('toInspectLive', () => {
   })
 
   test('a generation mismatch is PROMOTED to a field -- it used to be a log line nobody read', () => {
-    const out = toInspectLive({ ...base, group: group({ maxGenSeen: 9 }), runGen: 5 })
+    const out = toInspectLive({ ...base, group: group({ maxGenSeen: 9 }), leaseGen: 5 })
     expect(out.generationMismatch).toContain('tagged gen 9')
   })
 
   test('agreement means no mismatch key at all, so its presence always means trouble', () => {
-    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 5 }), runGen: 5 })).not.toHaveProperty(
+    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 5 }), leaseGen: 5 })).not.toHaveProperty(
       'generationMismatch',
     )
   })
 
-  test('the registry seeing a LOWER generation than run.md is normal and not flagged', () => {
+  test('the registry seeing a LOWER generation than the lease is normal and not flagged', () => {
     // A run that just leased is at gen N before anything is tagged with it.
-    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 4 }), runGen: 5 })).not.toHaveProperty(
+    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 4 }), leaseGen: 5 })).not.toHaveProperty(
       'generationMismatch',
     )
   })
 
   /**
-   * `runGen: null` is "the run was never read", which is NOT `runGen: 0`. The
+   * `leaseGen: null` is "the run was never read", which is NOT `leaseGen: 0`. The
    * comparison against 0 is what produced `tagged gen 6 but run.md says 0` on a
    * gen-6 run whose only sin was one timed-out sentinel RPC.
    */
   test('a run that was never READ produces no mismatch -- there is nothing to disagree with', () => {
-    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 9 }), runGen: null })).not.toHaveProperty(
+    expect(toInspectLive({ ...base, group: group({ maxGenSeen: 9 }), leaseGen: null })).not.toHaveProperty(
       'generationMismatch',
     )
   })

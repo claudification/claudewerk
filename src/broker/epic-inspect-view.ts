@@ -82,14 +82,16 @@ export interface LiveInput {
   /** Settled cards the baton has never acknowledged (`unacknowledgedCards`). */
   unacknowledged: readonly string[]
   /**
-   * `run.gen`; 0 when the read succeeded and found no artifact; `null` when the
-   * READ ITSELF failed and the generation is therefore unknown.
+   * THE LEASE'S generation -- `overseer_gen` on the epic card, which is the only
+   * copy of it there is. 0 when the read succeeded and the epic has never been
+   * woken; `null` when the READ ITSELF failed and the generation is therefore
+   * unknown.
    *
    * The three cases are not two: comparing the registry against a gen-0 default
    * that came from a timed-out RPC is what printed `conversations tagged gen 6
    * but run.md says 0` about a healthy gen-6 run.
    */
-  runGen: number | null
+  leaseGen: number | null
   conversations: EpicInspectConversation[]
 }
 
@@ -99,7 +101,7 @@ export interface LiveInput {
  *  run has no generation to disagree with, so the comparison is not made at all
  *  rather than made against a default. */
 export function toInspectLive(input: LiveInput): EpicInspectLive {
-  const mismatch = input.runGen === null ? null : generationMismatch(input.group, input.runGen)
+  const mismatch = input.leaseGen === null ? null : generationMismatch(input.group, input.leaseGen)
   return {
     armed: input.armed,
     inFlight: [...input.group.inFlight],

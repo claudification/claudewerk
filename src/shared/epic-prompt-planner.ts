@@ -25,12 +25,14 @@
  */
 
 import type { EpicPlan } from './epic-ready'
-import type { EpicRun } from './epic-run-store'
+import type { EpicRunReading } from './epic-run-types'
 
 export interface PlannerPromptCtx {
   projectUri: string
   projectRoot: string
-  run: EpicRun
+  /** The run, WITH the generation projected onto it from the epic card's lease
+   *  -- the prompt header prints it, and it is not in `run.md`. */
+  run: EpicRunReading
   plan: EpicPlan
   /** Every card under this epic, as `slug -- title (status)` lines. */
   cardLines: string[]
@@ -98,8 +100,9 @@ function theJob(ctx: PlannerPromptCtx): string {
     '   entry is the only account Jonas gets of what you changed on his board, and the next generation knows',
     '   nothing except these files and the board.',
     '',
-    '   `run.md` beside it is MACHINE-OWNED engine state and editing it deadlocks the run: its frontmatter holds',
-    '   the generation counter the lease is compared against. Write `digest.md`. Never `run.md`.',
+    '   `run.md` beside it is MACHINE-OWNED engine state -- its frontmatter is the ceilings, the spend ledger and',
+    '   the `when` axis, and an edit to it is silently clobbered by the next write. Write `digest.md`. Never',
+    '   `run.md`.',
   ].join('\n')
 }
 

@@ -313,6 +313,9 @@ describe('inspectEpic queue peers', () => {
  * A read that FAILED and a read that found nothing are different answers, and
  * only one of them licenses a claim about the run. Gen 6 of `epic-project-runner`
  * met a sentinel timeout and inspect reported `run.md says 0` about a gen-6 run.
+ *
+ * The comparison is against the LEASE now, which is where the generation lives
+ * -- but the three-way distinction is unchanged and is what these pin.
  */
 describe('inspectEpic after a failed read', () => {
   afterEach(() => resetEpicIo())
@@ -338,9 +341,9 @@ describe('inspectEpic after a failed read', () => {
     expect(result.live).not.toHaveProperty('generationMismatch')
   })
 
-  test('a CLEAN read with no artifact still compares against gen 0 -- that comparison is real', async () => {
+  test('a CLEAN read with no lease still compares against gen 0 -- that comparison is real', async () => {
     stubFailedRead()
     const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
-    expect(result.live.generationMismatch).toContain('run.md says 0')
+    expect(result.live.generationMismatch).toContain('the lease says 0')
   })
 })

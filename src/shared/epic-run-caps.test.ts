@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { elapsedRunMinutes, epicRunCaps, formatEpicRunCaps, formatUsd } from './epic-run-caps'
-import type { EpicRunMeta } from './epic-run-types'
+import type { EpicRunReading } from './epic-run-types'
 
 const T0 = Date.parse('2026-08-21T00:00:00.000Z')
 const at = (minutes: number) => T0 + minutes * 60_000
 
-const RUN: EpicRunMeta = {
+const RUN: EpicRunReading = {
   epicId: 'e1',
   project: 'claude://s/p',
   cadence: ['now'],
@@ -22,10 +22,11 @@ const RUN: EpicRunMeta = {
   planned: true,
   created: '',
   updated: '',
+  digest: '',
 }
 
-const run = (over: Partial<EpicRunMeta> = {}): EpicRunMeta => ({ ...RUN, ...over })
-const byLabel = (r: EpicRunMeta, nowMs: number, label: string) => epicRunCaps(r, nowMs).find(c => c.label === label)
+const run = (over: Partial<EpicRunReading> = {}): EpicRunReading => ({ ...RUN, ...over })
+const byLabel = (r: EpicRunReading, nowMs: number, label: string) => epicRunCaps(r, nowMs).find(c => c.label === label)
 
 describe('elapsedRunMinutes', () => {
   test('is null before the clock starts -- a window run waiting for the night owes nothing', () => {

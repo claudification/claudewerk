@@ -238,7 +238,7 @@ function spawnCtx(group: EpicGroup, gen: number): EpicSpawnCtx {
 async function takeLease(
   deps: BeatDeps,
   group: EpicGroup,
-  run: EpicRunSnapshot,
+  gen: number,
   convId: string,
   expectGen: number,
   what: string,
@@ -252,7 +252,7 @@ async function takeLease(
     lease: { convId, expectGen, holderAlive: holderIsAlive(group, holder) },
   })
   if (!res.ok || !res.lease?.granted) {
-    deps.log(`${tag(group.epicId, run.gen)} ${what} refused: ${res.lease?.reason ?? res.error ?? 'unknown'}`)
+    deps.log(`${tag(group.epicId, gen)} ${what} refused: ${res.lease?.reason ?? res.error ?? 'unknown'}`)
     return null
   }
   return res.lease.gen
@@ -313,44 +313,19 @@ async function spawnSeat(
 }
 
 /**
- * The generation the CAS is asked about. THE LEASE IS THE AUTHORITY.
+ * Take the lease, then spawn the overseer.
  *
- * `action.expectGen` comes from the run file, and the run file's `gen` is a
- * MIRROR -- the sentinel writes it when a lease is granted (epic-handlers.ts
- * `lease`). A mirror can drift: `run.md` is a hand-editable markdown artifact,
- * and it USED TO carry the digest an overseer rewrites every generation, so a
- * rewrite of the body carried the frontmatter -- and the counter -- along with
- * it. The digest now lives in `digest.md` (epic-run-store.ts), which closes that
- * particular door; the CAS still trusts the lease over the mirror, because a
- * hand-edited run file is not the only way a mirror can go stale.
+ * `action.expectGen` IS THE LEASE'S OWN GENERATION -- `runEpicBeat` reads it off
+ * `view.lease` and hands it to `planBeat`, which puts it here. There is nothing
+ * to reconcile: the run artifact carries no generation any more
+ * (`EpicRunMeta`), so the wake and the CAS cannot be quoting two different
+ * copies of it, which is the state that deadlocked `epic-the-wall-ii` for hours
+ * on 2026-08-20 (`stale wake: expected gen 12, epic is at gen 11`, spawning
+ * nothing, every panel surface reporting RUNNING).
  *
- * When it drifts the CAS can never agree with itself again, because the wake
- * quotes the run and `evaluateLease` compares against the card. That is not a
- * theoretical hazard: on 2026-08-20 `epic-the-wall-ii` beat every 45s for hours
- * on `stale wake: expected gen 12, epic is at gen 11`, spawning nothing, while
- * every surface in the panel said RUNNING.
- *
- * Quoting the lease we just read keeps the race protection intact -- two beats
- * reading the same lease still send the same generation and exactly one wins --
- * and makes a drifted mirror self-heal, since a granted lease rewrites it.
+ * The race protection is unchanged: two beats reading the same lease still send
+ * the same generation, and exactly one of them is granted.
  */
-function casGen(
-  deps: BeatDeps,
-  group: EpicGroup,
-  run: EpicRunSnapshot,
-  expectGen: number,
-  holder?: EpicLease | null,
-): number {
-  const onBoard = holder?.gen
-  if (onBoard === undefined || onBoard === expectGen) return expectGen
-  deps.log(
-    `${tag(group.epicId, run.gen)} generation DRIFT: the run file says ${expectGen}, the lease on the card ` +
-      `says ${onBoard} -- quoting the lease, which is what the CAS compares against`,
-  )
-  return onBoard
-}
-
-/** Take the lease, then spawn the overseer. */
 async function wakeOverseer(
   deps: BeatDeps,
   group: EpicGroup,
@@ -358,9 +333,9 @@ async function wakeOverseer(
   action: Extract<EpicAction, { kind: 'wake-overseer' }>,
   ctx: ActionContext,
 ): Promise<string | null> {
-  const expectGen = casGen(deps, group, run, action.expectGen, ctx.holder)
+  const expectGen = action.expectGen
   const convId = `pending-${group.epicId}-${expectGen + 1}`
-  const gen = await takeLease(deps, group, run, convId, expectGen, 'wake', ctx.holder)
+  const gen = await takeLease(deps, group, expectGen, convId, expectGen, 'wake', ctx.holder)
   if (gen === null) return null
 
   const spawned = await spawnSeat(
@@ -429,9 +404,17 @@ async function spawnPlanner(
   ctx: ActionContext,
 ): Promise<string | null> {
   const io = epicIo()
-  // Same authority as the wake: the lease decides, the run file only mirrors.
-  const expectGen = casGen(deps, group, run, run.gen, ctx.holder)
-  const gen = await takeLease(deps, group, run, `pending-${group.epicId}-planner`, expectGen, 'planner', ctx.holder)
+  // Same authority as the wake, and from the same place: the lease on the card.
+  const expectGen = ctx.gen
+  const gen = await takeLease(
+    deps,
+    group,
+    expectGen,
+    `pending-${group.epicId}-planner`,
+    expectGen,
+    'planner',
+    ctx.holder,
+  )
   if (gen === null) return null
 
   await io.sendEpicOp(deps, group.project, {
@@ -479,7 +462,7 @@ async function spawnPlanner(
 async function resolvePlanning(
   deps: BeatDeps,
   group: EpicGroup,
-  run: EpicRunSnapshot,
+  gen: number,
   action: Extract<EpicAction, { kind: 'plan-accept' | 'plan-checkpoint' }>,
 ): Promise<void> {
   const io = epicIo()
@@ -487,7 +470,7 @@ async function resolvePlanning(
   if (action.kind === 'plan-accept') {
     await io.sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch })
     await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
-    deps.log(`${tag(group.epicId, run.gen)} plan accepted: board unchanged, proceeding to the first beat`)
+    deps.log(`${tag(group.epicId, gen)} plan accepted: board unchanged, proceeding to the first beat`)
     return
   }
 
@@ -508,7 +491,7 @@ async function resolvePlanning(
   })
   await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
   forgetArmedEpic(group.project, group.epicId)
-  deps.log(`${tag(group.epicId, run.gen)} plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`)
+  deps.log(`${tag(group.epicId, gen)} plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`)
 }
 
 /** Park or complete: patch the run and stop. Both are terminal for the sweep. */
@@ -531,6 +514,16 @@ async function settleRun(
 }
 
 export interface ActionContext {
+  /**
+   * The overseer generation this beat is acting AT, read off the lease on the
+   * epic card by `runEpicBeat`.
+   *
+   * Every seat this beat spawns is tagged with it and every log line quotes it,
+   * so it is handed down once rather than re-derived per performer. It is not on
+   * the run any more, and that is the point of the card that removed it: one
+   * copy, on the card, which is what the CAS compares.
+   */
+  gen: number
   batonTail: string
   plan: ReturnType<typeof planEpic>
   settled: readonly string[]
@@ -573,16 +566,16 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
     wakeOverseer(p.deps, p.group, p.run, a, p.ctx),
   plan: (p, a: Extract<EpicAction, { kind: 'plan' }>) => spawnPlanner(p.deps, p.group, p.run, a, p.ctx),
   'plan-accept': (p, a: Extract<EpicAction, { kind: 'plan-accept' }>) =>
-    resolvePlanning(p.deps, p.group, p.run, a).then(() => null),
+    resolvePlanning(p.deps, p.group, p.ctx.gen, a).then(() => null),
   'plan-checkpoint': (p, a: Extract<EpicAction, { kind: 'plan-checkpoint' }>) =>
-    resolvePlanning(p.deps, p.group, p.run, a).then(() => null),
+    resolvePlanning(p.deps, p.group, p.ctx.gen, a).then(() => null),
   dispatch: (p, a: Extract<EpicAction, { kind: 'dispatch' }>) =>
-    spawnForCard(p.deps, p.group, p.run.gen, a.cardId, 'dispatch', a.dependsOn ?? []),
+    spawnForCard(p.deps, p.group, p.ctx.gen, a.cardId, 'dispatch', a.dependsOn ?? []),
   verify: (p, a: Extract<EpicAction, { kind: 'verify' }>) =>
-    spawnForCard(p.deps, p.group, p.run.gen, a.cardId, 'verify'),
-  park: (p, a: Extract<EpicAction, { kind: 'park' }>) => settleRun(p.deps, p.group, p.run.gen, a).then(() => null),
+    spawnForCard(p.deps, p.group, p.ctx.gen, a.cardId, 'verify'),
+  park: (p, a: Extract<EpicAction, { kind: 'park' }>) => settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
   complete: (p, a: Extract<EpicAction, { kind: 'complete' }>) =>
-    settleRun(p.deps, p.group, p.run.gen, a).then(() => null),
+    settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
 } as Record<EpicAction['kind'], Performer>
 
 /**

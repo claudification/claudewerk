@@ -12,7 +12,7 @@
  * decides anything, it only says where the run stands.
  */
 
-import type { EpicRunMeta } from './epic-run-types'
+import type { EpicRunMeta, EpicRunReading } from './epic-run-types'
 import { whenWaitingLine } from './epic-when'
 
 /** `$12.50`. Two decimals always: `$12.5` reads like a truncation. */
@@ -76,7 +76,7 @@ function wallClockReading(run: EpicRunMeta, nowMs: number): EpicCapReading {
   }
 }
 
-function generationReading(run: EpicRunMeta): EpicCapReading {
+function generationReading(run: EpicRunReading): EpicCapReading {
   const capped = run.maxGens > 0
   return {
     label: 'generations',
@@ -89,7 +89,7 @@ function generationReading(run: EpicRunMeta): EpicCapReading {
 
 /** All three ceilings, in the order `epic-beat.ts` checks them: dollars, wall
  *  clock, generations -- most expensive unit first. */
-export function epicRunCaps(run: EpicRunMeta, nowMs: number): EpicCapReading[] {
+export function epicRunCaps(run: EpicRunReading, nowMs: number): EpicCapReading[] {
   return [spendReading(run), wallClockReading(run, nowMs), generationReading(run)]
 }
 
@@ -109,7 +109,7 @@ export function epicRunCaps(run: EpicRunMeta, nowMs: number): EpicCapReading[] {
  * surface that prints this line -- the `epic_run` tool, the overseer's briefing --
  * must reach the same countdown the BEAT is holding the run on.
  */
-export function formatEpicRunCaps(run: EpicRunMeta, nowMs: number): string {
+export function formatEpicRunCaps(run: EpicRunReading, nowMs: number): string {
   const caps = epicRunCaps(run, nowMs)
     .map(c => {
       const left = c.remaining === null ? '' : ` (${c.remaining} left)`

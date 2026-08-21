@@ -19,15 +19,16 @@
 
 import type { EpicPlan } from './epic-ready'
 import { formatEpicRunCaps } from './epic-run-caps'
-import type { EpicRun } from './epic-run-store'
-import type { EpicWakeReason } from './epic-run-types'
+import type { EpicRunReading, EpicWakeReason } from './epic-run-types'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import { formatWhen } from './epic-when'
 
 export interface OverseerPromptCtx {
   projectUri: string
   projectRoot: string
-  run: EpicRun
+  /** The run, WITH the generation projected onto it from the epic card's lease
+   *  -- the prompt header prints it, and it is not in `run.md`. */
+  run: EpicRunReading
   plan: EpicPlan
   /** Rendered baton tail (epic-log.ts `renderEpicLogTail`). */
   batonTail: string
@@ -112,10 +113,11 @@ function theJob(ctx: OverseerPromptCtx): string {
     '   generation, which will not have this conversation, can pick up cold. Assume the reader knows nothing',
     '   except the board and that file.',
     '',
-    "   `run.md` beside it is MACHINE-OWNED: it is the engine's run state and editing it deadlocks the run.",
-    '   Its frontmatter carries the generation counter the lease is compared against, so a rewrite that carries',
-    '   the frontmatter along desynchronises the run permanently -- it beats forever, spawns nothing, and reads',
-    '   as RUNNING on every surface. That happened on 2026-08-20 and cost hours. Write `digest.md`. Never `run.md`.',
+    "   `run.md` beside it is MACHINE-OWNED: it is the engine's run state -- the ceilings, the spend ledger and",
+    '   the `when` axis -- and an edit to it is silently clobbered by the next write. The generation counter is',
+    '   NOT in it and never will be again: it is `overseer_gen` on the epic card, which is the only copy there',
+    '   is. A rewrite of `run.md` that carried the frontmatter along used to desynchronise the run permanently,',
+    '   which happened on 2026-08-20 and cost hours. Write `digest.md`. Never `run.md`.',
   ].join('\n')
 }
 

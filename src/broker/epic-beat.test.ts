@@ -50,6 +50,11 @@ const EMPTY_PLAN: EpicPlan = {
 function beat(over: Partial<EpicBeatInput> = {}, plan: Partial<EpicPlan> = {}, run: Partial<EpicRunSnapshot> = {}) {
   return planBeat({
     run: { ...RUN, ...run },
+    // THE GENERATION IS ITS OWN INPUT, off the lease -- the run artifact does not
+    // carry one. Defaulted from the run fixture's `gen` so a test that wants a
+    // specific generation can still say `{ gen: 40 }` in either bag and mean the
+    // same thing; `over` wins, as it does for every other field.
+    gen: run.gen ?? RUN.gen,
     plan: { ...EMPTY_PLAN, ...plan },
     inFlight: [],
     overseerAlive: false,

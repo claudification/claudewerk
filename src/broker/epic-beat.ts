@@ -46,6 +46,27 @@ export type EpicAction =
 
 export interface EpicBeatInput {
   run: EpicRunSnapshot
+  /**
+   * THE OVERSEER GENERATION, FROM THE LEASE ON THE EPIC CARD -- never from the
+   * run artifact.
+   *
+   * Its own input rather than a field read off `run` because this number is the
+   * one the CAS compares (`evaluateLease`), and every `expectGen` below is
+   * eventually handed back to it. While the run file carried a mirror of it, the
+   * beat quoted the mirror and the CAS compared the card: on 2026-08-20
+   * `epic-the-wall-ii` beat every 45 seconds for hours on `stale wake: expected
+   * gen 12, epic is at gen 11`, spawning nothing, with every panel surface
+   * reporting RUNNING.
+   *
+   * The mirror is gone (`EpicRunMeta`), so the two cannot drift any more -- but
+   * the beat still takes the generation explicitly, because a pure decision that
+   * reads it out of a bag it was handed cannot be argued with about WHICH copy
+   * it read.
+   *
+   * 0 means the epic has never been woken, which is what `evaluateLease` expects
+   * from a first wake.
+   */
+  gen: number
   plan: EpicPlan
   /** Card ids with a live implementer or verifier right now. */
   inFlight: readonly string[]
@@ -314,8 +335,8 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
     ])
   }
 
-  if (run.gen >= run.maxGens) {
-    return beat(`generation ceiling reached (${run.gen}/${run.maxGens})`, [
+  if (input.gen >= run.maxGens) {
+    return beat(`generation ceiling reached (${input.gen}/${run.maxGens})`, [
       { kind: 'park', reason: `hit the generation ceiling of ${run.maxGens} -- the run is thrashing, not working` },
     ])
   }
@@ -332,7 +353,7 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
  * Returns null when nothing is in the way, at which point `workBeat` decides.
  */
 function guardBeat(input: EpicBeatInput): EpicBeat | null {
-  const { run, plan } = input
+  const { plan } = input
 
   const capped = capBeat(input)
   if (capped) return capped
@@ -341,7 +362,7 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // rewriting the very cards the plan was computed from. The PLANNER sits in the
   // same seat, so this guard covers it too -- which is most of why it is not a
   // separate role.
-  if (input.overseerAlive) return beat(`overseer alive at gen ${run.gen}; holding the beat`)
+  if (input.overseerAlive) return beat(`overseer alive at gen ${input.gen}; holding the beat`)
 
   // GENERATION 0. Ahead of every other decision, including settles and questions:
   // once planning is owed, nothing may dispatch until it has happened, or the
@@ -355,7 +376,7 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // therefore the right answer whether the planner exited or died. Waking a
   // replacement first would spawn a plain overseer into a run that still has
   // `planned: false`, and the next beat would come straight back here.
-  const planning = planningBeat(run, input.boardFingerprint)
+  const planning = planningBeat(input.run, input.boardFingerprint)
   if (planning) return planning
 
   // THE SUPERVISOR DIED WITHOUT SAYING SO. Ahead of the settle branch below, and
@@ -367,8 +388,8 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // indistinguishable on every surface that renders either.
   if (input.overseerLost) {
     const also = input.unacknowledged.length > 0 ? `; ${input.unacknowledged.length} unacknowledged settle(s)` : ''
-    return beat(`overseer seat REAPED at gen ${run.gen}; waking a replacement${also}`, [
-      { kind: 'wake-overseer', expectGen: run.gen, reason: 'overseer-lost' },
+    return beat(`overseer seat REAPED at gen ${input.gen}; waking a replacement${also}`, [
+      { kind: 'wake-overseer', expectGen: input.gen, reason: 'overseer-lost' },
     ])
   }
 
@@ -376,14 +397,14 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // fresh overseer, and it outranks dispatching more work.
   if (input.unacknowledged.length > 0) {
     return beat(`${input.unacknowledged.length} unacknowledged settle(s): ${input.unacknowledged.join(', ')}`, [
-      { kind: 'wake-overseer', expectGen: run.gen, reason: 'card-settled' },
+      { kind: 'wake-overseer', expectGen: input.gen, reason: 'card-settled' },
     ])
   }
 
   // A question only the overseer can answer, and no overseer running.
   if (plan.questions.length > 0) {
     return beat(`${plan.questions.length} open question(s) for the overseer`, [
-      { kind: 'wake-overseer', expectGen: run.gen, reason: 'started' },
+      { kind: 'wake-overseer', expectGen: input.gen, reason: 'started' },
     ])
   }
 
@@ -537,7 +558,7 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
   return beat(
     `nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the overseer to replan ` +
       `(dry generation ${run.dryGens + 1})`,
-    [{ kind: 'wake-overseer', expectGen: run.gen, reason: 'started' }],
+    [{ kind: 'wake-overseer', expectGen: input.gen, reason: 'started' }],
     { dryGens: run.dryGens + 1 },
   )
 }

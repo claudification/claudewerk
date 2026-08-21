@@ -528,14 +528,21 @@ export function unacknowledgedFailedLegs(legs: readonly FailedLeg[], baton: read
 }
 
 /**
- * Does the generation the registry saw disagree with the run file? Only ever a
- * LOG line -- the run file is authoritative and the sweep must not "fix" it.
- * A persistent mismatch means spawns are being tagged with a stale generation,
- * which would make every wake look stale and quietly freeze the epic.
+ * Does the generation the registry saw disagree with THE LEASE ON THE EPIC CARD?
+ *
+ * Against the lease, because the lease is the only generation there is: the run
+ * artifact used to mirror it, and this comparison used to be made against the
+ * mirror -- so it could report a disagreement that was really the two copies
+ * drifting rather than a spawn racing anything.
+ *
+ * Only ever a LOG line (and an inspect field). The lease is authoritative and the
+ * sweep must not "fix" it. A persistent mismatch means spawns are being tagged
+ * with a stale generation, which would make every wake look stale and quietly
+ * freeze the epic.
  */
-export function generationMismatch(group: EpicGroup, runGen: number): string | null {
-  return group.maxGenSeen > runGen
-    ? `conversations tagged gen ${group.maxGenSeen} but run.md says ${runGen} -- spawns may be racing the lease`
+export function generationMismatch(group: EpicGroup, leaseGen: number): string | null {
+  return group.maxGenSeen > leaseGen
+    ? `conversations tagged gen ${group.maxGenSeen} but the lease says ${leaseGen} -- spawns may be racing the lease`
     : null
 }
 

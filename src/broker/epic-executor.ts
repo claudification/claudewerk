@@ -154,6 +154,29 @@ async function settleContext(
 }
 
 /**
+ * THE GENERATION THIS BEAT IS AT, read once, OFF THE LEASE -- the number every
+ * line of the beat quotes and every CAS it sends compares against.
+ *
+ * The run artifact does not carry one (`EpicRunMeta`): it used to mirror the
+ * card's `overseer_gen`, nothing reconciled the two, and a drifted mirror is what
+ * deadlocked `epic-the-wall-ii` for hours on 2026-08-20 -- `stale wake: expected
+ * gen 12, epic is at gen 11`, every 45 seconds, spawning nothing, while every
+ * panel surface said RUNNING. `view.lease` and `view.run` come from the SAME
+ * `get`, so the ceiling, the log lines, the prompt header and the wake all name
+ * one number by construction rather than by agreement.
+ *
+ * `null` lease means the epic has never been woken, which is generation 0 --
+ * exactly what `evaluateLease` expects from a first wake.
+ *
+ * Its own function rather than an expression in `runEpicBeat` because that
+ * function is already at its complexity ceiling and a `?.`/`??` pair costs two
+ * branches there for a fact that is not a decision.
+ */
+function leaseGen(view: EpicRunView): number {
+  return view.lease?.gen ?? 0
+}
+
+/**
  * Run ONE beat for one epic. Returns what it did, so the sweep can log a single
  * line per epic per tick rather than a scatter of unrelated messages.
  */
@@ -176,6 +199,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     })
   }
   const run = view.run
+  const gen = leaseGen(view)
 
   /**
    * A TERMINAL RUN IS TOUCHED BY NOTHING -- checked HERE, before the first write.
@@ -192,7 +216,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
    * need a sentinel round trip per tick either.
    */
   if (isInertRun(run.status)) {
-    return finish(deps, seats, run.gen, {
+    return finish(deps, seats, gen, {
       epicId: seats.epicId,
       note: `run is ${run.status}; not touched`,
       actions: 0,
@@ -217,14 +241,14 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // where a `start` still costs nothing.
   if (!isArmed(seats.project, seats.epicId)) {
     deps.log(
-      `${tag(seats.epicId, run.gen)} STRANDED: the run is ${run.status} but this epic is not in the sweep's ` +
+      `${tag(seats.epicId, gen)} STRANDED: the run is ${run.status} but this epic is not in the sweep's ` +
         `armed set -- it is visible only through its live conversations and stops advancing when the last one ` +
         `ends. Re-arm it with epic_run action=start.`,
     )
   }
 
-  const mismatch = generationMismatch(seats, run.gen)
-  if (mismatch) deps.log(`${tag(seats.epicId, run.gen)} ${mismatch}`)
+  const mismatch = generationMismatch(seats, gen)
+  if (mismatch) deps.log(`${tag(seats.epicId, gen)} ${mismatch}`)
 
   // THE BOARD IS READ FIRST, ahead of the acknowledgement it used to follow.
   // Nothing about the write order changes -- this is a read -- but every card id
@@ -241,7 +265,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // seat, so it is a WARN -- the beat still proceeds, because the alternative is
   // freezing an epic over a card someone deleted.
   const orphans = orphanedCardIds(group, cards)
-  if (orphans.length > 0) deps.log(`${tag(group.epicId, run.gen)} ${orphanedAckLine(orphans)}`)
+  if (orphans.length > 0) deps.log(`${tag(group.epicId, gen)} ${orphanedAckLine(orphans)}`)
 
   // Against the WHOLE log's acknowledgement set, never against `view.baton` --
   // that is a 20-entry prompt tail, and asking it this question is what made the
@@ -268,7 +292,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   const failed = unacknowledgedFailedLegs(group.failedLegs, view.baton)
   if (failed.length > 0) {
     deps.log(
-      `${tag(group.epicId, run.gen)} ${failed.length} failed launch(es): ` +
+      `${tag(group.epicId, gen)} ${failed.length} failed launch(es): ` +
         failed.map(l => `${l.cardId}/${l.role}@${l.convId.slice(0, 8)}`).join(', '),
     )
     await noteFailedLaunches(deps, group, failed)
@@ -280,7 +304,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // N; holding the beat` every 45 seconds. The fold has already stopped believing
   // it (`epic-sweep.ts`); this says so, in the log for every corpse and in the
   // baton for the one holding the lease.
-  const lost = await reapOverseers(deps, group, run.gen, view.lease, view.baton)
+  const lost = await reapOverseers(deps, group, gen, view.lease, view.baton)
 
   // THE SEATS THE REGISTRY HAS NOT CAUGHT UP WITH YET. A card dispatched on the
   // last beat is in NO lane until its agent host connects, which read as "nobody
@@ -296,7 +320,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   })
   if (pendingSeats.length > 0) {
     deps.log(
-      `${tag(group.epicId, run.gen)} ${pendingSeats.length} card(s) held for an unattached seat: ` +
+      `${tag(group.epicId, gen)} ${pendingSeats.length} card(s) held for an unattached seat: ` +
         pendingSeats.join(', '),
     )
   }
@@ -327,6 +351,10 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   const windowOpen = gatedBy(run.cadence, 'window') ? await deps.windowOpen(group.project) : true
   const beat: EpicBeat = planBeat({
     run,
+    // OFF THE LEASE, not off the run -- see the `gen` binding above. Every
+    // `expectGen` the beat emits ends up back at the CAS that produced this
+    // number, so the two cannot be different copies.
+    gen,
     plan,
     // THE SAME UNION the plan was computed from, and it must be: a beat that
     // withheld a card because a seat is arriving has work in flight, and telling
@@ -380,9 +408,10 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     await recordFinalPromises(deps, group, plan.rollup?.children.map(c => c.card) ?? [])
   }
 
-  await applyBeatPatch(deps, group, run.gen, beat.patch)
+  await applyBeatPatch(deps, group, gen, beat.patch)
 
   const spawned = await performActions(deps, group, run, beat, {
+    gen,
     batonTail: renderEpicLogTail(view.baton),
     plan,
     settled: pending,
@@ -393,7 +422,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     holder: view.lease,
   })
 
-  return finish(deps, group, run.gen, {
+  return finish(deps, group, gen, {
     epicId: group.epicId,
     note: `${beat.note} (${beat.actions.length} action(s), ${spawned.length} spawned)`,
     actions: beat.actions.length,

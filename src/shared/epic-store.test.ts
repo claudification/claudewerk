@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
 import { epicDigestFile, epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
-import { isOutOfGenerations, patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
+import { patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
 
 const T0 = Date.parse('2026-08-17T10:00:00.000Z')
 let root = ''
@@ -103,7 +103,10 @@ describe('the run artifact', () => {
     expect(run?.cadence).toEqual(['now'])
     expect(run?.target).toBe('merged')
     expect(run?.concurrency).toBe(3)
-    expect(run?.gen).toBe(0)
+    // AND NO GENERATION. It lives on the epic card as `overseer_gen`, which is
+    // what the CAS compares; a second copy here is the mirror that deadlocked
+    // `epic-the-wall-ii` (see `EpicRunMeta`).
+    expect(run).not.toHaveProperty('gen')
   })
 
   test('cadence is a MODE -- the same engine takes either value', () => {
@@ -156,26 +159,32 @@ describe('the run artifact', () => {
     expect(readEpicRun(root, 'e1')?.cadence).toEqual(['window'])
   })
 
-  test('re-arming RESUMES: the generation counter is never reset', () => {
+  /**
+   * Re-arming RESUMES, and it cannot reset the generation counter for the best
+   * possible reason: the counter is not in this file and `start` never opens the
+   * epic card. The dry streak, which IS here, does reset -- a resumed run gets
+   * its second chance back.
+   */
+  test('re-arming RESUMES, and writes no generation of its own', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
-    patchEpicRun(root, 'e1', { gen: 12, status: 'paused' }, T0 + 1)
+    patchEpicRun(root, 'e1', { dryGens: 1, status: 'paused' }, T0 + 1)
     startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 2)
     const run = readEpicRun(root, 'e1')
-    expect(run?.gen).toBe(12)
     expect(run?.status).toBe('armed')
     expect(run?.dryGens).toBe(0)
+    expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).not.toContain('gen:')
   })
 
   test('a patch merges and leaves absent fields alone', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p', concurrency: 5 }, T0)
-    patchEpicRun(root, 'e1', { gen: 3 }, T0 + 1)
+    patchEpicRun(root, 'e1', { dryGens: 3 }, T0 + 1)
     const run = readEpicRun(root, 'e1')
-    expect(run?.gen).toBe(3)
+    expect(run?.dryGens).toBe(3)
     expect(run?.concurrency).toBe(5)
   })
 
   test('patching an epic that never started is null, not a silent create', () => {
-    expect(patchEpicRun(root, 'ghost', { gen: 1 }, T0)).toBeNull()
+    expect(patchEpicRun(root, 'ghost', { dryGens: 1 }, T0)).toBeNull()
   })
 
   test('the digest is body prose and round-trips', () => {
@@ -213,12 +222,11 @@ describe('the run artifact', () => {
      *  touch a field the engine compares -- there is no frontmatter to catch. */
     test('rewriting the digest by hand cannot move the generation counter', () => {
       startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
-      patchEpicRun(root, 'e1', { gen: 11 }, T0 + 1)
 
       writeFileSync(epicDigestFile(root, 'e1'), '## Board at the start of generation 12\n\nprose, 900 lines of it\n')
 
       const run = readEpicRun(root, 'e1')
-      expect(run?.gen).toBe(11)
+      expect(run).not.toHaveProperty('gen')
       expect(run?.digest).toContain('generation 12')
     })
 
@@ -227,7 +235,8 @@ describe('the run artifact', () => {
       patchEpicRun(root, 'e1', { digest: 'Two cards left; both waiting on the schema card.' }, T0 + 1)
 
       const runFile = readFileSync(epicRunFile(root, 'e1'), 'utf8')
-      expect(runFile).toContain('gen: 0')
+      expect(runFile).toContain('status: armed')
+      expect(runFile).not.toContain('gen:')
       expect(runFile).not.toContain('schema card')
       expect(runFile).toContain(RUN_FILE_BANNER)
       expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toContain('schema card')
@@ -249,10 +258,10 @@ describe('the run artifact', () => {
     test('the first write moves a legacy digest into its own file', () => {
       writeLegacyRun('e1')
 
-      patchEpicRun(root, 'e1', { gen: 8 }, T0 + 1)
+      patchEpicRun(root, 'e1', { dryGens: 8 }, T0 + 1)
 
       expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toContain('legacy prose from gen 7')
-      expect(readEpicRun(root, 'e1')).toMatchObject({ gen: 8, digest: 'legacy prose from gen 7' })
+      expect(readEpicRun(root, 'e1')).toMatchObject({ dryGens: 8, digest: 'legacy prose from gen 7' })
     })
 
     /**
@@ -278,14 +287,15 @@ describe('the run artifact', () => {
       const asWritten = 'written by the overseer mid-beat\n\n\n'
 
       writeFileSync(epicDigestFile(root, 'e1'), asWritten)
-      patchEpicRun(root, 'e1', { gen: current!.gen + 1 }, T0 + 1)
+      patchEpicRun(root, 'e1', { dryGens: current!.dryGens + 1 }, T0 + 1)
 
       expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toBe(asWritten)
       // ...and the prose still reads back, so this is not "untouched because empty".
       expect(readEpicRun(root, 'e1')?.digest).toBe('written by the overseer mid-beat')
     })
 
-    /** A resume must not reset the prose either -- same argument as `gen`. */
+    /** A resume must not reset the prose either -- same argument as the dry
+     *  streak's ceiling: the last generation's account of the run outlives it. */
     test('re-arming keeps the digest the last generation wrote', () => {
       startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
       patchEpicRun(root, 'e1', { digest: 'three cards left', status: 'paused' }, T0 + 1)
@@ -307,12 +317,24 @@ describe('the run artifact', () => {
     })
   })
 
-  test('the generation ceiling is the runaway backstop', () => {
-    startEpicRun(root, { epicId: 'e1', project: 'p', maxGens: 3 }, T0)
-    patchEpicRun(root, 'e1', { gen: 2 }, T0 + 1)
-    expect(isOutOfGenerations(readEpicRun(root, 'e1')!)).toBe(false)
-    patchEpicRun(root, 'e1', { gen: 3 }, T0 + 2)
-    expect(isOutOfGenerations(readEpicRun(root, 'e1')!)).toBe(true)
+  /**
+   * THE MIRROR, GONE -- and this is the test that says a stale one is INERT.
+   *
+   * Every `run.md` armed before this card carries a `gen:` key, and so does any
+   * file a human or an agent edits by hand. Nothing reads it: the parse drops it
+   * and the next write does not put it back. A file claiming generation 99 is
+   * therefore indistinguishable, to every reader in the engine, from one that
+   * never mentioned a generation at all.
+   */
+  test('a `gen` hand-edited into run.md is read by nobody and does not survive a write', () => {
+    startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+    const file = epicRunFile(root, 'e1')
+    writeFileSync(file, readFileSync(file, 'utf8').replace('status: armed', 'status: armed\ngen: 99'), 'utf8')
+
+    expect(readEpicRun(root, 'e1')).not.toHaveProperty('gen')
+
+    patchEpicRun(root, 'e1', { dryGens: 1 }, T0 + 1)
+    expect(readFileSync(file, 'utf8')).not.toContain('gen: 99')
   })
 
   /**

@@ -110,10 +110,13 @@ export async function inspectEpic(
       group,
       armed: isArmed(project, epicId),
       unacknowledged: unacknowledgedCards(group.settled, view.acknowledgedCardIds),
+      // OFF THE LEASE, which is where the generation lives -- the run artifact
+      // no longer mirrors it (`EpicRunMeta`).
+      //
       // `null`, not 0, when the read FAILED: the generation is unknown, and a
-      // comparison against the parser's absent-file default is a warning about
-      // nothing. A clean read that found no artifact still compares against 0.
-      runGen: view.run?.gen ?? (view.error ? null : 0),
+      // comparison against the absent-lease default is a warning about nothing.
+      // A clean read of an epic that has never been woken still compares against 0.
+      leaseGen: view.error ? null : (view.lease?.gen ?? 0),
       conversations: epicConversations(convs, deps.isLive, epicId),
     }),
     beats: recentBeats(project, epicId, opts.beats ?? 10),

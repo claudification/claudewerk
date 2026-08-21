@@ -54,12 +54,12 @@ describe('the run acknowledgement on disk', () => {
   test('it does not disturb the rest of the run', () => {
     withRoot(root => {
       startEpicRun(root, { epicId: 'e1', project: 'claude:///p', maxGens: 12 }, T0)
-      patchEpicRun(root, 'e1', { status: 'paused', gen: 7 }, T0)
+      patchEpicRun(root, 'e1', { status: 'paused', dryGens: 7 }, T0)
       patchEpicRun(root, 'e1', { acknowledgedAt: new Date(T0).toISOString() }, T0)
 
       const run = readEpicRun(root, 'e1')
       expect(run?.status).toBe('paused')
-      expect(run?.gen).toBe(7)
+      expect(run?.dryGens).toBe(7)
       expect(run?.maxGens).toBe(12)
     })
   })

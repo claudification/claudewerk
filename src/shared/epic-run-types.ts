@@ -173,8 +173,22 @@ export interface EpicRunMeta {
    */
   cadence: EpicCadence[]
   status: EpicRunStatus
-  /** Monotonic overseer generation. Every wake increments it exactly once. */
-  gen: number
+  /**
+   * THERE IS NO `gen` HERE, AND THAT IS THE POINT.
+   *
+   * The overseer generation lives on the EPIC CARD, as `overseer_gen`, because
+   * that is the field `evaluateLease` compares against (epic-lease.ts). It used
+   * to be MIRRORED into this frontmatter on every lease grant, and nothing
+   * anywhere compared the two -- so when the mirror drifted, the wake quoted one
+   * number and the CAS compared the other and they could never agree again. On
+   * 2026-08-20 `epic-the-wall-ii` beat every 45 seconds for hours on `stale wake:
+   * expected gen 12, epic is at gen 11`, spawning nothing, while every panel
+   * surface said RUNNING.
+   *
+   * A second copy that no reader needed was the whole defect, so the copy is
+   * gone rather than reconciled. `EpicRunReading` below carries a `gen` PROJECTED
+   * from the lease for the surfaces that render one; nothing persists it.
+   */
   /** Delivery rung, same ladder as a quest: pr | merged | shipped. */
   target: 'pr' | 'merged' | 'shipped'
   /** Consecutive generations that found nothing to dispatch. Two = park. */
@@ -280,6 +294,28 @@ export interface EpicRunFull extends EpicRunMeta {
    *  `digest.md`, never `run.md`'s body: an agent ordered to rewrite prose must
    *  not have the engine's scalars in the same file. See `epic-run-store.ts`. */
   digest: string
+}
+
+/**
+ * THE RUN AS EVERY READER OUTSIDE THE STORE SEES IT: the two files on disk, plus
+ * the one number that is in NEITHER of them.
+ *
+ * `gen` is PROJECTED from the epic card's lease (`overseer_gen`) at the sentinel
+ * seam -- read on the way out, never written on the way in. That is what makes it
+ * a projection rather than the mirror this card deleted: there is exactly one
+ * place the generation is stored, so no two readers can disagree about it and no
+ * hand-edit of `run.md` can move it.
+ *
+ * It stays on this type rather than making every surface fold the lease itself
+ * because a generation is what a run IS read for -- the prompt header, the
+ * ceiling, the wall row, the rail and the `epic_run` tool all print it -- and
+ * five separate folds of the same field is how the second copy got written in
+ * the first place.
+ */
+export interface EpicRunReading extends EpicRunFull {
+  /** Monotonic overseer generation, from the CARD's lease. Every grant advances
+   *  it by exactly one; 0 means the epic has never been woken. */
+  gen: number
 }
 
 /**

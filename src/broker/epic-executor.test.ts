@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
 import type { CommitRow } from '../shared/commit-ledger'
-import { evaluateLease } from '../shared/epic-lease'
+import { type EpicLease, evaluateLease } from '../shared/epic-lease'
 import { acknowledgedCardIds, dispatchCountsByCard, readEpicLog } from '../shared/epic-log'
 import { SEAT_ATTACH_GRACE_MS } from '../shared/epic-pending-seats'
 import { MAX_CARD_SEATS } from '../shared/epic-ready'
@@ -88,6 +88,8 @@ let spawns: Array<{ name: string; epic: Record<string, unknown> }>
 let leaseGranted: boolean
 let cards: ProjectTaskMeta[]
 let run: EpicRunSnapshot | null
+/** The lease on the epic card -- the ONLY generation there is. */
+let lease: EpicLease | null
 /** What the cost store would answer for this run's conversations. */
 let spendUsd: number
 /** The conversation ids the spend fold was actually asked about. */
@@ -128,6 +130,7 @@ beforeEach(() => {
   leaseGranted = true
   cards = []
   run = { ...RUN }
+  lease = { convId: '', gen: 3, at: '' }
   spendUsd = 0
   spendAskedFor = []
   nowMs = NOW_0
@@ -144,7 +147,11 @@ beforeEach(() => {
       baton,
       acknowledgedCardIds: acknowledgedCardIds(baton),
       dispatchCounts: dispatchCountsByCard(baton),
-      lease: null,
+      // THE GENERATION COMES FROM HERE, not from `run` -- the run artifact does
+      // not carry one. `convId: ''` is the shape `releasePatch` leaves: ran to
+      // generation 3, holder released, counter kept. It matches the fixture's
+      // `maxGenSeen: 3`, which is what a healthy epic looks like.
+      lease,
       // NO `error` when the run is null: a successful read of an epic nobody
       // armed is not a failure, and the stub that pretended otherwise is the
       // same conflation the beat note used to make.
@@ -297,15 +304,7 @@ describe('runEpicBeat', () => {
    * to answering the group-wide question.
    */
   test('the CAS is told about THE HOLDER named on the board, not about any overseer', async () => {
-    configureEpicIo({
-      fetchEpicRun: async () => ({
-        run,
-        baton,
-        acknowledgedCardIds: acknowledgedCardIds(baton),
-        dispatchCounts: dispatchCountsByCard(baton),
-        lease: { convId: 'conv_holder', gen: 4, at: '' },
-      }),
-    })
+    lease = { convId: 'conv_holder', gen: 4, at: '' }
     await runEpicBeat(deps(), group({ settled: ['t1'], liveOverseers: ['conv_someone_else'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
   })
@@ -337,16 +336,8 @@ describe('runEpicBeat', () => {
     }
 
     /** The board still names the corpse as the holder -- that is the freeze. */
-    const holdingTheLease = (lease: { convId: string; gen: number } = { convId: DEAD.convId, gen: 3 }) => {
-      configureEpicIo({
-        fetchEpicRun: async () => ({
-          run,
-          baton,
-          acknowledgedCardIds: acknowledgedCardIds(baton),
-          dispatchCounts: dispatchCountsByCard(baton),
-          lease: { ...lease, at: '' },
-        }),
-      })
+    const holdingTheLease = (held: { convId: string; gen: number } = { convId: DEAD.convId, gen: 3 }) => {
+      lease = { ...held, at: '' }
     }
 
     const reaped = () => group({ abandonedOverseers: [DEAD], overseerAlive: false, liveOverseers: [] })
@@ -461,63 +452,58 @@ describe('runEpicBeat', () => {
   })
 
   /**
-   * THE 2026-08-20 DEADLOCK, in one test.
+   * THE 2026-08-20 DEADLOCK, in three tests -- and it is now a shape the engine
+   * cannot get into rather than one it recovers from.
    *
-   * `epic-the-wall-ii` beat every 45s for hours with `0 spawned`, logging
-   * `wake refused: stale wake: expected gen 12, epic is at gen 11`. The run file
-   * said gen 12; the lease on the card said 11. The wake quoted the RUN, the CAS
+   * `epic-the-wall-ii` beat every 45s for hours with `0 spawned`, logging `wake
+   * refused: stale wake: expected gen 12, epic is at gen 11`. The run file said
+   * gen 12; the lease on the card said 11. The wake quoted the RUN, the CAS
    * compares against the CARD, and the two could never agree again -- so every
    * settle woke nobody, forever, while the panel said RUNNING.
    *
-   * The run file's `gen` is a MIRROR (the sentinel writes it when a lease is
-   * granted) and the mirror is hand-editable: an overseer rewriting `run.md`'s
-   * digest can rewrite its frontmatter with it. The lease is the only authority,
-   * so the wake must quote the lease it just read.
+   * The run artifact carries no generation at all any more (`EpicRunMeta`), and
+   * `EpicRunSnapshot.gen` is projected onto it from the lease at the sentinel
+   * seam. A stale number in the artifact is therefore not reconciled, not logged
+   * as drift and not repaired -- it is UNREADABLE, and these pin that: hand a
+   * beat a run claiming generation 12 beside a lease at 11 and every number it
+   * emits is 11's.
    */
-  test('a run whose gen drifted ahead of the lease still wakes -- the CAS quotes the LEASE', async () => {
-    run = { ...RUN, gen: 12 }
-    configureEpicIo({
-      fetchEpicRun: async () => ({
-        run,
-        baton,
-        acknowledgedCardIds: acknowledgedCardIds(baton),
-        dispatchCounts: dispatchCountsByCard(baton),
-        lease: { convId: 'conv_dead', gen: 11, at: '' },
-      }),
+  describe('a run object claiming a generation the lease does not', () => {
+    beforeEach(() => {
+      run = { ...RUN, gen: 12 }
+      lease = { convId: 'conv_dead', gen: 11, at: '' }
     })
-    const out = await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
-    expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(11)
-    expect(out.spawned).toHaveLength(1)
-  })
 
-  test('the drift between the run mirror and the lease is LOGGED, not silently absorbed', async () => {
-    run = { ...RUN, gen: 12 }
-    configureEpicIo({
-      fetchEpicRun: async () => ({
-        run,
-        baton,
-        acknowledgedCardIds: acknowledgedCardIds(baton),
-        dispatchCounts: dispatchCountsByCard(baton),
-        lease: { convId: 'conv_dead', gen: 11, at: '' },
-      }),
+    test('wakes on the LEASE generation -- the one the CAS compares', async () => {
+      const out = await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
+      expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(11)
+      expect(out.spawned).toHaveLength(1)
     })
-    await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
-    expect(log.join('\n')).toContain('generation DRIFT')
+
+    /** Every LINE too, not just the CAS: the beat summary, the tag on each log
+     *  line and the beat ring all name the generation, and a surface quoting the
+     *  artifact while the engine quotes the lease is how the deadlock stayed
+     *  invisible for hours. */
+    test('and every log line it writes names that same generation', async () => {
+      await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
+      expect(log.some(l => l.includes('[epic e1 gen 11] beat:'))).toBe(true)
+      expect(log.join('\n')).not.toContain('[epic e1 gen 12] beat:')
+    })
+
+    /** The ceiling is the same question: judged against the lease, so a run file
+     *  claiming a generation past `maxGens` cannot park a healthy run. */
+    test('and the generation CEILING is judged against the lease, not the artifact', async () => {
+      run = { ...RUN, gen: 12, maxGens: 12 }
+      const out = await runEpicBeat(deps(), group({ settled: ['t1'], maxGenSeen: 12 }))
+      expect(out.note).not.toContain('generation ceiling')
+      expect(out.spawned).toHaveLength(1)
+    })
   })
 
   test('with the run and the lease in agreement the wake quotes that generation unchanged', async () => {
-    configureEpicIo({
-      fetchEpicRun: async () => ({
-        run,
-        baton,
-        acknowledgedCardIds: acknowledgedCardIds(baton),
-        dispatchCounts: dispatchCountsByCard(baton),
-        lease: { convId: 'conv_dead', gen: 3, at: '' },
-      }),
-    })
+    lease = { convId: 'conv_dead', gen: 3, at: '' }
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.expectGen).toBe(3)
-    expect(log.join('\n')).not.toContain('generation DRIFT')
   })
 
   /**
@@ -853,7 +839,10 @@ describe('runEpicBeat against the real sentinel seam', () => {
     mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
     writeFileSync(
       cardPath(root, 'e1', false),
-      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      // Generation 3, held by nobody -- the shape `releasePatch` leaves behind.
+      // The GENERATION LIVES HERE, on the card, and nowhere else: `run.md` has
+      // carried no `gen` since the mirror was deleted.
+      "---\ntitle: The epic\nstatus: open\ntags: [epic]\noverseer: ''\noverseer_gen: 3\n---\n\nBody.\n",
       'utf8',
     )
 
@@ -871,7 +860,7 @@ describe('runEpicBeat against the real sentinel seam', () => {
         projectRoot: root,
         op: 'patch',
         epicId: 'e1',
-        patch: { gen: 3, status: 'running' },
+        patch: { status: 'running' },
       },
       NOW,
     )
@@ -968,7 +957,10 @@ describe('a bounced card, against the real sentinel seam', () => {
     mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
     writeFileSync(
       cardPath(root, 'e1', false),
-      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      // Generation 3, held by nobody -- the shape `releasePatch` leaves behind.
+      // The GENERATION LIVES HERE, on the card, and nowhere else: `run.md` has
+      // carried no `gen` since the mirror was deleted.
+      "---\ntitle: The epic\nstatus: open\ntags: [epic]\noverseer: ''\noverseer_gen: 3\n---\n\nBody.\n",
       'utf8',
     )
     handleEpicOp(
@@ -978,7 +970,7 @@ describe('a bounced card, against the real sentinel seam', () => {
     )
     handleEpicOp(
       root,
-      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { gen: 3 } },
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { status: 'running' } },
       NOW,
     )
     // The bounce, as the engine actually leaves it: the implementer settled and
@@ -1073,7 +1065,10 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
     mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
     writeFileSync(
       cardPath(root, 'e1', false),
-      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      // Generation 3, held by nobody -- the shape `releasePatch` leaves behind.
+      // The GENERATION LIVES HERE, on the card, and nowhere else: `run.md` has
+      // carried no `gen` since the mirror was deleted.
+      "---\ntitle: The epic\nstatus: open\ntags: [epic]\noverseer: ''\noverseer_gen: 3\n---\n\nBody.\n",
       'utf8',
     )
     handleEpicOp(
@@ -1083,7 +1078,7 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
     )
     handleEpicOp(
       root,
-      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { gen: 3 } },
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { status: 'running' } },
       NOW,
     )
     // The seat that went out, and the settle the beat already acknowledged -- so

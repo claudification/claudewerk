@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import { planEpic } from '../shared/epic-ready'
-import type { EpicRun } from '../shared/epic-run-store'
+import type { EpicRunReading } from '../shared/epic-run-types'
 import { EPIC_RUN_DEFAULTS } from '../shared/epic-run-types'
 import type { SpawnRequest } from '../shared/spawn-schema'
 import { spawnRequestSchema } from '../shared/spawn-schema'
@@ -31,7 +31,7 @@ import { buildLaunchConfig, WERK_TAGS } from './spawn-launch-config'
 const PROJECT = 'claude://default/Users/jonas/projects/remote-claude'
 const CTX: EpicSpawnCtx = { project: PROJECT, projectRoot: PROJECT, epicId: 'epic-the-wall', gen: 6 }
 
-const RUN: EpicRun = {
+const RUN: EpicRunReading = {
   ...EPIC_RUN_DEFAULTS,
   epicId: 'epic-the-wall',
   project: PROJECT,

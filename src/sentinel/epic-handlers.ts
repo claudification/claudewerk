@@ -16,10 +16,10 @@
  */
 
 import { relative } from 'node:path'
-import { OVERSEER_KEY_PREFIX, readLease, releasePatch } from '../shared/epic-lease'
+import { type EpicLease, OVERSEER_KEY_PREFIX, readLease, releasePatch } from '../shared/epic-lease'
 import { acknowledgedCardIds, appendEpicLog, dispatchCountsByCard, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
-import { deleteEpicRun, patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
+import { deleteEpicRun, type EpicRun, patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import type { EpicRunStatus } from '../shared/epic-run-types'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
 import { casLeaseOnCard, patchCardMeta, readCardMeta } from './epic-card-meta'
@@ -46,9 +46,38 @@ const BATON_TAIL = 20
  */
 const DELETABLE: readonly EpicRunStatus[] = ['paused', 'aborted', 'complete']
 
+/**
+ * THE ONE PLACE THE GENERATION IS PROJECTED, and the reason there is no second
+ * copy of it anywhere.
+ *
+ * `run.md` does not carry `gen` (epic-run-types.ts). The epic CARD does, as
+ * `overseer_gen`, because that is what `evaluateLease` compares -- so every run
+ * that leaves this file gets the number read fresh off the card, on the way out,
+ * and nothing writes it back. A hand-edit of `run.md` therefore cannot move it,
+ * a stale `gen:` key left over from an older engine is inert, and the wake, the
+ * ceiling, the prompt header and the CAS are reading the same byte by
+ * construction.
+ *
+ * 0 when the card has never held a lease, which is the same answer the counter
+ * gave when it lived in the artifact.
+ */
+function withLeaseGen(run: EpicRun, lease: EpicLease | null): EpicRunSnapshot {
+  return { ...run, gen: lease?.gen ?? 0 }
+}
+
+/** The overseer lease as the epic CARD has it -- the generation's only home, and
+ *  the one fact about a run that is not in the run's own directory. */
+function currentLease(root: string, epicId: string): EpicLease | null {
+  return readLease(readCardMeta(root, epicId) ?? {})
+}
+
+function projected(root: string, epicId: string, run: EpicRun): EpicRunSnapshot {
+  return withLeaseGen(run, currentLease(root, epicId))
+}
+
 function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
   const run = readEpicRun(root, epicId)
-  return run ? { ...run } : null
+  return run ? projected(root, epicId, run) : null
 }
 
 const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
@@ -64,7 +93,8 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
    */
   start(root, msg, nowMs) {
     const run = startEpicRun(root, { epicId: msg.epicId, project: msg.projectRoot, ...(msg.start ?? {}) }, nowMs)
-    return { ok: true, run: { ...run }, currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}) }
+    const lease = currentLease(root, msg.epicId)
+    return { ok: true, run: withLeaseGen(run, lease), currentLease: lease }
   },
 
   /**
@@ -92,13 +122,13 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       // the file is read whole either way, and the beat's ceiling on redispatch
       // is a question about the entire run, not about its last 20 entries.
       dispatchCounts: dispatchCountsByCard(entries),
-      currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}),
+      currentLease: currentLease(root, msg.epicId),
     }
   },
 
   patch(root, msg, nowMs) {
     const run = patchEpicRun(root, msg.epicId, msg.patch ?? {}, nowMs)
-    return run ? { ok: true, run: { ...run } } : fail(`epic run not found: ${msg.epicId}`)
+    return run ? { ok: true, run: projected(root, msg.epicId, run) } : fail(`epic run not found: ${msg.epicId}`)
   },
 
   log_append(root, msg, nowMs) {
@@ -115,9 +145,13 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
     // The CAS itself is `casLeaseOnCard` -- shared with the per-card seat lease,
     // because the read-evaluate-write is identical and only the keys differ.
     const lease = casLeaseOnCard(root, msg.epicId, OVERSEER_KEY_PREFIX, meta, req, nowMs)
-    // The one thing that is NOT shared: a granted overseer lease advances the
-    // RUN, and a seat lease has no run to advance.
-    if (lease.granted) patchEpicRun(root, msg.epicId, { gen: lease.gen, status: 'running' }, nowMs)
+    // The one thing that is NOT shared: a granted overseer lease means the run
+    // is RUNNING, and a seat lease has no run to move.
+    //
+    // IT DOES NOT WRITE THE GENERATION. `casLeaseOnCard` has just advanced
+    // `overseer_gen` on the card, which is the only copy there is; mirroring it
+    // here is what this card deleted. See `withLeaseGen` above.
+    if (lease.granted) patchEpicRun(root, msg.epicId, { status: 'running' }, nowMs)
     return { ok: true, lease }
   },
 
@@ -128,13 +162,19 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
 
   pause(root, msg, nowMs) {
     const run = patchEpicRun(root, msg.epicId, { status: 'paused' }, nowMs)
+    if (!run) return fail(`epic run not found: ${msg.epicId}`)
+    // The generation is read BEFORE the release, and it survives it:
+    // `releasePatch` deliberately leaves `overseer_gen` standing, or the next
+    // wake would reuse a number the baton already holds (epic-lease.ts).
+    const paused = projected(root, msg.epicId, run)
     patchCardMeta(root, msg.epicId, releasePatch())
-    return run ? { ok: true, run: { ...run } } : fail(`epic run not found: ${msg.epicId}`)
+    return { ok: true, run: paused }
   },
 
   abort(root, msg, nowMs) {
     const run = patchEpicRun(root, msg.epicId, { status: 'aborted' }, nowMs)
     if (!run) return fail(`epic run not found: ${msg.epicId}`)
+    const aborted = projected(root, msg.epicId, run)
     patchCardMeta(root, msg.epicId, releasePatch())
     appendEpicLog(
       root,
@@ -142,7 +182,7 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       { kind: 'checkpoint', convId: 'sentinel', body: `Run ABORTED: ${msg.reason || 'no reason given'}` },
       nowMs,
     )
-    return { ok: true, run: { ...run, abortReason: msg.reason || 'aborted', updated: nowIso(nowMs) } }
+    return { ok: true, run: { ...aborted, abortReason: msg.reason || 'aborted', updated: nowIso(nowMs) } }
   },
 
   /**
@@ -177,7 +217,7 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       { kind: 'checkpoint', convId: 'sentinel', body: `Run CLEARED from the wall (status ${current.status})` },
       nowMs,
     )
-    return { ok: true, run: { ...run } }
+    return { ok: true, run: projected(root, msg.epicId, run) }
   },
 
   /**
@@ -225,7 +265,7 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
     // RELATIVE to the project, never the absolute path. This string is rendered
     // in a panel and pasted into reports; the box's directory layout is not
     // something a wall row needs to publish to say where the tombstone is.
-    return { ok: true, run: { ...current }, deletedTo: relative(root, to) }
+    return { ok: true, run: projected(root, msg.epicId, current), deletedTo: relative(root, to) }
   },
 }
 
