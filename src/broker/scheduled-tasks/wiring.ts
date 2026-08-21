@@ -16,6 +16,7 @@
 
 import type { SpawnCallerContext } from '../../shared/spawn-permissions'
 import { getUser } from '../auth'
+import { publishBoardReport } from '../board-report-feed'
 import { callBoard } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
@@ -104,6 +105,11 @@ export function wireScheduledTasks(store: StoreDriver, conversationStore: Conver
         getAllConversations: conversationStore.getAllConversations,
         isLive: werkLiveness(conversationStore.getActiveConversationCount),
         stampRun: (project, at) => stampScannerRun(project, 'morning-report', at),
+        // Records the brew and pushes it to the panel, in that order. The
+        // surface is a PURE READER -- it renders what this wrote and can never
+        // ask for a sweep of its own.
+        recordReport: (project, tz, sweep, at) =>
+          void publishBoardReport(conversationStore.getSubscribers(), project, tz, sweep, at),
         now: Date.now,
       }),
 

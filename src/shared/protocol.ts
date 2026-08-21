@@ -4587,6 +4587,93 @@ export interface ProjectBoardRequest {
   apply?: BoardApplyRequest
 }
 
+// ---------------------------------------------------------------------------
+// THE MORNING REPORT'S SURFACE -- reading the brew, and executing what is ticked.
+//
+// Deliberately NOT the board-op envelope above. `sweep` is a WRITE that runs a
+// full fold and lands a file; the surface must never be able to send it, because
+// a panel that generates its own report can never visibly fail and the missing
+// brew is this feature's only liveness signal. So the surface gets its own pair
+// of verbs -- one that READS what the schedule already produced, and one that
+// executes ticked rows through the broker (which logs the outcome, not the
+// intent). Neither can trigger a sweep.
+// ---------------------------------------------------------------------------
+
+/**
+ * One morning report, as the broker recorded it when the sweep came back.
+ *
+ * The markdown artifact beside the cards is tier 2 of D7 and is written for a
+ * human; this is the machine-readable copy the surface renders and ticks. It
+ * lives in the broker's `board-audit.db` sidecar, which is also what makes
+ * staleness answerable: a report is never deleted by the absence of a successor,
+ * so "from Tuesday" is a thing the panel can say out loud.
+ */
+export interface BoardReportRecord {
+  /** Canonical project URI the sweep ran against. */
+  project: string
+  /** `YYYY-MM-DD` in `tz` -- the artifact's own name, and `apply`'s actor stamp. */
+  date: string
+  /** IANA zone the report was dated in. Carried so Execute stamps `archived_by`
+   *  in the report's zone rather than the browser's. */
+  tz: string
+  /** Project-relative path of the markdown artifact. */
+  reportPath: string
+  proposals: Proposal[]
+  snapshot: string
+  /** The fold short-circuited -- HEAD and the board had not moved. */
+  skipped: boolean
+  selected: number
+  acted: number
+  refused: number
+  /** The fold's own words for why it had nothing to say. Rendered verbatim: "the
+   *  sweep found nothing" and "the sweep did not look" are different claims and
+   *  the panel must not merge them. */
+  idleReason?: string
+  /** Epoch ms the broker recorded this report. */
+  sweptAt: number
+}
+
+/** `latest` READS the recorded report; `execute` performs the ticked rows. There
+ *  is deliberately no verb here that runs a sweep. */
+export type BoardReportOp = 'latest' | 'execute'
+
+/** Dashboard -> Broker: read the last morning report, or execute ticked rows. */
+export interface BoardReportRequest {
+  type: 'board_report_request'
+  requestId: string
+  /** Canonical project URI. */
+  project: string
+  op: BoardReportOp
+  /** `execute` only. `date` names the report being executed and must match the
+   *  recorded one -- a tick list computed against yesterday's board is refused
+   *  rather than applied to today's. */
+  execute?: {
+    proposals: BoardProposalRef[]
+    date: string
+  }
+}
+
+/** Broker -> Dashboard: the recorded report, or one outcome per ticked row. */
+export interface BoardReportResult {
+  type: 'board_report_result'
+  requestId: string
+  ok: boolean
+  /** `latest`: the recorded report, or null when no sweep has ever landed. */
+  report?: BoardReportRecord | null
+  /** `execute`: one row per proposal, in the order it was handed them. Every row
+   *  is read back from what `apply` actually did, never from what was asked. */
+  applied?: BoardApplyOutcome[]
+  error?: string
+}
+
+/** Broker -> Dashboard: a fresh report landed. Pushed rather than polled so a
+ *  PARKED surface learns about the morning's brew and its dock tile pulses. */
+export interface BoardReportChanged {
+  type: 'board_report_changed'
+  project: string
+  report: BoardReportRecord
+}
+
 /** Dashboard -> Broker: read a project-relative file (markdown viewer). */
 export interface ProjectFileRequest {
   type: 'project_file_request'
