@@ -100,7 +100,7 @@ export type RefineBucket =
   | 'order-refused'
   | 'dispatch-failed'
 
-export const REFINE_BUCKETS: readonly RefineBucket[] = [
+const REFINE_BUCKETS: readonly RefineBucket[] = [
   'live-conversation',
   'already-run',
   'not-actionable',

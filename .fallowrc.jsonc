@@ -39,6 +39,15 @@
     "@shared/wall-pin",
     "@shared/ws-probe"
   ],
+  // Same alias, the OTHER bucket. `ignoreDependencies` above silences
+  // "unlisted dependency"; an alias fallow cannot resolve ALSO reports as
+  // "unresolved import", which is a separate finding with a separate ignore
+  // list. Every web file importing `@shared/*` carries one; the new-only gate
+  // hides them as inherited until a file is TOUCHED, and then the gate blocks
+  // that author's push for a false positive they did not cause. 2026-08-21: a
+  // new web test importing `@shared/protocol` blocked an epic integration
+  // exactly this way.
+  "ignoreUnresolvedImports": ["@shared/*"],
   "ignorePatterns": [".claude/**", ".rclaude/**"],
   "ignoreExports": [
     // src/shared/protocol.ts is a WIRE CONTRACT surface, not an app module.
