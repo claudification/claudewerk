@@ -181,7 +181,12 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     inFlight: group.inFlight,
     inVerify: group.inVerify,
     unspawnable: group.unspawnable,
-    // THE CEILING ON THE BOUNCE LANE, from the SAME `get` the run and the baton
+    // THE SAME `settled` the acknowledgement pass above reads, and deliberately
+    // the post-rename one: a card acknowledged under its old id must not be
+    // dispatchable again under its new one, which is the identical rule
+    // `renameAwareAcks` exists for one lane over.
+    settled: group.settled,
+    // THE CEILING ON THE DISPATCH LANE, from the SAME `get` the run and the baton
     // came from. Rename-aware for `renameAwareAcks`'s reason: the log names a
     // card by whatever id it had when the seat went out, so a renamed card would
     // otherwise start its seat count over at zero.

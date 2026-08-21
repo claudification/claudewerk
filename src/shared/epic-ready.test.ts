@@ -309,12 +309,20 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
     })
 
     /**
-     * BOUNCE LANE ONLY. A `notStarted` card is dispatched on its bucket exactly as
-     * it always was; widening the ceiling to that lane is a separate card
-     * (`epic-open-lane-redispatches-forever`), not a rider on this one.
+     * BOTH LANES, since `epic-open-lane-redispatches-forever`. This test pinned
+     * the opposite when the ceiling landed -- on the reasoning that a not-started
+     * card had never been dispatched, which is false of a card an implementer left
+     * in `open`. The ceiling is a per-CARD lifetime budget, so it is one number
+     * for both lanes and `status:` is not a lever that refills it.
      */
-    test('a not-started card is not subject to it', () => {
+    test('a not-started card IS subject to it -- the ceiling is per card, not per lane', () => {
       const p = planSeats([EPIC, card('t1', 'open', { epic: 'e1' })], { t1: MAX_CARD_SEATS + 10 })
+      expect(p.dispatch).toEqual([])
+      expect(p.exhausted.map(c => c.slug)).toEqual(['t1'])
+    })
+
+    test('a not-started card below the ceiling still dispatches', () => {
+      const p = planSeats([EPIC, card('t1', 'open', { epic: 'e1' })], { t1: MAX_CARD_SEATS - 1 })
       expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
       expect(p.exhausted).toEqual([])
     })
@@ -371,6 +379,157 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
     })
     expect(p.dispatch.map(c => c.slug)).toEqual(['b'])
     expect(p.exhausted).toEqual([])
+  })
+})
+
+/**
+ * AN `open` CARD A SEAT ALREADY RAN FOR IS NOT DISPATCHED AGAIN.
+ *
+ * Dispatching a card does not move it out of `open` -- `spawnForCard` only
+ * appends a baton entry -- so an implementer that ran, produced output and died
+ * without moving its own card left that card `open`, therefore `notStarted`,
+ * therefore dispatchable again on the very next beat. Every 45 seconds, forever:
+ * `MAX_LAUNCH_ATTEMPTS` explicitly does not apply, because a card that produced
+ * output is `settled` rather than `unspawnable`.
+ *
+ * The work-order scanner solved exactly this for the tag cohort with its
+ * `already-run` refusal, spelled out in its own comment. This is the epic
+ * cohort's copy.
+ */
+describe('an `open` card whose seat already settled -- the `alreadyRun` guard', () => {
+  const planSettled = (cards: ProjectTaskMeta[], settled: string[], inFlight: string[] = []) =>
+    planEpic({ cards, epicId: 'e1', concurrency: 3, inFlight, inVerify: [], settled })
+
+  test('a card with NO prior seat is dispatched normally', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1' })], [])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(p.alreadyRun).toEqual([])
+  })
+
+  test('a card whose only seat settled without moving it is NOT dispatched a second time', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1' })], ['t1'])
+    expect(p.dispatch).toEqual([])
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('the bound is ONE seat -- stricter than the ceiling, and it does not wait for it', () => {
+    const p = planEpic({
+      cards: [EPIC, card('t1', 'open', { epic: 'e1' })],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+      settled: ['t1'],
+      dispatches: { t1: 1 },
+    })
+    expect(p.dispatch).toEqual([])
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+    expect(p.exhausted).toEqual([])
+  })
+
+  test('`inbox` is not-started too, and gets the same guard', () => {
+    const p = planSettled([EPIC, card('t1', 'inbox', { epic: 'e1' })], ['t1'])
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+  })
+
+  test('the withheld card is NAMED, with both moves that re-authorise it', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1' })], ['t1'])
+    expect(p.idleReason).toContain('t1')
+    expect(p.idleReason).toContain('in-review')
+    expect(p.idleReason).toContain('in-progress')
+    expect(p.idleReason).not.toContain('nothing ready')
+  })
+
+  test('it is per card -- a settled sibling does not stall a fresh one', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1' }), card('t2', 'open', { epic: 'e1' })], ['t1'])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t2'])
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+    expect(p.idleReason).toBeUndefined()
+  })
+
+  test('a live seat wins -- a card being worked right now is not a stall', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1' })], ['t1'], ['t1'])
+    expect(p.alreadyRun).toEqual([])
+    expect(p.idleReason).toContain('still in flight')
+  })
+
+  test('it is reported as already-run rather than dependency-blocked', () => {
+    const p = planSettled([EPIC, card('t1', 'open', { epic: 'e1', dependsOn: ['ghost'] })], ['t1'])
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+    expect(p.waitingOnDeps).toEqual([])
+  })
+
+  /**
+   * THE BOUNCE LANE SURVIVES IT. A card at `in-progress` is settled by
+   * construction -- its implementer and its verifier both ran and both died --
+   * so applying this guard there would delete the lane the bounce card just
+   * built. `MAX_CARD_SEATS` bounds that one instead.
+   */
+  test('a bounced card at `in-progress` is settled and STILL dispatched', () => {
+    const p = planSettled([EPIC, card('t1', 'in-progress', { epic: 'e1' })], ['t1'])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(p.alreadyRun).toEqual([])
+  })
+
+  /**
+   * WHY BOTH GUARDS EXIST. `settled` is folded from the conversation registry, so
+   * it can only see a seat whose agent host connected and stamped an epic tag. A
+   * spawn the sentinel accepted whose host never connects is in NO lane -- not
+   * `inFlight`, not `settled`, not `failedLegs` -- and the baton count is the only
+   * thing that can stop it.
+   */
+  test('a seat that never connected is invisible to `settled` and caught by the ceiling', () => {
+    const p = planEpic({
+      cards: [EPIC, card('t1', 'open', { epic: 'e1' })],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+      settled: [],
+      dispatches: { t1: MAX_CARD_SEATS },
+    })
+    expect(p.dispatch).toEqual([])
+    expect(p.exhausted.map(c => c.slug)).toEqual(['t1'])
+    expect(p.alreadyRun).toEqual([])
+  })
+
+  test('an unspawnable card outranks an already-run one -- its seat cannot launch at all', () => {
+    const p = planEpic({
+      cards: [EPIC, card('t1', 'open', { epic: 'e1' }), card('t2', 'open', { epic: 'e1' })],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+      settled: ['t1'],
+      unspawnable: ['t2'],
+    })
+    expect(p.alreadyRun.map(c => c.slug)).toEqual(['t1'])
+    expect(p.idleReason).toContain('seats keep dying')
+  })
+
+  test('omitting `settled` means no guard -- the field is optional by design', () => {
+    const p = plan([EPIC, card('t1', 'open', { epic: 'e1' })])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
+    expect(p.alreadyRun).toEqual([])
+  })
+
+  /**
+   * THE TAG COHORT IS IMMUNE BY OMISSION, exactly as it is for the seat ceiling
+   * -- `settled` is optional and the work-order scanner does not pass it, because
+   * it runs its own `already-run` refusal BEFORE the fold and feeds the result in
+   * through `exclude`. Folding it again here would count one card into two
+   * refusal buckets.
+   *
+   * The arithmetic itself is NOT cohort-specific, and this pins that: a tag
+   * cohort that did supply `settled` would get the identical answer. That is the
+   * shared-fold contract (`epic-ready.ts` header) -- only the SELECTION differs.
+   */
+  test('planTagged is immune by omission, and identical when it does supply the set', () => {
+    const cards = [card('a', 'open', { tags: ['ready'] })]
+    const base = { cards, tag: 'ready', concurrency: 3, inFlight: [], inVerify: [] }
+    expect(planTagged(base).dispatch.map(c => c.slug)).toEqual(['a'])
+    expect(planTagged(base).alreadyRun).toEqual([])
+    expect(planTagged({ ...base, settled: ['a'] }).alreadyRun.map(c => c.slug)).toEqual(['a'])
   })
 })
 

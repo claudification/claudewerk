@@ -42,6 +42,7 @@ const EMPTY_PLAN: EpicPlan = {
   unspawnable: [],
   needsRefine: [],
   exhausted: [],
+  alreadyRun: [],
   complete: false,
 }
 
