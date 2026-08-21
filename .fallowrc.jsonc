@@ -21,6 +21,7 @@
     "@shared/epic-run-cleared",
     "@shared/epic-run-types",
     "@shared/epic-vitality",
+    "@shared/epic-when",
     "@shared/nightshift-types",
     "@shared/pinned-epic-rows",
     "@shared/project-order-types",
