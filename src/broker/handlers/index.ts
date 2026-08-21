@@ -4,6 +4,7 @@
  */
 
 import { registerAskQuestionHandlers } from './ask-question'
+import { registerBoardReportHandlers } from './board-report'
 import { registerBootLifecycleHandlers } from './boot-lifecycle'
 import { registerCanvasChatHandlers } from './canvas-chat'
 import { registerCanvasSyncHandlers } from './canvas-sync'
@@ -76,6 +77,7 @@ export function registerAllHandlers(): void {
   registerClipboardHandlers()
   registerPlanApprovalHandlers()
   registerProjectHandlers()
+  registerBoardReportHandlers()
   registerNightshiftHandlers()
   registerNightshiftWatchdogHandlers()
   registerNodeStatsHandlers()

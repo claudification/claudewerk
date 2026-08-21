@@ -26,6 +26,7 @@ import {
   setSentinelRegistry,
   setShareValidator,
 } from './auth-routes'
+import { BOARD_AUDIT_RETENTION_DAYS, closeBoardAudit, initBoardAudit, purgeBoardActions } from './board-audit'
 import { buildReviveMessage } from './build-revive'
 import { closeCanvasStore, initCanvasStore, reapExpiredCanvasShares } from './canvas-store'
 import { wireCapacityAdmission } from './capacity-wiring'
@@ -411,6 +412,15 @@ async function main() {
 
   // Initialize per-project hosted canvas store (broker-local config DB + durable scene files)
   initCanvasStore(authCacheDir)
+
+  // THE MORNING REPORT's sidecar: the recorded brew the surface renders, plus
+  // the intent/outcome rows behind "what happened to this card?". A sibling of
+  // the dispatch audit below, deliberately not the same table.
+  initBoardAudit(authCacheDir)
+  const purgedBoardActions = purgeBoardActions(Date.now())
+  if (purgedBoardActions > 0) {
+    console.log(`[board-audit] purged ${purgedBoardActions} action row(s) past ${BOARD_AUDIT_RETENTION_DAYS}d`)
+  }
 
   // Initialize dispatcher stores (decision audit log + threads near-memory + durable memory file + user notes)
   initDispatchAudit(authCacheDir)
@@ -820,6 +830,7 @@ async function main() {
     closeCommitLedger()
     closeChecklistStore()
     closeCanvasStore()
+    closeBoardAudit()
     closeDispatchAudit()
     closeDispatchThreads()
     stopDeskMemoryService()
