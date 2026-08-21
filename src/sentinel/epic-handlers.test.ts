@@ -63,6 +63,18 @@ describe('handleEpicOp', () => {
     expect(got.baton).toEqual([])
   })
 
+  /** A start reply is read as the run's STATUS BLOCK, and a status block that
+   *  says "no lease" while an overseer holds one is a lie the caller acts on. */
+  test('start carries the current lease back, so a resume reports the holder it actually has', () => {
+    op('start')
+    op('lease', { lease: { convId: 'conv_over', expectGen: 0, holderAlive: false } })
+    expect(op('start').currentLease?.convId).toBe('conv_over')
+  })
+
+  test('start on an epic nobody holds reports no lease rather than inventing one', () => {
+    expect(op('start').currentLease).toBeNull()
+  })
+
   test('patching a run that was never started fails instead of creating one', () => {
     expect(op('patch', { patch: { gen: 4 } }).ok).toBe(false)
   })

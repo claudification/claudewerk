@@ -80,6 +80,40 @@ describe('the run read', () => {
     expect(out).toContain('held by conv_abc')
   })
 
+  test('a get carries the digest -- that is what the read is for', () => {
+    expect(renderEpic({ ok: true, run: RUN }, 'get')).toContain('two cards landed, one bounced')
+  })
+
+  test('a start answers with the status block ALONE -- no digest, at any run status', () => {
+    for (const status of ['armed', 'paused', 'running'] as const) {
+      const out = renderEpic({ ok: true, run: { ...RUN, status } }, 'start')
+      expect(out).not.toContain('two cards landed, one bounced')
+      expect(out).not.toContain('## Digest')
+    }
+  })
+
+  test('a start still reports the state, the caps and the lease -- it is a status block, not silence', () => {
+    const out = renderEpic({ ok: true, run: RUN, lease: { convId: 'conv_abc', gen: 7, at: 'T' } }, 'start')
+    expect(out).toContain('generation 7/40')
+    expect(out).toContain('caps:')
+    expect(out).toContain('held by conv_abc')
+  })
+
+  test('a start says WHERE the digest went, so the omission is not read as an empty plan', () => {
+    expect(renderEpic({ ok: true, run: RUN }, 'start')).toContain('action=get')
+  })
+
+  test('the whole start reply stays an order of magnitude under a digest read', () => {
+    const long = { ...RUN, digest: 'x'.repeat(6000) }
+    expect(renderEpic({ ok: true, run: long }, 'start').length).toBeLessThan(
+      renderEpic({ ok: true, run: long }, 'get').length / 10,
+    )
+  })
+
+  test('an unnamed op renders in full -- verbose is the safe default for a caller that did not say', () => {
+    expect(renderEpic({ ok: true, run: RUN })).toContain('## Digest')
+  })
+
   test('an aborted run shows its reason', () => {
     expect(renderEpic({ ok: true, run: { ...RUN, status: 'aborted', abortReason: 'scope changed' } })).toContain(
       'scope changed',

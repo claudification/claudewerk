@@ -32,6 +32,9 @@ const DESCRIPTION = [
   '                    THINKS, `max_usd` (100) bounds what the whole run SPENDS, `max_wall_clock_minutes` (480)',
   '                    bounds how long it runs unattended. Whichever trips first PARKS the run and says so in',
   '                    the baton. A parked run resumes by starting it again with the ceiling raised.',
+  '                    CHEAP BY DESIGN: it merges rather than clobbers, so sending one knob changes one knob, and',
+  '                    it answers with the STATUS BLOCK ONLY (state, cadence, target, concurrency, caps, lease).',
+  '                    Raising a ceiling therefore costs about what `list` costs. Use get for the digest.',
   'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
   '                    generation counter.',
   'action=abort        terminal, with `reason` recorded in the append-only baton.',
@@ -43,7 +46,8 @@ const DESCRIPTION = [
   '',
   'INSPECT',
   'action=list         every run this project has: status, generation, cards in flight, whether armed.',
-  'action=get          the cheap read -- run state, digest and baton tail.',
+  'action=get          the cheap read -- run state, digest and baton tail. This is where the digest lives: start',
+  '                    does not print it, so reach for get when you want the plan of record.',
   'action=inspect      THE DEBUG READ. Everything at once: the run, who holds the overseer lease, the DAG plan',
   '                    (what is dispatchable / awaiting a verdict / held back by the ceiling / waiting on deps /',
   '                    parked as a question), WHY nothing is moving, which conversations are alive, which settled',
@@ -131,7 +135,9 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
       const json = (await res.json()) as EpicRunPayload
       if (!json.ok) return err(`epic error: ${json.error || res.status}`)
       debug(`[channel] epic ${String(body.op)} ok`)
-      return { content: [{ type: 'text', text: renderEpic(json) }] }
+      // The op goes to the renderer because the four run verbs come back in one
+      // shape: only the request knows whether this call asked for the plan.
+      return { content: [{ type: 'text', text: renderEpic(json, String(body.op)) }] }
     } catch (e) {
       return err(`epic request failed: ${(e as Error).message}`)
     }

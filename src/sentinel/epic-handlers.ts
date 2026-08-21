@@ -39,9 +39,15 @@ function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
 }
 
 const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
+  /**
+   * Arm / resume / reconfigure. Carries the LEASE back for the same reason `get`
+   * does: a start reply is now read as the run's status block, and a status
+   * block that reports "lease: free (never run)" on a resume whose overseer is
+   * mid-generation is worse than no lease line at all.
+   */
   start(root, msg, nowMs) {
     const run = startEpicRun(root, { epicId: msg.epicId, project: msg.projectRoot, ...(msg.start ?? {}) }, nowMs)
-    return { ok: true, run: { ...run } }
+    return { ok: true, run: { ...run }, currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}) }
   },
 
   /**

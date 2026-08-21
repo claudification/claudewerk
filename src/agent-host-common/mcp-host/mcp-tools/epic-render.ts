@@ -81,16 +81,33 @@ function batonBlock(baton: readonly EpicLogEntry[], heading: string): string[] {
   ]
 }
 
+/**
+ * THE VERBS THAT ANSWER WITH A STATUS BLOCK ALONE.
+ *
+ * `start` doubles as arm / resume / reconfigure, so the overwhelmingly common
+ * call is a one-field change -- raising a ceiling on a parked run. Printing the
+ * whole plan-of-record back at a caller who just moved `max_usd` costs ~1500
+ * tokens of context they wrote themselves ten minutes ago, and it makes the verb
+ * that RELEASES a brake feel expensive enough to avoid. The caps line in the
+ * header already answers the only question a reconfigure has.
+ *
+ * Not gated on "was it already armed", deliberately: a genuinely fresh arm has
+ * no digest yet, only the placeholder the first overseer generation replaces, so
+ * the case the gate would exist to serve has nothing to show. `get` is the
+ * digest's home and stays one call away.
+ */
+const STATUS_ONLY_OPS = new Set(['start'])
+
+const DIGEST_POINTER = 'digest not shown -- action=get for the plan of record'
+
 /** start / get / pause / abort -- the run, its digest, and the baton tail. */
-function renderRun(json: EpicRunPayload): string {
+function renderRun(json: EpicRunPayload, op?: string): string {
   const run = json.run
   if (!run) return 'No run for this epic yet. Use action=start to arm one.'
   return [
     ...runHeader(run),
     leaseLine(json.lease),
-    '',
-    '## Digest',
-    run.digest,
+    ...(op && STATUS_ONLY_OPS.has(op) ? [DIGEST_POINTER] : ['', '## Digest', run.digest]),
     ...batonBlock(json.baton ?? [], '## Baton (tail)'),
   ].join('\n')
 }
@@ -182,13 +199,20 @@ function renderBeat(beat: NonNullable<EpicRunPayload['beat']>): string {
   ].join('\n')
 }
 
-/** One payload -> one string. Dispatches on the SHAPE of the reply rather than
- *  on the action name, so a route that grows a field renders without the tool
- *  having to learn a new case. */
-export function renderEpic(json: EpicRunPayload): string {
+/**
+ * One payload -> one string. WHICH renderer is chosen by the SHAPE of the reply
+ * rather than by the action name, so a route that grows a field renders without
+ * the tool having to learn a new case.
+ *
+ * `op` is a hint, not a dispatch key: the four run verbs come back in one
+ * indistinguishable shape, and only the caller knows whether it asked to READ
+ * the plan or to CHANGE a knob. Absent, the reply renders in full -- the verbose
+ * answer is the safe default for a caller that did not say.
+ */
+export function renderEpic(json: EpicRunPayload, op?: string): string {
   if (json.inspect) return renderInspect(json.inspect)
   if (json.runs) return renderList(json.runs)
   if (json.beat) return renderBeat(json.beat)
   if (json.note) return json.note
-  return renderRun(json)
+  return renderRun(json, op)
 }
