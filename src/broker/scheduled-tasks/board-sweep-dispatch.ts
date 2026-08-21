@@ -15,29 +15,27 @@
  */
 
 import { cardsBeingWorked } from '../../shared/board-sweep'
+import type { BoardSweepResult, Conversation } from '../../shared/protocol'
 import type { ScheduledTask } from '../../shared/scheduled-task'
-import type { BoardSweepResult, Conversation, ProjectSettings } from '../../shared/protocol'
-import type { IsLive } from '../werk-liveness'
 import type { BoardRpcResult } from '../board-rpc'
+import type { IsLive } from '../werk-liveness'
 import type { DispatchOutcome } from './fire'
 
 export interface BoardSweepDispatchDeps {
   /** One board op against the sentinel that owns `project`. Never rejects. */
-  callBoard(project: string, op: { op: 'sweep'; project: string; sweep: { liveCards: string[]; tz: string } }): Promise<BoardRpcResult>
+  callBoard(
+    project: string,
+    op: { op: 'sweep'; project: string; sweep: { liveCards: string[]; tz: string } },
+  ): Promise<BoardRpcResult>
   getAllConversations(): Conversation[]
   isLive: IsLive
-  getProjectSettings(project: string): ProjectSettings | null
-}
-
-/**
- * OPT-IN, CHECKED AT EVERY FIRE and not merely at create.
- *
- * Same predicate shape as `ownerMaySpawn`, for the same reason: a project that
- * opts OUT after a schedule was armed must stop being swept, and a check that
- * only ran at create time would keep re-filing that project's cards forever.
- */
-export function morningReportEnabled(deps: Pick<BoardSweepDispatchDeps, 'getProjectSettings'>, project: string): boolean {
-  return deps.getProjectSettings(project)?.morningReportEnabled === true
+  /**
+   * "This scanner just finished a pass over this project." Stamped by the
+   * CALLER, never by the scanner -- three scanners each inventing their own
+   * timestamp store is the drift the scanner fabric exists to end.
+   */
+  stampRun(project: string, at: number): void
+  now(): number
 }
 
 /** One line of what the sweep did, for the `[sched]` log. The run row carries
@@ -71,6 +69,10 @@ export async function dispatchBoardSweep(task: ScheduledTask, deps: BoardSweepDi
   // sweep must show up in the run history, not look like it ran every morning.
   if (!sweep) return { ok: false, error: 'sentinel returned no sweep result -- does it know the `sweep` op?' }
 
+  // Stamped only on a pass that actually completed. "Enabled, last ran never" is
+  // the shape of every engine that died quietly in this codebase, and a stamp
+  // written on a failed fire would hide exactly that.
+  deps.stampRun(task.projectUri, deps.now())
   console.log(`[sched] board-sweep id=${task.id} project=${task.projectUri} tz=${task.tz} ${describe(sweep)}`)
   return { ok: true }
 }

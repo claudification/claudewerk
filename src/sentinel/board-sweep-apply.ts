@@ -53,7 +53,8 @@ function mutationFor(ref: BoardProposalRef, actor: string): Mutation {
     case 'archive-cold':
       return { ok: true, patch: { status: 'archived', archivedReason: 'cold', archivedBy: actor } }
     case 'flag-duplicate':
-      if (!ref.other) return { ok: false, error: 'flag-duplicate needs `other` -- it is the pointer it archives against' }
+      if (!ref.other)
+        return { ok: false, error: 'flag-duplicate needs `other` -- it is the pointer it archives against' }
       return {
         ok: true,
         patch: { status: 'archived', archivedReason: `duplicate-of:${ref.other}`, archivedBy: actor },

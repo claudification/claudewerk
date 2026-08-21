@@ -5,8 +5,6 @@
  */
 
 import { pinnedEpicRows } from '../shared/pinned-epic-rows'
-import { applyProposals } from './board-sweep-apply'
-import { runBoardSweep } from './board-sweep-op'
 import {
   createProjectTask,
   deleteProjectTask,
@@ -30,6 +28,8 @@ import type {
   ProjectWriteFile,
   ProjectWriteFileResult,
 } from '../shared/protocol'
+import { applyProposals } from './board-sweep-apply'
+import { runBoardSweep } from './board-sweep-op'
 import { scanPromiseLedger } from './promise-scan'
 
 export function handleProjectReadFile(root: string, msg: ProjectReadFile): ProjectReadFileResult {

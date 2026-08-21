@@ -21,12 +21,12 @@ import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
 import { getLaunchProfilesRaw } from '../launch-profiles/storage'
 import { hasPermissionAnyCwd } from '../permissions'
-import { getProjectSettings } from '../project-settings'
+import { getProjectSettings, scannerEnabledForProject, stampScannerRun } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
 import { dispatchSpawn } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
 import { werkLiveness } from '../werk-liveness'
-import { dispatchBoardSweep, morningReportEnabled } from './board-sweep-dispatch'
+import { dispatchBoardSweep } from './board-sweep-dispatch'
 import { broadcastScheduledRun, broadcastScheduledTasks } from './broadcast'
 import { type ScheduledTaskEngine, startScheduledTaskEngine } from './engine'
 
@@ -103,10 +103,18 @@ export function wireScheduledTasks(store: StoreDriver, conversationStore: Conver
         callBoard: (project, op) => callBoard(conversationStore, project, op),
         getAllConversations: conversationStore.getAllConversations,
         isLive: werkLiveness(conversationStore.getActiveConversationCount),
-        getProjectSettings,
+        stampRun: (project, at) => stampScannerRun(project, 'morning-report', at),
+        now: Date.now,
       }),
 
-    morningReportEnabled: projectUri => morningReportEnabled({ getProjectSettings }, projectUri),
+    /**
+     * THE SCANNER FABRIC'S OWN OPT-IN, off by default for every project. Not a
+     * flag of this feature's own: `morning-report` is one of the five ids in
+     * `scanner-ids.ts`, the settings panel already renders its checkbox, and a
+     * second predicate here would be a second spelling of the default to get
+     * wrong. THE CALLER CHECKS, NOT THE SCANNER.
+     */
+    morningReportEnabled: projectUri => scannerEnabledForProject(projectUri, 'morning-report'),
 
     notify(message) {
       if (!isPushConfigured()) return

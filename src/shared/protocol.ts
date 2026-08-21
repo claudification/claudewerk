@@ -3306,18 +3306,6 @@ export interface ProjectSettings {
    *  scavenger produces a lessons-learned recap for this project. Default off
    *  (opt-in). [[project_lessons_scavenger]] */
   lessonsEnabled?: boolean
-  /**
-   * MORNING REPORT (the board sweep) per-project opt-in. When true, a
-   * `board-sweep` schedule bound to this project is allowed to fire; when
-   * false or unset every fire records `skipped_disabled` and mutates nothing.
-   *
-   * OFF BY DEFAULT, like `lessonsEnabled` and `sotuEnabled`, and for the
-   * sharper version of the same reason: this one WRITES TO THE BOARD. A sweep
-   * that switched itself on would be an unattended agent re-filing cards in a
-   * repo whose owner never asked for it. `scanner-opt-in` will eventually own
-   * the whole checkbox row; this is the flag until it lands.
-   */
-  morningReportEnabled?: boolean
   /** DEFAULT model suite for this project's recaps ('accurate' | 'cheap' --
    *  shared/recap-suites.ts). Overrides the provenance fallback, and is itself
    *  overridden by a suite named on an individual recap_create. Unset = let the

@@ -11,6 +11,7 @@ import { newScheduledRunId } from './scheduled-run'
 import {
   DEFAULT_SCHEDULE_SPAWN,
   isOneShot,
+  isSpawnSchedule,
   newScheduledTaskId,
   scheduledTaskCreateSchema,
   scheduledTaskPatchSchema,
@@ -72,6 +73,28 @@ describe('validatedScheduledTaskSchema', () => {
 
   test('rejects an oversized prompt', () => {
     expect(errorOf(validatedScheduledTaskSchema, { ...FULL, prompt: 'x'.repeat(64 * 1024 + 1) })).toContain('64 KB')
+  })
+
+  test('an absent `action` is a SPAWN, so the prompt rule still binds', () => {
+    const { action: _none, ...noAction } = { ...FULL, action: undefined }
+    expect(isSpawnSchedule(noAction as never)).toBe(true)
+    expect(errorOf(validatedScheduledTaskSchema, { ...noAction, prompt: '' })).toContain('prompt is required')
+  })
+
+  test('a board-sweep needs no prompt -- its work is a board op, not a sentence', () => {
+    const { prompt: _dropped, ...sweep } = FULL
+    expect(validatedScheduledTaskSchema.safeParse({ ...sweep, action: 'board-sweep' }).success).toBe(true)
+  })
+
+  test('a board-sweep still needs a zone -- the container is UTC', () => {
+    const { prompt: _dropped, ...sweep } = FULL
+    expect(errorOf(validatedScheduledTaskSchema, { ...sweep, action: 'board-sweep', tz: 'Mars/Olympus' })).toContain(
+      'not a known IANA',
+    )
+  })
+
+  test('an unknown action is rejected rather than treated as a spawn', () => {
+    expect(validatedScheduledTaskSchema.safeParse({ ...FULL, action: 'delete-everything' }).success).toBe(false)
   })
 
   test('requires projectUri and cwd', () => {

@@ -157,9 +157,7 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
  * because those are rules about firing unattended work, and none of them is a
  * rule about spawning. Only the middle differs, so only the middle branches.
  */
-type FirePlan =
-  | { ok: true; run: () => Promise<DispatchOutcome>; outcome: RunOutcome }
-  | { ok: false; reason: string }
+type FirePlan = { ok: true; run: () => Promise<DispatchOutcome>; outcome: RunOutcome } | { ok: false; reason: string }
 
 function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: SeatOrder | undefined): FirePlan {
   if (!isSpawnSchedule(task)) {
