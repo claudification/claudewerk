@@ -451,6 +451,31 @@ async function spawnPlanner(
 }
 
 /**
+ * The run stops here: post the checkpoint, release the lease, stop sweeping, say
+ * so at the generation.
+ *
+ * Three call sites do exactly this -- a plan CHECKPOINT, a park and a complete --
+ * and the order carries meaning. The baton entry lands BEFORE the release, so
+ * whoever reads the board next finds the reason the run stopped rather than an
+ * idle lease with nothing to explain it. `forgetArmedEpic` is not optional: a
+ * stopped run left registered would be beaten every 45s for the life of the
+ * broker, doing nothing.
+ */
+async function standDown(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  checkpoint: string,
+  note: string,
+): Promise<void> {
+  const io = epicIo()
+  await io.appendBaton(deps, group.project, group.epicId, { kind: 'checkpoint', convId: 'broker', body: checkpoint })
+  await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
+  forgetArmedEpic(group.project, group.epicId)
+  deps.log(`${tag(group.epicId, gen)} ${note}`)
+}
+
+/**
  * The planning generation settled. Either the board is as it was -- proceed --
  * or it was rewritten, in which case the run stops and Jonas reads the plan
  * before a single implementer goes out.
@@ -480,18 +505,16 @@ async function resolvePlanning(
     epicId: group.epicId,
     patch: { ...patch, status: 'paused' },
   })
-  await io.appendBaton(deps, group.project, group.epicId, {
-    kind: 'checkpoint',
-    convId: 'broker',
-    body:
-      'CHECKPOINT -- the planning generation changed the board, so nothing has been dispatched. ' +
+  await standDown(
+    deps,
+    group,
+    gen,
+    'CHECKPOINT -- the planning generation changed the board, so nothing has been dispatched. ' +
       `${added.length} card state(s) added or changed, ${removed.length} gone. ` +
       "Read the planner's `intent` entry above for what it decided and why, then RUN again to accept the plan " +
       'and start beat 1 -- resuming does NOT re-plan.',
-  })
-  await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
-  forgetArmedEpic(group.project, group.epicId)
-  deps.log(`${tag(group.epicId, gen)} plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`)
+    `plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`,
+  )
 }
 
 /** Park or complete: patch the run and stop. Both are terminal for the sweep. */
@@ -505,12 +528,7 @@ async function settleRun(
   const status = action.kind === 'complete' ? 'complete' : 'paused'
   const body = action.kind === 'complete' ? 'Every child is terminal. Run complete.' : `Run PARKED: ${action.reason}`
   await io.sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch: { status } })
-  await io.appendBaton(deps, group.project, group.epicId, { kind: 'checkpoint', convId: 'broker', body })
-  await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
-  // Stop sweeping it. A parked or complete run that stayed registered would be
-  // beaten on every 45s forever, doing nothing, for the life of the broker.
-  forgetArmedEpic(group.project, group.epicId)
-  deps.log(`${tag(group.epicId, gen)} ${status}: ${body}`)
+  await standDown(deps, group, gen, body, `${status}: ${body}`)
 }
 
 export interface ActionContext {
