@@ -32,6 +32,11 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   merge: 'var(--event-prompt)',
   steering: 'var(--warning)',
   checkpoint: 'var(--comment)',
+  // AMBER, not red. Red on this pane means work that never went out
+  // (`dispatch-failed`); this is the engine noticing a dead supervisor and
+  // replacing it, so the run is moving again -- but a host died with nobody
+  // watching and somebody should look at what it left in its worktree.
+  'overseer-lost': 'var(--warning)',
   // Bookkeeping, not an event: the engine writing a sha into a card's `closes:`
   // must never out-shout a dispatch or a bounce at four feet.
   record: 'var(--comment)',

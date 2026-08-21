@@ -18,13 +18,17 @@
 
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
+import type { EpicWakeReason } from '../shared/epic-run-types'
 import { gatedBy, whenWaitingLine } from '../shared/epic-when'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { QueueVerdict } from './epic-queue'
 
 /** What the caller should do. Order in the array is the order to do it in. */
 export type EpicAction =
-  | { kind: 'wake-overseer'; expectGen: number; reason: string }
+  /** `reason` is the WAKE REASON the generation is recorded under, not free text:
+   *  it reaches the overseer prompt verbatim ("Woken by: ..."), so an untyped
+   *  string here is a typo that renders to a live agent. */
+  | { kind: 'wake-overseer'; expectGen: number; reason: EpicWakeReason }
   /** `dependsOn` rides along purely so the implementer prompt can order a base
    *  check -- the dispatch DECISION already happened, in `epic-cards.ts`, from
    *  card lanes. Nothing downstream re-reads it to gate anything. */
@@ -47,6 +51,20 @@ export interface EpicBeatInput {
   inFlight: readonly string[]
   /** Is the lease holder's conversation still alive? */
   overseerAlive: boolean
+  /**
+   * THE CONVERSATION HOLDING THIS EPIC IS A CORPSE, and the fold has just said so
+   * for the first time (`lostOverseer`, epic-sweep.ts).
+   *
+   * A SPENT FACT, not a standing one, and the difference is what stops it looping.
+   * `abandonedOverseers` never empties -- a dead conversation stays dead and stays
+   * in the registry -- so a beat that woke from the LANE would wake every 45
+   * seconds for the life of the broker. The caller keys it on the LEASE HOLDER
+   * instead, and a granted replacement moves the lease, so this reads false again
+   * on the very next beat.
+   *
+   * Absent means no reap, which is every caller that has not wired a reaper up.
+   */
+  overseerLost?: boolean
   /** Cards that reached a terminal state with no `completion` entry in the baton.
    *  The standing question that drives the wake. */
   unacknowledged: readonly string[]
@@ -328,8 +346,31 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // GENERATION 0. Ahead of every other decision, including settles and questions:
   // once planning is owed, nothing may dispatch until it has happened, or the
   // engine would race the pass that exists to tell it what may run in parallel.
+  //
+  // AHEAD OF THE REAP BELOW, TOO, and deliberately: the planner sits in the
+  // overseer seat, so a planner that died silently is reaped here like any other
+  // supervisor -- but what that run owes is a resolved planning generation, not a
+  // second planner. `planningBeat` accepts or checkpoints from the FINGERPRINT,
+  // which is a fact about the board rather than about the conversation, and is
+  // therefore the right answer whether the planner exited or died. Waking a
+  // replacement first would spawn a plain overseer into a run that still has
+  // `planned: false`, and the next beat would come straight back here.
   const planning = planningBeat(run, input.boardFingerprint)
   if (planning) return planning
+
+  // THE SUPERVISOR DIED WITHOUT SAYING SO. Ahead of the settle branch below, and
+  // the ordering is the only thing at stake: both wake exactly one overseer and
+  // both hand it the same settled list (the executor passes `pending` whichever
+  // branch fired), so what the order decides is WHICH FACT THE GENERATION IS
+  // NAMED AFTER. A generation that replaced a corpse is not the same event as one
+  // that followed a finished turn, and until this branch existed the two were
+  // indistinguishable on every surface that renders either.
+  if (input.overseerLost) {
+    const also = input.unacknowledged.length > 0 ? `; ${input.unacknowledged.length} unacknowledged settle(s)` : ''
+    return beat(`overseer seat REAPED at gen ${run.gen}; waking a replacement${also}`, [
+      { kind: 'wake-overseer', expectGen: run.gen, reason: 'overseer-lost' },
+    ])
+  }
 
   // A settled card the baton has not seen is the ONE fact that must reach a
   // fresh overseer, and it outranks dispatching more work.

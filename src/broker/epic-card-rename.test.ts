@@ -40,6 +40,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
+    abandonedOverseers: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
