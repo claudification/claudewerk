@@ -2,14 +2,12 @@
  * Filing a capture: draft -> board op -> the "Task created" flash.
  *
  * Split from `use-quick-task` at the seam between what the modal HOLDS (target
- * project, text, chips, open) and what happens when you COMMIT it. The two
- * submit keys live here together on purpose: they differ by one tag, and two
- * copies of the create call is how they drift apart.
+ * project, text, chips, open) and what happens when you COMMIT it.
  */
 
 import { useCallback, useState } from 'react'
 import { sendBoardOp } from '@/hooks/use-project-tasks'
-import { buildTaskDraft, NEEDS_REFINE_TAG, type TaskChips } from '@/lib/cards/task-chips'
+import { buildTaskDraft, type TaskChips } from '@/lib/cards/task-chips'
 import { haptic } from '@/lib/utils'
 
 interface FilingArgs {
@@ -23,9 +21,9 @@ interface FilingArgs {
 export function useQuickTaskFiling({ text, chips, targetProject, onFiled }: FilingArgs) {
   const [flash, setFlash] = useState(false)
 
-  const fileCard = useCallback(
-    (extraTags: string[]) => {
-      const draft = buildTaskDraft(text, chips, extraTags)
+  const submit = useCallback(
+    () => {
+      const draft = buildTaskDraft(text, chips)
       if (!draft || !targetProject) return
       haptic('tap')
 
@@ -43,11 +41,5 @@ export function useQuickTaskFiling({ text, chips, targetProject, onFiled }: Fili
     [text, chips, targetProject, onFiled],
   )
 
-  /** Enter / the Add button: file the card as captured. */
-  const submit = useCallback(() => fileCard([]), [fileCard])
-
-  /** Mod-Enter: the same card, tagged for a later pass. No spawn, no queue. */
-  const submitRefine = useCallback(() => fileCard([NEEDS_REFINE_TAG]), [fileCard])
-
-  return { submit, submitRefine, flash }
+  return { submit, flash }
 }

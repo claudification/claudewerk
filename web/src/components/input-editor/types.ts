@@ -19,7 +19,6 @@ export interface InputEditorProps {
    *  Quick Task modal, so the prompt input never grows a second submit path.
    *  CodeMirror backend only -- the legacy textarea has no keymap layer, same
    *  as it has no task-token completion. */
-  onSubmitAlt?: () => void
   disabled?: boolean
   placeholder?: string
   className?: string

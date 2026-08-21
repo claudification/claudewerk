@@ -111,37 +111,37 @@ test('submit carries the accepted chips onto the card', () => {
   expect(params.input.body).toBe('do it #infra')
 })
 
-test('the refine submit tags the card, and files it exactly once', () => {
+test('typing #needs-refine in the text tags the card -- no second submit path', () => {
   const { result } = open()
-  act(() => result.current.setText('half an idea'))
-  act(() => result.current.submitRefine())
+  act(() => result.current.setText('half an idea #needs-refine'))
+  act(() => result.current.submit())
 
   expect(sendBoardOp).toHaveBeenCalledTimes(1)
   const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
   expect(params.input.tags).toEqual(['needs-refine'])
-  // Same card either way -- only the tag differs.
+  // The tag is stripped from the TITLE, as every #tag is.
   expect(params.input.title).toBe('half an idea')
 })
 
-test('the refine tag joins the #tags from the text, it does not replace them', () => {
+test('the system tag rides alongside ordinary tags', () => {
   const { result } = open()
-  act(() => result.current.setText('half an idea #infra #wall'))
-  act(() => result.current.submitRefine())
+  act(() => result.current.setText('half an idea #infra #needs-refine #wall'))
+  act(() => result.current.submit())
 
   const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
-  expect(params.input.tags).toEqual(['infra', 'wall', 'needs-refine'])
+  expect(params.input.tags).toEqual(['infra', 'needs-refine', 'wall'])
 })
 
-test('a capture that already says #needs-refine gets it ONCE, not twice', () => {
+test('saying it twice tags it ONCE', () => {
   const { result } = open()
-  act(() => result.current.setText('already flagged #needs-refine'))
-  act(() => result.current.submitRefine())
+  act(() => result.current.setText('#needs-refine and again #needs-refine'))
+  act(() => result.current.submit())
 
   const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
   expect(params.input.tags).toEqual(['needs-refine'])
 })
 
-test('the plain submit never adds the refine tag', () => {
+test('a capture without the tag never grows one', () => {
   const { result } = open()
   act(() => result.current.setText('a finished thought #infra'))
   act(() => result.current.submit())
@@ -150,11 +150,15 @@ test('the plain submit never adds the refine tag', () => {
   expect(params.input.tags).toEqual(['infra'])
 })
 
-test('an empty refine capture submits nothing either', () => {
+test('a capture that is ONLY a system tag still submits nothing but the tag', () => {
   const { result } = open()
-  act(() => result.current.setText('  '))
-  act(() => result.current.submitRefine())
-  expect(sendBoardOp).not.toHaveBeenCalled()
+  act(() => result.current.setText('#needs-refine'))
+  act(() => result.current.submit())
+
+  const params = sendBoardOp.mock.calls[0][2] as { input: Record<string, unknown> }
+  // A title stripped to empty keeps its raw text rather than becoming task-<ms>.
+  expect(params.input.title).toBe('#needs-refine')
+  expect(params.input.tags).toEqual(['needs-refine'])
 })
 
 test('an empty capture submits nothing', () => {

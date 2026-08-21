@@ -5,13 +5,17 @@
  * extensions does this editor get" and "what happens to the document when a
  * submit key lands". These are the pieces tested directly.
  *
- * Three Enter paths, deliberately distinct:
+ * Two Enter paths, deliberately distinct:
  *   - Enter       -> plain submit (`submitKeymap`, still composed in extensions.ts)
- *   - Mod-Enter   -> the caller's ALTERNATE submit, opt-in (`altSubmitKeymap`)
  *   - Shift+Enter -> newline (`attachShiftEnterNewline`, a DOM listener)
+ *
+ * There was briefly a third, `Mod-Enter`, filing a Quick Task capture tagged
+ * `needs-refine`. It was REMOVED 2026-08-21: it did not fire for the user, and
+ * a modifier chord is the wrong shape for that job anyway -- invisible, and
+ * unreachable on a touchscreen. The tag is offered at the top of the `#` picker
+ * instead (see `board-system-tags.ts`).
  */
 
-import type { Extension } from '@codemirror/state'
 import { type EditorView, keymap } from '@codemirror/view'
 
 export function clearEditorDoc(view: EditorView) {
@@ -37,28 +41,6 @@ export function submitFromEditor(view: EditorView, onSubmit: () => void) {
   // bypassing react-codemirror's 200ms typing latch).
   onSubmit()
   clearEditorDoc(view)
-}
-
-/**
- * `Mod-Enter` -> a SECOND submit with different meaning (Quick Task files the
- * card tagged `needs-refine`). CM6 normalizes `Mod-` to Cmd on macOS and Ctrl
- * everywhere else, so one binding covers both.
- *
- * OPT-IN: callers that pass no alternate submit get no binding at all, which is
- * what keeps the prompt input on exactly one submit path.
- */
-export function altSubmitKeymap(onSubmitAlt: () => void): Extension {
-  return keymap.of([
-    {
-      key: 'Mod-Enter',
-      run: view => {
-        if (view.composing) return false
-        submitFromEditor(view, onSubmitAlt)
-        return true
-      },
-      preventDefault: true,
-    },
-  ])
 }
 
 /**

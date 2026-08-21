@@ -1,16 +1,16 @@
 /**
- * The three Enter paths, pinned against a REAL editor.
+ * The two Enter paths, pinned against a REAL editor.
  *
- * They are one key apart and mean three different things, so a regression in
- * any of them looks like the editor working: Enter files a card, Mod-Enter
- * files it tagged for a later pass, Shift+Enter types a newline. Nothing about
- * the modal makes a wrong one visible -- you find out when the card is on the
- * board without its tag, or when your second line submitted instead.
+ * They are one modifier apart and mean different things, so a regression in
+ * either looks like the editor working: Enter files a card, Shift+Enter types a
+ * newline. Nothing about the modal makes a wrong one visible -- you find out
+ * when your second line submitted instead of wrapping.
  *
- * Mod-Enter arriving as PLAIN submit is the specific failure this guards: CM6
- * keys bindings on the full modifier string, and if that ever stopped being
- * true, `Enter` would swallow the modified form and the tag would silently
- * never land.
+ * There was briefly a third, `Mod-Enter`, filing the capture tagged
+ * `needs-refine`. Removed 2026-08-21: it did not fire for the user, and a
+ * modifier chord is the wrong shape for that job regardless -- invisible, and
+ * unreachable on a touchscreen. The last test here pins the consequence: a
+ * modified Enter must now do nothing of OURS, on every surface.
  */
 
 import { EditorState } from '@codemirror/state'
@@ -20,18 +20,13 @@ import { buildInputExtensions } from './extensions'
 import { attachShiftEnterNewline, submitFromEditor } from './submit-keys'
 
 /**
- * CM6 normalizes `Mod-` to Cmd on macOS and Ctrl everywhere else. Mirror its
- * own platform check so this asserts the binding the user gets on THIS machine
- * rather than a hardcoded guess (jsdom is not a Mac, so it is Ctrl in CI).
+ * CM6 normalizes `Mod-` to Cmd on macOS and Ctrl everywhere else. Mirror its own
+ * platform check so this asserts what the user gets on THIS machine rather than
+ * a hardcoded guess (jsdom is not a Mac, so it is Ctrl in CI).
  */
 const MOD_KEY: 'metaKey' | 'ctrlKey' = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
   ? 'metaKey'
   : 'ctrlKey'
-
-interface Fired {
-  plain: string[]
-  alt: string[]
-}
 
 let teardown: (() => void) | null = null
 afterEach(() => {
@@ -39,16 +34,13 @@ afterEach(() => {
   teardown = null
 })
 
-/** A Quick Task-shaped editor: both submit paths wired, Shift+Enter attached. */
-function mountEditor(doc: string): { view: EditorView; fired: Fired } {
-  const fired: Fired = { plain: [], alt: [] }
+/** A Quick Task-shaped editor: submit wired, Shift+Enter attached. */
+function mountEditor(doc: string): { view: EditorView; fired: string[] } {
+  const fired: string[] = []
   const view = new EditorView({
     state: EditorState.create({
       doc,
-      extensions: buildInputExtensions({
-        onSubmit: () => fired.plain.push(view.state.doc.toString()),
-        onSubmitAlt: () => fired.alt.push(view.state.doc.toString()),
-      }),
+      extensions: buildInputExtensions({ onSubmit: () => fired.push(view.state.doc.toString()) }),
     }),
   })
   attachShiftEnterNewline(view)
@@ -62,21 +54,11 @@ function pressEnter(view: EditorView, mods: Partial<Record<'shiftKey' | 'metaKey
   )
 }
 
-test('Enter submits plain -- no alternate, doc cleared', () => {
+test('Enter submits and clears the doc', () => {
   const { view, fired } = mountEditor('rough thought')
   pressEnter(view)
 
-  expect(fired.plain).toEqual(['rough thought'])
-  expect(fired.alt).toEqual([])
-  expect(view.state.doc.toString()).toBe('')
-})
-
-test('Mod-Enter fires the ALTERNATE submit, never the plain one', () => {
-  const { view, fired } = mountEditor('rough thought')
-  pressEnter(view, { [MOD_KEY]: true })
-
-  expect(fired.alt).toEqual(['rough thought'])
-  expect(fired.plain).toEqual([])
+  expect(fired).toEqual(['rough thought'])
   expect(view.state.doc.toString()).toBe('')
 })
 
@@ -86,31 +68,22 @@ test('Shift+Enter inserts a newline and submits nothing', () => {
   pressEnter(view, { shiftKey: true })
 
   expect(view.state.doc.toString()).toBe('first line\n')
-  expect(fired.plain).toEqual([])
-  expect(fired.alt).toEqual([])
+  expect(fired).toEqual([])
 })
 
-test('no alternate submit callback means NO Mod-Enter binding at all', () => {
-  const fired: string[] = []
-  const view = new EditorView({
-    state: EditorState.create({
-      doc: 'prompt text',
-      // The prompt input's shape: one submit path, nothing else.
-      extensions: buildInputExtensions({ onSubmit: () => fired.push('plain') }),
-    }),
-  })
-  teardown = () => view.destroy()
-
+test('Mod-Enter no longer submits anything -- the chord is gone', () => {
+  const { view, fired } = mountEditor('rough thought')
   pressEnter(view, { [MOD_KEY]: true })
 
-  // Nothing of OURS runs: the key falls through to CM's own defaultKeymap
-  // (Mod-Enter is insertBlankLine there), which is exactly the untouched
-  // behaviour the prompt input has today.
+  // CM6 keys bindings on the FULL modifier string, so a modified Enter never
+  // falls through to the plain `Enter` handler. Re-adding a Mod-Enter binding
+  // anywhere would break this and should be a deliberate decision, not a
+  // side-effect.
   expect(fired).toEqual([])
-  expect(view.state.doc.toString()).toContain('prompt text')
+  expect(view.state.doc.toString()).toContain('rough thought')
 })
 
-test('submitFromEditor clears after the callback, for either path', () => {
+test('submitFromEditor clears AFTER the callback reads the doc', () => {
   const { view } = mountEditor('typed')
   let seen: string | null = null
   submitFromEditor(view, () => {

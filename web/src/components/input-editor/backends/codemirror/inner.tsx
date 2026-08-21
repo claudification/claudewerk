@@ -66,9 +66,6 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
   // surface either offers a second submit or it does not, and none of them
   // flips mid-life. The callback itself is read through a ref, so the caller
   // can hand us a fresh closure every render without rebuilding extensions.
-  const onSubmitAltRef = useRef(props.onSubmitAlt)
-  onSubmitAltRef.current = props.onSubmitAlt
-  const wantsAltSubmit = useRef(props.onSubmitAlt != null).current
 
   const onStashRef = useRef(props.onStash)
   onStashRef.current = props.onStash
@@ -94,7 +91,6 @@ export default function CodeMirrorBackendInner(props: InputEditorProps) {
     () =>
       buildInputExtensions({
         onSubmit: () => onSubmitRef.current(),
-        onSubmitAlt: wantsAltSubmit ? () => onSubmitAltRef.current?.() : undefined,
         onStash: props.onStash ? (text: string) => onStashRef.current?.(text) : undefined,
         // Larger font on mobile for thumb typing; bumped further in the
         // expanded panel (see scoped CSS override below).

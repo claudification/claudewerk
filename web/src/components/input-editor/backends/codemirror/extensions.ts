@@ -37,7 +37,7 @@ import { record } from '@/lib/perf-metrics'
 import type { SubCommandContext } from '../../sub-commands'
 import { autocompleteExtension } from './autocomplete'
 import { composingField, composingTracker } from './composition'
-import { altSubmitKeymap, clearEditorDoc, submitFromEditor } from './submit-keys'
+import { clearEditorDoc, submitFromEditor } from './submit-keys'
 
 // ---------------------------------------------------------------------------
 // Lightweight markdown decorator
@@ -398,13 +398,6 @@ function inputTheme(fontSize: number, minHeight: string, maxHeight: string): Ext
 
 interface InputExtensionOptions {
   onSubmit: () => void
-  /**
-   * Second submit on `Mod-Enter` (Cmd on macOS, Ctrl elsewhere). OPT-IN: omit
-   * it and no binding is registered at all, so a surface that wants one submit
-   * path keeps exactly one. Quick Task uses it to file the card tagged
-   * `needs-refine`.
-   */
-  onSubmitAlt?: () => void
   onStash?: (text: string) => void
   fontSize?: number
   minHeight?: string
@@ -467,9 +460,6 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     },
   ])
 
-  // Mod-Enter -> the alternate submit. Only present when a caller asked for one.
-  const altKeymap = opts.onSubmitAlt ? altSubmitKeymap(opts.onSubmitAlt) : []
-
   const stashKeymap = opts.onStash
     ? keymap.of([
         {
@@ -518,7 +508,6 @@ export function buildInputExtensions(opts: InputExtensionOptions): Extension[] {
     composingTracker,
     drawSelection(),
     history(),
-    altKeymap, // before submitKeymap for the same reason: ours wins over defaultKeymap
     submitKeymap, // before defaultKeymap so our Enter wins (autocomplete still wins over us when popup is open)
     stashKeymap,
     escapeBlurKeymap,

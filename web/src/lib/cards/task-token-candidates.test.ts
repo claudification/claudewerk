@@ -87,10 +87,32 @@ describe('priority candidates', () => {
 })
 
 describe('tag candidates', () => {
-  test('unions board tags and renders them hash-prefixed', () => {
+  test('SYSTEM TAGS lead, in registry order, ahead of anything the board has', () => {
     const rows = candidatesFor('tag', src(), '')
-    expect(rows.map(r => r.value)).toEqual(['epic', 'legacy', 'perf'])
-    expect(rows[0].label).toBe('#epic')
+    expect(rows.slice(0, 3).map(r => r.value)).toEqual(['needs-refine', 'epic', 'needs-overseer'])
+  })
+
+  test('a system tag explains what reads it; a board tag needs no gloss', () => {
+    const rows = candidatesFor('tag', src(), '')
+    expect(rows[0].detail).toBeTruthy()
+    expect(rows.find(r => r.value === 'perf')?.detail).toBeUndefined()
+  })
+
+  test('board tags follow the system ones, hash-prefixed', () => {
+    const rows = candidatesFor('tag', src(), '')
+    expect(rows.map(r => r.value)).toContain('perf')
+    expect(rows.find(r => r.value === 'perf')?.label).toBe('#perf')
+  })
+
+  test('a tag that is BOTH system and on the board appears exactly once, at the top', () => {
+    // BOARD carries `epic`; it must not also show up in the board section.
+    const values = candidatesFor('tag', src(), '').map(r => r.value)
+    expect(values.filter(v => v === 'epic')).toHaveLength(1)
+    expect(values.indexOf('epic')).toBeLessThan(values.indexOf('perf'))
+  })
+
+  test('a query narrows system tags too, and keeps their order', () => {
+    expect(candidatesFor('tag', src(), 'needs').map(r => r.value)).toEqual(['needs-refine', 'needs-overseer'])
   })
 
   test('tags come from archived cards too -- a label is not scoped to a lane', () => {
