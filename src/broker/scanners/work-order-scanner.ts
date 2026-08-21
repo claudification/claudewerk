@@ -30,7 +30,15 @@ import { type EpicPlan, planTagged } from '../../shared/epic-ready'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import { type EpicSpawnCtx, type EpicSpawnPlan, planImplementerSpawn } from '../epic-spawn-plan'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
-import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
+import {
+  DISPATCH_FAILED_BUCKET,
+  type DispatchFailedBucket,
+  dispatchUnits,
+  type Refusal,
+  type Scanner,
+  type ScannerDeps,
+  type ScanOutcome,
+} from './scanner'
 
 /**
  * The tag this scanner selects on.
@@ -41,6 +49,11 @@ import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
  * in that registry, so the two cannot drift without a test going red.
  */
 export const READY_TAG = 'ready'
+
+/** Log prefix. Named here because `scanWorkOrders` hands it to the shared
+ *  dispatch tail, and the `Scanner` record below quotes the same constant --
+ *  two spellings of a log prefix is how a grep stops finding half the lines. */
+const WORK_ORDER_TAG = '[work-orders]'
 
 /**
  * THE EPIC ID EVERY WORK-ORDER SEAT IS TAGGED WITH -- a reserved lane, not a
@@ -72,7 +85,10 @@ export type WorkOrderBucket =
   | 'held-back'
   | 'unspawnable'
   | 'not-actionable'
-  | 'dispatch-failed'
+  // Spelled by the shared surface, never restated here -- see
+  // `DISPATCH_FAILED_BUCKET`, which is the bucket the shared dispatch tail
+  // files into.
+  | DispatchFailedBucket
 
 const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
   'live-conversation',
@@ -84,7 +100,7 @@ const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
   'held-back',
   'unspawnable',
   'not-actionable',
-  'dispatch-failed',
+  DISPATCH_FAILED_BUCKET,
 ] as const
 
 export interface WorkOrderDeps extends ScannerDeps {
@@ -236,14 +252,11 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
   refused.push(...planRefusals(plan))
 
   const acted: string[] = []
-  for (const card of plan.dispatch) {
-    const ok = await dispatchCard(deps, card).catch(err => {
-      deps.log(`[work-orders] dispatch threw for ${card.slug}: ${err instanceof Error ? err.message : String(err)}`)
-      return false
-    })
-    if (ok) acted.push(card.slug)
-    else refused.push({ unit: card.slug, bucket: 'dispatch-failed', detail: 'the spawn was refused' })
-  }
+  await dispatchUnits(
+    plan.dispatch.map(card => ({ id: card.slug, send: () => dispatchCard(deps, card) })),
+    { tag: WORK_ORDER_TAG, log: deps.log },
+    { acted, refused },
+  )
 
   // WHATEVER IS LEFT. A `ready` card in a lane the fold has no opinion about --
   // `in-progress` with no live seat, `done`, `archived` -- is still a unit this
@@ -269,7 +282,7 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
 
 export const workOrderScanner: Scanner<WorkOrderDeps, WorkOrderBucket> = {
   id: 'work-orders',
-  tag: '[work-orders]',
+  tag: WORK_ORDER_TAG,
   selects: `cards tagged \`${READY_TAG}\``,
   does: 'dispatch',
   buckets: WORK_ORDER_BUCKETS,
