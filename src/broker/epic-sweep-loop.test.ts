@@ -301,3 +301,103 @@ describe('the restart quarantine', () => {
     expect(beats).toEqual(['claude://s/e1'])
   })
 })
+
+// THE PER-PROJECT OPT-IN. Off by default, every scanner, every project -- and
+// checked HERE, by the caller, never by the scanner.
+describe('the "epics" opt-in gate', () => {
+  /** A gate that says yes to exactly the projects named, and records its stamps. */
+  const gated = (...on: string[]): { deps: SweepDeps; stamps: Array<[string, number]> } => {
+    const stamps: Array<[string, number]> = []
+    const enabled = new Set(on)
+    return {
+      deps: {
+        ...deps(),
+        scannerOptIn: {
+          projects: () => [...enabled],
+          enabled: (project: string) => enabled.has(project),
+          stamp: (project: string, at: number) => void stamps.push([project, at]),
+        },
+      },
+      stamps,
+    }
+  }
+
+  test('a project with the box unticked is swept by nothing', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(gated().deps)
+    expect(beats).toHaveLength(0)
+  })
+
+  test('and says so, naming the project and where to tick it', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(gated().deps)
+    expect(log.join('\n')).toContain('claude://s/e1')
+    expect(log.join('\n')).toContain('Project Settings > Scanners')
+  })
+
+  test('a project with the box ticked is swept exactly as before', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(gated('claude://s/e1').deps)
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('gates PER PROJECT -- one opted in, one not, in the same tick', async () => {
+    convs = [conv('e1', 'implementer', 't1'), conv('e2', 'implementer', 'x1')]
+    await sweepEpics(gated('claude://s/e1').deps)
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('an armed run in an opted-out project is dropped, not beaten', async () => {
+    // The hole a conversation filter alone would leave: `epicsToWatch` unions the
+    // armed registry, which no dep reaches.
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    await sweepEpics(gated().deps)
+    expect(beats).toHaveLength(0)
+    expect(log.join('\n')).toContain('dropped armed epic e1')
+  })
+
+  test('an armed run in an opted-IN project is still beaten', async () => {
+    convs = []
+    noteArmedEpic('claude://s/e1', 'e1')
+    await sweepEpics(gated('claude://s/e1').deps)
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('absent gate means no gate -- the sweep runs everywhere', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    await sweepEpics(deps())
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  test('stamps last-run for every opted-in project, including the empty ones', async () => {
+    // The whole value of the stamp: an enabled project with no epic at all still
+    // proves the loop is alive, which is what "last ran never" would deny.
+    convs = []
+    const g = gated('claude://s/quiet')
+    await sweepEpics(g.deps)
+    expect(g.stamps).toEqual([['claude://s/quiet', 0]])
+  })
+
+  test('stamps nothing when no project opted in -- the default state writes zero times', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    const g = gated()
+    await sweepEpics(g.deps)
+    expect(g.stamps).toEqual([])
+  })
+
+  test('a forced BEAT NOW is refused for an opted-out project, naming the box', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    const res = await beatOneEpic(gated().deps, 'claude://s/e1', 'e1')
+    expect(res.ok).toBe(false)
+    expect(res.ok === false && res.error).toContain('Project Settings > Scanners')
+    expect(beats).toHaveLength(0)
+  })
+
+  test('a forced BEAT NOW still works for an opted-in project', async () => {
+    convs = [conv('e1', 'implementer', 't1')]
+    const res = await beatOneEpic(gated('claude://s/e1').deps, 'claude://s/e1', 'e1')
+    expect(res.ok).toBe(true)
+    expect(beats).toEqual(['claude://s/e1'])
+  })
+})
