@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
+import { DENY_FLOOR_RULES, denyFloorHookCommand } from '../../shared/unattended-permissions'
 import { createMemoryDriver } from '../store/memory/driver'
 import type { StoreDriver } from '../store/types'
 import { type EngineDeps, startScheduledTaskEngine } from './engine'
@@ -353,6 +354,102 @@ describe('runNow', () => {
     h.store.scheduledTasks.upsert(task)
     expect((await h.engine.runNow(task.id)).ok).toBe(true)
     expect(h.requests).toHaveLength(1)
+  })
+})
+
+/**
+ * THE DENY-FLOOR, THROUGH A REAL TICK.
+ *
+ * Proved here rather than only over `applyDenyFloorToRequest` because the claim
+ * is about the POPULATION, not the function: every schedule that fires, whether
+ * it names an order, carries its own `settingsInline`, or has never heard of
+ * either. The floor being right and the floor being REACHED are two different
+ * claims, and until this card only one branch of one order path reached it.
+ */
+describe('the unattended deny-floor on a scheduled fire', () => {
+  const inlineOf = (req: SpawnRequest) => req.settingsInline as Record<string, unknown>
+  const permsOf = (req: SpawnRequest) => inlineOf(req).permissions as { allow?: string[]; deny: string[] }
+  const denyOf = (req: SpawnRequest) => permsOf(req).deny
+  const hooksOf = (req: SpawnRequest) =>
+    inlineOf(req).hooks as { PreToolUse: Array<{ hooks: Array<{ command: string }> }>; SessionStart?: unknown[] }
+  const guardsOf = (req: SpawnRequest) => hooksOf(req).PreToolUse
+
+  test('a schedule naming no order and carrying no fragment still gets the floor', async () => {
+    const h = harness()
+    h.store.scheduledTasks.upsert(makeTask())
+
+    await h.engine.tick()
+
+    const req = h.requests[0] as SpawnRequest
+    for (const rule of DENY_FLOOR_RULES) expect(denyOf(req)).toContain(rule)
+    expect(guardsOf(req)[0]?.hooks[0]?.command).toBe(denyFloorHookCommand())
+  })
+
+  test('a schedule that configured its own settingsInline keeps it AND gains the floor', async () => {
+    const h = harness()
+    h.store.scheduledTasks.upsert(
+      makeTask({
+        spawn: {
+          ...DEFAULT_SCHEDULE_SPAWN,
+          permissionMode: 'dontAsk',
+          settingsInline: {
+            permissions: { allow: ['Bash(deno test:*)'], deny: ['Bash(terraform apply:*)'] },
+            hooks: { SessionStart: [{ matcher: '', hooks: [] }] },
+          },
+        },
+      }),
+    )
+
+    await h.engine.tick()
+
+    const req = h.requests[0] as SpawnRequest
+    // What the human configured is still there, verbatim.
+    expect(permsOf(req).allow).toEqual(['Bash(deno test:*)'])
+    expect(denyOf(req)).toContain('Bash(terraform apply:*)')
+    expect(hooksOf(req).SessionStart).toHaveLength(1)
+    // ...and the floor is now under it.
+    expect(denyOf(req)).toContain('Bash(git push origin main:*)')
+    expect(guardsOf(req)[0]?.hooks[0]?.command).toBe(denyFloorHookCommand())
+  })
+
+  test('a manual "Run now" gets the same floor as the 03:00 fire', async () => {
+    const h = harness()
+    const task = makeTask({ cron: '0 3 1 1 *' })
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.runNow(task.id)
+
+    expect(denyOf(h.requests[0] as SpawnRequest)).toContain('Bash(sudo:*)')
+  })
+
+  test('a fragment the floor cannot be folded into FAILS the fire rather than being overwritten', async () => {
+    const h = harness()
+    const task = makeTask({
+      spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsInline: { permissions: { deny: 'Bash(sudo:*)' } } },
+    })
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+
+    expect(h.requests).toHaveLength(0)
+    const run = h.store.scheduledTasks.listRuns(task.id)[0]
+    expect(run?.outcome).toBe('error')
+    expect(run?.error).toContain('deny-floor')
+    // A refused fire counts toward the backoff, exactly like an over-privileged order.
+    expect(h.store.scheduledTasks.get(task.id)?.consecutiveFailures).toBe(1)
+  })
+
+  test('a settingsPath with no inline fragment FAILS the fire rather than silently replacing the file', async () => {
+    // The sentinel materializes settingsInline and lets it WIN over settingsPath,
+    // so writing a floor fragment here would throw the human's file away.
+    const h = harness()
+    const task = makeTask({ spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsPath: '/etc/rclaude/nightly.json' } })
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+
+    expect(h.requests).toHaveLength(0)
+    expect(h.store.scheduledTasks.listRuns(task.id)[0]?.error).toContain('settingsPath')
   })
 })
 

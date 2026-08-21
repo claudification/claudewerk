@@ -17,7 +17,7 @@ import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
 import type { ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
-import { buildUnattendedSettings } from '../../shared/unattended-permissions'
+import { applyDenyFloor, buildUnattendedSettings } from '../../shared/unattended-permissions'
 import { nextFailureState } from './policy'
 import { decideSeatAdmission } from './seat-reservation'
 
@@ -202,6 +202,57 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
   return { ok: true, request: next }
 }
 
+export type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
+
+/**
+ * THE DENY-FLOOR ON EVERY SCHEDULED FIRE, ORDER OR NO ORDER.
+ *
+ * The floor -- force-push, push to mainline, `sudo`, process kills, external
+ * sends -- used to reach a scheduled seat by exactly one accident: it rides
+ * inside `buildUnattendedSettings`, which `applyOrderToRequest` called only when
+ * the request had no `settingsInline` of its own. So a schedule that named no
+ * order had never had the floor, and a schedule carrying its own fragment kept
+ * whatever floor that fragment declared, which was usually none.
+ *
+ * THE POPULATION IS "NOBODY IS WATCHING", NOT "IS A QUEST LEG". `docs/scheduled-
+ * tasks.md` § Security already settles this for the neighbouring question: "a
+ * schedule IS a spawn -- one that fires later, unattended, with nobody at the
+ * keyboard", which is why a scheduled fire runs with `bypassApprovalGate` and
+ * why the owner's grants are re-checked at every fire. The floor is written for
+ * exactly that population, so it is applied HERE, to every fire, rather than
+ * inherited from whichever builder a seat happened to go through.
+ *
+ * APPLIED AFTER THE ORDER, ON PURPOSE. The floor is a union and a union is
+ * commutative, so going last cannot undo an order's rules -- and it keeps this
+ * completely independent of `applyOrderToRequest`, which owns a different
+ * question (what an order may narrow) and must stay free to answer it. `manual`
+ * fires get the floor too: a "Run now" that tests a different permission surface
+ * than the 03:00 fire is a test that lies.
+ *
+ * A `settingsPath` WITH NO `settingsInline` FAILS THE FIRE. The sentinel
+ * materializes an inline fragment and lets it WIN over `settingsPath`
+ * (`src/sentinel/index.ts`), so writing one here would silently throw away the
+ * settings file a human pointed the schedule at -- most likely the allowlist
+ * that makes its `dontAsk` seat able to do anything at all. Both alternatives
+ * are quiet downgrades (drop the floor, or drop the human's file); a refusal
+ * recorded in run history is the only one the human can see and fix.
+ */
+export function applyDenyFloorToRequest(request: SpawnRequest): FloorApplication {
+  if (request.settingsInline === undefined && request.settingsPath !== undefined) {
+    return {
+      ok: false,
+      reason:
+        'cannot apply the unattended deny-floor: this spawn carries a settingsPath and no settingsInline, ' +
+        'and an inline fragment would silently replace that file -- move the settings inline',
+    }
+  }
+  const floored = applyDenyFloor(request.settingsInline)
+  if (!floored.ok) {
+    return { ok: false, reason: `cannot apply the unattended deny-floor -- ${floored.reason}` }
+  }
+  return { ok: true, request: { ...request, settingsInline: floored.settings } }
+}
+
 /** The still-running conversation from this schedule's most recent spawn, if any. */
 function liveConversationFor(task: ScheduledTask, deps: FireDeps): string | null {
   const last = deps.lastSpawnedConversationId(task.id)
@@ -311,7 +362,16 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     deps.persist(settleTask(task, deps, { dispatchOk: false, firedAt }))
     return finish(task, deps, opts, firedAt, { outcome: 'error', error: applied.reason })
   }
-  const request = applied.request
+
+  // The floor goes on last and applies to EVERY fire, including the ones that
+  // name no order. Same rule as an over-privileged order: a seat that cannot be
+  // given the floor is not dispatched without it.
+  const floored = applyDenyFloorToRequest(applied.request)
+  if (!floored.ok) {
+    deps.persist(settleTask(task, deps, { dispatchOk: false, firedAt }))
+    return finish(task, deps, opts, firedAt, { outcome: 'error', error: floored.reason })
+  }
+  const request = floored.request
 
   // Claimed here, released in the `finally`: everything that could still refuse
   // this fire has already run, and nothing between the claim and the dispatch

@@ -138,6 +138,12 @@ export function denyFloorHookCommand(): string {
   )
 }
 
+/** The floor's PreToolUse entry. One builder so the fragment `buildUnattendedSettings`
+ *  ships and the one `applyDenyFloor` grafts on can never be different objects. */
+function denyFloorHookEntry(): Record<string, unknown> {
+  return { matcher: '', hooks: [{ type: 'command', command: denyFloorHookCommand() }] }
+}
+
 /** Per-project overrides layered on the defaults. Shape overlaps NightshiftConfig. */
 export interface UnattendedPermissionConfig {
   allow?: string[]
@@ -163,7 +169,97 @@ export function buildUnattendedSettings(config: UnattendedPermissionConfig = {})
       deny: uniq([...DENY_FLOOR_RULES, ...(config.deny ?? [])]),
     },
     hooks: {
-      PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: denyFloorHookCommand() }] }],
+      PreToolUse: [denyFloorHookEntry()],
+    },
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The floor folded in, or the shape that stopped it being folded in. */
+export type DenyFloorApplication = { ok: true; settings: Record<string, unknown> } | { ok: false; reason: string }
+
+/** Is this PreToolUse entry the floor's own guard hook? */
+function isDenyFloorEntry(entry: unknown, command: string): boolean {
+  if (!isPlainObject(entry) || !Array.isArray(entry.hooks)) return false
+  return entry.hooks.some(hook => isPlainObject(hook) && hook.command === command)
+}
+
+/**
+ * THE FLOOR, FOLDED INTO A FRAGMENT SOMEBODY ELSE WROTE.
+ *
+ * `buildUnattendedSettings` builds a WHOLE fragment and is therefore only usable
+ * by a caller that has none of its own. This is the other half: it takes a
+ * fragment that already exists -- a human's `settingsInline` on a schedule, the
+ * one an order just wrote deny rules into -- and adds the floor to it, leaving
+ * everything else exactly as it was found.
+ *
+ * ADDITIVE, NEVER REPLACING, AND NEVER THE ALLOWLIST. Both halves of the floor
+ * go in: the declarative `DENY_FLOOR_RULES` unioned onto whatever `deny` is
+ * there, and the imperative PreToolUse guard hook appended to whatever
+ * `PreToolUse` is there -- the hook is the robust layer, since prefix rules
+ * cannot catch arg-order variants of `git push ... main`, so a floor without it
+ * is half a floor. `DEFAULT_ALLOW` deliberately does NOT come along: an
+ * allowlist WIDENS what a `dontAsk` seat may do, and a floor that widens
+ * anything is not a floor.
+ *
+ * IDEMPOTENT. A fragment that already carries the floor (anything built by
+ * `buildUnattendedSettings`) comes back unchanged in substance -- the rules
+ * dedupe and the hook entry is matched by its command, so the same settings can
+ * pass through several layers without growing a second copy of the guard.
+ *
+ * A SHAPE THE FLOOR CANNOT BE EXPRESSED IN RETURNS A REASON. `settingsInline` is
+ * an opaque bag by schema (`Record<string, unknown>`), so `permissions` might be
+ * a string and `hooks.PreToolUse` might be a number. Overwriting whatever was
+ * there and calling it a floor is a silent downgrade of a fragment a human
+ * configured; the caller gets the reason and decides (a scheduled fire refuses,
+ * loudly, into its run history).
+ */
+export function applyDenyFloor(settings: Record<string, unknown> | undefined): DenyFloorApplication {
+  if (settings === undefined) {
+    return {
+      ok: true,
+      settings: { permissions: { deny: [...DENY_FLOOR_RULES] }, hooks: { PreToolUse: [denyFloorHookEntry()] } },
+    }
+  }
+
+  const permissions = settings.permissions
+  if (permissions !== undefined && permissions !== null && !isPlainObject(permissions)) {
+    return { ok: false, reason: 'settingsInline.permissions is not an object' }
+  }
+  const existingDeny = isPlainObject(permissions) ? permissions.deny : undefined
+  if (existingDeny !== undefined && existingDeny !== null) {
+    if (!Array.isArray(existingDeny) || existingDeny.some(rule => typeof rule !== 'string')) {
+      return { ok: false, reason: 'settingsInline.permissions.deny is not an array of strings' }
+    }
+  }
+
+  const hooks = settings.hooks
+  if (hooks !== undefined && hooks !== null && !isPlainObject(hooks)) {
+    return { ok: false, reason: 'settingsInline.hooks is not an object' }
+  }
+  const preToolUse = isPlainObject(hooks) ? hooks.PreToolUse : undefined
+  if (preToolUse !== undefined && preToolUse !== null && !Array.isArray(preToolUse)) {
+    return { ok: false, reason: 'settingsInline.hooks.PreToolUse is not an array' }
+  }
+
+  // The caller's own rules stay at the head of the list: the floor is appended
+  // to what a human wrote, it does not reorder it.
+  const deny = uniq([...((existingDeny as string[] | undefined | null) ?? []), ...DENY_FLOOR_RULES])
+  const guard = denyFloorHookCommand()
+  const entries = (preToolUse as unknown[] | undefined | null) ?? []
+  const nextPreToolUse = entries.some(entry => isDenyFloorEntry(entry, guard))
+    ? entries
+    : [...entries, denyFloorHookEntry()]
+
+  return {
+    ok: true,
+    settings: {
+      ...settings,
+      permissions: { ...(isPlainObject(permissions) ? permissions : {}), deny },
+      hooks: { ...(isPlainObject(hooks) ? hooks : {}), PreToolUse: nextPreToolUse },
     },
   }
 }
