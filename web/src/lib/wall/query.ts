@@ -55,6 +55,15 @@ export interface WallRowFacets {
   host?: string
   /** `:` axis. */
   model?: string
+  /**
+   * `^` axis -- every workspace this row's project sits in, by name.
+   *
+   * A pane never fills this in. Workspace membership is not on the row, it is on
+   * the project tree, so `useWallFilter` resolves it from `project` through the
+   * workspace index and hands it to the matcher. Declaring the axis is the whole
+   * of a pane's part in it -- see `axes.ts`.
+   */
+  workspaces?: readonly string[]
   /** `+over` axis -- machine-dispatched provenance. */
   managed?: boolean
 }
@@ -73,6 +82,11 @@ function toSearchable(f: WallRowFacets): PulseSearchable {
     contextPct: f.contextPct,
     host: f.host,
     model: f.model,
+    // NOT defaulted to a keeping value: an absent workspace list means "in no
+    // workspace", which is a real answer, and `^eng` must not match it. Same
+    // rule as `host` and `model` -- absent is never a wildcard. A pane that has
+    // no workspace to resolve never sees the axis at all.
+    workspaces: f.workspaces,
     managed: f.managed,
   }
 }

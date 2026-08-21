@@ -1,5 +1,8 @@
-/**
- * @vitest-environment node
+/*
+ * jsdom, not node -- same import fallout as `axes.test.ts`: this suite reads the
+ * `filter` barrel, the barrel carries `useWallFilter`, and that hook now reaches
+ * the conversations store, which touches `localStorage` at module scope. Nothing
+ * below uses the DOM.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { projectToken, selectWallProject, useWallFilterStore, type WallFilterState } from './filter'

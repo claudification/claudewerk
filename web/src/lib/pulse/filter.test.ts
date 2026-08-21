@@ -50,6 +50,9 @@ describe('parsePulseQuery', () => {
   it('returns an empty query for blank input', () => {
     expect(isEmptyQuery(parsePulseQuery(''))).toBe(true)
     expect(isEmptyQuery(parsePulseQuery('   '))).toBe(true)
+    // A new axis that `isEmptyQuery` forgot would read as "constrains nothing"
+    // and be silently skipped on every surface that short-circuits on it.
+    expect(isEmptyQuery(parsePulseQuery('^eng'))).toBe(false)
   })
 
   it('parses ! as both attention bands, !! adds working, !!! is hard blocks only', () => {
@@ -91,6 +94,15 @@ describe('parsePulseQuery', () => {
     expect(parsePulseQuery(':opus').model).toBe('opus')
   })
 
+  it('parses ^workspace, and does NOT let it shadow :model', () => {
+    expect(parsePulseQuery('^eng').workspace).toBe('eng')
+    // The collision this sigil was chosen to avoid: `:y` would have had to mean
+    // one of these two, and the reader could not have known which.
+    const both = parsePulseQuery('^y :y')
+    expect(both.workspace).toBe('y')
+    expect(both.model).toBe('y')
+  })
+
   it('parses $cost and %context floors', () => {
     expect(parsePulseQuery('$1').minCostUsd).toBe(1)
     expect(parsePulseQuery('$0.5').minCostUsd).toBe(0.5)
@@ -104,7 +116,8 @@ describe('parsePulseQuery', () => {
   })
 
   it('parses the whole sigil set in one query', () => {
-    const q = parsePulseQuery('! @remote #epic ~30m $1 %80 &studio :opus ceiling')
+    const q = parsePulseQuery('! @remote #epic ~30m $1 %80 &studio :opus ^eng ceiling')
+    expect(q.workspace).toBe('eng')
     expect(q.bands).toEqual(['blocked', 'needs'])
     expect(q.project).toBe('remote')
     expect(q.tag).toBe('epic')
@@ -180,6 +193,30 @@ describe('matchesPulseQuery', () => {
     expect(matchesPulseQuery(row({ model: undefined }), q(':opus'))).toBe(false)
   })
 
+  it('filters by workspace, and a row answers to EVERY workspace it is in', () => {
+    // Membership is many-to-many by design. A project filed under two workspaces
+    // is returned by both, which is the whole reason the facet is a list.
+    const r = row({ workspaces: ['Engineering', 'Client Work'] })
+    expect(matchesPulseQuery(r, q('^eng'))).toBe(true)
+    expect(matchesPulseQuery(r, q('^client'))).toBe(true)
+    expect(matchesPulseQuery(r, q('^design'))).toBe(false)
+  })
+
+  it('reaches a workspace whose name has a space in it', () => {
+    // `^client work` cannot survive the tokenizer, so the hyphen form is the one
+    // the suggestion list inserts -- and it has to match.
+    const r = row({ workspaces: ['Client Work'] })
+    expect(matchesPulseQuery(r, q('^client-work'))).toBe(true)
+    expect(matchesPulseQuery(r, q('^clientwork'))).toBe(true)
+  })
+
+  it('treats "in no workspace" as a non-match, never a wildcard', () => {
+    expect(matchesPulseQuery(row({ workspaces: undefined }), q('^eng'))).toBe(false)
+    expect(matchesPulseQuery(row({ workspaces: [] }), q('^eng'))).toBe(false)
+    // ...and a project in no workspace is still perfectly visible unfiltered.
+    expect(matchesPulseQuery(row({ workspaces: [] }), q(''))).toBe(true)
+  })
+
   it('filters by cost and context floors, inclusive', () => {
     expect(matchesPulseQuery(row({ costUsd: 2 }), q('$1'))).toBe(true)
     expect(matchesPulseQuery(row({ costUsd: 1 }), q('$1'))).toBe(true)
@@ -214,11 +251,15 @@ describe('exclusion with -', () => {
   })
 
   it('excludes by each scope sigil', () => {
-    const r = row({ host: 'studio', model: 'claude-opus-5' })
+    const r = row({ host: 'studio', model: 'claude-opus-5', workspaces: ['Engineering'] })
     expect(matchesPulseQuery(r, q('-@remote'))).toBe(false)
     expect(matchesPulseQuery(r, q('-#worktree'))).toBe(false)
     expect(matchesPulseQuery(r, q('-&studio'))).toBe(false)
     expect(matchesPulseQuery(r, q('-:opus'))).toBe(false)
+    expect(matchesPulseQuery(r, q('-^eng'))).toBe(false)
+    // ...and a row in NO workspace survives `-^eng`, the mirror of the positive
+    // case: an exclusion can only reject what it can match.
+    expect(matchesPulseQuery(row({ workspaces: [] }), q('-^eng'))).toBe(true)
   })
 
   it('excludes a band', () => {

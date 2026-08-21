@@ -39,8 +39,10 @@
  * the whole fleet, and a cap that changed when you filtered would be worthless as
  * an alarm.
  *
- * FILTER. The project split declares `text`, `project` and `cost` -- the three
- * axes a project bar actually has a facet for. The OpenRouter split declares
+ * FILTER. The project split declares `text`, `project`, `workspace` and `cost`
+ * -- the axes a project bar actually has a facet for, `workspace` included
+ * because it is resolved FROM the project name and needs nothing else from the
+ * bar. The OpenRouter split declares
  * `text` only, so `@anvil` leaves it FULL rather than empty: a broker feature is
  * not attributable to a project, and blanking it would assert that it is.
  */
@@ -72,7 +74,7 @@ import { WallPane } from '../wall-pane'
 import { WallPeriodTabs } from '../wall-period-tabs'
 import { wallReading } from '../wall-reading-bus'
 
-const PROJECT_AXES: readonly WallAxis[] = ['text', 'project', 'cost']
+const PROJECT_AXES: readonly WallAxis[] = ['text', 'project', 'workspace', 'cost']
 const FEATURE_AXES: readonly WallAxis[] = ['text']
 
 /**

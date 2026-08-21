@@ -13,6 +13,7 @@ export function isEmptyQuery(q: PulseQuery): boolean {
     !q.tag &&
     !q.host &&
     !q.model &&
+    !q.workspace &&
     q.windowMs === null &&
     q.day === null &&
     q.minCostUsd === null &&
@@ -27,6 +28,29 @@ export function isEmptyQuery(q: PulseQuery): boolean {
  *  Absent is never a wildcard: `&studio` must not match an unknown host. */
 function has(field: string | undefined, needle: string): boolean {
   return (field ?? '').toLowerCase().includes(needle)
+}
+
+/**
+ * Drop the separators, so `^client-work` finds the workspace called
+ * "Client Work".
+ *
+ * The other string axes never need this: a project, a host and a model are all
+ * already token-shaped, because they come from a path segment, a sentinel alias
+ * or a model id. A WORKSPACE name is free prose the user typed into the sidebar,
+ * and the tokenizer splits the query on whitespace — so without this, a
+ * two-word workspace would be unreachable from the one box that is supposed to
+ * reach everything.
+ */
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[\s_-]+/g, '')
+}
+
+/** True when ANY of the row's workspaces contains the needle. Membership is
+ *  many-to-many; a row in five workspaces answers to all five. */
+function inWorkspace(row: PulseSearchable, needle: string): boolean {
+  const want = slug(needle)
+  if (!want) return false
+  return (row.workspaces ?? []).some(name => slug(name).includes(want))
 }
 
 /**
@@ -55,6 +79,7 @@ function isExcluded(row: PulseSearchable, not: PulseExclusions): boolean {
   if (not.tags.some(t => has(row.tag, t))) return true
   if (not.hosts.some(h => has(row.host, h))) return true
   if (not.models.some(m => has(row.model, m))) return true
+  if (not.workspaces.some(w => inWorkspace(row, w))) return true
   if (not.text.length) {
     const hay = haystack(row)
     if (not.text.some(word => hay.includes(word))) return true
@@ -80,6 +105,7 @@ const CONSTRAINTS: Array<{
   { applies: q => q.tag !== null, holds: (row, q) => has(row.tag, q.tag ?? '') },
   { applies: q => q.host !== null, holds: (row, q) => has(row.host, q.host ?? '') },
   { applies: q => q.model !== null, holds: (row, q) => has(row.model, q.model ?? '') },
+  { applies: q => q.workspace !== null, holds: (row, q) => inWorkspace(row, q.workspace ?? '') },
   { applies: q => q.windowMs !== null, holds: (row, q) => row.ageMs <= (q.windowMs ?? 0) },
   // A row carries an AGE, not an instant, so the day it fell on is recovered
   // against the clock at match time. At day granularity the sub-second drift

@@ -11,7 +11,8 @@
  * second click. ABORT is deliberately not on this pane: a terminal action does
  * not belong on a surface built to be glanced at.
  *
- * FILTER: `project` and `text`, and nothing else. In particular `managed` is NOT
+ * FILTER: `project`, `workspace` (resolved from the project name) and `text`,
+ * and nothing else. In particular `managed` is NOT
  * declared, and that is the whole reason this pane is not empty: every row here
  * is machine-dispatched by definition, and the grammar's default is to HIDE
  * machine-dispatched rows. Declaring the axis would blank the pane whenever the
@@ -35,7 +36,7 @@ import { RunTailRow } from '../runs/run-tail-row'
 import { type UnattendedRow, useRunClock, useUnattendedRuns } from '../runs/use-unattended-runs'
 import { WallPane } from '../wall-pane'
 
-const AXES = ['project', 'text'] as const
+const AXES = ['project', 'workspace', 'text'] as const
 
 /**
  * How many LIVE runs render at once.

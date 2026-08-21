@@ -11,7 +11,8 @@
  * The window label comes off the RESPONSE, not off the selected tab, so numbers
  * mid-switch are always labelled with the window they were built for.
  *
- * FILTER: `text` and `project`, plus `$cost` -- a sheaf row is money, so `$5`
+ * FILTER: `text`, `project` and `^workspace` (resolved from the project name),
+ * plus `$cost` -- a sheaf row is money, so `$5`
  * meaning "projects that burned at least five dollars" is the one extra axis
  * this pane genuinely understands. No `~time` (the tabs ARE the window) and no
  * band/context/model (a project is not a conversation).
@@ -29,7 +30,7 @@ import { handleChipCapture } from '../wall-chip-capture'
 import { WallPane } from '../wall-pane'
 import { SheafRowView } from './sheaf-row'
 
-const AXES: readonly WallAxis[] = ['text', 'project', 'cost']
+const AXES: readonly WallAxis[] = ['text', 'project', 'workspace', 'cost']
 
 /** Stable empty identity -- the filter memo keys on the array. */
 const NO_ROWS: readonly SheafRow[] = []

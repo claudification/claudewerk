@@ -7,7 +7,8 @@
  * Attribution outranks subject length -- see `commit-river-row.tsx` for what
  * that costs and how the row reflows instead of paying it.
  *
- * FILTER: `text`, `@project`, `~time` and `&host`. Notably NOT `managed`: a
+ * FILTER: `text`, `@project`, `^workspace` (resolved from the project name),
+ * `~time` and `&host`. Notably NOT `managed`: a
  * commit's `origin` says agent-or-human, which is not the same thing as
  * machine-DISPATCHED, and declaring the axis would let the grammar's
  * hide-machine-runs default empty this pane on an empty query box.
@@ -28,7 +29,7 @@ import { WallPane } from '../wall-pane'
 import { CommitRiverRow } from './commit-river-row'
 import { useRiverRows } from './use-river-rows'
 
-const AXES: readonly WallAxis[] = ['text', 'project', 'time', 'host']
+const AXES: readonly WallAxis[] = ['text', 'project', 'workspace', 'time', 'host']
 
 /** Free text searches the subject, the project, the sha and the branch. */
 function facets(row: RiverRow): WallRowFacets {
