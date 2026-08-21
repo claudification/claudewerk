@@ -25,6 +25,7 @@ import type {
 import type { HandlerContext, MessageData, MessageHandler } from '../handler-context'
 import { CONTROL_PANEL_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
 import { runNightshift } from '../nightshift-orchestrator'
+import { runNightshiftOutlook } from './nightshift-outlook'
 
 const NIGHTSHIFT_RPC_TIMEOUT_MS = 10_000
 const WRITE_OPS = new Set<NightshiftOpKind>([
@@ -104,6 +105,24 @@ export const nightshiftRequest: MessageHandler = async (ctx, data) => {
     } catch {
       /* socket gone -- caller navigated away */
     }
+  }
+
+  // The OUTLOOK is computed in the broker for the same reason `run` is: tonight's
+  // list comes from the board scan plus the conversation registry, and only the
+  // broker holds the registry. It is a DRY RUN -- reads only, nothing dispatched,
+  // nothing untagged -- so it stays out of WRITE_OPS and needs only files:read.
+  if (d.op === 'outlook') {
+    try {
+      const outlook = await runNightshiftOutlook(ctx.conversations, d.project)
+      sendReply({ type: 'nightshift_result', requestId: d.requestId, op: 'outlook', ok: true, outlook })
+    } catch (err) {
+      // The scan itself is self-catching; this covers the wiring around it (a
+      // config read that blows up, a store that is gone). The caller must always
+      // get a reply -- a silent drop leaves the pane spinning forever.
+      const error = err instanceof Error ? err.message : String(err)
+      sendReply({ type: 'nightshift_result', requestId: d.requestId, op: 'outlook', ok: false, error })
+    }
+    return
   }
 
   // Run-now is executed IN the broker -- it spawns the worker fleet directly via
