@@ -95,6 +95,7 @@ import { forkCcSession } from './fork-cc-session'
 import { resolveForkCwds } from './fork-cwds'
 import { runGitFabric } from './git-fabric'
 import { runGitLog } from './git-log'
+import { buildHeadlessArgs } from './headless-args'
 import { handleNightshiftOp } from './nightshift-handlers'
 import { startSentinelNodeStats } from './node-stats'
 import { applyOAuthToken, applyOAuthTokenDelta } from './oauth-token-env'
@@ -771,43 +772,6 @@ function buildHeadlessEnv(opts: {
   applyOAuthToken(env, opts.oauthToken, opts.profileEnv)
 
   return env
-}
-
-/**
- * Build CLI args for a directly-spawned headless rclaude process.
- */
-function buildHeadlessArgs(opts: {
-  mode?: 'fresh' | 'resume'
-  resumeId?: string
-  resumeName?: string
-  effort?: string
-  model?: string
-  agent?: string
-  worktree?: string
-  maxBudgetUsd?: number
-  permissionMode?: string
-}): string[] {
-  // Headless has no human to answer a prompt, so the legacy default is full
-  // bypass (--dangerously-skip-permissions) -- a spawn must never hang waiting
-  // for an approval nobody can give. The two unattended-but-GUARDED modes
-  // (auto = managed classifier, dontAsk = allow-list + read-only bash) are the
-  // nightshift permission model (plan-nightshift.md §10): for those we must NOT
-  // force bypass -- the chosen mode flows through RCLAUDE_PERMISSION_MODE ->
-  // cli-args `--permission-mode`, and the deny-floor still bites. Every other
-  // value (incl. undefined / plan / acceptEdits / bypassPermissions) keeps the
-  // legacy bypass so no existing spawn changes behavior.
-  const unattendedGuarded = opts.permissionMode === 'auto' || opts.permissionMode === 'dontAsk'
-  const args: string[] = unattendedGuarded ? [] : ['--dangerously-skip-permissions']
-  if (opts.mode === 'resume') {
-    const resumeKey = opts.resumeId || opts.resumeName
-    if (resumeKey) args.push('--resume', resumeKey)
-  }
-  if (opts.effort) args.push('--effort', opts.effort)
-  if (opts.model) args.push('--model', opts.model)
-  if (opts.agent) args.push('--agent', opts.agent)
-  if (opts.worktree) args.push('--worktree', opts.worktree)
-  if (opts.maxBudgetUsd) args.push('--max-budget-usd', String(opts.maxBudgetUsd))
-  return args
 }
 
 /**
@@ -2239,6 +2203,9 @@ async function spawnConversation(
   advisor?: string,
   /** Readable thinking summaries vs CC's redacted (empty) thinking blocks. */
   thinkingSummaries?: boolean,
+  /** CC `--max-turns`: hard turn ceiling. Headless only -- the PTY revive path
+   *  has no flag seam for it, and no unattended seat takes that path. */
+  maxTurns?: number,
 ): Promise<{ success: boolean; error?: string; tmuxSession?: string; tmuxPaneId?: string }> {
   launchLog(jobId, 'Validating directory', 'info', cwd)
 
@@ -2338,6 +2305,7 @@ async function spawnConversation(
       agent,
       worktree,
       maxBudgetUsd,
+      maxTurns,
       permissionMode,
     })
     const spawnEnv = buildHeadlessEnv({
@@ -3980,6 +3948,7 @@ function connect(
             spawnMsg.mcpConfigPath,
             spawnMsg.advisor,
             spawnMsg.thinkingSummaries,
+            spawnMsg.maxTurns,
           )
           const response: SpawnResult = {
             type: 'spawn_result',

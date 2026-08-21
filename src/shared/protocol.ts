@@ -3727,6 +3727,8 @@ export interface LaunchConfig {
   permissionMode?: string
   autocompactPct?: number
   maxBudgetUsd?: number
+  /** CC `--max-turns` for this launch, if a work order or caller capped it. */
+  maxTurns?: number
   includePartialMessages?: boolean
   env?: Record<string, string>
   appendSystemPrompt?: string
@@ -6562,6 +6564,9 @@ export interface SpawnConversation {
   // Limits
   autocompactPct?: number
   maxBudgetUsd?: number
+  /** CC `--max-turns`: hard turn ceiling for the run. Headless transport only,
+   *  exactly like `maxBudgetUsd`. Usually set by a work order's `caps.maxTurns`. */
+  maxTurns?: number
   // Ad-hoc task runner fields
   prompt?: string
   adHoc?: boolean

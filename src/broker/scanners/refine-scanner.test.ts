@@ -4,7 +4,7 @@ import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import { EPIC_ROSTER_HEADER } from '../../shared/epic-roster'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
-import { REFINER, REFINER_ORDER_ID } from '../../shared/refiner-order'
+import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { TaskStatus } from '../../shared/task-statuses'
 import { MAX_LAUNCH_ATTEMPTS } from '../epic-sweep'
@@ -111,9 +111,12 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(report.acted).toEqual(['a'])
     expect(report.unaccounted).toEqual([])
     const request = dispatched[0]?.request as SpawnRequest
-    expect(request.model).toBe(REFINER.order.caps.model)
-    expect(request.effort).toBe(REFINER.order.caps.effort)
-    expect(request.maxBudgetUsd).toBe(REFINER.order.caps.maxBudgetUsd)
+    expect(request.model).toBe(REFINER_ORDER.caps.model)
+    expect(request.effort).toBe(REFINER_ORDER.caps.effort)
+    expect(request.maxBudgetUsd).toBe(REFINER_ORDER.caps.maxBudgetUsd)
+    // The turn ceiling rides the same seam as the budget now that it is a cap
+    // rather than a number on a wrapper nothing read.
+    expect(request.maxTurns).toBe(REFINER_ORDER.caps.maxTurns)
     expect(request.adHoc).toBe(true)
     expect(request.headless).toBe(true)
   })
@@ -161,7 +164,11 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
   })
 
   test("the ceiling is the order's reservation, not a number picked here", () => {
-    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER.reservation)
+    // `Order.reservation` is optional, so this also pins that `REFINER@1` still
+    // DECLARES one -- a dropped declaration would silently fall back to 1 here
+    // and the assertion would pass against a number nobody wrote down.
+    expect(REFINER_ORDER.reservation).toBeDefined()
+    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER_ORDER.reservation as number)
   })
 
   test('a re-tagged card dispatches under the next attempt number, so the name is new', async () => {

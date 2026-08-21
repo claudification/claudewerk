@@ -89,6 +89,7 @@ export function buildLaunchConfig(
     autocompactPct: resolved.autocompactPct,
     includePartialMessages: resolved.includePartialMessages,
     maxBudgetUsd: resolved.maxBudgetUsd,
+    maxTurns: resolved.maxTurns,
     env: req.env || undefined,
     appendSystemPrompt,
     // Sentinel-profile INTENT (broker-safe NAME / mode / pool only). Profile env

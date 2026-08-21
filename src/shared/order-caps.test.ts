@@ -108,6 +108,38 @@ describe('maxBudgetUsd -- the other privilege field', () => {
   })
 })
 
+/**
+ * THE TURN CEILING composes exactly like the budget, and that is the claim.
+ *
+ * Both are hard stops on a seat nobody is watching, so both narrow only. If they
+ * ever diverge, the divergence is the bug: an order that could RAISE a turn
+ * ceiling it was handed would be buying a capability by being imported, which is
+ * the one thing this whole module exists to make impossible.
+ */
+describe('maxTurns -- the second ceiling, narrow-only like the first', () => {
+  test('an order asking for MORE turns than the base gets the base', () => {
+    const result = composeOrderCaps(order({ caps: { maxTurns: 500 } }), { maxTurns: 10 }, BENEVOLENT)
+    if (!result.ok) throw new Error('unreachable')
+    expect(result.caps.maxTurns).toBe(10)
+  })
+
+  test('an order asking for FEWER narrows the base', () => {
+    const result = composeOrderCaps(order({ caps: { maxTurns: 30 } }), { maxTurns: 200 }, BENEVOLENT)
+    if (!result.ok) throw new Error('unreachable')
+    expect(result.caps.maxTurns).toBe(30)
+  })
+
+  test('an absent side is "no opinion", never zero -- a zero-turn seat cannot answer', () => {
+    const fromOrder = composeOrderCaps(order({ caps: { maxTurns: 30 } }), {}, BENEVOLENT)
+    const fromBase = composeOrderCaps(order(), { maxTurns: 30 }, BENEVOLENT)
+    const neither = composeOrderCaps(order(), {}, BENEVOLENT)
+    if (!fromOrder.ok || !fromBase.ok || !neither.ok) throw new Error('unreachable')
+    expect(fromOrder.caps.maxTurns).toBe(30)
+    expect(fromBase.caps.maxTurns).toBe(30)
+    expect(neither.caps.maxTurns).toBeUndefined()
+  })
+})
+
 describe('deny -- the capability field, add-only', () => {
   test('the order’s rules are unioned onto the base', () => {
     const result = composeOrderCaps(

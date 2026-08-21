@@ -80,17 +80,30 @@ export type OrderPermissionMode = 'plan' | 'acceptEdits' | 'auto' | 'dontAsk' | 
 /**
  * Every CLI flag an order may set through the raw `flags` escape hatch.
  *
- * DEFAULT-DENY, and the list is short on purpose. These four are the ones a
+ * DEFAULT-DENY, and the list is short on purpose. These five are the ones a
  * ROLE legitimately decides: which model, how hard it thinks, which agent
- * definition it wears, and what it may spend. Everything else about the launch
- * is decided by the engine (`--output-format`, `--verbose`, `--permission-mode`,
- * `--settings`, `--mcp-config`, `--worktree`) and an order that could set those
- * would be rewriting the harness rather than describing a role.
+ * definition it wears, and the two ceilings it may not exceed -- money and
+ * turns. Everything else about the launch is decided by the engine
+ * (`--output-format`, `--verbose`, `--permission-mode`, `--settings`,
+ * `--mcp-config`, `--worktree`) and an order that could set those would be
+ * rewriting the harness rather than describing a role.
+ *
+ * `--max-turns` IS ON THE LIST FOR THE SAME REASON `--max-budget-usd` IS: both
+ * are hard stops on a seat that nobody is watching, and both narrow only. It is
+ * a hidden CC flag (`docs/stream-json-protocol.md`) but a real one -- an unknown
+ * flag is a hard `error: unknown option` from the CLI, so a spelling that did
+ * not exist would kill the spawn rather than be ignored.
  *
  * Prefer the typed `caps` fields; `flags` exists so a new CC flag is reachable
  * without a schema change, and it is the surface an attacker would aim at.
  */
-export const ORDER_FLAG_ALLOWLIST: readonly string[] = ['--model', '--effort', '--agent', '--max-budget-usd']
+export const ORDER_FLAG_ALLOWLIST: readonly string[] = [
+  '--model',
+  '--effort',
+  '--agent',
+  '--max-budget-usd',
+  '--max-turns',
+]
 
 /**
  * The characters a string may contain when it will end up in an argv.
@@ -113,10 +126,16 @@ export function isCommandLineSafe(value: string): boolean {
  * Caps and selections a role carries.
  *
  * TWO KINDS OF FIELD, and the distinction decides how they compose (see
- * `order-caps.ts`): `maxBudgetUsd` and `permissionMode` are PRIVILEGE -- they
- * may only ever be narrowed. `model`, `effort`, `agent` and `mcpConfigPath` are
- * SELECTION -- there is no ladder to climb, so the explicit choice of whoever
- * runs the order wins and the order supplies the default.
+ * `order-caps.ts`): `maxBudgetUsd`, `maxTurns` and `permissionMode` are
+ * PRIVILEGE -- they may only ever be narrowed. `model`, `effort`, `agent` and
+ * `mcpConfigPath` are SELECTION -- there is no ladder to climb, so the explicit
+ * choice of whoever runs the order wins and the order supplies the default.
+ *
+ * EVERY FIELD HERE IS A SPAWN FIELD -- it maps onto a `SpawnRequest` and rides
+ * to a seat. The seat's share of the SCHEDULER'S POOL is not one of them and
+ * lives on {@link Order.reservation} instead: `composeOrderCaps` would have no
+ * answer for how a pool share composes onto a spawn request, because it does
+ * not compose onto one at all.
  */
 export interface OrderCaps {
   /** CC model slug. A GUARD reading a diff does not need the tier a builder does. */
@@ -126,6 +145,19 @@ export interface OrderCaps {
   agent?: string
   /** Hard spend ceiling for ONE seat. `werk-run-caps` bounds the RUN; this bounds the seat. */
   maxBudgetUsd?: number
+  /**
+   * Hard TURN ceiling for one seat, as CC's `--max-turns`.
+   *
+   * THE SECOND HALF OF "WHAT A ROLE MAY SPEND", and it catches what a budget
+   * cannot: a seat that is cheap per turn and wrong about when to stop. A
+   * refiner still going at 30 turns has stopped refining and started
+   * implementing, and it can do that for a long time inside $0.50.
+   *
+   * A POSITIVE INTEGER. A count of turns has no fractional value, so `2.5` is a
+   * typo rather than a cap, and `0` is a seat that cannot take its first turn --
+   * which is a schedule that should be disabled, said in a place nothing reads.
+   */
+  maxTurns?: number
   /** The permission mode the seat runs at. Narrowing only, and `bypassPermissions`
    *  stays benevolent-only -- enforced in `order-caps.ts`, not here. */
   permissionMode?: OrderPermissionMode
@@ -205,6 +237,30 @@ export interface Order {
   /** Absent = this seat gets no worktree. */
   worktree?: OrderWorktree
   caps: OrderCaps
+  /**
+   * How many of a dispatcher's concurrent slots this order may hold AT ONCE.
+   *
+   * THE POOL IS THE DISPATCHER'S, THE SHARE IS THE ORDER'S. The scheduler caps
+   * itself at `MAX_CONCURRENT_SCHEDULED_SPAWNS` (3) globally -- enough to stop
+   * the scheduler eating the machine, and not enough to stop ONE role eating the
+   * scheduler. A backlog of 40 `#needs-refine` cards and a `REFINER@1` schedule
+   * holds all three for as long as the backlog lasts, and the nightly board
+   * sweep -- one fire, one minute, no retry -- is simply skipped, in a way that
+   * looks exactly like every other overlap skip in the history.
+   *
+   * IT IS NOT IN {@link OrderCaps} AND THAT IS THE POINT. Every field in `caps`
+   * maps onto a `SpawnRequest` and narrows what ONE seat may do; this one is
+   * about how many seats there may be, which is a question no spawn request can
+   * answer. `composeOrderCaps` would have to invent a composition rule for a
+   * field it can never write anywhere.
+   *
+   * ABSENT MEANS NO RESERVATION -- the dispatcher's own ceiling is the only
+   * bound, which is the status quo for every schedule that never heard of
+   * orders. `0` is legal and means PARKED: an order that may hold no slot at
+   * all, which is how a role is taken out of service without deleting it.
+   * See `src/broker/scheduled-tasks/seat-reservation.ts` for the decision.
+   */
+  reservation?: number
   /** Raw flag escape hatch. Default-deny against `ORDER_FLAG_ALLOWLIST`. */
   flags?: Record<string, string>
   permissions?: OrderPermissions
@@ -394,6 +450,23 @@ function optionalSafeString(record: Record<string, unknown>, key: string, field:
   return requireCommandLineSafe(value, field)
 }
 
+/**
+ * A COUNT: an integer at or above `min`, or absent.
+ *
+ * Integer-checked rather than merely positive, because every count in an order
+ * is of a discrete thing -- turns taken, slots held. `maxTurns: 2.5` and
+ * `reservation: 1.5` are typos that a `> 0` check would wave through into a
+ * comparison that then behaves like 2 in one place and 1 in another.
+ */
+function optionalCount(record: Record<string, unknown>, key: string, field: string, min: number): number | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min) {
+    fail(`${field} must be an integer >= ${min}`, field)
+  }
+  return value as number
+}
+
 function asRecord(value: unknown, field: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) fail(`${field} must be an object`, field)
   return value as Record<string, unknown>
@@ -417,6 +490,10 @@ function validateCaps(input: unknown): OrderCaps {
   put(caps, 'effort', optionalMember(raw, 'effort', EFFORTS, 'caps.effort'))
   put(caps, 'agent', optionalSafeString(raw, 'agent', 'caps.agent'))
   put(caps, 'maxBudgetUsd', budget as number | undefined)
+  // At least ONE turn. A zero-turn seat is a seat that cannot answer its own
+  // prompt, and a schedule that means to dispatch nothing says so by being
+  // disabled -- not by capping its role at a turn count nothing can use.
+  put(caps, 'maxTurns', optionalCount(raw, 'maxTurns', 'caps.maxTurns', 1))
   put(caps, 'permissionMode', optionalMember(raw, 'permissionMode', MODES, 'caps.permissionMode'))
   put(caps, 'mcpConfigPath', optionalSafeString(raw, 'mcpConfigPath', 'caps.mcpConfigPath'))
   return caps
@@ -497,6 +574,9 @@ export function validateOrder(input: unknown): Order {
   }
   put(order, 'prompt', source.prompt)
   put(order, 'instructions', source.instructions)
+  // ZERO IS LEGAL HERE, unlike `caps.maxTurns`: a parked order holding no slot
+  // is a role taken out of service, which is a thing somebody means.
+  put(order, 'reservation', optionalCount(raw, 'reservation', 'reservation', 0))
   put(order, 'namePrefix', optionalSafeString(raw, 'namePrefix', 'namePrefix'))
   put(order, 'worktree', validateWorktree(raw.worktree))
   put(order, 'flags', validateFlags(raw.flags))
