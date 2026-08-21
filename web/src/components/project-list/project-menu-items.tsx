@@ -5,6 +5,7 @@
 
 import { projectIdentityKey } from '@shared/project-uri'
 import { ContextMenu } from 'radix-ui'
+import { openMorningReport } from '@/components/morning-report/morning-report-state'
 import { openScheduledTasksModal } from '@/components/scheduled-tasks/modal-state'
 import { updateProjectSettings, useConversationsStore } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
@@ -41,6 +42,15 @@ export function ProjectMenuItems({ project, onOpenSettings }: { project: string;
         }}
       >
         Kanban board…
+      </ContextMenu.Item>
+      <ContextMenu.Item
+        className={cn(menuItemClass, 'text-amber-500')}
+        onSelect={() => {
+          haptic('tap')
+          openMorningReport(project)
+        }}
+      >
+        Morning report…
       </ContextMenu.Item>
       <ContextMenu.Item
         className={cn(menuItemClass, 'text-amber-400')}

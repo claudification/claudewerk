@@ -492,6 +492,9 @@ interface ConversationsState {
   canvasChatHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftHandler: ((msg: Record<string, unknown>) => void) | null
   nightshiftWatchdogHandler: ((msg: Record<string, unknown>) => void) | null
+  /** The morning report: `board_report_result` replies plus the
+   *  `board_report_changed` push that makes a PARKED surface pulse. */
+  boardReportHandler: ((msg: Record<string, unknown>) => void) | null
   /** True when the frame went out. False means the socket was not open and
    *  NOTHING was sent -- a caller awaiting a reply must treat that as a failure,
    *  not as a slow answer. */
@@ -1062,6 +1065,7 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   canvasChatHandler: null,
   nightshiftHandler: null,
   nightshiftWatchdogHandler: null,
+  boardReportHandler: null,
   showTerminal: false,
   terminalWrapperId: null,
   showSwitcher: false,
