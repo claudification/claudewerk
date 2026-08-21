@@ -5062,6 +5062,15 @@ export interface EpicLogAppendInput {
   kind: EpicLogKind
   convId: string
   body: string
+  /**
+   * The epic the entry is ABOUT, when that is not the one the op names.
+   *
+   * Absent means `EpicOp.epicId` -- which is every caller while a baton is
+   * per-epic, and is why this is additive rather than a break. It exists so a
+   * baton shared by several epics can be written to without the file path being
+   * the only thing that says which epic an entry belongs to.
+   */
+  epicId?: string
   cardId?: string
 }
 

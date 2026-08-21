@@ -17,7 +17,13 @@ export interface RawLogSection {
   ts: string
   kind: string
   convId: string
-  /** Optional trailing token on the header line (epic logs put the card id here). */
+  /**
+   * Optional trailing token on the header line. ONE token, deliberately, and it
+   * stays one: epic batons need two ids in it and COMPOSE them (`epic-log-tag.ts`)
+   * rather than widen this header, because widening it would rewrite the parser
+   * under quest logs -- which never write a tag at all -- to buy something only
+   * epics use. Opaque here on purpose; the meaning belongs to the caller.
+   */
   tag?: string
   body: string
 }

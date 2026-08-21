@@ -14,6 +14,7 @@
  */
 
 import { mkdirSync } from 'node:fs'
+import { composeBatonTag, parseBatonTag } from './epic-log-tag'
 import { epicDir, epicLogFile, nowIso } from './epic-paths'
 import type { EpicLogEntry, EpicLogKind } from './epic-run-types'
 import { appendSectionLog, readSectionLog, renderLogSection } from './md-section-log'
@@ -38,16 +39,26 @@ function asEpicLogKind(v: unknown): EpicLogKind {
   return KINDS.includes(v as EpicLogKind) ? (v as EpicLogKind) : 'intent'
 }
 
-/** The baton's `tag` slot carries the card id -- that is the whole difference
- *  between this log's header and a quest's. */
+/**
+ * The baton's `tag` slot carries BOTH ids, composed -- that is the whole
+ * difference between this log's header and a quest's.
+ *
+ * The composition lives in `epic-log-tag.ts` and nowhere else: this function and
+ * `readEpicLog` are the only two places in the system that see a tag, so the
+ * split is a parse boundary rather than a format everybody has to know.
+ */
 function toSection(e: EpicLogEntry) {
-  return { ts: e.ts, kind: e.kind, convId: e.convId, ...(e.cardId ? { tag: e.cardId } : {}), body: e.body }
+  const tag = composeBatonTag(e.epicId, e.cardId)
+  return { ts: e.ts, kind: e.kind, convId: e.convId, ...(tag ? { tag } : {}), body: e.body }
 }
 
 export interface AppendEpicLogInput {
   kind: EpicLogKind
   convId: string
   body: string
+  /** The epic this entry is ABOUT, when that is not the log being written to.
+   *  Omitted means the log's own epic, which is every caller today. */
+  epicId?: string
   cardId?: string
   ts?: string
 }
@@ -63,6 +74,13 @@ export interface AppendEpicLogInput {
  */
 function isMachineAcknowledgement(entry: EpicLogEntry): boolean {
   return entry.kind === 'completion' && entry.convId === 'broker' && Boolean(entry.cardId)
+}
+
+/** The identity the at-most-once rule is keyed on: a card WITHIN an epic. Card
+ *  ids are unique on a board, but a baton shared by several epics must not let
+ *  one epic's acknowledgement suppress another's. */
+function sameSettle(a: EpicLogEntry, b: EpicLogEntry): boolean {
+  return a.cardId === b.cardId && a.epicId === b.epicId
 }
 
 /**
@@ -81,26 +99,38 @@ export function appendEpicLog(root: string, epicId: string, input: AppendEpicLog
     ts: input.ts ?? nowIso(nowMs),
     kind: asEpicLogKind(input.kind),
     convId: input.convId || 'unknown',
+    epicId: input.epicId || epicId,
     ...(input.cardId ? { cardId: input.cardId } : {}),
     body: input.body,
   }
   if (isMachineAcknowledgement(entry)) {
-    const existing = readEpicLog(root, epicId).find(e => isMachineAcknowledgement(e) && e.cardId === entry.cardId)
+    const existing = readEpicLog(root, epicId).find(e => isMachineAcknowledgement(e) && sameSettle(e, entry))
     if (existing) return existing
   }
   appendSectionLog(epicLogFile(root, epicId), LOG_HEADER, toSection(entry))
   return entry
 }
 
-/** Every entry in append order. Tolerates a missing or half-written file. */
+/**
+ * Every entry in append order. Tolerates a missing or half-written file.
+ *
+ * THE PARSE BOUNDARY. `epicId` is the argument that located the file, and it is
+ * what a tag that names no epic falls back to -- which is every tag written
+ * before this split existed. That is why backward compatibility here is a total
+ * function and not a heuristic: the reader already knows the answer.
+ */
 export function readEpicLog(root: string, epicId: string): EpicLogEntry[] {
-  return readSectionLog(epicLogFile(root, epicId)).map(s => ({
-    ts: s.ts,
-    kind: asEpicLogKind(s.kind),
-    convId: s.convId,
-    ...(s.tag ? { cardId: s.tag } : {}),
-    body: s.body,
-  }))
+  return readSectionLog(epicLogFile(root, epicId)).map(s => {
+    const tag = parseBatonTag(s.tag, epicId)
+    return {
+      ts: s.ts,
+      kind: asEpicLogKind(s.kind),
+      convId: s.convId,
+      epicId: tag.epicId,
+      ...(tag.cardId ? { cardId: tag.cardId } : {}),
+      body: s.body,
+    }
+  })
 }
 
 /**
@@ -115,9 +145,16 @@ export function readEpicLogTail(root: string, epicId: string, n = 20): EpicLogEn
   return n >= all.length ? all : all.slice(all.length - n)
 }
 
-/** Entries for one card, oldest first -- "what has already happened to t7". */
+/**
+ * Entries for one card, oldest first -- "what has already happened to t7".
+ *
+ * Matched on the epic AS WELL AS the card. A no-op while a baton is per-epic,
+ * and the difference between an answer and a lie once one is not: the same card
+ * id can appear under a second epic in a shared baton, and "what happened to t7"
+ * asked of epic E must not return E2's history of it.
+ */
 export function readEpicLogForCard(root: string, epicId: string, cardId: string): EpicLogEntry[] {
-  return readEpicLog(root, epicId).filter(e => e.cardId === cardId)
+  return readEpicLog(root, epicId).filter(e => e.cardId === cardId && e.epicId === epicId)
 }
 
 /** How much of the baton, and which of it. */
