@@ -1287,6 +1287,36 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(yesterday!.costUsd).toBeCloseTo(0.6)
       })
 
+      it('queryHourly groupBy=day keeps per-project attribution', () => {
+        // REGRESSION (stats-hourly-groupby-day-misattributes-projects): the day
+        // rollup grouped by (day, account, model) only and stamped the merged
+        // SUM(cost_usd) with MIN(project_uri). Every project that billed that
+        // day collapsed into one row and the first-sorting URI ate everybody
+        // else's spend -- silently, with no missing-data signal.
+        const midnight = new Date()
+        midnight.setUTCHours(0, 0, 0, 0)
+        midnight.setUTCDate(midnight.getUTCDate() - 1)
+        const day = midnight.getTime()
+        const dayKey = new Date(day).toISOString().slice(0, 10)
+        const hour = 60 * 60 * 1000
+
+        const a = 'claude://default/proj-a'
+        const b = 'claude://default/proj-b'
+        store.costs.recordTurn(baseTurn({ timestamp: day + 1 * hour, projectUri: a, costUsd: 0.1 }))
+        store.costs.recordTurn(baseTurn({ timestamp: day + 2 * hour, projectUri: a, costUsd: 0.2 }))
+        store.costs.recordTurn(baseTurn({ timestamp: day + 3 * hour, projectUri: b, costUsd: 0.4 }))
+
+        const rows = store.costs.queryHourly({ groupBy: 'day' }).filter(r => r.hour === dayKey)
+        expect(rows).toHaveLength(2)
+
+        const rowA = rows.find(r => r.projectUri === a)
+        const rowB = rows.find(r => r.projectUri === b)
+        expect(rowA?.costUsd).toBeCloseTo(0.3)
+        expect(rowA?.turnCount).toBe(2)
+        expect(rowB?.costUsd).toBeCloseTo(0.4)
+        expect(rowB?.turnCount).toBe(1)
+      })
+
       // -----------------------------------------------------------------
       // queryTurnActivity -- the narrow projection the day-bucketed activity
       // matrix folds. Unpaged, so a month never truncates at 1000 rows.
@@ -1532,6 +1562,69 @@ runStoreTests('MemoryDriver', () => createMemoryDriver())
 runStoreTests('SqliteDriver', () =>
   createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'store-test-')) }),
 )
+
+// -----------------------------------------------------------------
+// queryHourly groupBy=day sentinel/profile attribution -- sqlite-only. The
+// memory driver's hour buckets carry no sentinel_id/profile columns at all
+// (they are absent, not wrong), so there is nothing to misattribute there.
+// -----------------------------------------------------------------
+
+describe('queryHourly groupBy=day sentinel/profile attribution (sqlite)', () => {
+  it('splits a day by sentinel and profile instead of stamping MIN()', () => {
+    const store = createSqliteDriver({ type: 'sqlite', dataDir: mkdtempSync(join(tmpdir(), 'hourly-day-attr-')) })
+    store.init()
+
+    const midnight = new Date()
+    midnight.setUTCHours(0, 0, 0, 0)
+    midnight.setUTCDate(midnight.getUTCDate() - 1)
+    const day = midnight.getTime()
+    const dayKey = new Date(day).toISOString().slice(0, 10)
+    const hour = 60 * 60 * 1000
+
+    // Deliberately different HOURS: `hourly_stats` is keyed
+    // (hour, account, model, project_uri) and its materialisation MIN()s
+    // sentinel_id/profile inside that key, so two profiles billing the same
+    // hour+project already collapse one level down. That is a separate defect
+    // (see card hourly-stats-pk-collapses-sentinel-profile); this test covers
+    // the day rollup, which is what this card fixes.
+    const base = {
+      conversationId: 's1',
+      projectUri: 'claude://default/proj-a',
+      account: 'alice@example.com',
+      orgId: 'org-1',
+      model: 'claude-opus-4',
+      inputTokens: 100,
+      outputTokens: 200,
+      cacheReadTokens: 50,
+      cacheWriteTokens: 25,
+      exactCost: true,
+    }
+    store.costs.recordTurn({
+      ...base,
+      timestamp: day + 1 * hour,
+      costUsd: 0.1,
+      sentinelId: 'snt_one',
+      profile: 'work',
+    })
+    store.costs.recordTurn({
+      ...base,
+      timestamp: day + 2 * hour,
+      costUsd: 0.4,
+      sentinelId: 'snt_two',
+      profile: 'personal',
+    })
+
+    const rows = store.costs.queryHourly({ groupBy: 'day' }).filter(r => r.hour === dayKey)
+    expect(rows).toHaveLength(2)
+
+    const work = rows.find(r => r.profile === 'work')
+    const personal = rows.find(r => r.profile === 'personal')
+    expect(work?.sentinelId).toBe('snt_one')
+    expect(work?.costUsd).toBeCloseTo(0.1)
+    expect(personal?.sentinelId).toBe('snt_two')
+    expect(personal?.costUsd).toBeCloseTo(0.4)
+  })
+})
 
 // -----------------------------------------------------------------
 // TokenStore.backfillFromTranscripts -- sqlite-only (scans transcript_entries
