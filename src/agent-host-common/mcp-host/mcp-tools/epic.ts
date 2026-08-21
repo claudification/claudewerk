@@ -47,6 +47,14 @@ const DESCRIPTION = [
   'action=clear        acknowledge a run that has ALREADY ENDED, so it stops occupying THE WALL. It is not a',
   '                    quieter abort and not a delete: run.md, the baton and every card stay exactly as they are,',
   '                    and it REFUSES an armed or running run -- pause or abort first.',
+  'action=delete       remove an ENDED run from the record entirely -- gone from the wall, from list, and from the',
+  '                    armed set, and it does not come back on the next sweep or broker restart. Use it for a run',
+  '                    armed by mistake, a duplicate, or a scratch run nobody wants in the history; use clear for a',
+  '                    real run you have simply finished reading. RECOVERABLE: the tree is MOVED to',
+  '                    .rclaude/project/epics/.deleted/<id>-<ts>/, never rm-ed, and the reply says where. It NEVER',
+  '                    touches the epic\'s CARDS -- they outlive runs by design, and the reply counts what it left.',
+  '                    Two refusals: the run must be paused, aborted or complete, and NO conversation tagged with',
+  '                    this epic may still be live. `reason` is recorded in the baton, inside the tombstone.',
   'action=beat         run ONE beat RIGHT NOW instead of waiting up to 45s for the sweep. Use this after arming',
   '                    to see immediately whether the run does anything, and to step a stalled run by hand.',
   '                    It OVERRIDES an appointment (`when=<iso>`) and records that it did. It does NOT override',
@@ -75,7 +83,7 @@ function err(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
-const ACTIONS = ['start', 'get', 'inspect', 'list', 'beat', 'pause', 'abort', 'clear', 'break_lease'] as const
+const ACTIONS = ['start', 'get', 'inspect', 'list', 'beat', 'pause', 'abort', 'clear', 'delete', 'break_lease'] as const
 
 /** Comma-separated or already a list -> a list. The MCP schema says string, and
  *  a model will send either spelling however the schema is worded. */
@@ -198,7 +206,7 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
               'Tripping it PARKS the run. 0 disarms it. The clock starts when work may begin, not when you arm -- ' +
               'a cadence=window run does not spend its budget waiting for the window.',
           },
-          reason: { type: 'string', description: 'abort / break_lease: why, recorded in the baton.' },
+          reason: { type: 'string', description: 'abort / delete / break_lease: why, recorded in the baton.' },
           force: { type: 'boolean', description: 'break_lease: break it even though the holder is still alive.' },
           beats: { type: 'number', description: 'inspect: how many past beats to show (default 10).' },
           baton_limit: { type: 'number', description: 'get / inspect: baton entries to return (default 20).' },

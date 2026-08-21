@@ -26,6 +26,37 @@ export function epicDir(root: string, epicId: string): string {
   return join(epicsRoot(root), safeEpicId(epicId))
 }
 
+/**
+ * WHERE A DELETED RUN GOES -- the tombstone yard.
+ *
+ * A dot-prefixed sibling of the runs themselves, which is what makes it safe:
+ * `SAFE_ID` forbids a leading dot, so no epic id can ever address this directory
+ * and no run can ever be written inside it. Nothing enumerates `epics/` either,
+ * so a tombstone cannot leak back onto a surface as a phantom run.
+ *
+ * `delete` is a MOVE and never an `rm` (see `deleteEpicRun`). A true purge of
+ * this directory is a separate, rarer, explicitly-destructive operation that
+ * deliberately does not exist yet -- and if it is ever built it is CLI-only.
+ */
+const DELETED_DIR = '.deleted'
+
+export function deletedEpicsRoot(root: string): string {
+  return join(epicsRoot(root), DELETED_DIR)
+}
+
+/**
+ * `.rclaude/project/epics/.deleted/<id>-<stamp>`.
+ *
+ * The stamp is the ISO instant with its punctuation flattened to hyphens. Two
+ * reasons, and neither is cosmetic: a colon is a legal path character here and
+ * an illegal one on the filesystems this project's artifacts get copied to, and
+ * a per-instant name means deleting the same epic twice never clobbers the first
+ * tombstone -- which would be an `rm` wearing a `mv`'s clothes.
+ */
+export function deletedEpicDir(root: string, epicId: string, nowMs: number): string {
+  return join(deletedEpicsRoot(root), `${safeEpicId(epicId)}-${nowIso(nowMs).replace(/[:.]/g, '-')}`)
+}
+
 export function epicRunFile(root: string, epicId: string): string {
   return join(epicDir(root, epicId), 'run.md')
 }

@@ -1,6 +1,6 @@
 /**
- * The BROKER-COMPUTED half of `/api/epic` -- `active`, `inspect`, `beat` and
- * `break_lease`.
+ * The BROKER-SIDE half of `/api/epic` -- `active`, `inspect`, `beat`,
+ * `break_lease` and `delete`.
  *
  * Deliberately a separate module from `epic-run-api.ts`. That one holds the four
  * SENTINEL verbs the RUN button drives (start/get/pause/abort); these four are
@@ -65,4 +65,19 @@ export function beatRun(project: string, epicId: string) {
  *  is the difference between an unstick and shooting a run mid-generation. */
 export function breakLease(project: string, epicId: string, reason: string, force = false) {
   return post({ op: 'break_lease', project, epicId, reason, force }, j => String(j.note ?? ''), '')
+}
+
+/**
+ * DELETE a run: gone from the wall, from `list` and from the armed set, and it
+ * does not come back on the next sweep or broker restart.
+ *
+ * RECOVERABLE -- the sentinel MOVES the tree to `.deleted/<id>-<ts>/` rather
+ * than removing it, and the note says where. It never touches the epic's cards.
+ *
+ * Refused on a run that is still armed or running, and refused while ANY
+ * conversation tagged with this epic is live -- stricter than `clear`, because
+ * this one moves the artifact those seats are writing to.
+ */
+export function deleteEpicRun(project: string, epicId: string, reason: string) {
+  return post({ op: 'delete', project, epicId, reason }, j => String(j.note ?? ''), '')
 }

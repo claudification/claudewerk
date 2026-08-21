@@ -12,8 +12,8 @@
  * everything else from the board.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { epicDir, epicRunFile, nowIso, safeEpicId } from './epic-paths'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { deletedEpicDir, deletedEpicsRoot, epicDir, epicRunFile, nowIso, safeEpicId } from './epic-paths'
 import {
   EPIC_RUN_DEFAULTS,
   type EpicCadence,
@@ -215,6 +215,33 @@ export function patchEpicRun(root: string, epicId: string, patch: EpicRunPatch, 
   const current = readEpicRun(root, epicId)
   if (!current) return null
   return writeRun(root, { ...current, ...patch, updated: nowIso(nowMs) })
+}
+
+/**
+ * DELETE A RUN -- AND `delete` IS A MOVE, NOT AN `rm`.
+ *
+ * The whole tree (`run.md`, the baton, anything a later card puts beside them)
+ * is relocated to `.deleted/<id>-<stamp>/`. That is what lets this verb exist at
+ * all: `epic-run-no-dismiss-or-delete` refused a delete on 2026-08-20 because
+ * "deleting the artifact destroys the run's history, which is the record
+ * `epic-mode-engine` exists to keep", and that argument has not become wrong. A
+ * move satisfies both sides -- the run is gone from every surface, and a
+ * mistaken delete is one `mv` away from being undone.
+ *
+ * Cheap enough to be the default: all six run directories on this box measured
+ * 1.7 MB in total on 2026-08-21. There is no storage argument here and there
+ * never will be at this scale.
+ *
+ * Returns the tombstone directory, or null when the epic had nothing on disk --
+ * a null is "nothing to delete", never "deleted successfully".
+ */
+export function deleteEpicRun(root: string, epicId: string, nowMs: number): string | null {
+  const from = epicDir(root, epicId)
+  if (!existsSync(from)) return null
+  const to = deletedEpicDir(root, epicId, nowMs)
+  mkdirSync(deletedEpicsRoot(root), { recursive: true })
+  renameSync(from, to)
+  return to
 }
 
 /** Has this run exhausted its generation ceiling? The runaway backstop. */

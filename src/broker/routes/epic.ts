@@ -7,10 +7,12 @@
  *   - SENTINEL OPS (`start`/`get`/`pause`/`abort`) forward to the sentinel via
  *     `sendEpicOp`, because the run artifact is a file and the broker owns no
  *     filesystem.
- *   - BROKER ACTIONS (`inspect`/`list`/`beat`/`break_lease`) are answered here,
- *     from the conversation registry, the armed set and the beat ring, plus
- *     reads the broker already makes. They add NO sentinel op -- see
- *     `epic-actions.ts`.
+ *   - BROKER ACTIONS (`inspect`/`list`/`beat`/`break_lease`/`delete`) are
+ *     answered here, from the conversation registry, the armed set and the beat
+ *     ring, plus reads the broker already makes. `break_lease` and `delete` do
+ *     forward to the sentinel in the end; they live on this side because each
+ *     carries a refusal only the BROKER can make (is the lease holder alive, is
+ *     a seat still writing to this run) -- see `epic-actions.ts`.
  *
  * The route's own job stays exactly three things: parse, permission-gate, and
  * shape the reply.
@@ -21,7 +23,7 @@ import type { EpicBatonQuery, EpicOpKind } from '../../shared/protocol'
 import type { ConversationStore } from '../conversation-store'
 import { listActiveEpicRuns } from '../epic-active'
 import { normalizeWhen, sendEpicOp } from '../epic-broker-rpc'
-import { forgetArmedEpic, noteArmedEpic } from '../epic-registry'
+import { forgetArmedEpic, forgetDeletedEpic, noteArmedEpic } from '../epic-registry'
 import { buildSweepDeps } from '../epic-sweep-loop'
 import type { Permission } from '../permissions'
 import { scannerEnabledForProject } from '../project-settings'
@@ -130,8 +132,14 @@ function refuse(
  * epic-registry.ts for the chicken-and-egg this closes.
  */
 function trackRun(body: EpicHttpBodyReady): void {
-  if (body.op === 'start') noteArmedEpic(body.project, body.epicId)
-  else if (body.op === 'pause' || body.op === 'abort') forgetArmedEpic(body.project, body.epicId)
+  if (body.op === 'start') {
+    noteArmedEpic(body.project, body.epicId)
+    // ARMING UN-DELETES. A `start` writes a fresh `run.md`, so the epic has a
+    // real run again -- leaving its tombstone in place would keep that new run
+    // off the wall, the badge and `list` while it was genuinely running, which
+    // is the invisibility the whole tail section exists to prevent.
+    forgetDeletedEpic(body.project, body.epicId)
+  } else if (body.op === 'pause' || body.op === 'abort') forgetArmedEpic(body.project, body.epicId)
 }
 
 function toActionInput(body: EpicHttpBodyReady): ActionInput {

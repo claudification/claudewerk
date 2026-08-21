@@ -68,11 +68,11 @@ function Row({ row, nowMs }: { row: UnattendedRow; nowMs: number }) {
 function NotRunning({
   tail,
   cleared,
-  onCleared,
+  onRowGone,
 }: {
   tail: readonly TailRow[]
   cleared: number
-  onCleared: () => void
+  onRowGone: () => void
 }) {
   if (tail.length === 0 && cleared === 0) return null
   const shown = tail.slice(0, TAIL_CAP)
@@ -80,7 +80,7 @@ function NotRunning({
     <div className="wall-run-tail-section">
       <div className="wall-run-tail-head">{`not running · ${tail.length}`}</div>
       {shown.map(({ row, liveness }) => (
-        <RunTailRow key={row.key} row={row} liveness={liveness} onCleared={onCleared} />
+        <RunTailRow key={row.key} row={row} liveness={liveness} onRowGone={onRowGone} />
       ))}
       {tail.length > shown.length && (
         <div className="wall-run-more">{`+ ${tail.length - shown.length} more not running`}</div>
@@ -127,7 +127,7 @@ export default function UnattendedRunsPane() {
       {live.length > shown.length && (
         <div className="wall-run-more">{`+ ${live.length - shown.length} more running, not inspected`}</div>
       )}
-      <NotRunning tail={tail} cleared={cleared.length} onCleared={reprime} />
+      <NotRunning tail={tail} cleared={cleared.length} onRowGone={reprime} />
     </WallPane>
   )
 }
