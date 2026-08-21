@@ -36,6 +36,19 @@ export interface OverseerPromptCtx {
   wake: EpicWakeReason
   /** One line per card that settled since the last generation, if any. */
   settled: string[]
+  /**
+   * NOW, IN EPOCH MS -- the beat's clock, injected, exactly as `planBeat` takes
+   * it (`EpicBeatInput.nowMs`).
+   *
+   * It was `Date.now()`, read inside this builder. That made the elapsed figure
+   * in the budget sentence the one number in the prompt that came from a
+   * different instant than the rest of it, and it made the sentence untestable:
+   * no assertion can state what "37 min" should be when the minute is whatever
+   * the suite happened to run at. The beat already holds a clock and gates the
+   * whole run on it -- the prompt reads the same one or it is describing a
+   * different beat.
+   */
+  nowMs: number
 }
 
 const AUTHORITY = [
@@ -137,7 +150,14 @@ function stopping(ctx: OverseerPromptCtx): string {
     // The engine parks on whichever of these trips first, without asking. An
     // overseer that cannot see its own remaining budget plans a five-generation
     // integration it has the money for exactly none of.
-    `THE RUN'S BUDGET, which the ENGINE enforces without consulting you: ${formatEpicRunCaps(ctx.run, Date.now())}.`,
+    //
+    // EVERY FIGURE IN THIS SENTENCE COMES FROM `ctx.run` AND `ctx.nowMs`, and
+    // nothing here may reach past them for a second opinion. `ctx.run` is the
+    // copy of the run that is ON DISK after the beat's own write
+    // (`epic-executor.ts`, `renderedRun`) -- which is the whole of the fix for
+    // the nine consecutive generations that were told they had a beat's worth
+    // more money than they did.
+    `THE RUN'S BUDGET, which the ENGINE enforces without consulting you: ${formatEpicRunCaps(ctx.run, ctx.nowMs)}.`,
     'Whichever ceiling trips first PARKS the run and records which one in the baton. Plan inside what is left --',
     'if the work genuinely needs more, say so and let Jonas raise it; you cannot raise it yourself.',
     '',

@@ -1208,6 +1208,143 @@ describe('a leg that died without producing anything', () => {
 })
 
 /**
+ * THE CAPS SENTENCE THE OVERSEER IS WOKEN WITH, against the REAL sentinel seam.
+ *
+ * Observed live on `epic-project-runner`, every generation from 3 to 11: the
+ * prompt's budget line and `run.md` disagreed about spend at the same instant,
+ * always with the prompt LOW, and the gap widened as the run got more expensive
+ * ($6.18 at gen 9, $14.11 at gen 11 -- about one beat's dispatches each time).
+ * At gen 3 the wall-clock ceiling was wrong too, by 2x, because the run had been
+ * re-armed with a raised ceiling in the same instant the beat was rendering it.
+ *
+ * The cause was ORDER: `runEpicBeat` patched the ledger and then handed
+ * `performActions` the run object it had DECIDED from -- the copy read before the
+ * write. So an overseer told to "plan inside what is left" was handed one whole
+ * beat more money than it had, in the one direction that cannot be recovered
+ * from, and a human raising a ceiling woke the very generation that could not see
+ * the new one.
+ *
+ * These run the REAL sentinel handler over a REAL `run.md`, so the object under
+ * assertion is the file on disk rather than a double's idea of it.
+ */
+describe('the budget sentence is rendered from the run this beat WROTE', () => {
+  const NOW = Date.parse('2026-08-21T15:12:38.257Z')
+  let root = ''
+  /** The overseer prompt that actually went out. */
+  let prompt = ''
+
+  const sentinel = (op: 'get' | 'start' | 'patch' | 'log_append' | 'release', extra: Record<string, unknown> = {}) =>
+    handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'epic-caps-'))
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      "---\ntitle: The epic\nstatus: open\ntags: [epic]\noverseer: ''\noverseer_gen: 3\n---\n\nBody.\n",
+      'utf8',
+    )
+    // The run as it stood at gen 3: $500 and eight hours, nothing spent yet.
+    sentinel('start', { start: { plan: false, maxUsd: 500, maxWallClockMinutes: 480 } })
+    sentinel('patch', { patch: { status: 'running' } })
+    cards = []
+    nowMs = NOW
+    prompt = ''
+
+    configureEpicIo({
+      fetchEpicRun: async (_d, _p, epicId, q?: EpicBatonQuery) =>
+        toEpicRunView(sentinel('get', { ...(q ? { baton: q } : {}) }) as EpicResult & { epicId: typeof epicId }),
+      appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
+      // Every op but the CAS goes to the real handler, so a patch really lands in
+      // `run.md` and really comes back as the run that is now on disk.
+      sendEpicOp: async (_d, _p, op) => {
+        ops.push({ op: op.op, patch: op.patch, lease: op.lease })
+        if (op.op === 'lease') {
+          return {
+            type: 'epic_result',
+            requestId: 'r',
+            op: 'lease',
+            ok: true,
+            lease: { granted: true, convId: 'conv_overseer', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
+          } as EpicResult
+        }
+        return sentinel(op.op as 'patch', { ...(op.patch ? { patch: op.patch } : {}) }) as EpicResult
+      },
+      dispatchSpawn: (async (req: { name: string; prompt: string; epic: Record<string, unknown> }) => {
+        spawns.push({ name: req.name, epic: req.epic })
+        prompt = req.prompt
+        return { ok: true, conversationId: 'conv_overseer', jobId: 'j' }
+      }) as never,
+    })
+  })
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('the SPEND is the figure this beat banked, not the one it decided from', async () => {
+    spendUsd = 110.954458
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }))
+    expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+    expect(prompt).toContain('spend $110.95/$500.00 ($389.05 left)')
+    // The pre-patch figure, which is what every generation of the live run read.
+    expect(prompt).not.toContain('$500.00 left')
+  })
+
+  /** The same beat, asked the other way: an overseer that reads the sentence and
+   *  an overseer that opens `run.md` get the SAME number. That is the property
+   *  every generation since gen 3 has had to work around by hand. */
+  test('and it agrees with what `run.md` says at the instant the prompt goes out', async () => {
+    spendUsd = 110.954458
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }))
+    const onDisk = toEpicRunView(sentinel('get') as EpicResult).run
+    expect(prompt).toContain(`spend $${(onDisk?.spentUsd ?? 0).toFixed(2)}/`)
+  })
+
+  /** `startedAt` moves the same way and for the same reason -- the elapsed figure
+   *  is what gave the staleness away live, reading 256 minutes against a stamp
+   *  four hours newer than the one it had measured from. */
+  test('the WALL CLOCK is measured from the startedAt this beat stamped', async () => {
+    spendUsd = 1
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }))
+    expect(prompt).toContain('wall clock 0 min/480 min (480 min left)')
+    expect(prompt).not.toContain('wall clock not started')
+  })
+
+  /**
+   * CAUSE 2, which the gen-4 observation separated out from the spend one: a
+   * human raised the ceiling between the scanner's read and this beat. The run
+   * the beat DECIDED from still says 480; the file says 960. Rendering the old
+   * number to the generation that re-arm exists to wake is the worst case for it.
+   */
+  test('a run re-armed mid-beat renders the NEW ceiling, not the one the beat read', async () => {
+    const stale = await epicIo().fetchEpicRun(deps(), PROJECT, 'e1')
+    sentinel('start', { start: { maxWallClockMinutes: 960 } })
+    spendUsd = 12
+
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }), { view: stale })
+
+    expect(prompt).toContain('/960 min')
+    expect(prompt).not.toContain('/480 min')
+  })
+
+  /** A beat with nothing to write is not a beat with nothing to render: the
+   *  ceiling can still have moved under it, so the prompt is sourced from the
+   *  file either way. */
+  test('and it does so even when this beat had no ledger patch of its own to send', async () => {
+    // A clock already running and nothing new banked: `pruned` drops every field
+    // and the beat sends no patch at all.
+    sentinel('patch', { patch: { startedAt: new Date(NOW - 14 * 60_000).toISOString() } })
+    const stale = await epicIo().fetchEpicRun(deps(), PROJECT, 'e1')
+    sentinel('start', { start: { maxWallClockMinutes: 960 } })
+    spendUsd = 0
+
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }), { view: stale })
+
+    expect(patchOps().some(p => p.spentUsd !== undefined)).toBe(false)
+    expect(prompt).toContain('/960 min')
+  })
+})
+
+/**
  * A CARD RENAMED WHILE ITS SEAT IS STILL TYPING -- the 2026-08-20 double
  * dispatch, end to end.
  *

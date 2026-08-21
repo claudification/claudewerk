@@ -29,6 +29,7 @@ import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats
 import { planEpic } from '../shared/epic-ready'
 import { gatedBy } from '../shared/epic-when'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
+import type { EpicRunSnapshot } from '../shared/protocol'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import {
   type AcknowledgeContext,
@@ -36,9 +37,10 @@ import {
   noteFailedLaunches,
   performActions,
   reapOverseers,
+  rendersRunState,
 } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
-import type { EpicRunView } from './epic-broker-rpc'
+import { type EpicRunView, normalizeWhen } from './epic-broker-rpc'
 import {
   applyCardRenames,
   cardRenames,
@@ -111,13 +113,66 @@ function finish(deps: BeatDeps, group: EpicGroup, gen: number, outcome: BeatOutc
  * alternative -- a fresh `if (beat.x !== run.x) sendEpicOp(...)` block per
  * counter -- is how you end up with four round trips a beat and one of them
  * silently unreachable.
+ *
+ * IT RETURNS THE RUN AS IT NOW STANDS ON DISK, which is free: the sentinel's
+ * `patch` handler re-reads the file, merges, writes, and answers with the
+ * result. That reply is the only object in this beat that is provably
+ * post-write, and `renderedRun` below is what it exists for. `null` means there
+ * was nothing to write or the write failed -- never "the run is unchanged".
  */
-async function applyBeatPatch(deps: BeatDeps, group: EpicGroup, gen: number, patch?: EpicBeatPatch): Promise<void> {
-  if (!patch) return
+async function applyBeatPatch(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  patch?: EpicBeatPatch,
+): Promise<EpicRunSnapshot | null> {
+  if (!patch) return null
   const res = await epicIo().sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch })
   if (!res.ok) {
     deps.log(`${tag(group.epicId, gen)} run patch FAILED (${Object.keys(patch).join(', ')}): ${res.error}`)
+    return null
   }
+  // NORMALISED at this seam like every other sentinel reply: an older sentinel
+  // answers with `cadence` as a bare string, and the prompt this run is about to
+  // be rendered into calls `formatWhen` on it.
+  return normalizeWhen(res.run ?? null)
+}
+
+/**
+ * THE RUN THE SPAWNED PROMPTS ARE RENDERED FROM -- the copy on disk AFTER this
+ * beat's own write, never the snapshot the beat decided from.
+ *
+ * THE ORDERING IS THE FIX, so do not tidy it back. `runEpicBeat` reads the run,
+ * decides, writes the ledger, and only then spawns; handing the seats the object
+ * it read at the top of that sequence renders every per-beat fact one beat
+ * stale, always LOW, in the direction that cannot be recovered from. Live on
+ * `epic-project-runner`, generations 3 through 11: the overseer's budget
+ * sentence under-reported spend every single time, by one beat's dispatches
+ * ($22.87 at gen 4, $14.11 at gen 11), while the file beside it was right.
+ *
+ * TWO SOURCES, ONE RULE -- "whatever the file says now":
+ *   - this beat wrote something, so the patch reply IS the file (`applyBeatPatch`);
+ *   - it wrote nothing, so the file may still have moved under it -- a human
+ *     re-arming a run with a raised ceiling mid-beat is exactly the case, and
+ *     the generation that re-arm wakes is the worst one to hand the old ceiling.
+ *     That costs one extra read, bought only on the beats that spawn a seat
+ *     carrying the run.
+ *
+ * The gate matters: every OTHER beat -- the idle sweep, a dispatch, a park --
+ * renders no run at all, and paying a round trip per epic per 45 seconds to
+ * refresh an object nobody reads is how a fix becomes a load on the sentinel.
+ */
+async function renderedRun(
+  deps: BeatDeps,
+  group: EpicGroup,
+  beat: EpicBeat,
+  decidedFrom: EpicRunSnapshot,
+  written: EpicRunSnapshot | null,
+): Promise<EpicRunSnapshot> {
+  if (!rendersRunState(beat)) return decidedFrom
+  if (written) return written
+  const view = await epicIo().fetchEpicRun(deps, group.project, group.epicId)
+  return view.run ?? decidedFrom
 }
 
 /**
@@ -408,9 +463,13 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     await recordFinalPromises(deps, group, plan.rollup?.children.map(c => c.card) ?? [])
   }
 
-  await applyBeatPatch(deps, group, gen, beat.patch)
+  const written = await applyBeatPatch(deps, group, gen, beat.patch)
+  // THE PROMPTS ARE BUILT AFTER THE RUN IS PERSISTED, and these two lines in
+  // this order ARE the fix -- `renderedRun` says why at length. A seat spawned
+  // from `run` here is a seat quoting the run as it was before this beat wrote.
+  const current = await renderedRun(deps, group, beat, run, written)
 
-  const spawned = await performActions(deps, group, run, beat, {
+  const spawned = await performActions(deps, group, current, beat, {
     gen,
     batonTail: renderEpicLogTail(view.baton),
     plan,
