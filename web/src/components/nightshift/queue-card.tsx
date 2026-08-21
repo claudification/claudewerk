@@ -18,14 +18,22 @@ function RiskBadge({ risk }: { risk?: string }) {
   return <span className={`text-[10px] font-mono uppercase ${color}`}>{risk} risk</span>
 }
 
+/**
+ * `onRemove` is OPTIONAL on purpose. The leftovers block still passes it -- those
+ * entries are files and removing one deletes a file. A card on tonight's list is
+ * not: it is a board card carrying `#nightshift`, and taking it off the list
+ * means untagging the card, which is a board write this pane deliberately does
+ * not own. No button beats a button that reports success without changing what
+ * runs.
+ */
 export function QueueCard({
   item,
   onRemove,
   busy,
 }: {
   item: NightshiftQueueItem
-  onRemove: () => void
-  busy: boolean
+  onRemove?: () => void
+  busy?: boolean
 }) {
   return (
     <div className="rounded-md border border-border bg-card p-3 space-y-1.5">
@@ -33,15 +41,17 @@ export function QueueCard({
         <span className="font-medium text-sm leading-snug">{item.title}</span>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs font-mono text-muted-foreground">#{item.id}</span>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onRemove}
-            title="Remove from the nightshift queue"
-            className="text-muted-foreground hover:text-red-300 transition-colors disabled:opacity-40"
-          >
-            <X className="size-3.5" />
-          </button>
+          {onRemove && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRemove}
+              title="Remove from the nightshift queue"
+              className="text-muted-foreground hover:text-red-300 transition-colors disabled:opacity-40"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -53,7 +63,9 @@ export function QueueCard({
             className="text-[10px] font-mono text-sky-400/80"
             title={item.boardRef ? `board: ${item.boardRef}` : undefined}
           >
-            from board
+            {/* The card id, not just "from board": under the tag the card IS the
+                item, so the id is the thing a reader needs to go look at. */}
+            {item.boardRef ?? 'from board'}
           </span>
         )}
       </div>

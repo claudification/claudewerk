@@ -4637,6 +4637,7 @@ export type NightshiftOpKind =
   | 'queue_list' // read the queue (tasks assigned, awaiting a run)
   | 'dequeue' // remove one queued task by id
   | 'run' // manual Run-now trigger -- intercepted at the broker (NOT relayed to the sentinel)
+  | 'outlook' // DRY-RUN the board scan: what tonight's run would open with, and what it refused
 
 /** Dashboard / night-manager -> Broker: one nightshift artifact op. */
 export interface NightshiftRequest {
@@ -4703,7 +4704,57 @@ export interface NightshiftResult {
   queued?: NightshiftQueueItem
   /** dequeue -- whether a queued task was removed. */
   removed?: boolean
+  /** outlook -- the board scan's answer, dry-run. */
+  outlook?: NightshiftOutlook
   error?: string
+}
+
+/**
+ * One card the nightshift scan SELECTED and did not admit, in its named bucket.
+ *
+ * `bucket` is deliberately a plain string on the wire rather than the scanner's
+ * `NightshiftRefusalBucket` union: that union lives in `src/broker/scanners/` and
+ * `src/shared/` must not depend on the broker. Restating the union here would be
+ * a second copy of a vocabulary that is already declared once -- so the payload
+ * ships the scanner's OWN `buckets` list instead (see below) and a renderer that
+ * meets an unknown bucket shows the slug rather than dropping the refusal.
+ */
+export interface NightshiftOutlookRefusal {
+  /** The card id refused. */
+  unit: string
+  /** Which named bucket -- one of `NightshiftOutlook.buckets`. */
+  bucket: string
+  /** One line of why, straight from the scanner. */
+  detail: string
+}
+
+/**
+ * WHAT TONIGHT'S RUN WOULD OPEN WITH, computed by running the real nightshift
+ * scanner against the board WITHOUT dispatching anything.
+ *
+ * This exists so the Outlook pane renders the run's OWN selection instead of a
+ * second client-side opinion about it: same scanner, same ordering, same caps,
+ * same four refusal buckets. `refused` is carried for the same reason the
+ * scanner contract requires it -- a card that a cap or a live conversation
+ * pushed out of tonight's run is countable rather than invisible.
+ */
+export interface NightshiftOutlook {
+  /** Tasks the run would open with, in dispatch order. */
+  admitted: NightshiftQueueItem[]
+  /** Every card the scan selected and declined, each in a named bucket. */
+  refused: NightshiftOutlookRefusal[]
+  /** Every card the scan looked at (the denominator: admitted + refused). */
+  selected: string[]
+  /** The scanner's COMPLETE refusal vocabulary, in its declared order, so a pane
+   *  can group by bucket without hardcoding a copy of the list. */
+  buckets: string[]
+  /** `caps.totalTasks` in force -- what the `over-cap` bucket is counting against. */
+  totalTasks: number
+  /** Why the scan would open nothing, when it would open nothing. */
+  idleReason?: string
+  /** The scan threw (e.g. no sentinel). The pane says so instead of rendering an
+   *  empty list, which would read as "nothing is queued". */
+  crashed?: string
 }
 
 /**

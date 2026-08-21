@@ -93,10 +93,90 @@ describe('applyOrderToRequest', () => {
     expect(result.ok && result.request.model).toBe('claude-opus-5')
   })
 
-  test('a settingsInline a human configured is not overwritten to add a deny rule', () => {
-    const mine = { permissions: { allow: ['Read'] } }
-    const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
-    expect(result.ok && result.request.settingsInline).toBe(mine)
+  /**
+   * THE UNION, which is this describe block's reason to exist.
+   *
+   * `REFINER@1`'s claim to being trustworthy is structural: the seat CANNOT
+   * call the status verb. A fragment the caller already set used to make the
+   * order skip its deny rules entirely, which turned that structural guarantee
+   * back into a comment. Every test below fails if the skip returns.
+   */
+  describe("a settingsInline the caller already set is UNIONED with the order's deny rules", () => {
+    const denyOf = (request: SpawnRequest): string[] | undefined =>
+      (request.settingsInline as { permissions?: { deny?: string[] } } | undefined)?.permissions?.deny
+
+    test("the caller's own fragment still delivers the order's deny rule", () => {
+      const mine = { permissions: { allow: ['Read'], deny: ['Bash(rm:*)'] } }
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(denyOf(result.request)).toContain('mcp__rclaude__project_set_status')
+      // UNIONED, not replaced -- the caller's rule survives alongside it.
+      expect(denyOf(result.request)).toContain('Bash(rm:*)')
+    })
+
+    test('everything else in the fragment is left exactly as the caller wrote it', () => {
+      const hooks = { PreToolUse: [{ matcher: '', hooks: [] }] }
+      const mine = { permissions: { allow: ['Read'], defaultMode: 'plan' }, hooks, env: { A: '1' } }
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      const settings = result.request.settingsInline as {
+        permissions: { allow: string[]; defaultMode: string }
+        hooks: unknown
+        env: unknown
+      }
+      expect(denyOf(result.request)).toContain('mcp__rclaude__project_set_status')
+      expect(settings.permissions.allow).toEqual(['Read'])
+      expect(settings.permissions.defaultMode).toBe('plan')
+      expect(settings.hooks).toBe(hooks)
+      expect(settings.env).toEqual({ A: '1' })
+      // ...and the caller's object itself is never mutated in place.
+      expect(mine.permissions).not.toHaveProperty('deny')
+    })
+
+    test('a fragment with no permissions block at all gets one', () => {
+      const result = applyOrderToRequest({ ...base, settingsInline: { env: { A: '1' } } }, REFINER)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(denyOf(result.request)).toEqual(['mcp__rclaude__project_set_status'])
+    })
+
+    test('a fragment that already carries the rule is handed back untouched', () => {
+      const mine = { permissions: { deny: ['mcp__rclaude__project_set_status'] } }
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      expect(result.ok && result.request.settingsInline).toBe(mine)
+    })
+
+    test('a caller who repeated a rule in its own deny list still gets the order rule', () => {
+      // The "did the order add anything" check is MEMBERSHIP, not list length:
+      // ['A','A'] dedupes to one entry, so a length test would read the union
+      // as a no-op and skip the write.
+      const mine = { permissions: { deny: ['Bash(rm:*)', 'Bash(rm:*)'] } }
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(denyOf(result.request)).toContain('mcp__rclaude__project_set_status')
+    })
+
+    test('a permissions block that is not an object FAILS the fire, naming the order', () => {
+      const result = applyOrderToRequest({ ...base, settingsInline: { permissions: 'nope' } }, REFINER)
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toContain(REFINER_ORDER_ID)
+      expect(result.reason).toContain('settingsInline.permissions')
+    })
+
+    test('a deny that is not an array of strings FAILS the fire rather than being overwritten', () => {
+      const bad = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: [1, 2] } } }, REFINER)
+      expect(bad.ok).toBe(false)
+      if (bad.ok) return
+      expect(bad.reason).toContain(REFINER_ORDER_ID)
+      expect(bad.reason).toContain('deny')
+
+      const worse = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: 'all' } } }, REFINER)
+      expect(worse.ok).toBe(false)
+    })
   })
 })
 
@@ -222,6 +302,54 @@ describe('the reservation, through the real engine tick', () => {
     expect(requests).toHaveLength(POOL)
     for (const resolve of release) resolve()
     await tick
+    engine.stop()
+  })
+})
+
+/**
+ * The union again, at the altitude that matters: a REAL schedule carrying its
+ * own `settingsInline`, fired by the real engine. `applyOrderToRequest` being
+ * right and the SEAT THAT ACTUALLY LAUNCHES being right are two claims, and the
+ * second one is the one the board cares about.
+ */
+describe('a scheduled fire whose request already carries settingsInline', () => {
+  test('the dispatched seat still cannot call the status verb', async () => {
+    const task = makeTask({
+      name: 'refine with settings',
+      orderId: REFINER_ORDER_ID,
+      spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsInline: { permissions: { allow: ['Read'] } } },
+    })
+    const { requests, release, engine } = hangingEngine([task])
+
+    const tick = engine.tick()
+    expect(requests).toHaveLength(1)
+    const permissions = (requests[0]?.settingsInline as { permissions?: { allow?: string[]; deny?: string[] } })
+      ?.permissions
+    expect(permissions?.deny).toContain('mcp__rclaude__project_set_status')
+    expect(permissions?.allow).toEqual(['Read'])
+
+    for (const resolve of release) resolve()
+    await tick
+    engine.stop()
+  })
+
+  test('a fragment the order cannot union is a FAILED fire, not a downgraded seat', async () => {
+    const task = makeTask({
+      name: 'refine with junk settings',
+      orderId: REFINER_ORDER_ID,
+      spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsInline: { permissions: { deny: 'everything' } } },
+    })
+    const { store, requests, engine } = hangingEngine([task])
+
+    await engine.tick()
+    // Nothing was dispatched, and the run row says which order refused.
+    expect(requests).toHaveLength(0)
+    const runs = store.scheduledTasks.listRuns(task.id, 20)
+    expect(runs).toHaveLength(1)
+    expect(runs[0]?.outcome).toBe('error')
+    expect(runs[0]?.error).toContain(REFINER_ORDER_ID)
+    // A failed fire counts against the schedule, so one nobody fixes disarms.
+    expect(store.scheduledTasks.get(task.id)?.consecutiveFailures).toBe(1)
     engine.stop()
   })
 })

@@ -1,8 +1,13 @@
 /**
  * NIGHTSHIFT agent tools -- how a spawned night-run worker (or the night
- * manager) writes the morning report. Every action POSTs one op-envelope to the
- * broker `/api/nightshift` route (Bearer secret), which relays it to the sentinel
- * that owns the project's `.nightshift/` tree. The artifact IS the API.
+ * manager) writes the morning report. Every REPORTING action POSTs one
+ * op-envelope to the broker `/api/nightshift` route (Bearer secret), which
+ * relays it to the sentinel that owns the project's `.nightshift/` tree. The
+ * artifact IS the API.
+ *
+ * ONE ACTION IS NOT AN ARTIFACT OP: `enqueue`. The night run's input is the
+ * `#nightshift` tag on a board card, not a queue file, so assigning work is a
+ * board write and stays on the host -- see nightshift-enqueue.ts.
  *
  * THE SAFE-TO-DO GATE (the whole point): before doing ANY task, decide whether
  * it is safe + plausibly achievable. If not, do NOT bulldoze -- report
@@ -11,6 +16,7 @@
 
 import { wsToHttpUrl } from '../../../shared/ws-url'
 import { debug } from '../debug'
+import { handleNightshiftEnqueue } from './nightshift-enqueue'
 import type { McpToolContext, ToolDef } from './types'
 
 type Params = Record<string, string>
@@ -57,23 +63,8 @@ function buildBody(p: Params): Record<string, unknown> | { error: string } {
       finalize: { digest: p.digest || undefined, cost_usd: num(p.cost_usd), runtime_min: num(p.runtime_min) },
     }
   }
-  if (action === 'enqueue') {
-    if (!p.title) return { error: 'title is required for enqueue' }
-    return {
-      project,
-      op: 'enqueue',
-      enqueue: {
-        title: p.title,
-        project,
-        description: p.description || undefined,
-        acceptance: p.acceptance || undefined,
-        feasibility: p.feasibility || undefined,
-        risk: p.risk || undefined,
-        source: p.source || undefined,
-        boardRef: p.board_ref || undefined,
-      },
-    }
-  }
+  // NOTE: `enqueue` is NOT here. It stopped being an artifact op the day the
+  // night run's input became the `#nightshift` tag -- see nightshift-enqueue.ts.
   if (action === 'run') return { project, op: 'run' }
   if (action === 'queue') return { project, op: 'queue_list' }
   if (action === 'dequeue') {
@@ -179,12 +170,16 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
         '(a one-line audit line appended to the task body). Use after integrating/testing/discarding a task.\n' +
         '- run_finalize: close the run. run_id required. digest (the night in one glance), cost_usd, runtime_min.\n' +
         '- snapshot: read back the latest (or run_id) report.\n' +
-        '- enqueue: assign ONE task to the nightshift queue (awaits a run). title required. description, ' +
-        'acceptance, feasibility, risk, source (manual|board), board_ref.\n' +
-        '- queue: list the tasks assigned to the queue, awaiting a run.\n' +
-        '- dequeue: remove one queued task by id.\n' +
-        '- run: trigger a night run NOW (manual) -- drains the queue by spawning guarded headless ' +
-        'workers in worktrees. Ignores the schedule/enabled gate. project required.',
+        "- enqueue: assign ONE task to tonight's run. THE LIST IS THE BOARD: this tags a card #nightshift, " +
+        'it does not write to a queue. board_ref=<card id> tags THAT card (idempotent, no copy); without it a ' +
+        'new card is filed carrying the tag. title required. description, acceptance, feasibility, risk ' +
+        '(acceptance/risk/feasibility go into the card body -- a card has no such frontmatter keys). ' +
+        'The project must live on this host.\n' +
+        '- queue: list the LEGACY .nightshift/queue/ entries. Read-only history: the run no longer takes its ' +
+        'input from there, so nothing in this list will run. Use project_list filter=*nightshift* for the real list.\n' +
+        "- dequeue: remove one LEGACY queue entry by id. Clears history; does not affect tonight's run.\n" +
+        '- run: trigger a night run NOW (manual) -- dispatches the #nightshift cards by spawning guarded ' +
+        'headless workers in worktrees. Ignores the schedule/enabled gate. project required.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -223,9 +218,17 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
           question: { type: 'string', description: 'blocked: the async question for Jonas.' },
           options: { type: 'string', description: 'blocked: comma-separated choices.' },
           reason: { type: 'string', description: 'skipped: why it was declined.' },
-          description: { type: 'string', description: 'enqueue: freeform task description (stored as the body).' },
-          source: { type: 'string', enum: ['manual', 'board'], description: 'enqueue: where the task came from.' },
-          board_ref: { type: 'string', description: 'enqueue: the project-board task id/slug it was promoted from.' },
+          description: { type: 'string', description: 'enqueue: freeform task description (becomes the card body).' },
+          source: {
+            type: 'string',
+            enum: ['manual', 'board'],
+            description: 'enqueue: where the task came from. board REQUIRES board_ref -- provenance is the card now.',
+          },
+          board_ref: {
+            type: 'string',
+            description:
+              'enqueue: the board card id to tag. Given -> that card is the task (no copy). Omitted -> a new card is filed.',
+          },
           task_count: { type: 'string', description: 'run_start: number of tasks dispatched.' },
           window: { type: 'string', description: 'run_start: scheduling window, e.g. "01:00-07:00".' },
           digest: { type: 'string', description: 'run_start/run_finalize: the night in one glance.' },
@@ -234,6 +237,9 @@ export function registerNightshiftTools(ctx: McpToolContext): Record<string, Too
         required: ['project'],
       },
       async handle(params: Params) {
+        // Every other action is an op-envelope relayed to the sentinel that owns
+        // `.nightshift/`. `enqueue` is a BOARD write and never leaves the host.
+        if ((params.action || 'report') === 'enqueue') return handleNightshiftEnqueue(ctx, params)
         const body = buildBody(params)
         if ('error' in body) return { content: [{ type: 'text', text: `Error: ${body.error}` }], isError: true }
         return post(body)

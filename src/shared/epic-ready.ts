@@ -16,16 +16,31 @@
  *
  * Concurrency is capped at the run's `concurrency` (default 3). That ceiling is
  * a review ceiling, not a machine one -- see werk-andon.
+ *
+ * TWO SELECTORS, ONE FOLD. `planEpic` picks the cohort by epic membership;
+ * `planTagged` picks it by board TAG, which is what the work-order scanner
+ * needs -- an authorised card is authorised whether or not it belongs to an
+ * epic. Only the SELECTION differs. Everything after it -- deps, the ceiling,
+ * questions, unspawnable, the idle table -- is one body, because a second
+ * readiness fold answering the same arithmetic slightly differently is the exact
+ * drift the scanner fabric exists to end (scanner-work-orders).
  */
 
-import { buildEpicIndex, type EpicRollup } from './epic-cards'
+import {
+  buildEpicIndex,
+  childrenComplete,
+  doneCardIds,
+  type EpicChild,
+  type EpicRollup,
+  toEpicChild,
+} from './epic-cards'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 
-export interface EpicPlanInput {
-  /** Every card on the board (the rollup filters to this epic's children). */
+/** Everything the fold needs that is NOT about how the cohort was chosen. */
+export interface PlanCohortInput {
+  /** Every card on the board (the selector narrows it to the cohort). */
   cards: readonly ProjectTaskMeta[]
-  epicId: string
   /** Max implementers in flight at once. */
   concurrency: number
   /** Card ids with a live implementer right now. */
@@ -54,6 +69,38 @@ export interface EpicPlanInput {
    * `idleReason`, which drives a dry generation -> one overseer wake -> a park.
    */
   unspawnable?: readonly string[]
+}
+
+/** Select the cohort by EPIC membership. */
+export interface EpicPlanInput extends PlanCohortInput {
+  epicId: string
+}
+
+/**
+ * Select the cohort by BOARD TAG -- `ready` for the work-order scanner.
+ *
+ * No `epicId`, and consequently `EpicPlan.rollup` comes back null: a tag cohort
+ * has no parent card, no percentage and no epic identity. Everything else on the
+ * plan means exactly what it means for an epic.
+ */
+export interface TaggedPlanInput extends PlanCohortInput {
+  /** The tag a card must carry to be in the cohort. */
+  tag: string
+  /**
+   * Card ids the CALLER has already refused, removed from the COHORT and from
+   * nowhere else.
+   *
+   * This exists so a caller never has to narrow `cards` to express "not this
+   * one". `cards` is the whole board because `doneCardIds` reads it -- filter a
+   * refused card out of the array and it stops counting as `done` for every
+   * OTHER card's `depends_on`, which is how the work-order scanner deadlocked
+   * its own steady state: dispatch a card, its seat settles, next tick the card
+   * is refused `already-run`, and everything depending on it is refused
+   * `waiting-on-deps` naming a dependency that is `done`. Forever.
+   *
+   * So: narrow the cohort here, never the board.
+   */
+  exclude?: ReadonlySet<string>
 }
 
 export interface EpicPlan {
@@ -100,36 +147,85 @@ function isQuestion(card: ProjectTaskMeta): boolean {
   return card.tags.includes(NEEDS_OVERSEER_TAG)
 }
 
+/** The cohort a selector produced, plus the two things only the selector knows:
+ *  whether there is an epic behind it, and what "nobody here" should say. */
+interface Cohort {
+  rollup: EpicRollup | null
+  children: readonly EpicChild[]
+  /** What `idleReason` says when the cohort is empty. */
+  emptyDetail: string
+}
+
+/**
+ * SELECT BY EPIC, then fold. Signature and behaviour unchanged -- every existing
+ * caller (`epic-executor`, `epic-inspect`) sees exactly what it saw.
+ */
 export function planEpic(input: EpicPlanInput): EpicPlan {
   const rollup = buildEpicIndex(input.cards).get(input.epicId) ?? null
   if (!rollup) {
     return {
-      rollup: null,
-      dispatch: [],
-      verify: [],
-      questions: [],
-      heldBack: [],
-      waitingOnDeps: [],
-      unspawnable: [],
-      complete: false,
+      ...emptyPlan(),
       idleReason: `no epic \`${input.epicId}\` on the board (no card carries it and no card claims it as a parent)`,
     }
   }
+  return foldCohort({ rollup, children: rollup.children, emptyDetail: 'the epic has no children yet' }, input)
+}
 
+/**
+ * SELECT BY TAG, then fold the SAME body -- the work-order scanner's entry point.
+ *
+ * The cohort is every card carrying the tag, in board order, with `waitingOn`
+ * measured against the whole board rather than against the cohort: an authorised
+ * card can perfectly well depend on a card nobody tagged, and a dependency
+ * outside the cohort still has to be done before this one is ready.
+ *
+ * `exclude` narrows the COHORT only, for exactly that reason -- see its doc on
+ * `TaggedPlanInput`.
+ */
+export function planTagged(input: TaggedPlanInput): EpicPlan {
+  const doneIds = doneCardIds(input.cards)
+  const tagged = input.cards.filter(c => c.tags.includes(input.tag))
+  const children = tagged.filter(c => !input.exclude?.has(c.slug)).map(card => toEpicChild(card, doneIds))
+  return foldCohort({ rollup: null, children, emptyDetail: emptyTagDetail(input.tag, tagged.length) }, input)
+}
+
+/** Why a tag cohort is empty -- "nobody carries it" and "the caller refused all
+ *  of them" are different stories and a baton that conflates them is a lie. */
+function emptyTagDetail(tag: string, taggedCount: number): string {
+  if (taggedCount === 0) return `no card carries \`${tag}\``
+  return `all ${taggedCount} card(s) carrying \`${tag}\` were excluded from the cohort by the caller`
+}
+
+/** The zero plan -- a cohort that does not exist, said once. */
+function emptyPlan(): EpicPlan {
+  return {
+    rollup: null,
+    dispatch: [],
+    verify: [],
+    questions: [],
+    heldBack: [],
+    waitingOnDeps: [],
+    unspawnable: [],
+    complete: false,
+  }
+}
+
+/** THE FOLD, which does not care how its cohort was chosen. */
+function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
   const inFlight = new Set(input.inFlight)
   const inVerify = new Set(input.inVerify)
   const dead = new Set(input.unspawnable ?? [])
-  const verify = rollup.children
+  const verify = cohort.children
     .filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug) && !dead.has(c.card.slug))
     .map(c => c.card)
-  const questions = rollup.children
+  const questions = cohort.children
     .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isQuestion(c.card))
     .map(c => c.card)
-  const unspawnable = rollup.children.filter(c => dead.has(c.card.slug)).map(c => c.card)
+  const unspawnable = cohort.children.filter(c => dead.has(c.card.slug)).map(c => c.card)
 
   const ready: ProjectTaskMeta[] = []
   const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
-  for (const child of rollup.children) {
+  for (const child of cohort.children) {
     if (child.bucket !== 'notStarted' || inFlight.has(child.card.slug)) continue
     if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
     if (dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
@@ -141,17 +237,20 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
   const dispatch = ready.slice(0, slots)
   const heldBack = ready.slice(slots)
 
+  const complete = childrenComplete(cohort.children)
   return {
-    rollup,
+    rollup: cohort.rollup,
     dispatch,
     verify,
     questions,
     heldBack,
     waitingOnDeps,
     unspawnable,
-    complete: rollup.complete,
+    complete,
     idleReason: idleReason({
-      rollup,
+      complete,
+      cohortSize: cohort.children.length,
+      emptyDetail: cohort.emptyDetail,
       ready,
       slots,
       verify,
@@ -164,7 +263,12 @@ export function planEpic(input: EpicPlanInput): EpicPlan {
 }
 
 interface IdleInput {
-  rollup: EpicRollup
+  /** Every member of the cohort terminal. `EpicRollup.complete`, for an epic. */
+  complete: boolean
+  /** How many cards the selector found. Zero is its own story. */
+  cohortSize: number
+  /** What zero MEANS for this selector -- the two selectors say different things. */
+  emptyDetail: string
   ready: ProjectTaskMeta[]
   slots: number
   verify: ProjectTaskMeta[]
@@ -199,7 +303,7 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
     when: i => i.verify.length > 0,
     say: i => `${i.verify.length} card(s) awaiting an independent verdict`,
   },
-  { when: i => i.rollup.complete, say: () => 'every child is terminal' },
+  { when: i => i.complete, say: () => 'every child is terminal' },
   {
     when: i => i.ready.length > 0 && i.slots === 0,
     say: i => `${i.ready.length} card(s) ready but ${i.inFlight} already in flight (concurrency ceiling)`,
@@ -209,7 +313,7 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
     say: i => `nothing ready: ${i.waitingOnDeps.map(w => `${w.card.slug} <- ${w.waitingOn.join(', ')}`).join('; ')}`,
   },
   { when: i => i.inFlight > 0, say: i => `${i.inFlight} card(s) still in flight` },
-  { when: i => i.rollup.children.length === 0, say: () => 'the epic has no children yet' },
+  { when: i => i.cohortSize === 0, say: i => i.emptyDetail },
 ]
 
 const IDLE_FALLBACK = 'nothing ready and nothing in flight -- the board may need replanning'

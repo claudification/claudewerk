@@ -15,9 +15,11 @@
  */
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import type { NightshiftOutlook } from '../../shared/protocol'
 import { GuardError, type HandlerContext } from '../handler-context'
 import { configureNightshiftRunner, resetNightshiftRunner } from '../nightshift-orchestrator'
 import { nightshiftRequest } from './nightshift'
+import { configureNightshiftOutlook, resetNightshiftOutlook } from './nightshift-outlook'
 
 interface RunCall {
   project: string
@@ -113,11 +115,68 @@ describe('nightshift run-now intercept', () => {
     expect(replies[0]).toMatchObject({ op: 'run', ok: false, error: 'queue is empty' })
   })
 
-  test('a normal artifact op (config_read) still relays to the sentinel (run is the only intercept)', async () => {
+  test('a normal artifact op (config_read) still relays to the sentinel (only run/outlook intercept)', async () => {
     const { ctx, sentinelSends } = makeCtx()
     await nightshiftRequest(ctx, { type: 'nightshift_request', requestId: 'r5', project: PROJECT, op: 'config_read' })
     expect(runCalls).toHaveLength(0)
     expect(sentinelSends).toHaveLength(1)
     expect(JSON.parse(sentinelSends[0])).toMatchObject({ type: 'nightshift_op', op: 'config_read' })
+  })
+})
+
+/**
+ * The OUTLOOK intercept. Same shape as Run-now and for the same reason -- the
+ * scan needs the conversation registry, which only the broker has -- except it
+ * is a READ: nothing dispatches, so it must never demand the write permission.
+ */
+describe('nightshift outlook intercept', () => {
+  const OUTLOOK: NightshiftOutlook = {
+    admitted: [],
+    refused: [{ unit: 'c', bucket: 'over-cap', detail: 'run opens with at most 2 task(s)' }],
+    selected: ['c'],
+    buckets: ['closed-lane', 'live-conversation', 'unreadable', 'over-cap'],
+    totalTasks: 2,
+  }
+  let outlookCalls: string[] = []
+
+  beforeEach(() => {
+    outlookCalls = []
+    configureNightshiftOutlook(async (_store, project) => {
+      outlookCalls.push(project)
+      return OUTLOOK
+    })
+  })
+  afterAll(resetNightshiftOutlook)
+
+  test('op=outlook answers from the broker scan and never relays to the sentinel', async () => {
+    const { ctx, replies, sentinelSends } = makeCtx()
+    await nightshiftRequest(ctx, { type: 'nightshift_request', requestId: 'o1', project: PROJECT, op: 'outlook' })
+
+    expect(outlookCalls).toEqual([PROJECT])
+    expect(sentinelSends).toHaveLength(0)
+    expect(replies[0]).toMatchObject({ type: 'nightshift_result', requestId: 'o1', op: 'outlook', ok: true })
+    // The refusals ride the reply -- the pane cannot be honest without them.
+    expect((replies[0] as { outlook: NightshiftOutlook }).outlook.refused).toHaveLength(1)
+  })
+
+  test('op=outlook is a READ -- files:read, not the write permission', async () => {
+    const { ctx, permCalls } = makeCtx()
+    await nightshiftRequest(ctx, { type: 'nightshift_request', requestId: 'o2', project: PROJECT, op: 'outlook' })
+    expect(permCalls[0]).toEqual({ perm: 'files:read', project: PROJECT })
+  })
+
+  test('a scan that blows up still replies -- a dropped reply leaves the pane spinning', async () => {
+    configureNightshiftOutlook(async () => {
+      throw new Error('store is gone')
+    })
+    const { ctx, replies } = makeCtx()
+    await nightshiftRequest(ctx, { type: 'nightshift_request', requestId: 'o3', project: PROJECT, op: 'outlook' })
+    expect(replies[0]).toMatchObject({ op: 'outlook', ok: false, error: 'store is gone' })
+  })
+
+  test('op=outlook never fires a run', async () => {
+    const { ctx } = makeCtx()
+    await nightshiftRequest(ctx, { type: 'nightshift_request', requestId: 'o4', project: PROJECT, op: 'outlook' })
+    expect(runCalls).toHaveLength(0)
   })
 })

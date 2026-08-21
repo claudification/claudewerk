@@ -231,7 +231,28 @@ keyboard. So:
   dialog exists so a human can vet a spawn, and at 03:00 there is no human. The
   vetting happens at CREATE time instead. Hard rejects (bypassPermissions,
   sensitive env) are not bypassable either way, and the scheduler identifies as
-  `trusted`, never `benevolent`.
+  `trusted`, never `benevolent`;
+- **every fire gets the unattended deny-floor** -- force-push, push to mainline,
+  `sudo`, process kills, external sends -- both halves of it: the declarative
+  `permissions.deny` rules and the imperative PreToolUse guard hook that catches
+  the arg-order variants a prefix rule cannot. It is applied in `fire.ts` after
+  any order's caps, so it reaches schedules that name no order and schedules
+  carrying their own `settingsInline` alike. Until 2026-08-21 it rode inside
+  `buildUnattendedSettings` and therefore reached exactly one branch of the order
+  path -- most scheduled seats had never had it.
+
+The floor is **additive only**: a schedule's own `settingsInline` keeps its
+allowlist, its hooks and any key the broker has never heard of, and the floor's
+rules are unioned onto its `deny` list. `DEFAULT_ALLOW` deliberately does *not*
+come with it -- an allowlist widens what a `dontAsk` seat may do.
+
+Two shapes refuse the fire outright rather than downgrade it quietly, both
+recorded as `error` runs that count toward the disarm backoff:
+
+| Refusal | Why |
+|---|---|
+| a `settingsInline` the floor cannot be folded into (`permissions` not an object, `permissions.deny` not a string array, `hooks.PreToolUse` not an array) | overwriting it would silently replace a fragment a human configured |
+| a `settingsPath` with no `settingsInline` | the sentinel lets a materialized inline fragment **win** over `settingsPath`, so writing the floor inline would throw the human's settings file away. Move the settings inline |
 
 ## HTTP API
 

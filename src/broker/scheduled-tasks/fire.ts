@@ -17,7 +17,7 @@ import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
 import { isSpawnSchedule, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
-import { buildUnattendedSettings } from '../../shared/unattended-permissions'
+import { applyDenyFloor, buildUnattendedSettings } from '../../shared/unattended-permissions'
 import { nextFailureState } from './policy'
 import { decideSeatAdmission } from './seat-reservation'
 
@@ -111,6 +111,56 @@ export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | 
 
 export type OrderApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The deny rules already in the request's own fragment, or why they cannot be read. */
+type InlineDeny = { ok: true; deny: string[] } | { ok: false; reason: string }
+
+/**
+ * Read the deny rules a caller's `settingsInline` already carries.
+ *
+ * `settingsInline` is an OPAQUE bag by schema (`Record<string, unknown>`), so
+ * every step down into it is a shape that might not be there. A shape a union
+ * cannot be expressed in returns a REASON rather than a guess: silently
+ * treating a malformed `permissions` block as "no deny rules" and writing over
+ * it is exactly the quiet downgrade this whole path exists to prevent.
+ */
+function inlineDeny(settings: Record<string, unknown> | undefined): InlineDeny {
+  if (settings === undefined) return { ok: true, deny: [] }
+  const permissions = settings.permissions
+  if (permissions === undefined || permissions === null) return { ok: true, deny: [] }
+  if (!isPlainObject(permissions)) return { ok: false, reason: 'settingsInline.permissions is not an object' }
+  const deny = permissions.deny
+  if (deny === undefined || deny === null) return { ok: true, deny: [] }
+  if (!Array.isArray(deny) || deny.some(rule => typeof rule !== 'string')) {
+    return { ok: false, reason: 'settingsInline.permissions.deny is not an array of strings' }
+  }
+  return { ok: true, deny: deny as string[] }
+}
+
+/**
+ * The fragment with `deny` in it -- BUILT when the caller had none, PATCHED when
+ * it had one.
+ *
+ * `deny` arrives already unioned (`composeOrderCaps` folded the caller's own
+ * rules in), so assigning it is additive, never a replacement. Everything else
+ * in the caller's fragment -- its allowlist, its hooks, keys this module has
+ * never heard of -- is spread through untouched, because the order is entitled
+ * to add a deny rule and to nothing else.
+ *
+ * A caller with NO fragment gets the full `buildUnattendedSettings` object,
+ * which is also where the deny FLOOR lives. A caller WITH one keeps its own
+ * floor: the order narrows what the caller configured, it does not re-configure
+ * the harness around it (see `sched-settings-inline-deny-floor`).
+ */
+function withDenyRules(settings: Record<string, unknown> | undefined, deny: string[]): Record<string, unknown> {
+  if (settings === undefined) return buildUnattendedSettings({ deny })
+  const permissions = isPlainObject(settings.permissions) ? settings.permissions : {}
+  return { ...settings, permissions: { ...permissions, deny } }
+}
+
 /**
  * Layer a work order's caps onto a spawn request.
  *
@@ -119,14 +169,30 @@ export type OrderApplication = { ok: true; request: SpawnRequest } | { ok: false
  * re-implemented so a scheduled seat gets byte-identical refusals to an epic
  * seat. What is left here is the mapping back onto a `SpawnRequest`.
  *
- * The deny rules go through `buildUnattendedSettings`, which is also where the
- * deny FLOOR lives, so an order's rules land unioned with the floor rather than
- * replacing it. A schedule that already carries its own `settingsInline` keeps
- * it: overwriting a fragment a human configured, to add one deny rule, would be
- * the order rewriting the harness.
+ * THE DENY RULES ARE UNIONED, NEVER SKIPPED. A schedule that already carries
+ * its own `settingsInline` gets the order's rules merged INTO that fragment:
+ * the caller's rules go in as `composeOrderCaps`' base so the union is the same
+ * one every other order path uses, and the result is written back over
+ * `permissions.deny` alone. Leaving the fragment alone instead -- which this
+ * did until `order-deny-union-settings-inline` -- silently downgraded an
+ * order's strongest guarantee to advice: `REFINER@1` denies the status verb so
+ * a refiner CANNOT move a lane, and a refiner that quietly regained that verb
+ * looks exactly like a correct run until a card lands in the wrong lane.
+ *
+ * A fragment whose shape cannot be unioned FAILS THE FIRE, naming the order,
+ * matching what already happens when an order asks for more privilege than its
+ * caller holds. Dispatching a seat with more privilege than its order allows is
+ * the one outcome that must not happen here.
  */
 export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | undefined): OrderApplication {
   if (order === undefined) return { ok: true, request }
+  const existing = inlineDeny(request.settingsInline)
+  if (!existing.ok) {
+    return {
+      ok: false,
+      reason: `order ${order.order.id}: cannot apply its deny rules -- ${existing.reason}`,
+    }
+  }
   const composed = composeOrderCaps(
     order.order,
     {
@@ -136,6 +202,7 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
       mcpConfigPath: request.mcpConfigPath,
       maxBudgetUsd: request.maxBudgetUsd,
       permissionMode: request.permissionMode as never,
+      deny: existing.deny,
     },
     internalOrderCaller(),
   )
@@ -143,8 +210,12 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
 
   const { deny, ...caps } = composed.caps
   const next: SpawnRequest = { ...request, ...caps }
-  if (deny?.length && request.settingsInline === undefined) {
-    next.settingsInline = buildUnattendedSettings({ deny })
+  // Membership, not length: a caller whose own deny list repeats a rule would
+  // make a length comparison read "nothing was added" and drop the order's
+  // rules on the floor -- the exact failure this card exists to close.
+  const alreadyDenied = new Set(existing.deny)
+  if (deny?.some(rule => !alreadyDenied.has(rule))) {
+    next.settingsInline = withDenyRules(request.settingsInline, deny)
   }
   return { ok: true, request: next }
 }
@@ -175,7 +246,75 @@ function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: S
   // not describe is worse than not dispatching it, and the failure counter is
   // what eventually disarms a schedule nobody is fixing.
   if (!applied.ok) return { ok: false, reason: applied.reason }
-  return { ok: true, run: () => deps.dispatch(applied.request), outcome: 'spawned' }
+
+  // The floor goes on last and applies to every SPAWNING fire, order or no
+  // order. It lives in this branch rather than in `fireSchedule` because it
+  // takes a `SpawnRequest`, and the other branch never builds one -- see the
+  // `isSpawnSchedule` arm above and the note on `FloorApplication` below.
+  const floored = applyDenyFloorToRequest(applied.request)
+  if (!floored.ok) return { ok: false, reason: floored.reason }
+  return { ok: true, run: () => deps.dispatch(floored.request), outcome: 'spawned' }
+}
+
+export type FloorApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
+
+/**
+ * THE DENY-FLOOR ON EVERY SCHEDULED FIRE, ORDER OR NO ORDER.
+ *
+ * The floor -- force-push, push to mainline, `sudo`, process kills, external
+ * sends -- used to reach a scheduled seat by exactly one accident: it rides
+ * inside `buildUnattendedSettings`, which `applyOrderToRequest` called only when
+ * the request had no `settingsInline` of its own. So a schedule that named no
+ * order had never had the floor, and a schedule carrying its own fragment kept
+ * whatever floor that fragment declared, which was usually none.
+ *
+ * THE POPULATION IS "NOBODY IS WATCHING", NOT "IS A QUEST LEG". `docs/scheduled-
+ * tasks.md` § Security already settles this for the neighbouring question: "a
+ * schedule IS a spawn -- one that fires later, unattended, with nobody at the
+ * keyboard", which is why a scheduled fire runs with `bypassApprovalGate` and
+ * why the owner's grants are re-checked at every fire. The floor is written for
+ * exactly that population, so it is applied in `planFire`, to every fire that
+ * SPAWNS, rather than inherited from whichever builder a seat happened to go
+ * through.
+ *
+ * A `board-sweep` FIRE GETS NO FLOOR, AND IS NOT EXEMPT -- there is nothing to
+ * apply one to. That branch launches no conversation and builds no
+ * `SpawnRequest`: it sends one board op to the sentinel that owns the project
+ * and returns a `DispatchOutcome`. This function has no argument to take. The
+ * unattended work still happens beside the files, gated per project by
+ * `FireDeps.morningReportEnabled` and by the sentinel's own op allowlist --
+ * a different gate, in a different process, on a thing that is not a spawn.
+ * If a future action ever DOES build a request, it goes through this floor.
+ *
+ * APPLIED AFTER THE ORDER, ON PURPOSE. The floor is a union and a union is
+ * commutative, so going last cannot undo an order's rules -- and it keeps this
+ * completely independent of `applyOrderToRequest`, which owns a different
+ * question (what an order may narrow) and must stay free to answer it. `manual`
+ * fires get the floor too: a "Run now" that tests a different permission surface
+ * than the 03:00 fire is a test that lies.
+ *
+ * A `settingsPath` WITH NO `settingsInline` FAILS THE FIRE. The sentinel
+ * materializes an inline fragment and lets it WIN over `settingsPath`
+ * (`src/sentinel/index.ts`), so writing one here would silently throw away the
+ * settings file a human pointed the schedule at -- most likely the allowlist
+ * that makes its `dontAsk` seat able to do anything at all. Both alternatives
+ * are quiet downgrades (drop the floor, or drop the human's file); a refusal
+ * recorded in run history is the only one the human can see and fix.
+ */
+export function applyDenyFloorToRequest(request: SpawnRequest): FloorApplication {
+  if (request.settingsInline === undefined && request.settingsPath !== undefined) {
+    return {
+      ok: false,
+      reason:
+        'cannot apply the unattended deny-floor: this spawn carries a settingsPath and no settingsInline, ' +
+        'and an inline fragment would silently replace that file -- move the settings inline',
+    }
+  }
+  const floored = applyDenyFloor(request.settingsInline)
+  if (!floored.ok) {
+    return { ok: false, reason: `cannot apply the unattended deny-floor -- ${floored.reason}` }
+  }
+  return { ok: true, request: { ...request, settingsInline: floored.settings } }
 }
 
 /** The still-running conversation from this schedule's most recent spawn, if any. */
@@ -294,6 +433,9 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     deps.persist(settleTask(task, deps, { dispatchOk: false, firedAt }))
     return finish(task, deps, opts, firedAt, { outcome: 'error', error: plan.reason })
   }
+  // A refused deny-floor arrives here as `!plan.ok`, above: `planFire` owns the
+  // floor now (it is the branch that has a `SpawnRequest`), and both refusals
+  // settle the task and finish `error` on the one path, exactly as before.
 
   // Claimed here, released in the `finally`: everything that could still refuse
   // this fire has already run, and nothing between the claim and the dispatch

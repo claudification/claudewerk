@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  applyDenyFloor,
   buildUnattendedSettings,
   DEFAULT_ALLOW,
   DENY_FLOOR_REGEX,
@@ -94,5 +95,104 @@ describe('buildUnattendedSettings', () => {
     }
     expect(perms.allow.filter(r => r === 'Read')).toHaveLength(1)
     expect(perms.deny.filter(r => r === 'Bash(sudo:*)')).toHaveLength(1)
+  })
+})
+
+/**
+ * THE FLOOR FOLDED INTO SOMEONE ELSE'S FRAGMENT.
+ *
+ * The interesting cases are all about what must SURVIVE the fold: the caller's
+ * allowlist, the caller's hooks, keys this module never heard of. A floor that
+ * quietly rewrites a fragment a human configured is the failure mode, not the
+ * floor being absent.
+ */
+describe('applyDenyFloor', () => {
+  const ok = (settings: Record<string, unknown> | undefined) => {
+    const result = applyDenyFloor(settings)
+    if (!result.ok) throw new Error(`expected ok, got: ${result.reason}`)
+    return result.settings
+  }
+  const perms = (settings: Record<string, unknown>) => settings.permissions as { allow?: string[]; deny: string[] }
+  const preToolUse = (settings: Record<string, unknown>) =>
+    (settings.hooks as { PreToolUse: Array<{ hooks: Array<{ command: string }> }> }).PreToolUse
+
+  test('no fragment at all -> the floor, and NOT the allowlist', () => {
+    const s = ok(undefined)
+    for (const rule of DENY_FLOOR_RULES) expect(perms(s).deny).toContain(rule)
+    expect(preToolUse(s)[0].hooks[0].command).toBe(denyFloorHookCommand())
+    // DEFAULT_ALLOW would WIDEN a dontAsk seat. A floor never widens anything.
+    expect(perms(s).allow).toBeUndefined()
+  })
+
+  test("the caller's own deny rules keep their place and the floor is appended", () => {
+    const s = ok({ permissions: { deny: ['Bash(terraform apply:*)'] } })
+    expect(perms(s).deny[0]).toBe('Bash(terraform apply:*)')
+    for (const rule of DENY_FLOOR_RULES) expect(perms(s).deny).toContain(rule)
+  })
+
+  test("the caller's allowlist, hooks and unknown keys are untouched", () => {
+    const s = ok({
+      permissions: { allow: ['Bash(deno test:*)'], defaultMode: 'acceptEdits' },
+      hooks: { SessionStart: [{ matcher: '', hooks: [] }], PreToolUse: [{ matcher: 'Edit', hooks: [] }] },
+      somethingThisModuleNeverHeardOf: { nested: true },
+    })
+    expect(perms(s).allow).toEqual(['Bash(deno test:*)'])
+    expect((perms(s) as unknown as { defaultMode: string }).defaultMode).toBe('acceptEdits')
+    expect((s.hooks as { SessionStart: unknown[] }).SessionStart).toHaveLength(1)
+    expect(s.somethingThisModuleNeverHeardOf).toEqual({ nested: true })
+    // The caller's own PreToolUse entry survives; the guard is APPENDED to it.
+    expect(preToolUse(s)).toHaveLength(2)
+    expect(preToolUse(s)[1].hooks[0].command).toBe(denyFloorHookCommand())
+  })
+
+  test('idempotent -- a fragment that already has the floor does not grow a second copy', () => {
+    const once = ok(buildUnattendedSettings({ deny: ['Bash(terraform apply:*)'] }))
+    const twice = ok(once)
+    expect(twice).toEqual(once)
+    expect(preToolUse(twice)).toHaveLength(1)
+    expect(perms(twice).deny.filter(r => r === 'Bash(sudo:*)')).toHaveLength(1)
+    // The extra per-project rule is still there after the second pass.
+    expect(perms(twice).deny).toContain('Bash(terraform apply:*)')
+  })
+
+  test('a caller repeating a floor rule gets one copy, not two', () => {
+    const s = ok({ permissions: { deny: ['Bash(sudo:*)'] } })
+    expect(perms(s).deny.filter(r => r === 'Bash(sudo:*)')).toHaveLength(1)
+  })
+
+  test('a shape the floor cannot be expressed in returns a reason rather than overwriting it', () => {
+    // Each of these would otherwise be silently replaced -- the exact quiet
+    // downgrade the floor exists to prevent.
+    expect(applyDenyFloor({ permissions: 'strict' })).toEqual({
+      ok: false,
+      reason: 'settingsInline.permissions is not an object',
+    })
+    expect(applyDenyFloor({ permissions: { deny: 'Bash(sudo:*)' } })).toEqual({
+      ok: false,
+      reason: 'settingsInline.permissions.deny is not an array of strings',
+    })
+    expect(applyDenyFloor({ permissions: { deny: ['ok', 7] } })).toEqual({
+      ok: false,
+      reason: 'settingsInline.permissions.deny is not an array of strings',
+    })
+    expect(applyDenyFloor({ hooks: [] })).toEqual({ ok: false, reason: 'settingsInline.hooks is not an object' })
+    expect(applyDenyFloor({ hooks: { PreToolUse: 3 } })).toEqual({
+      ok: false,
+      reason: 'settingsInline.hooks.PreToolUse is not an array',
+    })
+  })
+
+  test('absent and null blocks are "nothing there", not a bad shape', () => {
+    for (const fragment of [{}, { permissions: null }, { hooks: null }, { permissions: { deny: null } }]) {
+      const s = ok(fragment as Record<string, unknown>)
+      expect(perms(s).deny).toContain('Bash(sudo:*)')
+      expect(preToolUse(s)).toHaveLength(1)
+    }
+  })
+
+  test('the input object is never mutated', () => {
+    const input = { permissions: { deny: ['Bash(terraform apply:*)'] } }
+    applyDenyFloor(input)
+    expect(input.permissions.deny).toEqual(['Bash(terraform apply:*)'])
   })
 })
