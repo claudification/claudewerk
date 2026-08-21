@@ -362,6 +362,13 @@ Registered conditionally -- only when `scripts/worktree-create.sh` exists.
 to run `scripts/worktree-finish.sh` before exiting. This rebases onto main and
 fast-forwards. Interactive sessions get guidance via CLAUDE.md.
 
+> **The fast-forward is `merge --ff-only` inside main's own working tree, never
+> `git fetch . HEAD:main`.** git 2.54 refuses to move a ref checked out in any
+> working tree, and main is permanently checked out at the repo root, so the old
+> no-checkout fetch failed at the last step of EVERY worktree session and the
+> `2>/dev/null` on layers 3 disguised it as "unmerged commits". See the `ff_main`
+> helper in both scripts and `src/shared/git-ff-main.ts` for the agent-host twin.
+
 **Layer 3 - Safety nets:**
 - Agent Host (`headless-lifecycle.ts`): On ad-hoc result, checks for unmerged
   commits and attempts fast-forward before exit.

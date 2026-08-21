@@ -33,6 +33,36 @@ fi
 
 cd "$WT_PATH" 2>/dev/null || exit 0
 
+# Fast-forward $MAIN_BRANCH to this worktree's HEAD.
+#
+# The old "merge without a checkout" trick, git fetch . HEAD:$MAIN_BRANCH, is
+# DEAD as of git 2.54: git refuses to move a ref checked out in ANY working
+# tree, and $MAIN_BRANCH is permanently checked out at the repo root. The guard
+# is CORRECT -- moving the ref under a live checkout leaves that tree's index
+# disagreeing with HEAD, so the root would show the merged files as uncommitted
+# REVERSALS. So do the merge INSIDE the tree that owns the branch.
+#
+# --ff-only can only advance the ref, never rewrite it, and it aborts without
+# touching anything if a locally-modified file would be overwritten, so it
+# cannot eat another agent's uncommitted work. Dirt on files the merge does NOT
+# touch is fine and is deliberately NOT a blocker: with a dozen live agents,
+# main is almost always dirty on something.
+#
+# Fallback: when $MAIN_BRANCH is checked out NOWHERE (bare repo, CI) the old
+# fetch is still correct and still permitted.
+ff_main() {
+  FF_SHA="$(git rev-parse --verify HEAD)"
+  # No early exit in this awk. Leaving while git is still writing SIGPIPEs it;
+  # pipefail promotes 141 and set -e then kills the script silently inside the
+  # command substitution. That scar is commit 7115f480 -- drain the whole stream.
+  FF_MAIN_WT="$(git worktree list --porcelain 2>/dev/null | awk -v b="branch refs/heads/$MAIN_BRANCH" '/^worktree / {cur=substr($0,10); next} $0==b {print cur}')"
+  if [[ -z "$FF_MAIN_WT" ]]; then
+    git fetch . "HEAD:$MAIN_BRANCH"
+    return
+  fi
+  git -C "$FF_MAIN_WT" merge --ff-only "$FF_SHA"
+}
+
 BRANCH="$(git branch --show-current 2>/dev/null || echo '')"
 MAIN_BRANCH="main"
 git rev-parse --verify main >/dev/null 2>&1 || MAIN_BRANCH="master"
@@ -47,11 +77,19 @@ if [[ -n "$BRANCH" ]]; then
   fi
 
   if [[ "$AHEAD" -gt 0 ]]; then
-    # Try fast-forward merge before blocking
-    if git fetch . "HEAD:$MAIN_BRANCH" 2>/dev/null; then
+    # Try fast-forward merge before blocking.
+    #
+    # NEVER swallow the failure. This used to be `... 2>/dev/null` and reported
+    # every failure as "unmerged commits that cannot be fast-forwarded" -- which
+    # was a LIE once git started refusing the fetch outright: the commits merged
+    # perfectly, git just was not allowed to say so, and clean worktrees piled up
+    # refusing to be removed. Print git's own reason so a real conflict and a
+    # tooling failure can never again look identical.
+    if FF_OUT="$(ff_main 2>&1)"; then
       echo "Auto-merged $AHEAD commits from $BRANCH to $MAIN_BRANCH before removal" >&2
     else
-      echo "BLOCKED: Worktree $BRANCH has $AHEAD unmerged commits that cannot be fast-forwarded to $MAIN_BRANCH. Merge first." >&2
+      echo "BLOCKED: Worktree $BRANCH has $AHEAD commits that could not be fast-forwarded to $MAIN_BRANCH:" >&2
+      echo "$FF_OUT" >&2
       exit 1
     fi
   fi

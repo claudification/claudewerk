@@ -8,6 +8,7 @@ import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasPendingDialogs, resetMcpChannel } from '../agent-host-common/mcp-host/mcp-channel'
 import { claudeConfigDir } from '../shared/claude-config-dir'
+import { fastForwardMain } from '../shared/git-ff-main'
 import type { AgentHostMessage } from '../shared/protocol'
 import { writeSecureFile } from '../shared/secure-temp'
 import { shouldExitAfterResultFromEnv } from './adhoc-exit'
@@ -693,14 +694,26 @@ function adHocShutdown(
 
         let merged = ahead === 0
         if (ahead > 0) {
-          const ff = Bun.spawnSync(['git', 'fetch', '.', `HEAD:${mainBranch}`], { cwd: wtPath })
-          if (ff.exitCode === 0) {
-            debug(`[ad-hoc] Merged ${ahead} commits from ${branch} to ${mainBranch}`)
+          // Layer 3 of the merge-back defense. This used to call
+          // `git fetch . HEAD:<main>` and report ANY failure as "unmerged
+          // commits", which became a lie the day git started refusing to move a
+          // checked-out ref: the commits merged fine, git just was not allowed
+          // to say so, and every ad-hoc worktree silently "preserved" itself.
+          // fastForwardMain() merges inside main's own worktree and hands back
+          // git's verbatim reason -- LOG EVERYTHING, never a bare failure.
+          const ff = fastForwardMain(wtPath, mainBranch)
+          if (ff.ok) {
+            debug(`[ad-hoc] Merged ${ahead} commits from ${branch} to ${mainBranch} (via ${ff.via})`)
             ctx.diag('ad-hoc', `Merged ${ahead} commits from ${branch} to ${mainBranch}`)
             merged = true
           } else {
-            debug(`[ad-hoc] Cannot fast-forward ${mainBranch} (${ahead} unmerged commits on ${branch})`)
-            ctx.diag('ad-hoc', `WARNING: ${ahead} unmerged commits on ${branch} - worktree preserved`)
+            debug(
+              `[ad-hoc] Cannot fast-forward ${mainBranch} (${ahead} commits on ${branch}, via=${ff.via}): ${ff.message}`,
+            )
+            ctx.diag(
+              'ad-hoc',
+              `WARNING: could not fast-forward ${mainBranch} (${ahead} commits on ${branch}) - worktree preserved: ${ff.message}`,
+            )
           }
         } else {
           debug(`[ad-hoc] Branch ${branch} already merged (0 commits ahead)`)

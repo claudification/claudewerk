@@ -26,8 +26,15 @@ export type TaskMeta = {
 
 export const AUTO_COMMIT_INSTRUCTIONS = '\n\nWhen you are done, commit all changes with a descriptive commit message.'
 
+/**
+ * Never hand agents a raw `git fetch . HEAD:main` here. git 2.54 refuses to move
+ * a ref checked out in any working tree, so that command fails for every agent,
+ * every time, and strands the branch. `worktree-finish.sh` owns the merge-back
+ * (see the `ff_main` helper) -- point at the script, not at git plumbing, so
+ * this text can never drift from the tool again.
+ */
 export const WORKTREE_MERGEBACK_INSTRUCTIONS =
-  '\n\nIMPORTANT - WORKTREE MERGE-BACK:\nYou are working in a git worktree (isolated branch). Before finishing:\n1. Commit all changes\n2. Merge back to main: run `git rebase main && git fetch . HEAD:main`\n3. If rebase conflicts occur, resolve them and run `git rebase --continue`, then `git fetch . HEAD:main`\n4. Verify: `git log --oneline main -5`\nThis merges your work back to main so it is not stranded on a dead branch.'
+  '\n\nIMPORTANT - WORKTREE MERGE-BACK:\nYou are working in a git worktree (isolated branch). Before finishing:\n1. Commit all changes\n2. Merge back to main: run `bash scripts/worktree-finish.sh`\n3. If rebase conflicts occur, resolve them, run `git rebase --continue`, then re-run the script\n4. Verify: `git log --oneline main -5`\nThis merges your work back to main so it is not stranded on a dead branch.\nDo NOT use `git fetch . HEAD:main` -- git refuses to move a branch that is checked out elsewhere, and main is always checked out at the repo root.'
 
 export type PromptOptions = {
   autoCommit?: boolean

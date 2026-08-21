@@ -32,6 +32,19 @@ describe('composeSpawnPrompt', () => {
     expect(out).toBe(`hello${WORKTREE_MERGEBACK_INSTRUCTIONS}`)
   })
 
+  it('never teaches agents the dead `git fetch . HEAD:main` merge-back', () => {
+    // This text shipped that command to every spawned agent. git 2.54 refuses
+    // to move a ref checked out in another working tree, and main is always
+    // checked out at the repo root -- so it failed for every agent, every time,
+    // and stranded the branch. Point at worktree-finish.sh instead.
+    // Match on PRESCRIPTION, not on the substring: the text now names the
+    // command once more, deliberately, inside an explicit "do not" warning.
+    expect(WORKTREE_MERGEBACK_INSTRUCTIONS).not.toContain('run `git fetch . HEAD:main`')
+    expect(WORKTREE_MERGEBACK_INSTRUCTIONS).not.toMatch(/^\d\..*git fetch \. HEAD:main/m)
+    expect(WORKTREE_MERGEBACK_INSTRUCTIONS).toContain('worktree-finish.sh')
+    expect(WORKTREE_MERGEBACK_INSTRUCTIONS).toContain('Do NOT use')
+  })
+
   it('appends both suffixes when both flags are true', () => {
     const out = composeSpawnPrompt('hello', { autoCommit: true, worktreeMergeBack: true })
     expect(out).toBe(`hello${AUTO_COMMIT_INSTRUCTIONS}${WORKTREE_MERGEBACK_INSTRUCTIONS}`)
