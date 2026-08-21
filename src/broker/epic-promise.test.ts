@@ -57,6 +57,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
+    abandonedOverseers: [],
     settled: ['t1'],
     failedLegs: [],
     unspawnable: [],

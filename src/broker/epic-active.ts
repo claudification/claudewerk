@@ -156,7 +156,13 @@ export function runStamps(run: { acknowledgedAt?: string; updated?: string } | n
  * erase every other run from the badge.
  */
 export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.now()): Promise<EpicActivityEntry[]> {
-  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive)
+  // `producedOutput` stays UNPASSED, exactly as it always was here: this feed
+  // reads `inFlight` and `overseerAlive` and never `settled`, so the coarser
+  // fold costs it nothing and widening it would be a change to a lane no row
+  // renders. `overseerReaper` is a different matter -- the row PRINTS
+  // `overseerAlive`, so without it the badge says OVERSEER ALIVE about a
+  // conversation the engine has already replaced.
+  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive, undefined, deps.overseerReaper)
   const reads = await Promise.all(groups.map(group => readRun(deps, group)))
   // THE SAME FOLD THE SWEEP ACTS ON. A feed that decided the queue differently
   // from the engine would be a rail that lies about the engine by construction --

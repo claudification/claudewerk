@@ -16,6 +16,7 @@ import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
+import { buildOverseerReaper, type OverseerReaper } from './epic-overseer-vitality'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
 import type { EpicGroup, IsLive, ProducedOutput } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
@@ -86,6 +87,16 @@ export interface SweepDeps extends BeatDeps {
    * store always supplies it.
    */
   producedOutput?: ProducedOutput
+  /**
+   * Reaps an overseer whose end was never recorded -- no socket, silent past the
+   * grace (`epic-overseer-vitality.ts`). Without it `overseerAlive` is whatever
+   * the registry's `status` field happens to say, and a supervisor whose agent
+   * host died holds `guardBeat` -- and therefore the entire run -- forever.
+   *
+   * Optional so the tests that build deps by hand keep their old meaning (nothing
+   * is ever reaped); `buildSweepDeps` always installs the real one.
+   */
+  overseerReaper?: OverseerReaper
   /**
    * Publish the activity feed to the control panel. Optional because every test
    * in this file builds deps by hand and none of them cares; absent means the
@@ -198,6 +209,14 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   // reads too, or the panel would be told a different story than the engine
   // acted on.
   deps.publishActivity ??= () => publishEpicActivity(deps, s as unknown as ActivityBroadcaster)
+  // Same rule, and here it is the CLOCK that must be the final one: a test that
+  // overrides `now` to drive the silence window would otherwise be reaping
+  // against `Date.now`. `??=` rather than an assignment so a test may still
+  // install `NEVER_REAPED` (or its own) and get exactly the old behaviour.
+  deps.overseerReaper ??= buildOverseerReaper({
+    hasSocket: id => s.getActiveConversationCount(id) > 0,
+    now: () => deps.now(),
+  })
   return deps
 }
 
@@ -336,6 +355,7 @@ function pickBeatGroup(watched: readonly EpicGroup[], project: string, epicId: s
       inVerify: [],
       overseerAlive: false,
       liveOverseers: [],
+      abandonedOverseers: [],
       settled: [],
       failedLegs: [],
       unspawnable: [],

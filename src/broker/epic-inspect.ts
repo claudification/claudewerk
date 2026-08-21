@@ -39,7 +39,14 @@ import type { SweepDeps } from './epic-sweep-loop'
  *  instant, or a conversation that ends mid-call appears in one and not the
  *  other. */
 function groupFor(convs: readonly Conversation[], deps: SweepDeps, project: string, epicId: string): EpicGroup {
-  return groupEpicConversations(convs, deps.isLive).get(epicId) ?? emptyGroup(epicId, project)
+  // The reaper rides along on every fold this file makes, and it is not
+  // cosmetic: an inspect is the read a human takes when a run has gone quiet,
+  // and one that reported OVERSEER ALIVE about the corpse the engine had already
+  // replaced would send that human looking for a conversation nobody can open.
+  return (
+    groupEpicConversations(convs, deps.isLive, undefined, deps.overseerReaper).get(epicId) ??
+    emptyGroup(epicId, project)
+  )
 }
 
 export interface InspectOptions {
@@ -183,7 +190,11 @@ async function inspectQueue(
 ): Promise<EpicQueueReading | undefined> {
   if (!gatedBy(run?.cadence, 'queue')) return undefined
 
-  const groups = groupEpicConversations(convs, deps.isLive)
+  // Reaped, for `groupFor`'s reason plus one specific to this fold:
+  // `toQueueScope` sets `busy` from `overseerAlive`, so a dead supervisor in one
+  // epic reads as a project whose runner is occupied and blocks every OTHER
+  // queued epic in it.
+  const groups = groupEpicConversations(convs, deps.isLive, undefined, deps.overseerReaper)
   const others = projectPeers(groups, project, epicId)
   const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
   // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. `planProjectQueues`
@@ -256,7 +267,7 @@ export async function listEpicRuns(
   project: string,
   nowMs: number = Date.now(),
 ): Promise<EpicRunListEntry[]> {
-  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
+  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive, undefined, deps.overseerReaper)
   const ids = new Set<string>()
   // BY PROJECT IDENTITY, never by raw string. The caller types
   // `claude:///path` while the conversation store holds `claude://default/path`

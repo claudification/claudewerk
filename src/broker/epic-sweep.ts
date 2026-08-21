@@ -16,9 +16,11 @@
  * branch of it is exercised without a broker, a sentinel or a CC process.
  */
 
+import type { EpicLease } from '../shared/epic-lease'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
+import { NEVER_REAPED, type OverseerReaper } from './epic-overseer-vitality'
 import { isDeletedEpic, listArmedEpics } from './epic-registry'
 
 /** What one epic's conversations add up to, from the registry alone. */
@@ -38,7 +40,16 @@ export interface EpicGroup {
    * `in-review` asked for a new verifier every sweep, forever.
    */
   inVerify: string[]
-  /** Is a conversation holding the overseer seat still alive? */
+  /**
+   * Is a conversation holding the overseer seat still alive?
+   *
+   * REAPED, not merely read off the registry. A conversation whose end was never
+   * recorded sits at `active`/`idle`/`starting` forever, and `werkLiveness` reads
+   * that as LIVE -- which held `guardBeat` and therefore the WHOLE RUN for the
+   * life of the broker. An overseer that has held no socket and said nothing past
+   * `OVERSEER_SILENCE_MS` is excluded here and reported in
+   * {@link EpicGroup.abandonedOverseers} instead.
+   */
   overseerAlive: boolean
   /**
    * The ids of the live overseer-seat conversations, not just whether any exist.
@@ -47,8 +58,31 @@ export interface EpicGroup {
    * that -- it says only that SOME overseer lives, which is a different question
    * and reads `true` in exactly the case the CAS exists to stop (a second
    * overseer already running alongside a stale holder).
+   *
+   * REAPED IN THE SAME PASS as `overseerAlive`, and that identity is required
+   * rather than tidy: this is `holderAlive`'s input (epic-beat-actions.ts
+   * `holderIsAlive`). Reaping one and not the other would unfreeze `guardBeat`
+   * only for the replacement wake to be refused by a holder the same fold had
+   * just declared dead -- the run frozen by a second mechanism instead of the
+   * first, with a different log line and the same silence.
    */
   liveOverseers: string[]
+  /**
+   * OVERSEER SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED
+   * -- dead by silence rather than by a recorded end. See
+   * `epic-overseer-vitality.ts`.
+   *
+   * Never overlaps `liveOverseers`: an entry here is precisely a conversation
+   * that would have been in that list and no longer is.
+   *
+   * The lane exists so the replacement generation can SAY WHAT IT REPLACED. A
+   * fresh overseer woken after a corpse and one woken after a finished turn are
+   * the same spawn with the same prompt shape, and a reader of `log.md` alone
+   * must be able to tell them apart -- one is the engine doing its job, the other
+   * is a host that died and nobody noticed. Reported per CONVERSATION, with the
+   * evidence, because a run can lose two supervisors.
+   */
+  abandonedOverseers: AbandonedOverseer[]
   /**
    * Cards whose every backing conversation has ended AND at least one of them
    * produced something. Candidates for a wake.
@@ -108,6 +142,29 @@ export interface FailedLeg {
   gen: number
 }
 
+/**
+ * One overseer the engine reaped: the registry still calls it live, and it has
+ * held no connection and said nothing for longer than the engine will wait.
+ *
+ * Carries the EVIDENCE rather than a verdict, because the baton entry it becomes
+ * has to be checkable by a human who does not trust it: WHICH conversation, from
+ * WHICH generation, silent since WHEN, and -- the field that makes the whole
+ * thing legible -- the status the registry was still reporting while the
+ * supervisor was gone.
+ */
+export interface AbandonedOverseer {
+  convId: string
+  /** The generation this overseer was serving. */
+  gen: number
+  /** The conversation's own last sign of life, epoch ms. */
+  lastActivity: number
+  /** How long it had been silent when the engine gave up on it, ms. */
+  silentForMs: number
+  /** The status the registry still carried. THE FIELD THAT LIED -- never
+   *  `ended`, or `werkLiveness` would have freed the beat without help. */
+  status: Conversation['status']
+}
+
 /** Liveness is the registry's to know; the caller supplies the predicate. */
 export type IsLive = (conv: Conversation) => boolean
 
@@ -153,6 +210,7 @@ export function emptyGroup(epicId: string, project: string): EpicGroup {
     inVerify: [],
     overseerAlive: false,
     liveOverseers: [],
+    abandonedOverseers: [],
     settled: [],
     failedLegs: [],
     unspawnable: [],
@@ -209,9 +267,49 @@ function absorbCardSeat(
   }
 }
 
+/**
+ * THE OVERSEER SEAT, FOLDED -- alive, reaped, or already ended.
+ *
+ * Its own function because the reap is asked ONLY of a seat the registry still
+ * claims is live: a conversation already known dead has nothing to reap, and
+ * recording it here would turn every ordinary finished generation into a reported
+ * corpse and wake a replacement for a supervisor that simply went home.
+ *
+ * Both live lanes are written from the SAME verdict -- see
+ * `EpicGroup.liveOverseers` for why splitting them freezes the run twice.
+ */
+function absorbOverseer(
+  conv: Conversation,
+  gen: number,
+  claimsLive: boolean,
+  reaper: OverseerReaper,
+  group: EpicGroup,
+): void {
+  if (!claimsLive) return
+  const reaping = reaper(conv)
+  if (!reaping) {
+    group.overseerAlive = true
+    group.liveOverseers.push(conv.id)
+    return
+  }
+  group.abandonedOverseers.push({
+    convId: conv.id,
+    gen,
+    lastActivity: conv.lastActivity,
+    silentForMs: reaping.silentForMs,
+    status: conv.status,
+  })
+}
+
 /** Fold one conversation into the accumulators. Split out so the grouping pass
  *  reads as "for each conversation, absorb it" and nothing else. */
-function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutput, acc: Accumulators): void {
+function absorb(
+  conv: Conversation,
+  isLive: IsLive,
+  producedOutput: ProducedOutput,
+  overseerReaper: OverseerReaper,
+  acc: Accumulators,
+): void {
   const tag = conv.launchConfig?.epic
   if (!tag?.epicId) return
 
@@ -226,15 +324,31 @@ function absorb(conv: Conversation, isLive: IsLive, producedOutput: ProducedOutp
 
   const live = isLive(conv)
   if (tag.role === 'overseer') {
-    if (live) {
-      group.overseerAlive = true
-      group.liveOverseers.push(conv.id)
-    }
+    absorbOverseer(conv, tag.gen, live, overseerReaper, group)
     return
   }
   const { epicId, cardId, role, gen } = tag
   if (!cardId) return
   absorbCardSeat(conv, { epicId, cardId, role, gen }, live, producedOutput, acc, group)
+}
+
+/**
+ * IS THE CONVERSATION THAT HOLDS THIS EPIC ONE OF THE CORPSES? The standing
+ * question the replacement wake is driven from.
+ *
+ * KEYED ON THE LEASE HOLDER, and that is what bounds the wake. `abandonedOverseers`
+ * is re-derived from the registry on EVERY sweep and never empties -- a dead
+ * conversation stays dead and stays in the list -- so a wake fired from the lane
+ * itself would fire again every 45 seconds for the life of the broker. The lease
+ * moves: a granted replacement makes the new conversation the holder, this
+ * function goes null on the very next beat, and the fact is spent exactly once.
+ *
+ * Returns the reaping rather than a boolean so the baton entry can quote the
+ * evidence -- see `AbandonedOverseer`.
+ */
+export function lostOverseer(group: EpicGroup, holder: EpicLease | null): AbandonedOverseer | null {
+  if (!holder?.convId) return null
+  return group.abandonedOverseers.find(o => o.convId === holder.convId) ?? null
 }
 
 /**
@@ -295,9 +409,13 @@ export function groupEpicConversations(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput: ProducedOutput = () => true,
+  /** Reaps an overseer whose end was never recorded. DEFAULTS TO NEVER, so a
+   *  caller that has not wired a clock up keeps today's behaviour rather than
+   *  reaping on an instant it never supplied. */
+  overseerReaper: OverseerReaper = NEVER_REAPED,
 ): Map<string, EpicGroup> {
   const acc: Accumulators = { groups: new Map(), cards: new Map(), verifiers: new Map(), outputs: new Map() }
-  for (const conv of convs) absorb(conv, isLive, producedOutput, acc)
+  for (const conv of convs) absorb(conv, isLive, producedOutput, overseerReaper, acc)
   splitLanes(acc)
   return acc.groups
 }
@@ -395,8 +513,9 @@ export function epicsToWatch(
   convs: readonly Conversation[],
   isLive: IsLive,
   producedOutput?: ProducedOutput,
+  overseerReaper?: OverseerReaper,
 ): EpicGroup[] {
-  const groups = groupEpicConversations(convs, isLive, producedOutput)
+  const groups = groupEpicConversations(convs, isLive, producedOutput, overseerReaper)
   for (const { project, epicId } of listArmedEpics()) {
     // A conversation-derived group is strictly better -- it knows what is in
     // flight -- so an armed entry only fills a gap, never overwrites one.
