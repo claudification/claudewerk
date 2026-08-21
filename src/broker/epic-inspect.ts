@@ -183,10 +183,18 @@ async function inspectQueue(
   const groups = groupEpicConversations(convs, deps.isLive)
   const others = projectPeers(groups, project, epicId)
   const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
+  // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. `planProjectQueues`
+  // buckets scopes by raw `project` string and the verdict below is looked up
+  // under the caller's spelling, so a peer carrying the store's spelling lands
+  // in a bucket the lookup never reaches -- which reads as NO QUEUE LINE AT ALL,
+  // the same lie one layer over from the peer filter. Every scope here is
+  // already known to be this project (that is what `projectPeers` decided), so
+  // stamping them all with one spelling states that fact rather than re-deriving
+  // it inside the fold.
   const scopes = [
     toQueueScope(groups.get(epicId) ?? emptyGroup(epicId, project), run),
     ...others.map((peer, i) => toQueueScope(peer, runs[i] ?? null)),
-  ]
+  ].map(scope => ({ ...scope, project }))
   return toQueueReading(planProjectQueues(scopes, deps.now()).verdict(project, epicId))
 }
 
@@ -198,9 +206,16 @@ async function inspectQueue(
  */
 function projectPeers(groups: Map<string, EpicGroup>, project: string, epicId: string): EpicGroup[] {
   const peers = new Map<string, EpicGroup>()
-  for (const [id, group] of groups) if (group.project === project && id !== epicId) peers.set(id, group)
+  // BY PROJECT IDENTITY ON BOTH HALVES, never by raw string -- the same fix
+  // `listEpicRuns` below and `epic-active.ts` already carry. `project` is
+  // whatever the MCP caller typed (`claude:///path`), `group.project` is what
+  // the conversation store holds (`claude://default/path`) and `armed.project`
+  // is whatever the arming caller passed. Raw `===` made the peer set EMPTY,
+  // and an empty peer set answers "nothing else is running", so the debug read
+  // rendered a held run as ungated while the beat was holding it.
+  for (const [id, group] of groups) if (isSameProject(group.project, project) && id !== epicId) peers.set(id, group)
   for (const armed of listArmedEpics()) {
-    const fresh = armed.project === project && armed.epicId !== epicId && !peers.has(armed.epicId)
+    const fresh = isSameProject(armed.project, project) && armed.epicId !== epicId && !peers.has(armed.epicId)
     if (fresh) peers.set(armed.epicId, emptyGroup(armed.epicId, project))
   }
   return [...peers.values()]
