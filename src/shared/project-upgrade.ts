@@ -13,18 +13,9 @@
  * code can be called from anywhere that wants to self-heal a board.
  */
 
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmdirSync,
-  unlinkSync,
-  utimesSync,
-  writeFileSync,
-} from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, unlinkSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
+import { writeFileAtomic } from './atomic-write'
 import { parseCardFrontmatter } from './card-frontmatter'
 import { serializeCard } from './project-card-file'
 import { type LegacyCard, listLegacyCards, listLegacyCollisions } from './project-legacy'
@@ -101,7 +92,7 @@ function migrateCard(root: string, card: LegacyCard): string | null {
   try {
     // The DIRECTORY wins over any stale `status:` key already in the file: it
     // is where the board actually had this card.
-    writeFileSync(dest, serializeCard({ ...meta, status: card.status }, body, blocks), 'utf8')
+    writeFileAtomic(dest, serializeCard({ ...meta, status: card.status }, body, blocks))
   } catch (err) {
     return `write failed: ${(err as Error).message}`
   }

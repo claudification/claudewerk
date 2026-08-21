@@ -9,18 +9,9 @@
  * the Result screen reads them; act-on-results agents get pointed at the folder.
  */
 
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
+import { appendFileGuarded, writeFileAtomic } from './atomic-write'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import {
   DEFAULT_NIGHTSHIFT_CONFIG,
@@ -106,7 +97,7 @@ export function readNightshiftConfig(root: string): NightshiftConfig {
 
 export function writeNightshiftConfig(root: string, config: NightshiftConfig): void {
   mkdirSync(nsRoot(root), { recursive: true })
-  writeFileSync(join(nsRoot(root), 'config.json'), `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+  writeFileAtomic(join(nsRoot(root), 'config.json'), `${JSON.stringify(config, null, 2)}\n`)
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +229,7 @@ export function writeTask(root: string, runId: string, input: WriteTaskInput, no
   const content = serializeFrontmatter(taskFrontmatter(meta), taskBody(input.report ?? {}))
   // Path-jail belt-and-suspenders: confirm the resolved file stays under root.
   resolveInRoot(root, file.slice(root.length))
-  writeFileSync(file, content, 'utf8')
+  writeFileAtomic(file, content)
   return meta
 }
 
@@ -335,7 +326,7 @@ export function patchTask(
     attempts: patch.attempts ?? current.attempts,
   }
   const body = patch.note ? appendNote(parsed.body, patch.note) : parsed.body
-  writeFileSync(file, serializeFrontmatter(taskFrontmatter(merged), body.trimEnd()), 'utf8')
+  writeFileAtomic(file, serializeFrontmatter(taskFrontmatter(merged), body.trimEnd()))
   return merged
 }
 
@@ -362,7 +353,7 @@ export function writeBlocked(root: string, runId: string, input: WriteBlockedInp
     created,
   }
   const file = join(dir, `${pad3(input.id)}-${slugify(input.title)}.md`)
-  writeFileSync(file, serializeFrontmatter(fm, body), 'utf8')
+  writeFileAtomic(file, serializeFrontmatter(fm, body))
   return { ...input, created, body }
 }
 
@@ -418,7 +409,20 @@ function renderSkippedEntry(s: NightshiftSkipped): string {
   ].join('\n')
 }
 
-/** Append a declined task to skipped.md (creating it with a header if needed). */
+/**
+ * Append a declined task to skipped.md (creating it with a header if needed).
+ *
+ * A REAL APPEND, not the read-whole-rewrite-whole shape this was copied from.
+ * That shape re-read the entire file and wrote every byte of it back per entry,
+ * so a killed sentinel truncated the WHOLE record of what the nightshift declined
+ * -- the one file whose entire job is that trust is not eroded by silent drops.
+ * `appendFileGuarded` writes one entry past the end instead: a kill cannot damage
+ * it, and its newline guard keeps a power-loss tail from swallowing the good
+ * entry after the bad one, since `listRunSkipped` splits on `/^### /m` too.
+ *
+ * Not `appendSectionLog`: these sections are `### NNN <title>` with bullets, and
+ * that parser requires a `[convId]` header it would silently skip every one of.
+ */
 export function appendSkipped(
   root: string,
   runId: string,
@@ -429,8 +433,8 @@ export function appendSkipped(
   const file = skippedFile(root, runId)
   const entry: NightshiftSkipped = { ...input, created: input.created ?? nowIso(nowMs) }
   const header = '# Skipped\n\nTasks the nightshift declined and why (trust isn’t eroded by silent drops).\n\n'
-  const prefix = existsSync(file) ? readFileSync(file, 'utf8') : header
-  writeFileSync(file, `${prefix}${renderSkippedEntry(entry)}\n`, 'utf8')
+  if (!existsSync(file)) writeFileAtomic(file, header)
+  appendFileGuarded(file, `${renderSkippedEntry(entry)}\n`)
   return entry
 }
 
@@ -565,7 +569,7 @@ export function startRun(root: string, input: StartRunInput, nowMs: number): Nig
     created: nowIso(nowMs),
   }
   const digest = input.digest?.trim() || '_run in progress_'
-  writeFileSync(runFile(root, runId), serializeFrontmatter(runFrontmatter(meta), digest), 'utf8')
+  writeFileAtomic(runFile(root, runId), serializeFrontmatter(runFrontmatter(meta), digest))
   updateLatest(root, runId)
   return { ...meta, digest }
 }
@@ -603,7 +607,7 @@ export function finalizeRun(root: string, runId: string, patch: FinalizeRunPatch
     finished: nowIso(nowMs),
   }
   const digest = patch.digest?.trim() || run.digest
-  writeFileSync(runFile(root, runId), serializeFrontmatter(runFrontmatter(meta), digest), 'utf8')
+  writeFileAtomic(runFile(root, runId), serializeFrontmatter(runFrontmatter(meta), digest))
   return { ...meta, digest }
 }
 
@@ -728,7 +732,7 @@ export function enqueueTask(root: string, input: NightshiftEnqueueInput, nowMs: 
   const file = join(dir, `${pad3(id)}-${slugify(input.title)}.md`)
   // Path-jail belt-and-suspenders: confirm the resolved file stays under root.
   resolveInRoot(root, file.slice(root.length))
-  writeFileSync(file, serializeFrontmatter(fm, body), 'utf8')
+  writeFileAtomic(file, serializeFrontmatter(fm, body))
   return {
     id,
     title: input.title,

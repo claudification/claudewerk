@@ -10,8 +10,8 @@
  * its own `kind` enum and coercion, since those are genuinely different.
  */
 
-import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
-import { writeFileAtomic } from './atomic-write'
+import { existsSync, readFileSync } from 'node:fs'
+import { appendFileGuarded, writeFileAtomic } from './atomic-write'
 
 /** One parsed section, before the caller narrows `kind` to its own enum. */
 export interface RawLogSection {
@@ -69,26 +69,6 @@ export function readSectionLog(file: string): RawLogSection[] {
 }
 
 /**
- * Is the last byte on disk a newline? A file that is absent or empty counts as
- * yes -- there is nothing for the next header to collide with.
- *
- * One byte read, never the file: this is asked on every append and the file it
- * guards reached 1.0 MB.
- */
-function endsWithNewline(file: string): boolean {
-  const size = statSync(file).size
-  if (size === 0) return true
-  const fd = openSync(file, 'r')
-  try {
-    const byte = Buffer.alloc(1)
-    readSync(fd, byte, 0, 1, size - 1)
-    return byte[0] === 0x0a
-  } finally {
-    closeSync(fd)
-  }
-}
-
-/**
  * Append one section, creating the file with `header` when it does not exist.
  *
  * AN APPEND HANDLE, and the comment that used to sit here argued the opposite:
@@ -108,15 +88,14 @@ function endsWithNewline(file: string): boolean {
  * tail, which `parseSectionLog` already skips (it has skipped unparseable
  * sections since it was extracted). Bounded damage instead of total.
  *
- * The newline guard is what keeps that damage to ONE entry: a torn tail with no
- * final newline would put the next `### ` mid-line, where `/^### /m` cannot see
- * it, and the good entry that followed the bad one would vanish too.
+ * The newline guard is what keeps that damage to ONE entry -- see
+ * `appendFileGuarded`, which owns it now that nightshift's `skipped.md` needs the
+ * same treatment for a log this parser does not recognise.
  *
  * The header still goes through `writeFileAtomic` -- it is a whole-file write,
  * and it is the one write here that creates the file rather than extending it.
  */
 export function appendSectionLog(file: string, header: string, section: RawLogSection): void {
   if (!existsSync(file)) writeFileAtomic(file, header)
-  const gap = endsWithNewline(file) ? '' : '\n'
-  appendFileSync(file, `${gap}${renderLogSection(section)}\n`, 'utf8')
+  appendFileGuarded(file, `${renderLogSection(section)}\n`)
 }
