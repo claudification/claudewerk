@@ -26,7 +26,10 @@ function parseListQuery(url: URL): CommitQuery {
     projectUris: projectUris.length > 0 ? projectUris : undefined,
     text: url.searchParams.get('q') ?? undefined,
     path: url.searchParams.get('path') ?? undefined,
-    origin: origin === 'agent' || origin === 'human' ? origin : undefined,
+    // `unknown` is filterable like the other two: "show me only what the backfill
+    // brought in" is the question a viewer asks the moment the ledger stops being
+    // only what the hook saw.
+    origin: origin === 'agent' || origin === 'human' || origin === 'unknown' ? origin : undefined,
     includeSuperseded: url.searchParams.get('includeSuperseded') === '1',
     limit: Number(url.searchParams.get('limit')) || undefined,
     offset: Number(url.searchParams.get('offset')) || undefined,

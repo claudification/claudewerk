@@ -81,7 +81,7 @@ export function normalizeCommit(payload: CommitIngestPayload, now: number): Norm
     insertions: positiveInt(payload.insertions),
     deletions: positiveInt(payload.deletions),
     kind: classifyKind(payload, subject),
-    origin: classifyOrigin(conversationId),
+    origin: classifyOrigin(conversationId, Boolean(payload.backfill)),
     committedAt,
     ingestedAt: now,
     ...parseConventional(subject),

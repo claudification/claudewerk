@@ -59,10 +59,20 @@ export function classifyKind(payload: CommitIngestPayload, subject: string): Com
   return 'normal'
 }
 
-/** A commit made inside a conversation is the agent's; anything else came from
- *  a human at a terminal. That is the whole rule -- the env either carried a
- *  conversation id or it didn't, and there is no third case worth inventing. */
-export function classifyOrigin(conversationId: string | null): CommitOrigin {
+/**
+ * A commit made inside a conversation is the agent's; a live hook that carried
+ * no conversation id came from a human at a terminal.
+ *
+ * THE THIRD CASE IS REAL AND IT USED NOT TO BE. A `git log` backfill also
+ * carries no conversation id, and reading that absence as "a human did it" would
+ * relabel every agent commit in the walk -- roughly twenty thousand of them on
+ * the first run -- as Jonas's own work, in the one pane that filters on this
+ * field. The absence means the same thing either way; what differs is whether
+ * anything was ever WATCHING, and only the caller knows that. So the caller
+ * states where the payload came from and this function still does the deciding.
+ */
+export function classifyOrigin(conversationId: string | null, backfill = false): CommitOrigin {
+  if (backfill) return 'unknown'
   return conversationId ? 'agent' : 'human'
 }
 

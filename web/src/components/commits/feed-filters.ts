@@ -6,11 +6,14 @@
  * view quietly shows a row that does not belong to the filter it claims.
  */
 
-import type { CommitRow } from '@/lib/commits'
+import type { CommitOrigin, CommitRow } from '@/lib/commits'
 
 export interface FeedFilters {
   text?: string
-  origin?: 'agent' | 'human'
+  /** Takes the shared union rather than a local copy of it, so a new origin is
+   *  one edit in `shared/commit-ledger.ts` and not a second list to keep in
+   *  step. `unknown` (the git backfill) became filterable this way. */
+  origin?: CommitOrigin
   project?: string
 }
 

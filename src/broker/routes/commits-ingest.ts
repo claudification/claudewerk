@@ -60,16 +60,25 @@ export function ingestCommit(conversationStore: ConversationStore, payload: Comm
 
     if (result.inserted) {
       const row = { ...enriched, id: result.id, profile, supersededBy: null } as CommitRow
+      // A BACKFILL IS HISTORY, NOT NEWS. Every frame below announces a commit as
+      // something that just happened; a `git log` walk inserts tens of thousands
+      // of commits from last year, and broadcasting them would fill the COMMIT
+      // RIVER with 2025 as though it were the last two minutes -- and hand the
+      // wall's pulse a spike that never occurred. The rows still land, and a
+      // reader still finds them; nothing is told they are new.
+      const announce = !payload.backfill
       // TWO TIERS, deliberately. The count is safe for anyone who can read the
       // conversation; the full row carries host disk paths and is gated harder
       // (see commit-ledger/broadcast.ts). The first version of this shipped
       // through an unscoped broadcast -- do not collapse them back together.
-      broadcastCommitRecorded(conversationStore, row)
+      if (announce) broadcastCommitRecorded(conversationStore, row)
       // The PLACE tier. A commit with no conversation still lands in a project,
       // so this bump is OUTSIDE the conversation branch below -- a human commit
-      // must move the project card too.
+      // must move the project card too. The BUMP happens either way (a backfilled
+      // commit really is in that project's history and the total must say so);
+      // only the announcement is suppressed.
       for (const project of bumpProjectCommitStats(enriched)) {
-        broadcastProjectCommitStats(conversationStore, project, { ...getProjectCommitStats(project) })
+        if (announce) broadcastProjectCommitStats(conversationStore, project, { ...getProjectCommitStats(project) })
       }
       if (enriched.conversationId) {
         const next = bumpCommitCount(enriched.conversationId)
