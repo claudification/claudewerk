@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
@@ -1709,5 +1709,107 @@ describe('the beat writes `closes:` for a card it settled', () => {
       expect(baton.filter(e => e.kind === 'record')).toHaveLength(1)
       expect(parsePromiseBlock(files.get(CARD_REL) ?? '')?.closes).toEqual([SHA])
     })
+  })
+})
+
+/**
+ * A TORN `run.md`, END TO END THROUGH THE REAL SENTINEL SEAM -- the RED test of
+ * `epic-artifact-writes-not-atomic`.
+ *
+ * Every epic artifact write used to be a bare `writeFileSync`, which truncates
+ * and then writes, so a killed sentinel left a PREFIX on disk. `readEpicRun`
+ * coerced every field through a fallback and `parseFrontmatter` answers a file
+ * with no complete block with `{ meta: {} }` -- so that prefix read back as a
+ * healthy run: `status: armed`, every counter at zero. At generation 0 with
+ * `plan: true` and no `planBaseline`, `planningBeat` dispatches a PLANNING
+ * GENERATION over the board of a live run that has just lost its state. Nothing
+ * threw, nothing logged, and the wall said RUNNING.
+ *
+ * A double for `fetchEpicRun` cannot see any of this: the whole defect lives in
+ * what the SENTINEL makes of the bytes. So this runs the real handler over a
+ * real torn file through the real broker fold, and stubs only what would spawn a
+ * process.
+ */
+describe('a truncated run artifact, against the real sentinel seam', () => {
+  const NOW = Date.parse('2026-08-22T08:00:00.000Z')
+  let root = ''
+
+  const sentinel = (op: 'get' | 'log_append' | 'start' | 'patch', extra: Record<string, unknown> = {}) =>
+    handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
+
+  /** Cut `run.md` where a killed write would: before the closing `---`. */
+  const tearTheRun = () => {
+    const file = join(root, '.rclaude', 'project', 'epics', 'e1', 'run.md')
+    writeFileSync(file, readFileSync(file, 'utf8').slice(0, 60), 'utf8')
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'epic-torn-'))
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      "---\ntitle: The epic\nstatus: open\ntags: [epic]\noverseer: ''\noverseer_gen: 0\n---\n\nBody.\n",
+      'utf8',
+    )
+    // A run that OWES A PLANNING GENERATION -- the exact shape a torn read
+    // invents out of nothing, so a beat that acted on the defaults would be
+    // indistinguishable from a beat acting on the truth.
+    sentinel('start', { start: { plan: true } })
+
+    // One card ready to be worked, so a beat that believed the file would have
+    // something to do with itself.
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+
+    configureEpicIo({
+      fetchEpicRun: async (_d, _p, epicId, baton?: EpicBatonQuery) =>
+        toEpicRunView(sentinel('get', { ...(baton ? { baton } : {}) }) as EpicResult & { epicId: typeof epicId }),
+      appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
+    })
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  /** Sanity: the fixture is a run a beat WOULD act on. Without this the refusal
+   *  below could be passing for any reason at all. */
+  test('the intact run plans a generation -- so the refusal below is about the tear', async () => {
+    const out = await runEpicBeat(deps(), group({ maxGenSeen: 0 }))
+    expect(spawns).toHaveLength(1)
+    expect(out.actions).toBeGreaterThan(0)
+  })
+
+  test('the beat REFUSES, rather than reporting an armed run at generation zero', async () => {
+    tearTheRun()
+    const out = await runEpicBeat(deps(), group({ maxGenSeen: 0 }))
+    expect(out.actions).toBe(0)
+    expect(spawns).toHaveLength(0)
+    expect(out.note).toContain('NOT READ')
+    expect(out.error).toContain('UNREADABLE')
+  })
+
+  /** "the epic is armed but nothing is on disk for it" is a different claim about
+   *  a different file, and it is the one a human would act on by re-arming. */
+  test('and does not report the artifact as absent', async () => {
+    tearTheRun()
+    const out = await runEpicBeat(deps(), group({ maxGenSeen: 0 }))
+    expect(out.note).not.toContain('nothing is on disk')
+  })
+
+  test('a refused beat writes nothing -- no baton entry, no patch, no lease', async () => {
+    tearTheRun()
+    await runEpicBeat(deps(), group({ maxGenSeen: 0, settled: ['t1'] }))
+    expect(readEpicLog(root, 'e1')).toEqual([])
+    expect(ops).toEqual([])
+  })
+
+  /** Every verb refuses, not only `get`: `start` merges onto what it reads, so on
+   *  a torn file it would write the invented defaults back out as a real fresh
+   *  run and launder the corruption into the record. */
+  test.each(['start', 'patch', 'get'] as const)('the sentinel refuses `%s` on a torn file', op => {
+    tearTheRun()
+    const res = sentinel(op, op === 'patch' ? { patch: { dryGens: 1 } } : {})
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('UNREADABLE')
   })
 })

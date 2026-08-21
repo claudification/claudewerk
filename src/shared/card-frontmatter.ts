@@ -83,7 +83,10 @@ export function foldCardBlockLists({ meta, raw }: CardMeta): CardMeta {
  * nothing to say about their keys.
  */
 export function parseCardFrontmatter(content: string): Frontmatter {
-  const { meta, body, raw } = parseFrontmatter(content)
+  const { meta, body, raw, hasFrontmatter } = parseFrontmatter(content)
   const folded = foldCardBlockLists({ meta, raw })
-  return { meta: folded.meta, body, raw: folded.raw }
+  // Carried straight through: folding block lists changes what `meta` says, not
+  // whether the file HAD a block. A card reader that flipped it would be telling
+  // its caller the file was torn.
+  return { meta: folded.meta, body, raw: folded.raw, hasFrontmatter }
 }

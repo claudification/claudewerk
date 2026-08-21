@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
 import { epicDigestFile, epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
-import { patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
+import { EpicRunUnreadableError, patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
 
 const T0 = Date.parse('2026-08-17T10:00:00.000Z')
 let root = ''
@@ -408,6 +408,94 @@ describe('the run artifact', () => {
       patchEpicRun(root, 'e1', { spentUsd: 0.07 }, T0 + 1)
       expect(readEpicRun(root, 'e1')).toMatchObject({ spentUsd: 0.07, maxUsd: 12.75 })
     })
+  })
+
+  /**
+   * A TORN `run.md` IS NOT A FRESH RUN -- the dangerous half of
+   * `epic-artifact-writes-not-atomic`.
+   *
+   * Every write was a bare `writeFileSync`, which truncates and then writes, so a
+   * killed sentinel left a PREFIX on disk. `parseFrontmatter` answers a file with
+   * no complete block with `{ meta: {} }`, and every field below it was coerced
+   * through a fallback -- so the prefix read back as `status: armed` with every
+   * counter at zero. At generation 0 with `plan: true` and no `planBaseline`,
+   * `planningBeat` dispatches a PLANNING GENERATION over the board of a live run
+   * that has just lost its state. Nothing threw and nothing logged.
+   */
+  describe('a truncated run artifact', () => {
+    /** The bytes a sentinel killed mid-write actually leaves: a prefix, cut
+     *  before the closing `---`. */
+    function tear(epicId: string, atByte = 60): string {
+      startEpicRun(root, { epicId, project: 'p', plan: true }, T0)
+      const file = epicRunFile(root, epicId)
+      const torn = readFileSync(file, 'utf8').slice(0, atByte)
+      writeFileSync(file, torn, 'utf8')
+      return torn
+    }
+
+    test('refuses to read, rather than reporting an armed run at generation zero', () => {
+      tear('e1')
+      expect(() => readEpicRun(root, 'e1')).toThrow(EpicRunUnreadableError)
+    })
+
+    test('an EMPTY run.md is the same answer -- not "never started"', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      writeFileSync(epicRunFile(root, 'e1'), '', 'utf8')
+      expect(() => readEpicRun(root, 'e1')).toThrow(EpicRunUnreadableError)
+    })
+
+    /** An epic with nothing on disk is still `null`. The third outcome must not
+     *  swallow the first, or every unstarted epic becomes an error. */
+    test('an epic that was never started still reads as null, not as an error', () => {
+      expect(readEpicRun(root, 'never-started')).toBeNull()
+    })
+
+    /** `startEpicRun` MERGES onto what it reads. On a torn file it would have
+     *  written the defaults back out as a real fresh run -- laundering the
+     *  corruption into the record and destroying the spend ledger with it. */
+    test('start refuses too, rather than laundering the tear into a fresh run', () => {
+      const torn = tear('e1')
+      expect(() => startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 1)).toThrow(EpicRunUnreadableError)
+      // The refusal wrote NOTHING: the bytes on disk are still the torn ones, so
+      // a human (or a later card) still has the prefix to recover from.
+      expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).toBe(torn)
+    })
+
+    test('patch refuses rather than merging onto invented defaults', () => {
+      tear('e1')
+      expect(() => patchEpicRun(root, 'e1', { dryGens: 1 }, T0 + 1)).toThrow(EpicRunUnreadableError)
+    })
+
+    /** The error has to name the epic and say what to do about it: this reaches a
+     *  human through a beat note on the wall, and "cannot read run" with no
+     *  subject is a line nobody can act on. */
+    test('the refusal names the epic and the recovery', () => {
+      tear('e1')
+      expect(() => readEpicRun(root, 'e1')).toThrow(/`e1`[\s\S]*re-arm/)
+    })
+
+    /** No behaviour change on a well-formed artifact -- including one whose BODY
+     *  is truncated, which is a torn write that lost nothing the engine reads. */
+    test('a run whose body is cut but whose frontmatter closes still reads', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p', concurrency: 5 }, T0)
+      const file = epicRunFile(root, 'e1')
+      const whole = readFileSync(file, 'utf8')
+      writeFileSync(file, whole.slice(0, whole.indexOf('---\n', 4) + 8), 'utf8')
+      expect(readEpicRun(root, 'e1')).toMatchObject({ concurrency: 5, status: 'armed' })
+    })
+  })
+
+  /** The writes are tmp-and-rename now, and the staging siblings do not survive
+   *  the call -- an artifact directory a human reads by hand stays readable. */
+  test('a start and a patch leave no staging files in the epic directory', () => {
+    startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+    patchEpicRun(root, 'e1', { dryGens: 1, digest: 'prose' }, T0 + 1)
+    appendEpicLog(root, 'e1', { kind: 'intent', convId: 'c', body: 'x' }, T0 + 2)
+    expect(readdirSync(join(root, '.rclaude', 'project', 'epics', 'e1')).sort()).toEqual([
+      'digest.md',
+      'log.md',
+      'run.md',
+    ])
   })
 
   test('a junk value falls back to the default instead of poisoning the run', () => {

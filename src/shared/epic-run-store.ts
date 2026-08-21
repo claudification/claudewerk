@@ -33,7 +33,8 @@
  * everything else from the board.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
+import { writeFileAtomic } from './atomic-write'
 import {
   deletedEpicDir,
   deletedEpicsRoot,
@@ -51,7 +52,7 @@ import {
   type EpicRunStatus,
 } from './epic-run-types'
 import { parseWhen, serializeWhen } from './epic-when'
-import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
+import { type Frontmatter, parseFrontmatter, serializeFrontmatter } from './frontmatter'
 
 const STATUSES: readonly EpicRunStatus[] = ['armed', 'running', 'paused', 'complete', 'aborted']
 const TARGETS = ['pr', 'merged', 'shipped'] as const
@@ -143,11 +144,83 @@ function readDigest(root: string, epicId: string, runBody: string): string {
   return legacy || DEFAULT_DIGEST
 }
 
-/** Read a run, or null when the epic has never been started. */
+/**
+ * THE RUN FILE IS THERE AND CANNOT BE BELIEVED.
+ *
+ * The third outcome of a read, and the one that used to be missing. `readEpicRun`
+ * had two -- absent (`null`) and parsed -- and coerced every field through a
+ * fallback on the way out, so a `run.md` truncated mid-frontmatter parsed to
+ * `{ meta: {} }` and came back as `status: armed` with every counter at zero. A
+ * VALID-LOOKING FRESH RUN. At generation 0 with `plan: true` and no
+ * `planBaseline` that is exactly the shape `planningBeat` dispatches a PLANNING
+ * GENERATION for (`epic-beat.ts`) -- a full replan over a board whose live run
+ * had just lost its state, with nothing thrown and nothing logged.
+ *
+ * IT IS AN EXCEPTION RATHER THAN A THIRD RETURN VALUE, and that is the whole
+ * design: every sentinel op goes through `runGuarded` (`epic-handlers.ts`), which
+ * turns a throw into `{ ok: false, error }`, which `toEpicRunView` turns into a
+ * view with no run and an error, which `runEpicBeat` already reports as "run
+ * artifact NOT READ -- the read failed" and refuses to act on. So one throw
+ * makes EVERY verb refuse -- `get`, `patch`, `lease`, `clear`, `delete` and
+ * `start` alike -- instead of six call sites each remembering to check a flag.
+ *
+ * `start` refusing is a feature, not collateral damage: `startEpicRun` merges
+ * onto whatever it reads, so on a torn file it would have written the defaults
+ * back out as a real fresh run and laundered the corruption into the record.
+ *
+ * RECOVERY IS BY HAND, deliberately, and it is one command: move the torn
+ * `run.md` aside (the baton beside it is intact -- it is append-only and its
+ * reader skips a torn tail) and re-arm the epic. Nothing in the engine may
+ * decide on its own that a run's state is disposable.
+ */
+export class EpicRunUnreadableError extends Error {
+  constructor(epicId: string, why: string) {
+    super(
+      `epic run artifact for \`${epicId}\` is UNREADABLE (${why}) -- it is truncated or corrupt. ` +
+        `Refusing to read it as a fresh run; move run.md aside and re-arm the epic.`,
+    )
+    this.name = 'EpicRunUnreadableError'
+  }
+}
+
+/**
+ * ALL THREE OUTCOMES OF OPENING `run.md`, decided in one place: `null` when the
+ * epic was never started, the parse when it is intact, a throw when it is
+ * neither. Kept out of `readEpicRun` because that function is a forty-field
+ * projection and the DECISION about whether to project at all is a different
+ * job -- one that has to stay legible on its own.
+ */
+function readRunFile(root: string, epicId: string): Frontmatter | null {
+  const file = epicRunFile(root, epicId)
+  if (!existsSync(file)) return null
+  let parsed: Frontmatter
+  try {
+    parsed = parseFrontmatter(readFileSync(file, 'utf8'))
+  } catch (err) {
+    // PRESENT AND UNREADABLE is the same answer as present and torn: the one
+    // thing it is not is "this epic was never started". Swallowing the errno
+    // here is what let a permissions problem read as a fresh run.
+    throw new EpicRunUnreadableError(epicId, err instanceof Error ? err.message : String(err))
+  }
+  // A torn write can only ever leave a PREFIX of the intended bytes, and the
+  // closing `---` is written after the last key -- so "no complete block" covers
+  // the whole realistic truncation space, empty file included. A file that DOES
+  // close its block has every scalar the writer meant to emit.
+  if (!parsed.hasFrontmatter) throw new EpicRunUnreadableError(epicId, 'run.md carries no frontmatter block')
+  return parsed
+}
+
+/**
+ * Read a run, or null when the epic has never been started.
+ *
+ * THROWS `EpicRunUnreadableError` when the file is present but does not carry a
+ * frontmatter block. See that class for why the third outcome cannot be a
+ * fallback and cannot be a return value.
+ */
 export function readEpicRun(root: string, epicId: string): EpicRun | null {
-  const content = readIfPresent(epicRunFile(root, epicId))
-  if (content === null) return null
-  const { meta, body } = parseFrontmatter(content)
+  const parsed = readRunFile(root, epicId)
+  if (parsed === null) return null
+  const { meta, body } = parsed
   return {
     epicId: typeof meta.epicId === 'string' ? meta.epicId : epicId,
     project: typeof meta.project === 'string' ? meta.project : '',
@@ -208,11 +281,16 @@ function writeRun(root: string, run: EpicRun, digest?: string): EpicRun {
   // The gate list goes back as a bare scalar when there is only one of it, so a
   // run that never touched this axis keeps the exact bytes it has always had.
   const frontmatter = { ...meta, cadence: serializeWhen(run.cadence) }
-  writeFileSync(epicRunFile(root, run.epicId), serializeFrontmatter(frontmatter, RUN_FILE_BANNER), 'utf8')
+  // TMP-AND-RENAME, both files. A bare `writeFileSync` truncates before it
+  // writes, so a sentinel killed mid-write left a `run.md` that still existed
+  // and no longer said anything -- and `readEpicRun` read that as a fresh armed
+  // run at generation zero. See `atomic-write.ts` and `EpicRunUnreadableError`:
+  // this half stops the tear, that half stops a tear from being believed.
+  writeFileAtomic(epicRunFile(root, run.epicId), serializeFrontmatter(frontmatter, RUN_FILE_BANNER))
 
   const file = epicDigestFile(root, run.epicId)
   const prose = digest ?? (existsSync(file) ? null : run.digest)
-  if (prose !== null) writeFileSync(file, `${prose.trim()}\n`, 'utf8')
+  if (prose !== null) writeFileAtomic(file, `${prose.trim()}\n`)
   return run
 }
 
