@@ -48,6 +48,7 @@ beforeEach(() => {
       run: null,
       baton: [],
       acknowledgedCardIds: [],
+      dispatchCounts: {},
       lease,
       ...(getError ? { error: getError } : {}),
     }),

@@ -16,7 +16,7 @@
  */
 
 import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
-import { acknowledgedCardIds, appendEpicLog, readEpicLog, sliceEpicLog } from '../shared/epic-log'
+import { acknowledgedCardIds, appendEpicLog, dispatchCountsByCard, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
@@ -71,6 +71,10 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
       run: snapshot(root, msg.epicId),
       baton: sliceEpicLog(entries, { limit: BATON_TAIL, ...(msg.baton ?? {}) }),
       acknowledgedCardIds: acknowledgedCardIds(entries),
+      // The third whole-log fold, beside the other two and for the same reason:
+      // the file is read whole either way, and the beat's ceiling on redispatch
+      // is a question about the entire run, not about its last 20 entries.
+      dispatchCounts: dispatchCountsByCard(entries),
       currentLease: readLease(readCardMeta(root, msg.epicId) ?? {}),
     }
   },

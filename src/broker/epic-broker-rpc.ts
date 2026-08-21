@@ -5,7 +5,7 @@
  */
 
 import type { EpicLease } from '../shared/epic-lease'
-import { acknowledgedCardIds } from '../shared/epic-log'
+import { acknowledgedCardIds, dispatchCountsByCard } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type {
@@ -133,6 +133,9 @@ export interface EpicRunView {
   baton: EpicLogEntry[]
   /** Every card acknowledged anywhere in the log. The wake's standing question. */
   acknowledgedCardIds: string[]
+  /** cardId -> seats dispatched for it anywhere in the log. The ceiling on the
+   *  redispatch path -- see `EpicResult.dispatchCounts` and `MAX_CARD_SEATS`. */
+  dispatchCounts: Record<string, number>
   /** Who holds the overseer seat, off the epic card. `null` = never run. */
   lease: EpicLease | null
   error?: string
@@ -142,6 +145,7 @@ const EMPTY_VIEW = (error: string): EpicRunView => ({
   run: null,
   baton: [],
   acknowledgedCardIds: [],
+  dispatchCounts: {},
   lease: null,
   error,
 })
@@ -166,6 +170,11 @@ export function toEpicRunView(res: EpicResult): EpicRunView {
     run: res.run ?? null,
     baton,
     acknowledgedCardIds: res.acknowledgedCardIds ?? acknowledgedCardIds(baton),
+    // Same skew rule, same direction of error: an old sentinel makes the ceiling
+    // read LOW, which spends a seat it should have withheld -- survivable. The
+    // opposite fallback (pretend the ceiling is hit) would strand every bounced
+    // card on the board the moment a deploy went out of order.
+    dispatchCounts: res.dispatchCounts ?? dispatchCountsByCard(baton),
     lease: res.currentLease ?? null,
   }
 }

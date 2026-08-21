@@ -173,6 +173,41 @@ export function acknowledgedCardIds(entries: readonly EpicLogEntry[]): string[] 
   return [...ids]
 }
 
+/**
+ * HOW MANY SEATS EACH CARD HAS COST, over the WHOLE log -- the ceiling on the
+ * redispatch path (`epic-ready.ts`, `MAX_CARD_SEATS`).
+ *
+ * THE BATON, NOT THE CONVERSATION REGISTRY, and the difference is the whole
+ * reason this exists. `spawnForCard` appends a `dispatch` entry the instant a
+ * spawn is accepted, whereas a spawned conversation carries no epic tag until
+ * its agent host connects (`setPendingLaunchConfig` is consumed by the meta
+ * handler) -- so a seat dispatched on beat N is invisible to `EpicGroup.inFlight`
+ * on beat N+1 and countable here immediately. A registry-derived count would read
+ * zero in exactly the window a runaway starts in.
+ *
+ * Whole log, never the prompt-sized tail, for `acknowledgedCardIds`'s reason: a
+ * ceiling computed over the last 20 entries is a ceiling that resets itself, and
+ * this one exists to stop the thirteen-seat night.
+ *
+ * ROLE-BLIND on purpose. `spawnForCard` writes the same `dispatch` kind for an
+ * implementer and for a verifier, and nothing in the entry distinguishes them
+ * (adding a role would be a schema change to `md-section-log` for a number whose
+ * only consumer is a ceiling). So this counts SEATS, which is the unit the
+ * ceiling is denominated in -- a healthy card costs two, one of each.
+ *
+ * `dispatch-failed` is NOT counted: every failed launch already has its own
+ * `dispatch` entry ahead of it, and the launch path has its own bound in
+ * `MAX_LAUNCH_ATTEMPTS`.
+ */
+export function dispatchCountsByCard(entries: readonly EpicLogEntry[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const e of entries) {
+    if (e.kind !== 'dispatch' || !e.cardId) continue
+    counts[e.cardId] = (counts[e.cardId] ?? 0) + 1
+  }
+  return counts
+}
+
 /** Render a tail as the markdown block a prompt embeds. */
 export function renderEpicLogTail(entries: readonly EpicLogEntry[]): string {
   if (entries.length === 0) return '_(empty -- this is the first generation)_'
