@@ -1427,6 +1427,15 @@
 .wall-burn-split-window {
 	letter-spacing: 0.04em;
 }
+/* The window label's caveat -- see BurnBars `note`. Quieter than the window it
+   qualifies, and never truncated: a half-printed caveat is worse than none. */
+.wall-burn-split-note {
+	letter-spacing: 0.04em;
+	text-transform: none;
+	color: var(--fg-subtle, var(--comment));
+	opacity: 0.75;
+	white-space: nowrap;
+}
 .wall-burn-split-total {
 	font-variant-numeric: tabular-nums;
 	letter-spacing: 0;
