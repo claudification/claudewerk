@@ -34,8 +34,6 @@ vi.mock('@/hooks/use-conversations', () => ({
   useConversations: () => [],
 }))
 
-vi.mock('@/hooks/use-nightshift-queue', () => ({ enqueueNightshiftTask: vi.fn() }))
-
 afterEach(cleanup)
 
 function task(over: Partial<ProjectTask> = {}): ProjectTask {

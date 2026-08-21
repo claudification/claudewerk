@@ -16,6 +16,19 @@
  * runId is the run DATE (YYYY-MM-DD): one run per night, deterministic dir name.
  */
 
+/**
+ * THE ROUTING TAG. A board card carrying it is what tonight's run selects --
+ * see `src/broker/scanners/nightshift-scanner.ts`. The card IS the item; there
+ * is no copy of it anywhere.
+ *
+ * Named here rather than in `board-system-tags.ts` for the same reason
+ * `EPIC_TAG` lives in `epic-cards.ts` and `NEEDS_OVERSEER_TAG` in
+ * `epic-run-types.ts`: the registry is a display list that IMPORTS the tags the
+ * machinery reads, and a subsystem owns its own vocabulary. In `shared` because
+ * both ends need it -- the broker scans for it and the board button writes it.
+ */
+export const NIGHTSHIFT_TAG = 'nightshift'
+
 // ---------------------------------------------------------------------------
 // Task lifecycle vocabulary
 // ---------------------------------------------------------------------------
