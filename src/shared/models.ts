@@ -364,6 +364,39 @@ export function isDefault1MFamily(slug: string): boolean {
 }
 
 /**
+ * COARSE SPEND CLASSES, cheapest first -- the ladder a cap is clamped along.
+ *
+ * COARSE ON PURPOSE, and the coarseness is the honest part. The question a clamp
+ * asks is "does this ask for MORE than the seat may spend", and the only answer
+ * the registry can support is the class: `fallbackPriceUsdPerMTok` is set on
+ * three families out of sixteen (it exists for models LiteLLM has not published
+ * yet), so ranking by price would rank most of the board `undefined`. Within a
+ * class the versions are deliberately equal -- claiming Opus 4 outranks Sonnet 5
+ * would be a statement about capability this file has no evidence for, and the
+ * clamp does not need it.
+ *
+ * Matched against the FAMILY ID, so every dated and `[1m]` slug lands on its
+ * family's class through `resolveModelFamily` rather than through a second
+ * regex.
+ */
+const MODEL_SPEND_CLASSES: readonly (readonly string[])[] = [['haiku'], ['sonnet'], ['opus'], ['fable', 'mythos']]
+
+/**
+ * Where a slug sits on the spend ladder, or `undefined` when it cannot be placed
+ * -- an unknown slug, a provider-specific id, or a dynamic alias (`best`,
+ * `opusplan`) that resolves to a different family every week.
+ *
+ * `undefined` is a REAL answer and callers must treat it as such: a value that
+ * cannot be ranked cannot be proven to be a narrowing, so a clamp keeps its cap.
+ */
+export function modelSpendRank(slug: string): number | undefined {
+  const family = resolveModelFamily(slug)
+  if (!family) return undefined
+  const rank = MODEL_SPEND_CLASSES.findIndex(names => names.some(name => family.familyId.includes(name)))
+  return rank === -1 ? undefined : rank
+}
+
+/**
  * Every string that identifies a model in FREE TEXT -- accepted slug, family id,
  * or display name -- paired with the family id it resolves to. Sorted longest
  * needle first so `claude-sonnet-4-6` beats the bare `sonnet` alias and

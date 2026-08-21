@@ -4233,6 +4233,10 @@ export interface ProjectTaskInputWire {
   blockedBy?: string[]
   /** Stored as `relates_to`. */
   relatesTo?: string[]
+  /** Stored as `model`. A HINT: an order may clamp it down, never raise it, and
+   *  a slug the model registry does not recognise is dropped rather than
+   *  written. Also reachable as a `#model-<slug>` tag, normalised on write. */
+  model?: string
   /** Stored as `wall_pinned`, a scalar boolean. `false` deletes the key. */
   wallPinned?: boolean
 }

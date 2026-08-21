@@ -15,6 +15,7 @@ import { statSync } from 'node:fs'
 import { makeBodyPreview } from './body-preview'
 import { foldCardBlockLists, parseCardFrontmatter } from './card-frontmatter'
 import { asCardValueList, normalizeLinkageMeta, readLinkage, readOne } from './card-linkage-read'
+import { readCardModel } from './card-model'
 import { CARD_PRIORITIES, ORDERED_CARD_KEYS } from './card-schema'
 import { type RawBlocks, serializeFrontmatter } from './frontmatter'
 import type { ProjectTask } from './project-task-types'
@@ -115,6 +116,12 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     archivedReason: undefinedIfBlank(raw.meta.archived_reason),
     archivedBy: undefinedIfBlank(raw.meta.archived_by),
     deleteAt: undefinedIfBlank(raw.meta.delete_at),
+    // VALIDATED on the way out, unlike the lifecycle keys above, and for the
+    // opposite reason: those keep a record a reader interprets, this one is
+    // handed to CC as `--model <id>` hours later with nobody watching. An
+    // unrecognised slug reads as absent here and gets a doctor finding instead
+    // -- the card still projects, which is what stops one typo hiding a card.
+    model: readCardModel(raw.meta.model),
     created: String(raw.meta.created || ''),
     mtime: raw.mtime,
     body,
