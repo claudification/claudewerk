@@ -17,7 +17,8 @@ import type { EpicCapReading } from '@shared/epic-run-caps'
 import type { EpicLogEntry, EpicLogKind } from '@shared/epic-run-types'
 import type { RunVitalityView } from '@shared/epic-vitality'
 import { formatDurationShort } from '@/lib/status-style'
-import type { BeatTick, RunBuckets } from './run-model'
+import type { RunBuckets } from './run-model'
+import { type BeatTick, batonHeadline } from './run-tails'
 
 const BATON_TONE: Record<EpicLogKind, string> = {
   intent: 'var(--comment)',
@@ -121,17 +122,26 @@ export function CapStrip({ caps }: { caps: readonly EpicCapReading[] }) {
   )
 }
 
+/**
+ * WHAT IT LAST DID -- one line, and only ever one line.
+ *
+ * The body is prose one agent wrote for another and runs to thousands of
+ * characters, so it is CLAMPED IN THE MARKUP as well as the CSS: the first line
+ * of the body only, ellipsised, full text on hover. Relying on the stylesheet
+ * alone left the whole essay in the DOM, which is how a 38%-tall pane rendered a
+ * single run as a wall of text with the numbers scrolled off the top.
+ */
 export function BatonTail({ entries, nowMs }: { entries: readonly EpicLogEntry[]; nowMs: number }) {
   if (entries.length === 0) return null
   return (
     <div className="wall-run-baton">
       {entries.map(entry => (
-        <div key={`${entry.ts} ${entry.kind}`}>
+        <div key={`${entry.ts} ${entry.kind}`} title={entry.body}>
           <span className="wall-run-baton-kind" style={{ color: BATON_TONE[entry.kind] }}>
             {entry.kind}
           </span>
           <span className="wall-run-baton-age">{formatDurationShort(Math.max(0, nowMs - Date.parse(entry.ts)))}</span>
-          <span className="wall-run-baton-body">{entry.body}</span>
+          <span className="wall-run-baton-body">{batonHeadline(entry.body)}</span>
         </div>
       ))}
     </div>

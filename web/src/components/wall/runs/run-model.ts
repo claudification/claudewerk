@@ -15,10 +15,9 @@
  */
 
 import { type EpicCapReading, epicRunCaps } from '@shared/epic-run-caps'
-import type { EpicLogEntry } from '@shared/epic-run-types'
 import { type RunVitalityView, runVitality } from '@shared/epic-vitality'
 import type { NightshiftTaskMeta, NightshiftTaskStatus } from '@shared/nightshift-types'
-import type { EpicActivityEntry, EpicBeatRecord, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
+import type { EpicActivityEntry, EpicInspectResult, EpicRunSnapshot } from '@shared/protocol'
 
 /**
  * A run the sweep is supposed to be beating, and WHAT it is actually doing.
@@ -97,7 +96,12 @@ export function idleSentence(entry: EpicActivityEntry, data: EpicInspectResult |
  * the class of disagreement this pane was built to end.
  */
 export function runCaps(run: EpicRunSnapshot | null, nowMs: number): EpicCapReading[] {
-  return run ? epicRunCaps(run, nowMs) : []
+  if (!run) return []
+  // THE GENERATION CAP IS ALREADY IN THE HEAD (`gen 28/60`), so printing
+  // `generations 28/60` again three lines down is the same fact charged twice on
+  // a pane whose whole complaint is length. It comes back the moment it is the
+  // thing that STOPPED the run -- an alarm nobody sees is worse than a repeat.
+  return epicRunCaps(run, nowMs).filter(cap => cap.label !== 'generations' || cap.over)
 }
 
 // ---------------------------------------------------------------------------
@@ -134,34 +138,8 @@ export function runStall(entry: EpicActivityEntry, nowMs: number): RunStall {
 // THE OVERSEER LEASE moved to `@/lib/epic-lease-view` -- the overseer window
 // needs the same sentence, and it could not import it from inside the wall.
 
-// ---------------------------------------------------------------------------
-// THE TAILS -- baton and beat pulse
-// ---------------------------------------------------------------------------
-
-/** How many baton entries the wall shows. The window shows all of them; a
- *  glanceable surface shows the last few and links out for the rest. */
-const BATON_TAIL = 3
-
-/** The baton arrives oldest-first (it is an append-only log); a tail reads
- *  newest-first, because the last thing that happened is the interesting one. */
-export function batonTail(baton: readonly EpicLogEntry[], n: number = BATON_TAIL): EpicLogEntry[] {
-  return baton.slice(-n).reverse()
-}
-
-/** Ticks in the beat pulse. Matches the approved mockup. */
-const BEAT_TICKS = 12
-
-export interface BeatTick {
-  at: string
-  /** Did this beat DO anything? A run that beats and never acts is still a run
-   *  that is not moving, and the pulse should not pretend otherwise. */
-  did: boolean
-}
-
-/** Oldest-left, newest-right -- the ring already serves newest last. */
-export function beatTicks(beats: readonly EpicBeatRecord[], n: number = BEAT_TICKS): BeatTick[] {
-  return beats.slice(-n).map(b => ({ at: b.at, did: b.actions > 0 }))
-}
+// THE TAILS -- baton and beat pulse -- moved to `run-tails.ts`. Presenting a log
+// and judging a run are different jobs, and this file was over the split bar.
 
 // ---------------------------------------------------------------------------
 // NIGHTSHIFT

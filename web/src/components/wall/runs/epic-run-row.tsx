@@ -15,74 +15,15 @@
  * else on the row is allowed to be louder.
  */
 
-import type { RunVitalityView } from '@shared/epic-vitality'
-import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
 import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
-import { useWallFilterStore } from '@/lib/wall/filter-store'
-import { ProjectTag } from '../../project-tag'
-import { navigateFromWall } from '../wall-navigate'
 import { RunActions } from './run-actions'
-import { BatonTail, BeatPulse, BucketStrip, CapStrip, RunTag } from './run-bits'
-import { batonTail, beatTicks, idleSentence, type RunStall, runBuckets, runCaps, runStall, runView } from './run-model'
+import { BatonTail, BucketStrip, CapStrip } from './run-bits'
+import { RunHead } from './run-head'
+import { idleSentence, type RunStall, runBuckets, runCaps, runStall, runView } from './run-model'
+import { batonTail } from './run-tails'
 import type { EpicRunRowData } from './use-unattended-runs'
-
-/**
- * WHO IT IS, WHETHER IT IS ARMED, AND WHICH GENERATION.
- *
- * Owns the wall-filter store read because it owns the only button that uses it:
- * a click on the project tag filters the WHOLE wall, and the row above has no
- * other business with the filter.
- *
- * `gen` and `maxGens` prefer the inspect read and fall back to the activity
- * entry -- inspect is fetched per visible run and can be a beat fresher, but the
- * entry is what put the row on screen and is never absent.
- */
-function RunHead({
-  row,
-  view,
-  run,
-  beats,
-}: {
-  row: EpicRunRowData
-  view: RunVitalityView
-  run: EpicRunSnapshot | null
-  beats: readonly EpicBeatRecord[]
-}) {
-  const toggleProject = useWallFilterStore(s => s.toggleProject)
-  const { entry, project, epicId } = row
-  const gen = run?.gen ?? entry.gen
-  const maxGens = run?.maxGens ?? entry.maxGens
-
-  return (
-    <div className="wall-run-head">
-      <RunTag view={view} />
-      <button
-        type="button"
-        title={`Filter the whole wall to ${row.projectName}`}
-        onClick={() => toggleProject(row.projectName)}
-        className="wall-run-proj"
-      >
-        <ProjectTag name={row.projectName} icon={row.projectIcon} color={row.projectColor} />
-      </button>
-      <button
-        type="button"
-        title="Click -- the MAIN window opens this epic. The wall stays put."
-        onClick={() => navigateFromWall({ kind: 'epic', project, id: epicId })}
-        className="wall-run-name"
-      >
-        {epicId}
-      </button>
-      <BeatPulse ticks={beatTicks(beats)} />
-      <span className="flex-1" />
-      <span className="wall-run-gen">
-        {`gen ${gen}${maxGens > 0 ? `/${maxGens}` : ''}`}
-        {run?.cadence ? ` · ${run.cadence}` : ''}
-      </span>
-    </div>
-  )
-}
 
 /** A STALLED RUN SAYS SO, WITH THE AGE. Rendering this one as "running" is the
  *  bug the whole pane exists to kill -- so the not-stalled case renders nothing
@@ -138,7 +79,7 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
 
   return (
     <div className="wall-run" data-epic={epicId} data-stalled={stall.stalled || undefined}>
-      <RunHead row={row} view={view} run={run} beats={inspect?.beats ?? []} />
+      <RunHead row={row} view={view} run={run} beats={inspect?.beats ?? []} stall={stall} />
       <StallBanner stall={stall} />
       {/* WHY the tag says what it says. The tag alone is what let three surfaces
           each print a different confident word for the same run. */}

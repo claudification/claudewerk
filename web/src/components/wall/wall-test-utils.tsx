@@ -6,7 +6,7 @@
  * bar this card ships the chrome for.
  */
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { act } from 'react'
 import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
@@ -39,7 +39,14 @@ export async function openTheWall(): Promise<void> {
     openWall()
   })
   render(<WallModal />)
-  await waitFor(() => expect(document.querySelectorAll('[data-pane]')).toHaveLength(WALL_PANE_CODES.length))
+  // 5s, not the 1s default. Every pane is a dynamic `import()`, so the FIRST run
+  // after an edit pays vite's cold transform for fourteen chunks at once and
+  // regularly blew past a second -- a green suite that goes red once and then
+  // green again on a re-run, which reads as "my change broke the wall". It is
+  // not a race the product has; it is the compiler being slow, so wait longer.
+  await waitFor(() => expect(document.querySelectorAll('[data-pane]')).toHaveLength(WALL_PANE_CODES.length), {
+    timeout: 5000,
+  })
 }
 
 /** Registered by each suite so a leaked modal record or a stuck ambient flag
