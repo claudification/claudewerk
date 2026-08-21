@@ -27,6 +27,7 @@ import { useManageWorkspacesOpen } from '@/components/manage-workspaces/manage-w
 import { MarkdownViewerModal } from '@/components/markdown-viewer-modal'
 import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
+import { useMorningReportOpen } from '@/components/morning-report/morning-report-state'
 import { useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
 import { useOverseerOpen } from '@/components/overseer/overseer-state'
 import { PanelBoundary } from '@/components/panel-boundary'
@@ -238,6 +239,15 @@ const VacuumModal = lazyModule(
       default: m.VacuumModal,
     })) as Promise<{ default: ComponentType }>,
   useVacuumOpen,
+)
+// THE MORNING REPORT -- the parked brew and its Execute button. Per-project and
+// opt-in, so most sessions never open it and must not pay for the chunk.
+const MorningReportModal = lazyModule(
+  () =>
+    import('@/components/morning-report/morning-report-modal').then(m => ({
+      default: m.MorningReportModal,
+    })) as Promise<{ default: ComponentType }>,
+  useMorningReportOpen,
 )
 // The overseer control plane. The BADGE that opens it is eager (it is header
 // chrome and must render the moment anything is running); the window itself is
@@ -624,6 +634,7 @@ function Dashboard() {
       <OrganizeProjectsModal />
       <ManageWorkspacesModal />
       <VacuumModal />
+      <MorningReportModal />
       <OverseerModal />
       {canAdmin && <WallModal />}
       <LaunchProfileCommands />

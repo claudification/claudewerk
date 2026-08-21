@@ -97,6 +97,15 @@ const STORE_HANDLER_ROUTES: Array<{ match: (type: string) => boolean; pick: (s: 
       match: type => type === 'nightshift_watchdog_result' || type === 'nightshift_watchdog_event',
       pick: s => s.nightshiftWatchdogHandler,
     },
+
+    // THE MORNING REPORT: the request/reply for `latest` and `execute`, plus the
+    // `board_report_changed` push. The push is why this is a route rather than a
+    // bare request channel -- a PARKED surface has to learn that the morning's
+    // brew landed, or its dock tile can never pulse.
+    {
+      match: type => type === 'board_report_result' || type === 'board_report_changed',
+      pick: s => s.boardReportHandler,
+    },
   ]
 
 function isProjectMessage(type: string): boolean {
