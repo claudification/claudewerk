@@ -71,6 +71,19 @@ export type EpicWakeReason =
   | 'verdict' // a verifier approved or bounced
   | 'steering' // Jonas answered a question or redirected
   | 'resumed' // pause lifted / window opened
+  /**
+   * THE PREVIOUS SUPERVISOR DIED WITHOUT SAYING SO and this generation replaced
+   * it -- no recorded end, no socket, silent past the grace
+   * (`epic-overseer-vitality.ts`).
+   *
+   * Its own reason rather than folding into `started` or `card-settled`, because
+   * a generation that replaced a corpse and one that followed a finished turn
+   * produce the identical spawn and are the same event on every surface that
+   * renders one. They are not the same event: one is the engine doing its job,
+   * the other is an agent host that died with nobody watching, and only the
+   * second one means somebody should go and look at what it left behind.
+   */
+  | 'overseer-lost'
 
 /** Baton entry kinds. Append-only; never patched (see epic-log.ts). */
 export type EpicLogKind =
@@ -83,6 +96,23 @@ export type EpicLogKind =
   | 'merge' // the overseer integrated a branch
   | 'steering' // a Quest-Giver course correction
   | 'checkpoint' // the run stopped and handed the decision to Jonas
+  /**
+   * THE ENGINE REAPED THE OVERSEER SEAT. The conversation holding this epic held
+   * no connection and said nothing past the grace, so the run stopped believing
+   * it and replaced it.
+   *
+   * ITS OWN KIND rather than a `record` or a `checkpoint`, for the reason the
+   * whole card exists: before this, a run whose supervisor died silently wrote
+   * `overseer alive at gen N; holding the beat` to the broker log every 45
+   * seconds forever, and NOTHING reached the baton at all -- so the one file a
+   * fresh overseer reads about the past could not tell "the last generation
+   * finished" from "the last generation died". A reader of `log.md` alone must be
+   * able to tell those apart, and no existing kind says it.
+   *
+   * Acknowledges NOTHING (`ACKNOWLEDGING_KINDS`, epic-log.ts): it is a fact about
+   * a SEAT, not a verdict about a card.
+   */
+  | 'overseer-lost'
   /**
    * The engine wrote a fact down about a card -- today, the sha in its `closes:`,
    * or the reason there is no honest one to write (epic-promise.ts).

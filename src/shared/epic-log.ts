@@ -32,6 +32,7 @@ const KINDS: readonly EpicLogKind[] = [
   'merge',
   'steering',
   'checkpoint',
+  'overseer-lost',
   'record',
 ]
 

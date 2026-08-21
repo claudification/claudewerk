@@ -29,7 +29,7 @@ import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats
 import { planEpic } from '../shared/epic-ready'
 import { gatedBy } from '../shared/epic-when'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
-import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
+import { acknowledge, noteFailedLaunches, performActions, reapOverseers } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
 import type { EpicRunView } from './epic-broker-rpc'
 import {
@@ -234,6 +234,14 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     await noteFailedLaunches(deps, group, failed)
   }
 
+  // THE SUPERVISOR THE REGISTRY STILL CALLS ALIVE. Before this, an overseer whose
+  // agent host died without recording an end held `guardBeat` -- and therefore
+  // the entire run -- for the life of the broker, logging `overseer alive at gen
+  // N; holding the beat` every 45 seconds. The fold has already stopped believing
+  // it (`epic-sweep.ts`); this says so, in the log for every corpse and in the
+  // baton for the one holding the lease.
+  const lost = await reapOverseers(deps, group, run.gen, view.lease, view.baton)
+
   // THE SEATS THE REGISTRY HAS NOT CAUGHT UP WITH YET. A card dispatched on the
   // last beat is in NO lane until its agent host connects, which read as "nobody
   // is working this" and sent a second seat into the SAME worktree -- twice on
@@ -286,6 +294,13 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // the overseer and parks a run that is simply mid-launch.
     inFlight: withPendingSeats(group.inFlight, pendingSeats),
     overseerAlive: group.overseerAlive,
+    // A SPENT FACT, keyed on the lease holder rather than on the lane -- see
+    // `EpicBeatInput.overseerLost`. The wake this drives moves the lease, so the
+    // next beat reads false and the replacement is billed exactly once. Stated
+    // unconditionally rather than spread, unlike the two below: those are genuinely
+    // ABSENT for a caller that did not compute them, while this one always has an
+    // answer once a reaper has run.
+    overseerLost: lost !== null,
     ...(ctx.queue ? { queue: ctx.queue } : {}),
     ...(ctx.forced ? { forced: true } : {}),
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is

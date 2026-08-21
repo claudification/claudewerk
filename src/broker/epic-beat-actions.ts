@@ -10,6 +10,7 @@
 import { fingerprintDelta } from '../shared/epic-board-fingerprint'
 import type { EpicLease } from '../shared/epic-lease'
 import type { planEpic } from '../shared/epic-ready'
+import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { EpicAction, EpicBeat } from './epic-beat'
 import { epicIo, tag } from './epic-io'
@@ -22,7 +23,8 @@ import {
   planPlannerSpawn,
   planVerifierSpawn,
 } from './epic-spawn-plan'
-import { type EpicGroup, type FailedLeg, MAX_LAUNCH_ATTEMPTS } from './epic-sweep'
+import type { AbandonedOverseer, EpicGroup, FailedLeg } from './epic-sweep'
+import { lostOverseer, MAX_LAUNCH_ATTEMPTS } from './epic-sweep'
 import type { BeatDeps } from './epic-types'
 
 /**
@@ -84,6 +86,87 @@ export async function noteFailedLaunches(deps: BeatDeps, group: EpicGroup, legs:
     })
     if (!res.ok) deps.log(`${tag(group.epicId, leg.gen)} dispatch-failed append FAILED for ${leg.cardId}: ${res.error}`)
   }
+}
+
+/**
+ * EVERY REAPED SUPERVISOR SAID OUT LOUD, and the one that matters returned.
+ *
+ * Both halves in one call because they answer one question at one instant, and
+ * because `runEpicBeat` is already 19 cyclomatic before this card touches it --
+ * a loop and a branch inlined there would be three more, paid by a function that
+ * cannot afford them.
+ *
+ * THE SPLIT BETWEEN THE TWO OUTPUTS is the whole design. The broker LOG gets
+ * every corpse, because an ex-overseer that died three generations ago is a fact
+ * about the fleet somebody debugging wants. The BATON gets only the one holding
+ * the lease, because the baton is the record of THIS RUN's generations and
+ * because the lane it comes from is re-derived from a registry that never forgets
+ * -- writing all of them would append the same entries every 45 seconds forever.
+ */
+export async function reapOverseers(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  holder: EpicLease | null,
+  baton: readonly EpicLogEntry[],
+): Promise<AbandonedOverseer | null> {
+  for (const dead of group.abandonedOverseers) {
+    deps.log(
+      `${tag(group.epicId, gen)} overseer ${dead.convId.slice(0, 8)} (gen ${dead.gen}) REAPED: status ` +
+        `${dead.status} but no socket and silent for ${Math.round(dead.silentForMs / 1000)}s`,
+    )
+  }
+  const lost = lostOverseer(group, holder)
+  if (lost) await noteLostOverseer(deps, group, gen, lost, baton)
+  return lost
+}
+
+/**
+ * Write an `overseer-lost` entry for a supervisor the engine has just reaped.
+ *
+ * THE POINT OF THE ENTRY, which is the whole reason the card exists: a run whose
+ * overseer's agent host died without recording an end used to write `overseer
+ * alive at gen N; holding the beat` to the BROKER LOG every 45 seconds, forever,
+ * and nothing at all to the baton. The baton is the only thing a fresh overseer
+ * generation reads about the past, so from inside the run the death was
+ * invisible: generation N+1 looked exactly like a generation that followed a
+ * finished turn. This is what makes those two tellable apart.
+ *
+ * AT MOST ONCE PER DEAD HOLDER, and it is checked against the baton for the same
+ * reason `unacknowledgedFailedLegs` is: the lane it comes from is re-derived from
+ * a registry that never forgets a conversation, so an unguarded write would
+ * append the same entry every tick. The tail is a sufficient window here in a way
+ * it is not for a card settle -- the wake this accompanies moves the lease and
+ * makes the fact unaskable on the next beat, so the only case that can repeat is
+ * a lease the CAS keeps refusing, which cannot put 20 entries between two
+ * attempts.
+ *
+ * Machine-authored and terse, same as `acknowledge` and `noteFailedLaunches`, and
+ * it quotes the EVIDENCE rather than the verdict: a human who does not believe
+ * the engine can check every number in it against the conversation registry.
+ */
+async function noteLostOverseer(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  dead: AbandonedOverseer,
+  baton: readonly EpicLogEntry[],
+): Promise<void> {
+  if (baton.some(e => e.kind === 'overseer-lost' && e.convId === dead.convId)) return
+  const silentMin = Math.round(dead.silentForMs / 60_000)
+  const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
+    kind: 'overseer-lost',
+    convId: dead.convId,
+    body:
+      `The OVERSEER of generation ${dead.gen} (conversation \`${dead.convId}\`) was REAPED: the conversation ` +
+      `registry still reported it as \`${dead.status}\`, but it has held no agent-host connection and produced ` +
+      `nothing for ${silentMin} minute(s) (last sign of life ${new Date(dead.lastActivity).toISOString()}). ` +
+      'Its end was never recorded, so the engine had been holding every beat for it. A replacement generation ' +
+      'is being woken. THIS GENERATION FOLLOWS A DEATH, NOT A FINISHED TURN -- whatever that overseer was ' +
+      'part-way through (a merge, a card edit, an answer to a question) may be half-done, so trust the board ' +
+      'and git over anything the baton implies was completed.',
+  })
+  if (!res.ok) deps.log(`${tag(group.epicId, gen)} overseer-lost append FAILED for ${dead.convId}: ${res.error}`)
 }
 
 function spawnCtx(group: EpicGroup, gen: number): EpicSpawnCtx {
@@ -232,7 +315,7 @@ async function wakeOverseer(
       run: { ...run, gen },
       plan: ctx.plan,
       batonTail: ctx.batonTail,
-      wake: action.reason as never,
+      wake: action.reason,
       settled: ctx.settled.map(c => `${c} settled`),
     }),
     'overseer',

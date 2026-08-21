@@ -92,6 +92,66 @@ describe('planBeat', () => {
     expect(b.note).toContain('overseer alive')
   })
 
+  /**
+   * THE REPLACEMENT GENERATION. `overseerLost` is what the fold hands the beat
+   * once it has stopped believing a supervisor whose end was never recorded --
+   * see `epic-sweep.ts` `lostOverseer`.
+   */
+  describe('a reaped overseer wakes a replacement, and the generation says so', () => {
+    test('the beat after the reap wakes, rather than dispatching under a corpse', () => {
+      const b = beat({ overseerLost: true }, { dispatch: [card('t1')] })
+      expect(kinds(b)).toEqual(['wake-overseer'])
+      expect(b.actions[0]).toMatchObject({ expectGen: 3, reason: 'overseer-lost' })
+    })
+
+    /**
+     * THE WHOLE POINT OF A SEPARATE REASON. Both branches wake exactly one
+     * overseer with the same settled list in its prompt, so the only thing the
+     * ordering decides is which fact the generation is NAMED after -- and a
+     * generation that replaced a corpse is not the same event as one that
+     * followed a finished turn.
+     */
+    test('and outranks a settle, which would otherwise name the generation `card-settled`', () => {
+      const b = beat({ overseerLost: true, unacknowledged: ['t1'] })
+      expect(b.actions[0]).toMatchObject({ reason: 'overseer-lost' })
+      expect(b.note).toContain('unacknowledged settle')
+    })
+
+    test('the note says REAPED, so the broker log is not another `overseer alive` line', () => {
+      expect(beat({ overseerLost: true }).note).toContain('REAPED')
+    })
+
+    /** A live overseer is still a live overseer: the reap concerns a DIFFERENT
+     *  conversation (an ex-holder), and dispatching under the live one is the
+     *  bug `guardBeat`'s hold exists to prevent. */
+    test('a live overseer still holds the beat even when some other seat was reaped', () => {
+      const b = beat({ overseerLost: true, overseerAlive: true }, { dispatch: [card('t1')] })
+      expect(b.actions).toEqual([])
+      expect(b.note).toContain('overseer alive')
+    })
+
+    /** A planner sits in the overseer seat, so it is reaped like any other -- but
+     *  what the run owes is a RESOLVED planning generation, decided from the
+     *  board fingerprint, not a second planner. */
+    test('a run still owed a planning generation resolves that first', () => {
+      const b = beat(
+        { overseerLost: true, boardFingerprint: 'fp' },
+        {},
+        { plan: true, planned: false, planBaseline: 'fp' },
+      )
+      expect(kinds(b)).toEqual(['plan-accept'])
+    })
+
+    test('the ceilings still park ahead of it -- a dead overseer is not a reason to keep spending', () => {
+      const b = beat({ overseerLost: true }, {}, { gen: 40, maxGens: 40 })
+      expect(kinds(b)).toEqual(['park'])
+    })
+
+    test('absent means no reap, which is every caller that never wired a reaper up', () => {
+      expect(beat({}, { dispatch: [card('t1')] }).actions.map(a => a.kind)).toEqual(['dispatch'])
+    })
+  })
+
   test('an unacknowledged settle outranks dispatching more work', () => {
     const b = beat({ unacknowledged: ['t1'] }, { dispatch: [card('t2')] })
     expect(kinds(b)).toEqual(['wake-overseer'])
