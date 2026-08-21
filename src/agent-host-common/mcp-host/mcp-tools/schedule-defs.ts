@@ -7,7 +7,45 @@
  * need benevolent trust), and every time is meaningless without its zone.
  */
 
+import { SCHEDULE_ACTIONS } from '../../../shared/scheduled-task'
+
 const ID = { id: { type: 'string', description: 'Schedule id (sch_...), from schedule_list' } } as const
+
+/**
+ * WHAT a schedule fires, and the payload each kind needs.
+ *
+ * Shared by create and update so the two cannot drift: a field the engine reads
+ * but only one tool can set is a field an agent can write and never fix.
+ */
+const ACTION = {
+  action: {
+    type: 'string',
+    enum: [...SCHEDULE_ACTIONS],
+    description:
+      'WHAT fires. "spawn" (default) launches a conversation from `prompt`. "board-sweep" runs the morning ' +
+      'report\'s board op and launches nothing. "epic-start" ARMS an epic run (`epic_id`) and launches nothing -- ' +
+      'the epic engine dispatches from there. Only "spawn" needs a prompt; the other two refuse to invent one.',
+  },
+  epic_id: {
+    type: 'string',
+    description: 'epic-start: the epic CARD id (file name without .md) to arm. Required for that action.',
+  },
+  when: {
+    type: 'string',
+    description:
+      'epic-start: the DISPATCH GATE of the armed run -- "now", "window", "queue", an ISO instant with an offset, ' +
+      'or a comma-separated composition. This is NOT when the schedule fires (that is `cron`/`runAt`): the ' +
+      'schedule decides when the run is ARMED, `when` decides when the armed run may start dispatching.',
+  },
+  target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'epic-start: delivery rung.' },
+  concurrency: { type: 'number', description: 'epic-start: max implementers in flight (epic default 3).' },
+  max_gens: { type: 'number', description: 'epic-start: overseer generation ceiling (epic default 40).' },
+  max_usd: { type: 'number', description: 'epic-start: USD ceiling for the whole run (epic default 100).' },
+  max_wall_clock_minutes: {
+    type: 'number',
+    description: 'epic-start: unattended wall-clock ceiling in minutes (epic default 480).',
+  },
+} as const
 
 const WHEN_NOTE =
   'WHEN: pass EITHER `cron` (repeating, 5 fields, Vixie syntax) OR `runAt` (one-shot, epoch ms) -- never both, never neither. ' +
@@ -42,15 +80,24 @@ export const SCHEDULE_TOOL_SCHEMAS = {
 
   create: {
     description:
-      'Arm a new SCHEDULE: a prompt that spawns a conversation on its own clock, with nobody at the keyboard. ' +
+      'Arm a new SCHEDULE: work that fires on its own clock, with nobody at the keyboard. ' +
       'Requires BENEVOLENT trust -- the human approval dialog that vets an ordinary spawn cannot help at 03:00, so the vetting is this call. ' +
       `The schedule runs as a real USER (see \`owner\`), whose spawn permission is re-checked at every fire. ${WHEN_NOTE} ` +
+      'WHAT it fires is `action`: a spawn from `prompt` (the default), the morning board sweep, or an EPIC ARM ' +
+      '(`action=epic-start` + `epic_id`) -- which is how "start the migration epic at 02:00 on Saturday" happens ' +
+      'without a human pressing RUN. `prompt` is required for a spawn and refused for the other two. ' +
       'WHERE defaults to your own project and its root directory (any worktree path is folded back to the repo, since a worktree outlives its schedule by less than the schedule outlives it).',
     inputSchema: {
       type: 'object' as const,
       properties: {
         name: { type: 'string', description: 'Short name, shown in the panel' },
-        prompt: { type: 'string', description: 'What the run should DO. This is the entire payload -- be specific.' },
+        prompt: {
+          type: 'string',
+          description:
+            'spawn: what the run should DO. This is the entire payload -- be specific. Required for action=spawn ' +
+            '(the default) and meaningless for every other action.',
+        },
+        ...ACTION,
         cron: {
           type: 'string',
           description: 'Repeating: 5-field cron, e.g. "0 9 * * 1-5". Mutually exclusive with runAt.',
@@ -79,7 +126,11 @@ export const SCHEDULE_TOOL_SCHEMAS = {
         maxRuns: { type: 'number', description: 'Disarm after N runs' },
         enabled: { type: 'boolean', description: 'Armed on creation (default true)' },
       },
-      required: ['name', 'prompt'],
+      // `prompt` is NOT required here any more: it is required for `spawn` alone,
+      // and the server says so per action (`checkAction`). A schema-level
+      // requirement would force a board sweep and an epic arm to invent a
+      // sentence neither of them ever reads.
+      required: ['name'],
     },
   },
 
@@ -98,6 +149,7 @@ export const SCHEDULE_TOOL_SCHEMAS = {
         },
         name: { type: 'string' },
         prompt: { type: 'string' },
+        ...ACTION,
         cron: { type: 'string', description: 'New 5-field cron' },
         runAt: { type: 'number', description: 'New one-shot instant (epoch ms, must be future)' },
         tz: { type: 'string', description: 'New IANA zone' },

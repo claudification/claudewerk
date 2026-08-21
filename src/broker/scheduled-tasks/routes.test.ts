@@ -227,6 +227,78 @@ describe('PATCH /api/scheduled-tasks/:id', () => {
   })
 })
 
+/**
+ * AN `epic-start` SCHEDULE, through the write path both callers share.
+ *
+ * The interesting rules are cross-field ones a plain object schema cannot say:
+ * an arm needs an epic and no prompt, a spawn needs a prompt and no epic, and
+ * editing one knob of an armed schedule must not require re-sending the epic id
+ * beside it -- the exact contract `epic_run action=start` already promises.
+ */
+describe('epic-start schedules', () => {
+  const EPIC = {
+    ...VALID,
+    prompt: undefined,
+    action: 'epic-start',
+    epic: { epicId: 'epic-the-wall', when: 'window,queue', maxUsd: 40 },
+  }
+
+  async function patch(id: string, body: unknown) {
+    return app.request(`/api/scheduled-tasks/${id}`, {
+      method: 'PATCH',
+      headers: { ...asUser(ADMIN), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  }
+
+  async function createEpic() {
+    const res = await create(EPIC)
+    expect(res.status).toBe(200)
+    return ((await res.json()) as { scheduledTask: { id: string } }).scheduledTask.id
+  }
+
+  it('stores the arm payload verbatim, with no prompt to invent', async () => {
+    const stored = store.scheduledTasks.get(await createEpic())
+    expect(stored?.action).toBe('epic-start')
+    expect(stored?.epic).toEqual({ epicId: 'epic-the-wall', when: 'window,queue', maxUsd: 40 })
+    expect(stored?.prompt).toBeUndefined()
+  })
+
+  it('refuses an arm that names no epic rather than arming nothing every Saturday', async () => {
+    const res = await create({ ...EPIC, epic: undefined })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { error: string }).error).toContain('epic is required')
+  })
+
+  it('refuses an epic block on a spawn -- that is somebody who forgot the action', async () => {
+    const res = await create({ ...VALID, epic: { epicId: 'epic-the-wall' } })
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { error: string }).error).toContain('epic-start')
+  })
+
+  it('raising one ceiling keeps every other knob, the epic id included', async () => {
+    const id = await createEpic()
+    expect((await patch(id, { epic: { maxUsd: 200 } })).status).toBe(200)
+
+    expect(store.scheduledTasks.get(id)?.epic).toEqual({
+      epicId: 'epic-the-wall',
+      when: 'window,queue',
+      maxUsd: 200,
+    })
+  })
+
+  it('turning it back into a spawn clears the epic block instead of deadlocking', async () => {
+    const id = await createEpic()
+    // Both halves in one patch: the action changes AND the prompt arrives. A
+    // merge that kept the stale epic block would refuse this forever.
+    expect((await patch(id, { action: 'spawn', prompt: 'do it by hand' })).status).toBe(200)
+
+    const stored = store.scheduledTasks.get(id)
+    expect(stored?.action).toBe('spawn')
+    expect(stored?.epic).toBeUndefined()
+  })
+})
+
 describe('DELETE /api/scheduled-tasks/:id', () => {
   it('removes the schedule', async () => {
     const res = await create()
