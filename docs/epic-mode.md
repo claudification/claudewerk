@@ -52,7 +52,7 @@ card and the diff, never the transcript.
    ┌───────────────────────────────────────────┐       │
    │  THE BEAT            planBeat()           │       │
    │  DAG order from depends_on . concurrency  │       │
-   │  ceiling . cadence gate . dry-gen park    │       │
+   │  ceiling . `when` gates . dry-gen park    │       │
    └───┬───────────────────────────────────────┘       │
        │ dispatchSpawn(permissionMode: dontAsk         │
        │               + deny-floor + THE MUTE)        │
@@ -240,15 +240,42 @@ run past any context horizon.
 
 ---
 
-## 7. Cadence is a mode, not an engine
+## 7. `when` is a mode, not an engine
 
-| `cadence` | Dispatch | Verdicts |
+| `when` | Dispatch | Verdicts |
 |---|---|---|
 | `now` | immediately, ignores the clock | always |
 | `window` | deferred to the project's nightshift window | always |
+| `queue` | deferred until no other epic in the project has work in flight, then EXCLUSIVE until this run goes dry | always |
 
-A verdict lands either way: judging is not night work, and a card stuck in
-`in-review` is the worst place for work to sit.
+A verdict lands whichever gate is in force: judging is not night work, a card
+stuck in `in-review` is the worst place for work to sit, and -- for `queue` --
+verdicts are what let the runner drain so the queued run can enter at all.
+
+**`when` is a LIST and ALL of its gates must pass on the same beat.**
+`when=window,queue` means "at night, and not while another epic is running".
+Every gate is a PER-BEAT PREDICATE rather than an arm-time choice, which is what
+makes them compose: `window` was always re-evaluated every beat, so `queue` is a
+value on that axis and not a mechanism beside it.
+
+The field is spelled `cadence` in `run.md` and on the wire, and `when` on the
+verb surface -- one axis, two names, deliberately: renaming the stored field
+would mean migrating every artifact on disk and would break the broker/sentinel
+skew rule (they deploy separately). The codec is `src/shared/epic-when.ts`.
+
+### `queue` -- a deliberate refusal to share
+
+A queued run waits until nothing else in the project has a live seat, then holds
+the runner exclusively: every OTHER epic stops dispatching (they keep verifying)
+until the queued run goes dry, which parks it, which releases the hold. It is
+the right shape for an epic that rewrites something everything else touches.
+
+Holding is `startedAt` -- already defined as "the first beat the run was
+PERMITTED to dispatch" -- so it needs no state of its own, and arming clears it.
+
+The starvation risk is reported rather than left silent: position, what it is
+behind, how long it has waited, on the beat note every tick, in `inspect`, and
+on the wall's run rail. Past 30 minutes the line says `STARVING`.
 
 ---
 
@@ -367,10 +394,13 @@ sentinel is down. Neither is covered by the standing web-deploy licence.
 
 ```
 epic_run(project="claude://...", epic_id="werk-epic", action="start",
-         cadence="now", concurrency=3)
+         when="now", concurrency=3)
 ```
 
 or the **RUN** button on any epic card in the EPICS view.
+
+`when` takes `now`, `window`, `queue`, or a comma-separated composition of them
+(§7). `cadence` is still accepted as its old name.
 
 ### The verbs
 
@@ -401,7 +431,7 @@ unless forced, and writes who broke it and why into the baton.
 nothing else -- which makes it the reconfigure verb as much as the arm verb, and
 raising a parked run's `max_usd` its most common call by far.
 
-So it answers with the STATUS BLOCK ALONE: run state, cadence, target,
+So it answers with the STATUS BLOCK ALONE: run state, `when`, target,
 concurrency, the three caps and the lease, plus a line saying where the digest
 went. Roughly what `list` costs. It used to return the whole plan-of-record
 digest on every call, ~1500 tokens of context the caller usually wrote itself
