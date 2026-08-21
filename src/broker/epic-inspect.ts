@@ -13,10 +13,19 @@
  */
 
 import { planEpic } from '../shared/epic-ready'
-import type { Conversation, EpicBatonQuery, EpicInspectResult, EpicRunListEntry } from '../shared/protocol'
+import { gatedBy } from '../shared/epic-when'
+import type {
+  Conversation,
+  EpicBatonQuery,
+  EpicInspectResult,
+  EpicQueueReading,
+  EpicRunListEntry,
+  EpicRunSnapshot,
+} from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { fetchBoardCards, fetchEpicRun } from './epic-broker-rpc'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
+import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
 import { isArmed, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
@@ -55,6 +64,7 @@ export async function inspectEpic(
   const view = await fetchEpicRun(deps, project, epicId, opts.baton)
   const convs = deps.getAllConversations()
   const group = groupFor(convs, deps, project, epicId)
+  const queue = await inspectQueue(deps, project, epicId, convs, view.run)
   const cards = await fetchBoardCards(deps, project)
   const plan = planEpic({
     cards,
@@ -86,8 +96,58 @@ export async function inspectEpic(
     }),
     beats: recentBeats(project, epicId, opts.beats ?? 10),
     baton: view.baton,
+    ...(queue ? { queue } : {}),
     ...(view.error ? { error: view.error } : {}),
   }
+}
+
+/**
+ * THE QUEUE AXIS, FOR AN INSPECT -- the one answer this read cannot get from the
+ * epic it was asked about.
+ *
+ * "Queued, position 2 of 3, behind `epic-morning-report`" needs every OTHER run
+ * in the project, so this is the only place an inspect reads outside its own
+ * epic. It therefore does so ONLY FOR A QUEUED RUN: an inspect is fetched per
+ * visible row on the wall, and paying N-1 sentinel reads on every row of every
+ * refresh to tell an ordinary epic it is not queued would make the pane's most
+ * expensive read more expensive for everyone, to say nothing.
+ *
+ * The other direction -- an ordinary epic that a queued one is HOLDING -- is
+ * reported by the beat note it already logs and by the run rail, whose feed reads
+ * every run in the project anyway (`epic-active.ts`). It is not lost, it is just
+ * not worth an inspect's round trips.
+ */
+async function inspectQueue(
+  deps: SweepDeps,
+  project: string,
+  epicId: string,
+  convs: readonly Conversation[],
+  run: EpicRunSnapshot | null,
+): Promise<EpicQueueReading | undefined> {
+  if (!gatedBy(run?.cadence, 'queue')) return undefined
+
+  const groups = groupEpicConversations(convs, deps.isLive)
+  const peers = new Map<string, EpicGroup>()
+  for (const [id, group] of groups) if (group.project === project && id !== epicId) peers.set(id, group)
+  for (const armed of listArmedEpics()) {
+    if (armed.project === project && armed.epicId !== epicId && !peers.has(armed.epicId)) {
+      peers.set(armed.epicId, emptyGroup(armed.epicId, project))
+    }
+  }
+
+  const others = [...peers.values()]
+  const runs = await Promise.all(
+    others.map(peer =>
+      fetchEpicRun(deps, project, peer.epicId, { limit: 1 })
+        .then(v => v.run ?? null)
+        .catch(() => null),
+    ),
+  )
+  const scopes = [
+    toQueueScope(groups.get(epicId) ?? emptyGroup(epicId, project), run),
+    ...others.map((peer, i) => toQueueScope(peer, runs[i] ?? null)),
+  ]
+  return toQueueReading(planProjectQueues(scopes, deps.now()).verdict(project, epicId))
 }
 
 /**

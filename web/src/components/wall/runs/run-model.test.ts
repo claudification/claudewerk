@@ -193,7 +193,7 @@ describe('runCaps', () => {
   const RUN: EpicRunSnapshot = {
     epicId: 'epic-the-wall',
     project: 'claude:///Users/j/remote-claude',
-    cadence: 'now',
+    cadence: ['now'],
     status: 'running',
     gen: 3,
     target: 'merged',

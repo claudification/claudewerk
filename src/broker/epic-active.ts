@@ -22,9 +22,10 @@
  */
 
 import { beatStale, isVitallyLive, STALE_BEAT_MS } from '../shared/epic-vitality'
-import type { EpicActivityEntry } from '../shared/protocol'
+import type { EpicActivityEntry, EpicRunSnapshot } from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { epicIo } from './epic-io'
+import { planProjectQueues, type QueueVerdict, toQueueReading, toQueueScope } from './epic-queue'
 import { listArmedEpics } from './epic-registry'
 import { type EpicGroup, epicsToWatch } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
@@ -44,24 +45,65 @@ function lastBeat(project: string, epicId: string): string | null {
   return beats.length > 0 ? (beats[beats.length - 1]?.at ?? null) : null
 }
 
-async function toEntry(deps: SweepDeps, group: EpicGroup, nowMs: number): Promise<EpicActivityEntry> {
-  // `limit: 1` and not 0: the sentinel's `get` wants a query, and one entry is
-  // the cheapest honest answer. The baton itself is dropped -- the window's
-  // inspect fetches it properly.
-  const view = await epicIo().fetchEpicRun(deps, group.project, group.epicId, { limit: 1 })
+/**
+ * One run read, and whether reading it FAILED -- two different facts.
+ *
+ * A run that came back `null` because the epic has no artifact is a normal row;
+ * a run nobody could read is a degraded one, and the row has to say so. Folding
+ * them together would let a sentinel outage render as a project full of healthy
+ * runs that simply have not started.
+ */
+interface RunRead {
+  run: EpicRunSnapshot | null
+  failed: boolean
+}
+
+const FAILED_READ: RunRead = { run: null, failed: true }
+
+/**
+ * `limit: 1` and not 0: the sentinel's `get` wants a query, and one entry is the
+ * cheapest honest answer. The baton itself is dropped -- the window's inspect
+ * fetches it properly.
+ *
+ * The try/catch wraps the CALL, not just the promise, because a stubbed or
+ * broken `fetchEpicRun` can throw synchronously -- and a `.catch()` chained onto
+ * a call that never returned a promise catches nothing.
+ */
+async function readRun(deps: SweepDeps, group: EpicGroup): Promise<RunRead> {
+  try {
+    const view = await epicIo().fetchEpicRun(deps, group.project, group.epicId, { limit: 1 })
+    return { run: view.run ?? null, failed: false }
+  } catch {
+    return FAILED_READ
+  }
+}
+
+/**
+ * One row, from reads the caller has already made.
+ *
+ * SYNCHRONOUS now, and that is the point: the queue verdict is a fact about the
+ * whole project, so the run reads have to happen before ANY row is built. A row
+ * that fetched its own run could only ever be told about itself.
+ */
+function toEntry(group: EpicGroup, read: RunRead, queue: QueueVerdict, nowMs: number): EpicActivityEntry {
   const at = lastBeat(group.project, group.epicId)
+  const reading = toQueueReading(queue)
+  const run = read.run
   return {
     epicId: group.epicId,
     project: group.project,
-    status: view.run?.status ?? null,
-    gen: view.run?.gen ?? group.maxGenSeen,
-    maxGens: view.run?.maxGens ?? 0,
+    status: run?.status ?? null,
+    gen: run?.gen ?? group.maxGenSeen,
+    maxGens: run?.maxGens ?? 0,
     inFlight: group.inFlight.length,
     overseerAlive: group.overseerAlive,
-    armed: listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
-    lastBeatAt: at,
-    stale: beatStale(at, nowMs),
-    ...runStamps(view.run),
+    armed: read.failed ? false : listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
+    lastBeatAt: read.failed ? null : at,
+    // A run nobody could READ is stale by definition -- the alternative reads as
+    // "beating fine", which is the one thing a degraded row must never claim.
+    stale: read.failed || beatStale(at, nowMs),
+    ...runStamps(run),
+    ...(reading ? { queue: reading } : {}),
   }
 }
 
@@ -93,23 +135,17 @@ export function runStamps(run: { acknowledgedAt?: string; updated?: string } | n
  * erase every other run from the badge.
  */
 export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.now()): Promise<EpicActivityEntry[]> {
-  const rows = await Promise.all(
-    epicsToWatch(deps.getAllConversations(), deps.isLive).map(group =>
-      toEntry(deps, group, nowMs).catch(
-        (): EpicActivityEntry => ({
-          epicId: group.epicId,
-          project: group.project,
-          status: null,
-          gen: group.maxGenSeen,
-          maxGens: 0,
-          inFlight: group.inFlight.length,
-          overseerAlive: group.overseerAlive,
-          armed: false,
-          lastBeatAt: null,
-          stale: true,
-        }),
-      ),
-    ),
+  const groups = epicsToWatch(deps.getAllConversations(), deps.isLive)
+  const reads = await Promise.all(groups.map(group => readRun(deps, group)))
+  // THE SAME FOLD THE SWEEP ACTS ON. A feed that decided the queue differently
+  // from the engine would be a rail that lies about the engine by construction --
+  // the failure `epicsToWatch` is shared to prevent, one layer up.
+  const queues = planProjectQueues(
+    groups.map((group, i) => toQueueScope(group, reads[i]?.run ?? null)),
+    nowMs,
+  )
+  const rows = groups.map((group, i) =>
+    toEntry(group, reads[i] ?? FAILED_READ, queues.verdict(group.project, group.epicId), nowMs),
   )
   return rows.sort((a, b) => a.project.localeCompare(b.project) || a.epicId.localeCompare(b.epicId))
 }

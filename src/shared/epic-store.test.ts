@@ -100,7 +100,7 @@ describe('the run artifact', () => {
     startEpicRun(root, { epicId: 'e1', project: 'claude://s/p' }, T0)
     const run = readEpicRun(root, 'e1')
     expect(run?.status).toBe('armed')
-    expect(run?.cadence).toBe('now')
+    expect(run?.cadence).toEqual(['now'])
     expect(run?.target).toBe('merged')
     expect(run?.concurrency).toBe(3)
     expect(run?.gen).toBe(0)
@@ -108,9 +108,32 @@ describe('the run artifact', () => {
 
   test('cadence is a MODE -- the same engine takes either value', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p', cadence: 'window' }, T0)
-    expect(readEpicRun(root, 'e1')?.cadence).toBe('window')
+    expect(readEpicRun(root, 'e1')?.cadence).toEqual(['window'])
     startEpicRun(root, { epicId: 'e1', project: 'p', cadence: 'now' }, T0 + 1)
-    expect(readEpicRun(root, 'e1')?.cadence).toBe('now')
+    expect(readEpicRun(root, 'e1')?.cadence).toEqual(['now'])
+  })
+
+  /**
+   * THE `when` AXIS ON DISK. A run armed before the field could hold more than
+   * one gate says `cadence: window` as a bare scalar, and a parse that lost it
+   * would dispatch a night run at noon -- so the scalar spelling is pinned here
+   * as an INPUT, not just as something `serializeWhen` happens to emit.
+   */
+  test('the gate list round-trips through frontmatter, scalar or list', () => {
+    startEpicRun(root, { epicId: 'e1', project: 'p', cadence: ['window', 'queue'] }, T0)
+    expect(readEpicRun(root, 'e1')?.cadence).toEqual(['window', 'queue'])
+    expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).toContain('cadence: [window, queue]')
+
+    startEpicRun(root, { epicId: 'e2', project: 'p', cadence: 'queue' }, T0)
+    expect(readFileSync(epicRunFile(root, 'e2'), 'utf8')).toContain('cadence: queue')
+  })
+
+  test('an artifact from before the axis existed keeps its gate, not the default', () => {
+    startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+    const file = epicRunFile(root, 'e1')
+    // Exactly what the five run directories on disk say today.
+    writeFileSync(file, readFileSync(file, 'utf8').replace('cadence: now', 'cadence: window'), 'utf8')
+    expect(readEpicRun(root, 'e1')?.cadence).toEqual(['window'])
   })
 
   test('re-arming RESUMES: the generation counter is never reset', () => {
@@ -227,6 +250,6 @@ describe('the run artifact', () => {
     patchEpicRun(root, 'e1', { status: 'exploded' as never, cadence: 'whenever' as never }, T0 + 1)
     const run = readEpicRun(root, 'e1')
     expect(run?.status).toBe('armed')
-    expect(run?.cadence).toBe('now')
+    expect(run?.cadence).toEqual(['now'])
   })
 })

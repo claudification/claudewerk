@@ -26,7 +26,7 @@ import {
   scannerEnabledForProject,
   stampScannerRun,
 } from './project-settings'
-import { epicScanner, epicsToBeat } from './scanners/epic-scanner'
+import { epicScanner, epicsToBeat, planBeatContexts } from './scanners/epic-scanner'
 import { runScan } from './scanners/scanner'
 import {
   markEngineBoot as markBoot,
@@ -337,7 +337,8 @@ export async function beatOneEpic(
   }
   sweeping = true
   try {
-    const group = epicsToBeat(deps).find(g => g.epicId === epicId && g.project === project) ?? {
+    const watched = epicsToBeat(deps)
+    const group = watched.find(g => g.epicId === epicId && g.project === project) ?? {
       epicId,
       project,
       inFlight: [],
@@ -350,7 +351,18 @@ export async function beatOneEpic(
       convIds: [],
       maxGenSeen: 0,
     }
-    const outcome = await runEpicBeat(deps, group)
+    // THE SAME QUEUE THE SWEEP WOULD SEE, computed over this epic's PROJECT
+    // PEERS. A forced beat changes WHEN, never WHETHER -- so it honours the
+    // queue gate exactly as it honours the window one. Beating a queued epic by
+    // hand while another holds the runner would be the back door the gate exists
+    // to close, and the beat says which epic is holding rather than going quiet.
+    const peers = watched.filter(g => g.project === project)
+    const plan = await planBeatContexts(deps, peers.includes(group) ? peers : [...peers, group])
+    // An unreadable run is reported as the failure it is, rather than beaten
+    // against a view nobody could fetch.
+    const unreadable = plan.failure(group)
+    if (unreadable) return { ok: false, error: unreadable }
+    const outcome = await runEpicBeat(deps, group, plan.context(group))
     // BEAT NOW exists because a human is watching and does not want to wait 45s
     // for the tick. Making them then wait 45s to SEE what it did would give back
     // exactly what the verb was for.

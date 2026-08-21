@@ -25,15 +25,19 @@ const DESCRIPTION = [
   'over every finished card, and wakes a single OVERSEER between beats -- the only seat that may ask a human.',
   '',
   'DRIVE',
-  'action=start        arm (or resume) the run. `cadence` "now" ignores the clock; "window" defers dispatch to',
-  '                    the project night window. `concurrency` defaults to 3 -- that is a REVIEW ceiling, not a',
-  '                    machine one; raising it means choosing to stop reviewing per-change.',
+  'action=start        arm (or resume) the run. `when` is the DISPATCH GATE, re-evaluated every beat: "now"',
+  '                    ignores the clock, "window" defers to the project night window, "queue" waits until no',
+  '                    other epic in this project has work in flight and then holds the runner EXCLUSIVELY until',
+  '                    this run goes dry (everything else keeps verifying, but stops dispatching). Comma-separate',
+  '                    to compose -- `when=window,queue` means both must pass. `concurrency` defaults to 3 -- that',
+  '                    is a REVIEW ceiling, not a machine one; raising it means choosing to stop reviewing',
+  '                    per-change.',
   '                    THREE HANDBRAKES, none of them infinity: `max_gens` (40) bounds how often the overseer',
   '                    THINKS, `max_usd` (100) bounds what the whole run SPENDS, `max_wall_clock_minutes` (480)',
   '                    bounds how long it runs unattended. Whichever trips first PARKS the run and says so in',
   '                    the baton. A parked run resumes by starting it again with the ceiling raised.',
   '                    CHEAP BY DESIGN: it merges rather than clobbers, so sending one knob changes one knob, and',
-  '                    it answers with the STATUS BLOCK ONLY (state, cadence, target, concurrency, caps, lease).',
+  '                    it answers with the STATUS BLOCK ONLY (state, when, target, concurrency, caps, lease).',
   '                    Raising a ceiling therefore costs about what `list` costs. Use get for the digest.',
   'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
   '                    generation counter.',
@@ -99,7 +103,10 @@ export function toBody(p: Record<string, unknown>): Record<string, unknown> | st
   const start =
     action === 'start'
       ? {
-          cadence: p.cadence,
+          // `when` IS `cadence`, widened -- one axis, two names, and the storage
+          // one still answers so a caller (or a test) written before the rename
+          // keeps working. `when` wins when both are sent.
+          cadence: p.when ?? p.cadence,
           target: p.target,
           concurrency: p.concurrency,
           maxGens: p.max_gens,
@@ -155,7 +162,18 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
             description: 'The epic CARD id -- its file name without .md. Required for everything except list.',
           },
           action: { type: 'string', enum: [...ACTIONS], description: 'What to do.' },
-          cadence: { type: 'string', enum: ['now', 'window'], description: 'start: when ready cards may dispatch.' },
+          when: {
+            type: 'string',
+            description:
+              'start: the gate(s) a ready card must pass before it dispatches -- "now" (no gate), "window" (the ' +
+              "project's night window), \"queue\" (wait until no other epic in this project is running, then hold " +
+              'the runner exclusively until this run goes dry). Comma-separate to compose them: "window,queue" ' +
+              'means ALL of them must pass on the same beat. Evaluated every beat, not once at arm time.',
+          },
+          cadence: {
+            type: 'string',
+            description: 'start: the old name for `when`. Accepted; prefer `when`, which is the same field.',
+          },
           target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'start: delivery rung.' },
           concurrency: { type: 'number', description: 'start: max implementers in flight (default 3).' },
           max_gens: { type: 'number', description: 'start: overseer generation ceiling (default 40).' },

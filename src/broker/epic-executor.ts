@@ -26,6 +26,7 @@
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { planEpic } from '../shared/epic-ready'
+import { gatedBy } from '../shared/epic-when'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
@@ -37,12 +38,32 @@ import {
   renameAwareAcks,
   renameAwareCounts,
 } from './epic-card-rename'
+import type { EpicRunView } from './epic-broker-rpc'
 import { epicIo, tag } from './epic-io'
 import { recordFinalPromises, recordSettledPromises } from './epic-promise'
+import type { QueueVerdict } from './epic-queue'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
 import type { BeatDeps, BeatOutcome } from './epic-types'
 
 export type { BeatDeps, BeatOutcome } from './epic-types'
+
+/**
+ * WHAT THE CALLER ALREADY KNOWS, so the beat does not ask again.
+ *
+ * Both fields exist for the same reason: the queue gate is a question about the
+ * WHOLE project (`epic-queue.ts`), so somebody above one epic's beat has to have
+ * read every run in the project before any of them beats. That reader is the
+ * scanner, and handing its reads down here is what keeps the round-trip count
+ * exactly where it was -- one `get` per epic per tick, not two.
+ *
+ * BOTH OPTIONAL, and absent means today's behaviour: fetch my own run, no queue
+ * gate. Every test that drives one beat by hand keeps working unchanged, and a
+ * future caller that forgets the pre-pass under-gates rather than mis-gates.
+ */
+export interface BeatContext {
+  view?: EpicRunView
+  queue?: QueueVerdict
+}
 
 /**
  * Every exit from a beat goes through here: log the line, ring the beat log,
@@ -86,9 +107,9 @@ async function applyBeatPatch(deps: BeatDeps, group: EpicGroup, gen: number, pat
  * Run ONE beat for one epic. Returns what it did, so the sweep can log a single
  * line per epic per tick rather than a scatter of unrelated messages.
  */
-export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<BeatOutcome> {
+export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatContext = {}): Promise<BeatOutcome> {
   const io = epicIo()
-  const view = await io.fetchEpicRun(deps, seats.project, seats.epicId)
+  const view = ctx.view ?? (await io.fetchEpicRun(deps, seats.project, seats.epicId))
   if (!view.run) {
     return finish(deps, seats, 0, {
       epicId: seats.epicId,
@@ -188,12 +209,17 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     dispatches: renameAwareCounts(view.dispatchCounts, renames),
   })
 
-  const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true
+  // ONE ROUND TRIP PER GATE THAT IS ACTUALLY CARRIED: a run whose `when` axis
+  // never mentions the window must not pay a sentinel call to be told it does
+  // not care. The queue gate costs nothing here -- the caller computed it across
+  // the whole project before any epic beat started.
+  const windowOpen = gatedBy(run.cadence, 'window') ? await deps.windowOpen(group.project) : true
   const beat: EpicBeat = planBeat({
     run,
     plan,
     inFlight: group.inFlight,
     overseerAlive: group.overseerAlive,
+    ...(ctx.queue ? { queue: ctx.queue } : {}),
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is
     // exactly what the overseer needs to be woken FOR. The baton write above is
     // what stops the NEXT sweep re-discovering the same settle forever.

@@ -15,7 +15,7 @@ const at = (minutes: number) => T0 + minutes * 60_000
 const RUN: EpicRunSnapshot = {
   epicId: 'e1',
   project: 'claude://s/p',
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 3,
   target: 'merged',
@@ -129,23 +129,23 @@ describe('planBeat', () => {
 
 describe('cadence is a mode on one engine', () => {
   test('cadence=now ignores the clock', () => {
-    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: 'now' })
+    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['now'] })
     expect(kinds(b)).toEqual(['dispatch'])
   })
 
   test('cadence=window holds dispatch until the window opens', () => {
-    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: 'window' })
+    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['window'] })
     expect(kinds(b)).toEqual([])
     expect(b.note).toContain('window is closed')
   })
 
   test('a closed window still lets a verdict land -- judging is not night work', () => {
-    const b = beat({ windowOpen: false }, { dispatch: [card('t1')], verify: [card('t2')] }, { cadence: 'window' })
+    const b = beat({ windowOpen: false }, { dispatch: [card('t1')], verify: [card('t2')] }, { cadence: ['window'] })
     expect(kinds(b)).toEqual(['verify'])
   })
 
   test('cadence=window dispatches normally once the window is open', () => {
-    const b = beat({ windowOpen: true }, { dispatch: [card('t1')] }, { cadence: 'window' })
+    const b = beat({ windowOpen: true }, { dispatch: [card('t1')] }, { cadence: ['window'] })
     expect(kinds(b)).toEqual(['dispatch'])
   })
 })
@@ -382,7 +382,7 @@ describe('startedAt -- the wall clock starts when the run can work', () => {
   })
 
   test('a window run whose window is shut does NOT start the clock', () => {
-    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: 'window' })
+    const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['window'] })
     expect(b.patch?.startedAt).toBeUndefined()
   })
 

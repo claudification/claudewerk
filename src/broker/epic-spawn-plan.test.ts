@@ -29,7 +29,7 @@ const CTX: EpicSpawnCtx = {
 const RUN: EpicRunSnapshot = {
   epicId: 'werk-epic',
   project: CTX.project,
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 4,
   target: 'merged',
