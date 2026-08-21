@@ -27,7 +27,10 @@ import type { HandlerContext, MessageData, MessageHandler } from '../handler-con
 import { CONTROL_PANEL_ONLY, registerHandlers, SENTINEL_ONLY } from '../message-router'
 import { subscribeProjectWatch, unsubscribeProjectWatch } from '../project-watch-registry'
 
-const BOARD_WRITE_OPS = new Set<ProjectBoardOp['op']>(['create', 'update', 'move', 'delete'])
+// `sweep` and `apply` are in here because both WRITE: `apply` mutates cards and
+// `sweep` lands the dated report. Gating them as reads would make the morning
+// report the one board mutation a viewer could perform.
+const BOARD_WRITE_OPS = new Set<ProjectBoardOp['op']>(['create', 'update', 'move', 'delete', 'sweep', 'apply'])
 const PROJECT_RPC_TIMEOUT_MS = 10_000
 
 /** Resolve a project URI to its host root + owning sentinel socket. */
@@ -109,6 +112,11 @@ const projectBoardRequest: MessageHandler = (ctx, data) => {
       patch: d.patch,
       fromStatus: d.fromStatus,
       toStatus: d.toStatus,
+      // Forwarded whole. This relay copies field by field, so an op whose
+      // payload is not listed here reaches the sentinel stripped -- which is how
+      // a surface ends up calling `apply` and being told its params are missing.
+      sweep: d.sweep,
+      apply: d.apply,
     }
     return op as unknown as Record<string, unknown>
   })

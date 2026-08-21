@@ -4581,6 +4581,10 @@ export interface ProjectBoardRequest {
   patch?: Partial<ProjectTaskInputWire>
   fromStatus?: ProjectTaskStatus
   toStatus?: ProjectTaskStatus
+  /** sweep / apply -- the morning report's two payloads. Both are WRITES; see
+   *  `BOARD_WRITE_OPS` in `handlers/project.ts`. */
+  sweep?: BoardSweepRequest
+  apply?: BoardApplyRequest
 }
 
 /** Dashboard -> Broker: read a project-relative file (markdown viewer). */

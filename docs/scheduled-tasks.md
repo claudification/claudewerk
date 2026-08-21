@@ -108,6 +108,40 @@ cron at all -- see the two kinds above.
 `describeWhen()` wraps it so a one-shot gets the same treatment ("Once, Thu 13
 Aug, 09:00 (Europe/Berlin)") and every surface renders one kind of sentence.
 
+## Two actions: spawn and board-sweep
+
+A schedule carries an `action`, and an absent one means `spawn` -- which is what
+every schedule written before the field existed meant.
+
+| Action | Fires | Records |
+|---|---|---|
+| `spawn` (default) | a conversation, via `dispatchSpawn` | `spawned` |
+| `board-sweep` | the morning report's board op, via the sentinel | `swept` |
+
+A `board-sweep` launches **no conversation**, so it records `swept` and not
+`spawned` -- a run row claiming a conversation nobody can open is the kind of
+confident-but-untrue history the morning report exists to stop. It also carries
+no `prompt`: its work is the op.
+
+It rides this engine rather than a timer of its own because cron parsing, the
+required IANA zone, missed-fire reconciliation, the 3-in-flight ceiling, the
+owner re-check and the run history are all rules about firing unattended work,
+and none of them is a rule about spawning. A second scheduler would have had to
+re-implement every one of them.
+
+**Off by default, per project.** A `board-sweep` fire is gated on the scanner
+opt-in (`scanners: { 'morning-report': true }`, `src/shared/scanner-opt-in.ts`),
+re-checked at **every fire** exactly like the owner's grants. An opted-out
+project records `skipped_disabled` -- deliberately not `error`, because five
+quiet mornings must not disarm a schedule that is correctly declining to run.
+A completed pass stamps `scannersLastRun['morning-report']`; a failed one does
+not, so "enabled, last ran never" stays visible.
+
+Where the work happens: `src/broker/scheduled-tasks/board-sweep-dispatch.ts`
+(liveness answer + opt-in) -> `src/sentinel/board-sweep-op.ts` (the fold, the
+dated report at `.rclaude/project/reports/<date>.md`) and
+`src/sentinel/board-sweep-apply.ts` (the mutations Execute asks for).
+
 ## What a schedule spawns
 
 The `spawn` field is the **same partial spawn snapshot a launch profile carries**,
@@ -175,10 +209,11 @@ Every firing writes a row, including the ones that launched nothing:
 | Outcome | Means |
 |---|---|
 | `spawned` | A conversation was launched |
+| `swept` | A `board-sweep` ran its op. No conversation -- see the two actions above |
 | `error` | Dispatch failed (or the owner lost permission) |
 | `skipped_overlap` | Previous run still alive, or the concurrency ceiling was hit |
 | `missed` | Should have fired during an outage; recorded, not run. Also how a one-shot records that it went stale |
-| `skipped_disabled` | Reserved |
+| `skipped_disabled` | The project has not opted this scanner in |
 
 That is deliberate: a schedule that quietly never runs must look different from
 one that runs fine. Retention is 200 runs per schedule / 90 days.
@@ -290,6 +325,9 @@ then disarms itself after five silent dispatch failures, weeks later.
 | Time display rules | `src/shared/format-when.ts` |
 | Record + validation | `src/shared/scheduled-task.ts` |
 | Fire decisions (pure) | `src/broker/scheduled-tasks/policy.ts` |
+| Board-sweep dispatch (opt-in + liveness) | `src/broker/scheduled-tasks/board-sweep-dispatch.ts` |
+| The sweep + the dated report | `src/sentinel/board-sweep-op.ts`, `board-sweep-report.ts` |
+| Executing ticked proposals | `src/sentinel/board-sweep-apply.ts` |
 | The tick | `src/broker/scheduled-tasks/engine.ts` |
 | Firing + run rows | `src/broker/scheduled-tasks/fire.ts` |
 | Outage reconciliation | `src/broker/scheduled-tasks/catch-up.ts` |

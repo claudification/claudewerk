@@ -106,7 +106,7 @@ export function cardPath(root: string, id: string, create = true): string {
  * there would be read back as a card with no frontmatter on the very next board
  * read. The directory does not exist until the first sweep writes one.
  */
-export const REPORTS_DIR = 'reports'
+const REPORTS_DIR = 'reports'
 
 /** `<root>/.rclaude/project/reports`, created on demand. */
 export function reportsDir(root: string, create = true): string {
