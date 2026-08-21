@@ -14,11 +14,13 @@ import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
-import { type EpicGroup, epicsToWatch, type IsLive, type ProducedOutput } from './epic-sweep'
+import type { IsLive, ProducedOutput } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
+import { epicScanner, epicsToBeat } from './scanners/epic-scanner'
+import { runScan } from './scanners/scanner'
 import {
   markEngineBoot as markBoot,
   RESTART_QUARANTINE_MS as QUARANTINE_MS,
@@ -144,13 +146,16 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
 
 let sweeping = false
 
-/** Every epic worth a beat this tick. The SAME set the activity feed reports --
- *  see `epicsToWatch`, which is shared precisely so the two cannot drift. */
-function epicsToBeat(deps: SweepDeps): EpicGroup[] {
-  return epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput)
-}
-
-/** One tick: a beat for every epic with conversations or an armed run. */
+/**
+ * One tick: a beat for every epic with conversations or an armed run.
+ *
+ * The PASS itself moved to `scanners/epic-scanner.ts` and runs through `runScan`,
+ * which is what makes every epic it looked at come back either acted-on or
+ * refused into a named bucket. What stayed here is everything the scanner
+ * contract deliberately does not own: the reentrancy guard, the restart
+ * quarantine, and the activity publish -- the cadence, in other words, which
+ * `beatOneEpic` shares and a scanner must not schedule for itself.
+ */
 export async function sweepEpics(deps: SweepDeps): Promise<void> {
   if (sweeping) {
     deps.log('[epic-sweep] previous tick still running; skipping')
@@ -166,13 +171,10 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
   }
   sweeping = true
   try {
-    for (const group of epicsToBeat(deps)) {
-      // One epic's failure must never stop the others: a project whose sentinel
-      // is down would otherwise freeze every other epic on the box.
-      await runEpicBeat(deps, group).catch(err => {
-        deps.log(`[epic-sweep] beat crashed for ${group.epicId}: ${err instanceof Error ? err.message : String(err)}`)
-      })
-    }
+    // `runScan` is self-catching, so the guard below is released either way --
+    // but the try/finally stays, because a guard that depends on a callee never
+    // throwing is a guard one refactor away from wedging the sweep forever.
+    await runScan(epicScanner, deps)
   } finally {
     sweeping = false
   }

@@ -89,7 +89,13 @@ describe('priority candidates', () => {
 describe('tag candidates', () => {
   test('SYSTEM TAGS lead, in registry order, ahead of anything the board has', () => {
     const rows = candidatesFor('tag', src(), '')
-    expect(rows.slice(0, 3).map(r => r.value)).toEqual(['needs-refine', 'epic', 'needs-overseer'])
+    expect(rows.slice(0, 5).map(r => r.value)).toEqual([
+      'needs-refine',
+      'nightshift',
+      'ready',
+      'epic',
+      'needs-overseer',
+    ])
   })
 
   test('a system tag explains what reads it; a board tag needs no gloss', () => {

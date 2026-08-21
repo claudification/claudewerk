@@ -31,13 +31,23 @@ export interface SystemTag {
 /**
  * The registry, in display order.
  *
- * `needs-refine` leads because it is the one a human applies BY HAND while
- * capturing; the other two are usually written by the engine or by the act of
- * creating an epic, so a picker offering them first would be offering the rarer
- * case.
+ * THE HAND-APPLIED ONES LEAD. `needs-refine`, `nightshift` and `ready` are what a
+ * human reaches for while capturing; `epic` and `needs-overseer` are usually
+ * written by the engine or by the act of creating an epic, so a picker offering
+ * them first would be offering the rarer case.
+ *
+ * `nightshift` and `ready` are two tags because they are read by two SCANNERS
+ * with two cadences -- "batch this into tonight's run" and "authorised for
+ * unattended work, whenever" are different authorisations, and Jonas asked for
+ * them as separate opt-in checkboxes. Neither is called `work-order`: that name
+ * collides with `order@1`, the ROLE artifact, and "which order does this
+ * work-order use?" is an unparseable sentence. Card = the work, tag = the
+ * routing, order = the seat.
  */
 export const SYSTEM_TAGS: readonly SystemTag[] = [
   { tag: 'needs-refine', detail: 'filed rough -- improve it later' },
+  { tag: 'nightshift', detail: 'batch this into the next night run' },
+  { tag: 'ready', detail: 'authorised for unattended work, whenever' },
   { tag: EPIC_TAG, detail: 'this card IS an epic' },
   { tag: 'needs-overseer', detail: 'a question for the overseer, not work' },
 ] as const
