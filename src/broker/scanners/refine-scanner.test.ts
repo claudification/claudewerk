@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { SYSTEM_TAGS } from '../../shared/board-system-tags'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import { EPIC_ROSTER_HEADER } from '../../shared/epic-roster'
+import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
 import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
@@ -155,6 +156,30 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
     expect(prompt).toContain(NEEDS_REFINE_TAG)
     expect(prompt).toContain('REMOVE')
+  })
+
+  /**
+   * THE SEAM, not the text. This scanner builds only the CONTEXT half -- which
+   * card, which file, the roster -- and the instruction half comes off the ORDER
+   * through `composeSeatPrompt`, the one function the scheduler's
+   * `buildSpawnRequest` also calls.
+   *
+   * The assertion is on the WHOLE prompt, deliberately, because that is the only
+   * shape that catches the failure this pins. Re-deriving the block from the
+   * `REFINER_INSTRUCTIONS` constant reads the same bytes TODAY -- so a
+   * `toContain` would pass either way -- but an order edited to carry a
+   * different block would then move the scheduler's seat and not this one, and
+   * this test fails the moment the two sources disagree.
+   */
+  test("the prompt is the scanner's own context composed with the ORDER's block", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('rough-card')] }))
+    const context = [
+      'REFINE the board card `rough-card`.',
+      '',
+      'Card file: /p/.rclaude/project/cards/rough-card.md',
+    ].join('\n')
+    expect(REFINER_ORDER.instructions).toBeTruthy()
+    expect(dispatched[0]?.request.prompt).toBe(composeSeatPrompt(REFINER_ORDER, context))
   })
 
   test("a seat is tagged with the RESERVED lane, never with the card's own epic", async () => {
@@ -430,6 +455,18 @@ describe('the roster of epics the seat may soft-link the card to', () => {
     expect(prompt).toContain('REFINE the board card `rough-card`')
     expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
     expect(prompt).toContain('REMOVE')
+  })
+
+  /** The roster is CONTEXT, so it rides in the half this scanner owns and lands
+   *  ahead of the order's block -- a seat reads its standing rules against a
+   *  target it already has. */
+  test("the roster sits in the context half, ahead of the order's block", async () => {
+    const cards = [card('rough-card'), card('epic-a', 'open', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    const instructions = REFINER_ORDER.instructions ?? ''
+    expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeGreaterThan(-1)
+    expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeLessThan(prompt.indexOf(instructions))
   })
 
   test('it says out loud that a wrong parent is worse than none', async () => {
