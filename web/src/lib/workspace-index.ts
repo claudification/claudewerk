@@ -76,8 +76,13 @@ export function buildWorkspaceIndex(order: ProjectOrder, label: (uri: string) =>
 export function useWorkspaceIndex(): WorkspaceIndex {
   const order = useConversationsStore(s => s.projectOrder)
   const projectSettings = useConversationsStore(s => s.projectSettings)
-  return useMemo(
-    () => buildWorkspaceIndex(order, uri => projectDisplayName(uri, projectSettings[projectIdentityKey(uri)]?.label)),
-    [order, projectSettings],
-  )
+  return useMemo(() => {
+    // Absent, not empty: several pane suites mock the conversations store with a
+    // hand-rolled partial state, and a fleet with no sidebar order is the same
+    // answer as a fleet with no workspaces -- nothing to scope by.
+    if (!order) return EMPTY_WORKSPACE_INDEX
+    return buildWorkspaceIndex(order, uri =>
+      projectDisplayName(uri, projectSettings?.[projectIdentityKey(uri)]?.label),
+    )
+  }, [order, projectSettings])
 }

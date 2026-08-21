@@ -17,7 +17,15 @@ import { applyWallFrame, resetWallFrames } from '@/hooks/wall-frame-store'
 import { useWallFilterStore } from '@/lib/wall/filter-store'
 import PlanUsagePane from '../panes/s2-plan-usage'
 
-vi.mock('@/hooks/use-conversations', () => ({ wsSend: vi.fn() }))
+// `useConversationsStore` is here for `useWallFilter`, not for S2: the shared
+// hook resolves the `^workspace` axis out of the sidebar's project order, and it
+// asks for that whether or not this pane declared the axis. A selector over an
+// empty state answers "no workspaces", which is the right answer for a pane
+// whose rows are per-account and have no project at all.
+vi.mock('@/hooks/use-conversations', () => ({
+  wsSend: vi.fn(),
+  useConversationsStore: (select: (state: unknown) => unknown) => select({}),
+}))
 
 const T0 = Date.parse('2026-08-19T12:00:00.000Z')
 

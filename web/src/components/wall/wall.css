@@ -127,6 +127,8 @@
 .wall-filter {
 	flex: 1 1 320px;
 	min-width: 180px;
+	/* The anchor for the suggestion dropdown below -- see `.wall-filter-suggest`. */
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 6px;
@@ -162,6 +164,42 @@
 }
 .wall-filter:focus-within .wall-filter-hint {
 	visibility: hidden;
+}
+
+/* The sigil autocomplete. Anchored to the box, dropping DOWNWARDS -- the wall's
+   header is at the TOP of the surface, so there is nothing above the box to
+   drop into (the compose-box sibling, `autocomplete-dropdown.tsx`, drops upward
+   for the mirror-image reason: it sits at the bottom of the transcript). */
+.wall-filter-suggest {
+	position: absolute;
+	top: calc(100% + 2px);
+	left: 0;
+	right: 0;
+	z-index: 30;
+	max-height: 240px;
+	overflow-y: auto;
+	background: var(--background);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	box-shadow: 0 6px 18px rgb(0 0 0 / 35%);
+}
+.wall-filter-suggest-row {
+	display: flex;
+	gap: 4px;
+	align-items: baseline;
+	padding: 3px 8px;
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: var(--foreground);
+}
+.wall-filter-suggest-row.is-on {
+	background: var(--surface-inset);
+	color: var(--primary);
+}
+.wall-filter-suggest-sigil {
+	color: var(--comment);
 }
 
 /* W1 time cursor. The track IS a timeline: past on the LEFT, LIVE at the RIGHT
