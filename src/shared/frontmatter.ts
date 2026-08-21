@@ -40,11 +40,29 @@ export interface Frontmatter {
   body: string
   /** Blocks preserved byte-for-byte; see `RawBlocks`. Empty for almost every file. */
   raw: RawBlocks
+  /**
+   * DID THE CONTENT ACTUALLY CARRY A BLOCK -- as opposed to parsing to nothing?
+   *
+   * `{ meta: {}, body: content }` is this parser's answer to BOTH "a plain
+   * markdown file with no frontmatter" and "a file whose frontmatter is
+   * truncated mid-block", and a caller that coerces every field through a
+   * fallback cannot tell those apart. `readEpicRun` could not: a `run.md` torn
+   * mid-write read back as `status: armed` with every counter at zero -- a
+   * valid-looking fresh run over a board whose real state had just been lost
+   * (`epic-artifact-writes-not-atomic`).
+   *
+   * So the fact is REPORTED rather than inferred, and the inference every caller
+   * would otherwise write by hand (`content.startsWith('---')`, or worse, a
+   * second copy of the regex) stays out of five modules. Every existing reader
+   * ignores it and behaves exactly as it did.
+   */
+  hasFrontmatter: boolean
 }
 
 /**
  * Split `---\n...\n---\n<body>` into parsed frontmatter + trimmed body.
- * Files with no frontmatter block return `{ meta: {}, body: content, raw: {} }`.
+ * Files with no frontmatter block return `{ meta: {}, body: content, raw: {} }`
+ * and `hasFrontmatter: false` -- see that field for why the flag exists.
  *
  * Values: bare scalars are kept as strings (callers coerce). `[a, b]` becomes
  * a string array. Quoted scalars are unwrapped. No nesting, no multi-line values
@@ -53,7 +71,7 @@ export interface Frontmatter {
  */
 export function parseFrontmatter(content: string): Frontmatter {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-  if (!match) return { meta: {}, body: content, raw: {} }
+  if (!match) return { meta: {}, body: content, raw: {}, hasFrontmatter: false }
 
   const meta: Record<string, unknown> = {}
   const raw: RawBlocks = {}
@@ -71,7 +89,7 @@ export function parseFrontmatter(content: string): Frontmatter {
     }
     meta[key] = value.startsWith('[') && value.endsWith(']') ? parseInlineArray(value) : unquote(value)
   }
-  return { meta, body: match[2].trim(), raw }
+  return { meta, body: match[2].trim(), raw, hasFrontmatter: true }
 }
 
 /** A value that opens an indented region: nothing at all (nested mapping or

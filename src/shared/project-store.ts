@@ -23,8 +23,9 @@
  * It has no wire, no broker, no conversation concepts.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { writeFileAtomic } from './atomic-write'
 import { canonicalizeCardPath, resolveInRoot } from './project-paths'
 
 export {
@@ -112,7 +113,10 @@ export interface WriteFileResult {
   error?: string
 }
 
-/** Write (create or overwrite) a project-relative file, jailed under root. */
+/** Write (create or overwrite) a project-relative file, jailed under root.
+ *  TMP-AND-RENAME (`atomic-write.ts`): a reader concurrent with this call sees
+ *  the old file or the new one, never a prefix of either. The staging sibling
+ *  lands in the same jailed directory, so the jail still holds. */
 export function writeProjectFile(root: string, relPath: string, content: string): WriteFileResult {
   let abs: string
   try {
@@ -122,7 +126,7 @@ export function writeProjectFile(root: string, relPath: string, content: string)
   }
   try {
     mkdirSync(dirname(abs), { recursive: true })
-    writeFileSync(abs, content, 'utf8')
+    writeFileAtomic(abs, content)
     return { ok: true, size: Buffer.byteLength(content) }
   } catch (err) {
     return { ok: false, error: (err as Error).message }
