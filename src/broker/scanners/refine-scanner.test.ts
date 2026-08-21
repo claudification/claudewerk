@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { SYSTEM_TAGS } from '../../shared/board-system-tags'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
+import { EPIC_ROSTER_HEADER } from '../../shared/epic-roster'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
 import { REFINER, REFINER_ORDER_ID } from '../../shared/refiner-order'
@@ -142,7 +143,7 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(deny).toContain('mcp__rclaude__project_set_status')
   })
 
-  /** The tag removal is step 6 of `REFINER_INSTRUCTIONS`, imported rather than
+  /** The tag removal is step 7 of `REFINER_INSTRUCTIONS`, imported rather than
    *  restated -- the drain is the whole point and a second copy of the prose is
    *  the drift this epic exists to end. */
   test('the prompt orders the tag removed, and names the card file', async () => {
@@ -367,5 +368,66 @@ describe('the accounting -- no rough card is ever dropped', () => {
     expect(report.crashed).toBe('sentinel unreachable')
     expect(report.scanner).toBe('refine')
     expect(log.join('\n')).toContain('[refine] scan crashed')
+  })
+})
+
+/**
+ * THE OPEN-EPIC ROSTER, the only board context a refiner seat ever gets.
+ *
+ * A refiner is handed ONE card. Without the roster it cannot set `epic:` on an
+ * orphan without going and reading the whole board itself -- which a Haiku seat
+ * on a $0.50 budget will not reliably do, and which nothing in its instructions
+ * told it to do.
+ */
+describe('the roster of epics the seat may soft-link the card to', () => {
+  test('an orphan card is told which epics are open', async () => {
+    const cards = [
+      card('rough-card'),
+      card('epic-scanner-fabric', 'open', { tags: ['epic'], title: 'The scanner fabric' }),
+    ]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    expect(prompt).toContain(EPIC_ROSTER_HEADER)
+    expect(prompt).toContain('- epic-scanner-fabric -- The scanner fabric')
+  })
+
+  test('a card that already has an epic gets no roster -- prompt weight that changes nothing', async () => {
+    const cards = [card('rough-card', 'open', { epic: 'epic-a' }), card('epic-a', 'open', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    expect(dispatched[0]?.request.prompt ?? '').not.toContain(EPIC_ROSTER_HEADER)
+  })
+
+  test('a board with no open epic emits no block, not a blank one', async () => {
+    const cards = [card('rough-card'), card('shipped', 'done', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    expect(prompt).not.toContain(EPIC_ROSTER_HEADER)
+    expect(prompt).not.toContain('\n\n\n')
+  })
+
+  test('the roster is bounded on a board carrying 60 epics', async () => {
+    const cards = [
+      card('rough-card'),
+      ...Array.from({ length: 60 }, (_, i) => card(`e${i}`, 'open', { tags: ['epic'] })),
+    ]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    expect(prompt.split('\n').filter(l => /^- e\d+ --/.test(l)).length).toBeLessThanOrEqual(40)
+    expect(prompt).toContain('more open epic(s) not listed here')
+  })
+
+  test('the card, its file and the instructions all survive the roster', async () => {
+    const cards = [card('rough-card'), card('epic-a', 'open', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    expect(prompt).toContain('REFINE the board card `rough-card`')
+    expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
+    expect(prompt).toContain('REMOVE')
+  })
+
+  test('it says out loud that a wrong parent is worse than none', async () => {
+    const cards = [card('rough-card'), card('epic-a', 'open', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    expect(dispatched[0]?.request.prompt ?? '').toContain('Not sure? Leave it unset')
   })
 })

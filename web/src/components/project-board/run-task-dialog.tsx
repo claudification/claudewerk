@@ -5,6 +5,7 @@
  * board and from TaskEditorOverlay; both hand it the card the editor was on.
  */
 
+import { openEpicRoster, wantsEpicRoster } from '@shared/epic-roster'
 import { buildSpawnDiagnostics } from '@shared/spawn-diagnostics'
 import { deriveConversationName } from '@shared/spawn-naming'
 import { composeSpawnPrompt } from '@shared/spawn-prompt'
@@ -16,7 +17,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { focusLaunchTargetAndClose, useLaunchProgress } from '@/hooks/use-launch-progress'
-import type { ProjectTask } from '@/hooks/use-project'
+import { type ProjectTask, useProjectTasksList } from '@/hooks/use-project'
 import { sendSpawnRequest } from '@/hooks/use-spawn'
 import { applySubagentCapEnv } from '@/lib/env-parse'
 import { useKeyLayer } from '@/lib/key-layers'
@@ -46,6 +47,8 @@ export function RunTaskDialog({
     const s = state.conversationsById[conversationId]
     return s ? projectPath(s.project) : ''
   })
+  const projectUri = useConversationsStore(state => state.conversationsById[conversationId]?.project ?? null)
+  const boardCards = useProjectTasksList(projectUri)
   const savedDefaults = useMemo(() => loadRunTaskDefaults(), [])
   const [model, setModel] = useState(savedDefaults.model)
   const [effort, setEffort] = useState<string>(savedDefaults.effort)
@@ -60,6 +63,17 @@ export function RunTaskDialog({
   const [timeout, setTimeout_] = useState(savedDefaults.timeout)
   const [mode, setMode] = useState<TaskMode>('work')
   const modeSpec = taskMode(mode)
+
+  /**
+   * The open-epic roster, and ONLY when this run can act on it: a refine of a
+   * card that has no `epic:` yet. A work run does not parent cards, and a card
+   * that already has a parent is not re-parented by a refiner -- in both cases
+   * the block is prompt weight that changes nothing.
+   */
+  const epicRoster = useMemo(
+    () => (wantsEpicRoster(mode === 'refine', [task]) ? openEpicRoster(boardCards) : ''),
+    [mode, task, boardCards],
+  )
 
   /** Switching mode re-picks the lifecycle switches it implies. See run-task-mode. */
   function switchMode(next: TaskMode) {
@@ -153,6 +167,7 @@ export function RunTaskDialog({
       autoCommit,
       worktreeMergeBack: useWorktree,
       mode,
+      epicRoster: epicRoster || undefined,
     })
 
     const spawnReq: SpawnRequest = {

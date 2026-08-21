@@ -16,13 +16,13 @@
  *
  * THE TAG IS THE QUEUE, AND DRAINING IT IS THE JOB. A refiner that improves a
  * card and leaves the tag on refines that card again on every tick, forever.
- * The removal is an imperative in `REFINER_INSTRUCTIONS` (step 6), which is why
+ * The removal is an imperative in `REFINER_INSTRUCTIONS` (step 7), which is why
  * this file does not restate it: `refiner-order.ts` is the one definition of
  * what a refiner is, `task-modes.ts` exists because two definitions of "refine"
  * had already diverged once, and a third copy here is exactly that drift.
  *
  * WHAT STOPS AN UNDRAINED TAG BILLING FOREVER is the `already-run` bucket below,
- * not the instruction. A refiner that died before step 6 leaves the card tagged
+ * not the instruction. A refiner that died before step 7 leaves the card tagged
  * and the seat settled, and from the next tick the card is refused rather than
  * re-dispatched -- so a killed refiner leaves a card tagged and undispatched,
  * never half-refined and never on a retry treadmill.
@@ -46,6 +46,7 @@
 import { cardRelPath } from '../../shared/card-path'
 import { epicBucket } from '../../shared/epic-cards'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
+import { openEpicRoster, wantsEpicRoster } from '../../shared/epic-roster'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
@@ -178,18 +179,29 @@ function refinerName(cardId: string, gen: number): string {
 }
 
 /**
- * The prompt: WHICH card, then the order's own instructions verbatim.
+ * The prompt: WHICH card, the open-epic roster when it can be used, then the
+ * order's own instructions verbatim.
  *
  * The instruction block is imported, never restated -- it is the half of the
  * seat that says what refining means, including the tag removal that drains the
  * queue. All this function adds is the pointer, which is the half `REFINER@1`
- * deliberately does not carry ("there is deliberately no dispatcher here").
+ * deliberately does not carry ("there is deliberately no dispatcher here"), and
+ * the roster, which is the only board context the seat gets.
+ *
+ * THE ROSTER IS SKIPPED FOR A CARD THAT ALREADY HAS AN EPIC. Step 6 of the
+ * instructions can only ever add a parent to a card that has none -- a refiner
+ * does not re-parent somebody's card -- so on a card carrying `epic:` the whole
+ * block is prompt weight that changes nothing, on the seat whose entire premise
+ * is being cheap. `openEpicRoster` returns `''` for a board with no open epic
+ * too, and an empty block is dropped rather than emitted as a blank line.
  */
-function buildRefinerPrompt(projectRoot: string, cardId: string): string {
+function buildRefinerPrompt(projectRoot: string, card: ProjectTaskMeta, cards: readonly ProjectTaskMeta[]): string {
+  const roster = wantsEpicRoster(true, [card]) ? openEpicRoster(cards) : ''
   return [
-    `REFINE the board card \`${cardId}\`.`,
+    `REFINE the board card \`${card.slug}\`.`,
     '',
-    `Card file: ${projectRoot}/${cardRelPath(cardId)}`,
+    `Card file: ${projectRoot}/${cardRelPath(card.slug)}`,
+    ...(roster ? ['', roster] : []),
     '',
     REFINER_INSTRUCTIONS,
   ].join('\n')
@@ -222,11 +234,11 @@ type SeatCompilation = { ok: true; request: SpawnRequest } | { ok: false; reason
  * own rules. Nobody is watching a refiner, so it gets the floor for the same
  * reason every scheduled fire does.
  */
-function compileSeat(deps: RefineDeps, card: ProjectTaskMeta): SeatCompilation {
+function compileSeat(deps: RefineDeps, card: ProjectTaskMeta, cards: readonly ProjectTaskMeta[]): SeatCompilation {
   const gen = attemptsFor(deps, card.slug)
   const base: SpawnRequest = {
     cwd: deps.project,
-    prompt: buildRefinerPrompt(deps.projectRoot, card.slug),
+    prompt: buildRefinerPrompt(deps.projectRoot, card, cards),
     headless: true,
     // Single-prompt worker: exit at end of turn rather than idling until the
     // watchdog reaps it. Same reasoning as every other unattended seat.
@@ -306,7 +318,7 @@ const REFUSAL_RULES: ReadonlyArray<{
   {
     // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
     // forever. A refiner that ran and finished leaves the tag on only if it
-    // failed to reach step 6 of its instructions -- and dispatching a second
+    // failed to reach step 7 of its instructions -- and dispatching a second
     // one, and a third, every tick, is the treadmill. The card stays tagged and
     // visible with a reason instead; re-tagging it (or fixing whatever stopped
     // the drain) re-authorises it, by a decision somebody made, never the clock.
@@ -348,12 +360,16 @@ function triageSelected(
  */
 function compileSeats(
   deps: RefineDeps,
-  cards: readonly ProjectTaskMeta[],
+  candidates: readonly ProjectTaskMeta[],
+  board: readonly ProjectTaskMeta[],
 ): { units: DispatchUnit[]; refused: Refusal<RefineBucket>[] } {
   const units: DispatchUnit[] = []
   const refused: Refusal<RefineBucket>[] = []
-  for (const card of cards) {
-    const seat = compileSeat(deps, card)
+  for (const card of candidates) {
+    // THE WHOLE BOARD, not just the tagged cohort: the epic roster the prompt
+    // carries is built from the same array this pass already holds, and the
+    // epics it names are almost never themselves tagged `needs-refine`.
+    const seat = compileSeat(deps, card, board)
     if (seat.ok) units.push({ id: card.slug, send: () => deps.dispatch(seat.request, card.slug) })
     else refused.push({ unit: card.slug, bucket: 'order-refused', detail: seat.reason })
   }
@@ -394,7 +410,7 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
     ),
   )
 
-  const compiled = compileSeats(deps, triaged.candidates.slice(0, slots))
+  const compiled = compileSeats(deps, triaged.candidates.slice(0, slots), cards)
   refused.push(...compiled.refused)
 
   const acted: string[] = []
