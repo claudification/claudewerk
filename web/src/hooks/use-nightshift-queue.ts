@@ -4,11 +4,11 @@
  * zero runs. Thin wrapper over the shared per-project resource.
  *
  * Wire:
- *   queue_list -> { ok, queue }   enqueue -> { ok, queued }   dequeue -> { ok, removed }
+ *   queue_list -> { ok, queue }   dequeue -> { ok, removed }
  *   nightshift_event { event:'queue_update' } -> re-fetch.
  */
 
-import type { NightshiftEnqueueInput, NightshiftQueueItem } from '@shared/nightshift-types'
+import type { NightshiftQueueItem } from '@shared/nightshift-types'
 import { createNightshiftResource } from './nightshift-resource'
 import { sendNightshiftRpc } from './nightshift-rpc'
 
@@ -29,19 +29,21 @@ export function useNightshiftQueue(projectUri: string | null): NightshiftQueueSt
   return { queue: data, loading, error, refetch }
 }
 
-/** Assign one task to a project's nightshift queue. Resolves after the queue refetches. */
-export async function enqueueNightshiftTask(
-  projectUri: string,
-  input: Omit<NightshiftEnqueueInput, 'project'>,
-): Promise<void> {
-  await sendNightshiftRpc({
-    type: 'nightshift_request',
-    project: projectUri,
-    op: 'enqueue',
-    enqueue: { ...input, project: projectUri },
-  })
-  await resource.refetch(projectUri)
-}
+/**
+ * NO `enqueueNightshiftTask` HERE ANY MORE, deliberately.
+ *
+ * The run's input is the `#nightshift` tag on a board card; the broker scans the
+ * board and builds each task from the card at dispatch time. A web helper that
+ * still wrote into `.nightshift/queue/` would be a door into a room the engine
+ * no longer enters -- it would report success and the task would never run.
+ * Both callers now write a card instead (`board-modals.tsx` tags an existing
+ * one, `assign-tasks-dialog.tsx` files a new one).
+ *
+ * The READS below stay: the queue directory still holds entries filed before
+ * the switch, and the only thing left to do with them is look at them and clear
+ * them. Draining them properly is `nightshift-queue-drain`, deliberately a card
+ * with a human on it.
+ */
 
 /** Remove one queued task by id. */
 export async function dequeueNightshiftTask(projectUri: string, id: string): Promise<void> {

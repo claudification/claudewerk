@@ -1,13 +1,29 @@
 /**
- * Assign a task to a project's nightshift queue (plan §3, the INPUT side). A
- * freeform form -> `enqueue` op. Promoting an existing project-board card is the
- * other path (board card context menu); this is the hand-typed one.
+ * Assign a task to a project's nightshift (plan §3, the INPUT side). A freeform
+ * form; tagging an existing project-board card is the other path (the card
+ * editor's Nightshift button). This is the hand-typed one.
+ *
+ * IT FILES A CARD NOW, NOT A QUEUE ENTRY. This used to call the `enqueue` op,
+ * which wrote a standalone task into `.nightshift/queue/` -- a second store,
+ * with its own copy of a title and a body, that the board could not see. The
+ * night run's input is the `#nightshift` TAG on a board card, so a form that
+ * kept writing to the queue would have been a door into a room the engine no
+ * longer enters: it would appear to work and nothing would ever run.
+ *
+ * So a hand-typed task becomes a real card carrying the tag. It shows up on the
+ * board, it can be refined, and it is the same object the run will read.
+ *
+ * `risk`, `feasibility` and `acceptance` are folded into the card BODY rather
+ * than frontmatter: they are queue-item fields and a board card has no such
+ * keys. Keeping the inputs and writing them as prose loses nothing a night
+ * worker reads (it gets the body) and invents no card schema, which is a
+ * decision for whoever revives the run engine, not for this card.
  */
 
-import type { NightshiftFeasibility, NightshiftRisk } from '@shared/nightshift-types'
+import { NIGHTSHIFT_TAG, type NightshiftFeasibility, type NightshiftRisk } from '@shared/nightshift-types'
 import { Moon } from 'lucide-react'
 import { useState } from 'react'
-import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
+import { sendBoardOp } from '@/hooks/project-task-wire'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 
 const RISKS: NightshiftRisk[] = ['low', 'medium', 'high']
@@ -46,15 +62,17 @@ export function AssignTasksDialog({
     setError(null)
   }
 
-  function buildInput() {
-    return {
-      title: title.trim(),
-      description: trimmed(description),
-      acceptance: trimmed(acceptance),
-      risk: risk || undefined,
-      feasibility: feasibility || undefined,
-      source: 'manual' as const,
-    }
+  /** The card body: what was typed, plus the two nightshift qualifiers as prose
+   *  so nothing entered here is silently dropped. */
+  function buildBody() {
+    const qualifiers = [risk && `risk: ${risk}`, feasibility && `feasibility: ${feasibility}`].filter(Boolean)
+    return [
+      trimmed(description) ?? '',
+      trimmed(acceptance) && `## Acceptance\n${acceptance.trim()}`,
+      qualifiers.length > 0 && `_${qualifiers.join(' -- ')}_`,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   async function submit() {
@@ -62,7 +80,10 @@ export function AssignTasksDialog({
     setBusy(true)
     setError(null)
     try {
-      await enqueueNightshiftTask(projectUri, buildInput())
+      const resp = await sendBoardOp(projectUri, 'create', {
+        input: { title: title.trim(), body: buildBody(), tags: [NIGHTSHIFT_TAG] },
+      })
+      if (!resp.ok) throw new Error((resp.error as string) || 'failed to file the card')
       reset()
       onOpenChange(false)
     } catch (e) {

@@ -27,7 +27,11 @@ const TICK_MS = 60_000
 /** History pruning is cheap but pointless to run every minute. */
 const PRUNE_EVERY_TICKS = 60
 
-export interface EngineDeps extends Omit<FireDeps, 'persist' | 'recordRun' | 'inFlight' | 'maxInFlight' | 'now'> {
+export interface EngineDeps
+  extends Omit<
+    FireDeps,
+    'persist' | 'recordRun' | 'inFlight' | 'inFlightForOrder' | 'claimSlot' | 'maxInFlight' | 'now'
+  > {
   store: StoreDriver
   now?: () => number
   maxInFlight?: number
@@ -50,13 +54,44 @@ export function startScheduledTaskEngine(deps: EngineDeps): ScheduledTaskEngine 
   const maxInFlight = deps.maxInFlight ?? MAX_CONCURRENT_SCHEDULED_SPAWNS
   /** Schedules with a dispatch in flight -- a slow spawn must not double-fire. */
   const firing = new Set<string>()
+  /**
+   * THE SEAT POOL, which is deliberately NOT `firing`.
+   *
+   * `firing` holds a schedule from the moment it is considered until its fire
+   * settles -- refusals, permission failures and all -- because that is what a
+   * double-fire guard has to do. Occupancy is a different question: a fire
+   * refused for overlap never took a slot, and counting it as one is how a
+   * ceiling of 3 ends up admitting 2. `fire.ts` claims from here between
+   * admission and dispatch, and releases in a `finally` so a throwing dispatch
+   * cannot leak a slot.
+   */
+  let dispatching = 0
+  const dispatchingByOrder = new Map<string, number>()
   let ticks = 0
+
+  function claimSlot(orderId: string | undefined): () => void {
+    dispatching++
+    if (orderId !== undefined) dispatchingByOrder.set(orderId, (dispatchingByOrder.get(orderId) ?? 0) + 1)
+    let released = false
+    return () => {
+      // Idempotent: a release called twice must not free somebody else's slot.
+      if (released) return
+      released = true
+      dispatching--
+      if (orderId === undefined) return
+      const left = (dispatchingByOrder.get(orderId) ?? 1) - 1
+      if (left > 0) dispatchingByOrder.set(orderId, left)
+      else dispatchingByOrder.delete(orderId)
+    }
+  }
 
   const fireDeps: FireDeps = {
     ...deps,
     maxInFlight,
     now,
-    inFlight: () => firing.size,
+    inFlight: () => dispatching,
+    inFlightForOrder: orderId => dispatchingByOrder.get(orderId) ?? 0,
+    claimSlot,
     persist(task) {
       store.scheduledTasks.upsert(task)
       deps.onScheduleChanged?.(task)

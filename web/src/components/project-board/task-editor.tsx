@@ -419,7 +419,7 @@ export function TaskEditor({
                     haptic('tap')
                     onPromote({ ...task, title, body, status, priority, tags })
                   }}
-                  title="Promote this card into the nightshift queue"
+                  title="Tag this card #nightshift -- the next night run reads the card itself"
                   className="flex items-center gap-1 whitespace-nowrap px-3 py-1 text-[11px] font-bold font-mono bg-amber-400/10 text-amber-300 border border-amber-400/25 hover:bg-amber-400/20 transition-colors"
                 >
                   <Moon className="size-3" />

@@ -449,6 +449,19 @@ export function closedWithoutCommit(rows: PromiseRow[]): PromiseRow[] {
 const FILED_LANES: ReadonlySet<string> = new Set(['done', 'archived'])
 
 /**
+ * Is this lane an assertion that the work is FINISHED?
+ *
+ * Exported because the board sweep asks the same question for a different
+ * reason -- it must not propose promoting a card that is already filed, and must
+ * not pair two finished cards as duplicates. Two lanes is a small enough set that
+ * a second copy looks harmless, which is exactly how a third lane would end up
+ * known to one reader and not the other.
+ */
+export function isFiledLane(status: string): boolean {
+  return FILED_LANES.has(status)
+}
+
+/**
  * Does THIS row belong in the loud table? The ONE answer, for every surface.
  *
  * It was three: this module, the wall's `useCardVerdicts` and the project
@@ -458,7 +471,7 @@ const FILED_LANES: ReadonlySet<string> = new Set(['done', 'archived'])
  * 342 amnestied cards while the third had stopped. One function, three callers.
  */
 export function isBrokenPromise(row: Pick<PromiseRow, 'status' | 'verdict'>): boolean {
-  return FILED_LANES.has(row.status) && isOutstanding(row.verdict)
+  return isFiledLane(row.status) && isOutstanding(row.verdict)
 }
 
 /**

@@ -355,18 +355,8 @@ WorktreeCreate hook          worktree-finish.sh          WorktreeRemove hook
 ```
 
 **Layer 1 - WorktreeCreate hook:** Branches from local HEAD, not origin/HEAD.
-Copies `.worktreeinclude` files. Runs `worktree-init.sh` (bun install, board
-sparse-exclusion, etc.). Registered conditionally -- only when
-`scripts/worktree-create.sh` exists.
-
-> **A worktree never holds a copy of the board.** `worktree-init.sh` runs
-> `scripts/worktree-sparse-board.sh`, which sparse-excludes `.rclaude/project/`
-> from that worktree's checkout. The board is a tracked tree, so without this
-> every worktree materialises its own stale 600+ file copy that an agent can
-> commit with `git add -A` and that conflicts on merge over cards nobody edited.
-> `.worktreeinclude` is not the lever here -- it only copies *gitignored* files.
-> Sweep worktrees that predate this with `scripts/worktree-sparse-board.sh --all`
-> (non-destructive, idempotent; it refuses to run on the main checkout).
+Copies `.worktreeinclude` files. Runs `worktree-init.sh` (bun install, etc.).
+Registered conditionally -- only when `scripts/worktree-create.sh` exists.
 
 **Layer 2 - Merge-back instruction:** Ad-hoc task prompts include instructions
 to run `scripts/worktree-finish.sh` before exiting. This rebases onto main and

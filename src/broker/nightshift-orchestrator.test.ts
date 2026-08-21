@@ -1,17 +1,23 @@
 /**
  * Nightshift orchestrator drain tests. The orchestrator talks to the outside
- * world through exactly two module deps -- `dispatchSpawn` (spawns the worker)
- * and `sendNightshiftOp` (the sentinel RPC) -- so we mock both and drive the
- * drain loop by hand via the exported `advanceAllRuns`. Covers: empty-queue skip,
- * the concurrency cap (never more than N in flight), the totalTasks cap (never
- * dispatch more than the cap), finalize after everything settles, and the
- * ensure-terminal patch for a worker that ends without reporting.
+ * world through exactly three module deps -- `dispatchSpawn` (spawns the
+ * worker), `sendNightshiftOp` (the sentinel RPC) and `callBoard` (the project
+ * board, which is where the run's TASKS come from since the copy-queue was
+ * retired) -- so we mock all three and drive the drain loop by hand via the
+ * exported `advanceAllRuns`. Covers: nothing-tagged skip, the concurrency cap
+ * (never more than N in flight), the totalTasks cap (never dispatch more than
+ * the cap), finalize after everything settles, the untag that replaced the
+ * dequeue, and the ensure-terminal patch for a worker that ends without
+ * reporting.
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { expandPath } from '../sentinel/expand-path'
+import { NIGHTSHIFT_TAG } from '../shared/nightshift-types'
+import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { NightshiftResult } from '../shared/protocol'
 import type { SpawnRequest } from '../shared/spawn-schema'
+import type { BoardRpcResult } from './board-rpc'
 import type { ConversationStore } from './conversation-store'
 import type { NightshiftIo } from './nightshift-orchestrator'
 
@@ -24,10 +30,14 @@ interface OpCall {
 }
 
 let opCalls: OpCall[] = []
+/** Every board op the orchestrator sent -- the list, the per-card reads, and
+ *  the tag-stripping update that replaced `dequeue`. */
+let boardCalls: Array<{ op: string; slug?: string; tags?: string[] }> = []
 let dispatchCount = 0
 /** Every SpawnRequest the orchestrator handed to dispatchSpawn, verbatim. */
 let spawnReqs: SpawnRequest[] = []
-/** Queue the fake sentinel returns for `queue_list`. */
+/** The `#nightshift` cards the fake board answers `list` with. One per task the
+ *  run should open with -- `queueItems[i]` and card `i` are the same work. */
 let queueItems: Array<{ id: string; title: string }> = []
 /** Config the fake sentinel returns for `config_read`. */
 let configOut: Record<string, unknown> = {}
@@ -35,6 +45,21 @@ let configOut: Record<string, unknown> = {}
 let snapshotTasks: Array<{ id: string; status: string }> = []
 /** conversationId -> status, the fake store's view of spawned workers. */
 const convStatus = new Map<string, string>()
+
+/** The board card behind `queueItems[i]`. Slugs sort in the same order as the
+ *  ordinals, so the scanner numbers them 001..N in this order. */
+function cardOf(item: { id: string; title: string }): ProjectTaskMeta {
+  return {
+    slug: `card-${item.id}`,
+    status: 'open',
+    title: item.title,
+    tags: [NIGHTSHIFT_TAG],
+    refs: [],
+    created: '2026-08-01T00:00:00Z',
+    mtime: 0,
+    bodyPreview: '',
+  }
+}
 
 const fakeDispatchSpawn = async (req: SpawnRequest) => {
   spawnReqs.push(req)
@@ -44,11 +69,24 @@ const fakeDispatchSpawn = async (req: SpawnRequest) => {
   return { ok: true as const, conversationId }
 }
 
+const fakeCallBoard = async (
+  _store: unknown,
+  _project: string,
+  op: { op: string; slug?: string; patch?: { tags?: string[] } },
+): Promise<BoardRpcResult> => {
+  boardCalls.push({ op: op.op, slug: op.slug, tags: op.patch?.tags })
+  if (op.op === 'list') return { ok: true, tasks: queueItems.map(cardOf) }
+  if (op.op === 'get') {
+    const item = queueItems.find(q => `card-${q.id}` === op.slug)
+    return { ok: true, task: item ? { ...cardOf(item), body: `body of ${op.slug}` } : null }
+  }
+  return { ok: true }
+}
+
 const fakeSendNightshiftOp = async (_deps: unknown, _project: string, op: OpCall): Promise<NightshiftResult> => {
   opCalls.push(op)
   const base = { type: 'nightshift_result' as const, requestId: '', op: op.op, ok: true }
   if (op.op === 'config_read') return { ...base, config: configOut } as unknown as NightshiftResult
-  if (op.op === 'queue_list') return { ...base, queue: queueItems } as unknown as NightshiftResult
   if (op.op === 'snapshot') return { ...base, snapshot: { tasks: snapshotTasks } } as unknown as NightshiftResult
   return base as unknown as NightshiftResult
 }
@@ -70,6 +108,7 @@ const {
 configureNightshiftIo({
   dispatchSpawn: fakeDispatchSpawn as unknown as NightshiftIo['dispatchSpawn'],
   sendNightshiftOp: fakeSendNightshiftOp as unknown as NightshiftIo['sendNightshiftOp'],
+  callBoard: fakeCallBoard as unknown as NightshiftIo['callBoard'],
 })
 afterAll(resetNightshiftIo)
 const { CapacityLedger } = await import('./capacity-ledger')
@@ -79,6 +118,10 @@ const store = {
     convStatus.has(id)
       ? { status: convStatus.get(id), stats: { totalInputTokens: 0, totalOutputTokens: 0 } }
       : undefined,
+  // The board scan folds the registry to find cards a live conversation is
+  // already on. No epic seats here, so nothing is ever held back for liveness.
+  getAllConversations: () => [],
+  getActiveConversationCount: () => 0,
 } as unknown as ConversationStore
 
 /** A capacity ledger for the admission tests. `fiveHourPct` sets the stubbed
@@ -121,6 +164,7 @@ async function drainToFinalize(project: string, maxSteps = 20): Promise<number> 
 
 beforeEach(() => {
   opCalls = []
+  boardCalls = []
   dispatchCount = 0
   spawnReqs = []
   queueItems = []
@@ -130,14 +174,38 @@ beforeEach(() => {
 })
 
 describe('runNightshift', () => {
-  test('empty queue is skipped, nothing dispatched, no run opened', async () => {
+  test('a board with nothing tagged is skipped, nothing dispatched, no run opened', async () => {
     queueItems = []
     const out = await runNightshift(store, 'proj-empty', { trigger: 'manual' })
     expect(out.ok).toBe(false)
-    expect(out.skipped).toMatch(/queue is empty/)
+    expect(out.skipped).toMatch(/no cards tagged #nightshift/)
     expect(dispatchCount).toBe(0)
     expect(opCalls.some(o => o.op === 'run_start')).toBe(false)
     expect(isNightshiftRunActive('proj-empty')).toBe(false)
+  })
+
+  // THE POINT OF THE CARD: the run's input is a reference to a card, not a copy
+  // of one. The prompt has to carry the body the board holds RIGHT NOW.
+  test('the task body is read from the card at dispatch, never from a stored copy', async () => {
+    queueItems = makeQueue(1)
+    const out = await runNightshift(store, 'proj-ref', { trigger: 'manual' })
+    expect(out.ok).toBe(true)
+    expect(boardCalls.filter(c => c.op === 'get').map(c => c.slug)).toContain('card-001')
+    expect(spawnReqs[0]?.prompt).toContain('body of card-001')
+    await drainToFinalize('proj-ref')
+  })
+
+  // ...and the untag is what `dequeue` used to be: the thing that stops the same
+  // card being picked up by tomorrow's run.
+  test('dispatch strips #nightshift from the card instead of dequeuing a copy', async () => {
+    queueItems = makeQueue(1)
+    await runNightshift(store, 'proj-untag', { trigger: 'manual' })
+
+    const update = boardCalls.find(c => c.op === 'update')
+    expect(update?.slug).toBe('card-001')
+    expect(update?.tags).toEqual([])
+    expect(opCalls.some(o => o.op === 'dequeue')).toBe(false)
+    await drainToFinalize('proj-untag')
   })
 
   test('scheduler trigger respects config.enabled=false', async () => {

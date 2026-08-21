@@ -1,8 +1,11 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { listSuites, type RecapSuiteId } from '@shared/recap-suites'
+import { SCANNER_IDS, type ScannerId } from '@shared/scanner-ids'
+import { packScannerToggles, type ScannerToggles, scannerEnabled } from '@shared/scanner-opt-in'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission } from '@shared/spawn-schema'
 import { Check, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { ScannersPanel } from '@/components/project-settings/scanners-panel'
 import { SecurityPanel } from '@/components/project-settings/security-panel'
 import { GroupHeader, SettingRow } from '@/components/settings/settings-inputs'
 import { SettingsShell, type SettingsShellTab } from '@/components/settings/settings-shell'
@@ -39,6 +42,7 @@ interface ProjectSettingsEditorProps {
 const PROJECT_TABS: SettingsShellTab[] = [
   { id: 'general', label: 'General' },
   { id: 'launch', label: 'Launch' },
+  { id: 'scanners', label: 'Scanners' },
   { id: 'security', label: 'Security' },
 ]
 
@@ -62,6 +66,8 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     (current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission,
   )
   const [lessonsEnabled, setLessonsEnabled] = useState(current.lessonsEnabled ?? false)
+  // Only the true entries are ever stored, so an empty object IS "all off".
+  const [scanners, setScanners] = useState<ScannerToggles>(current.scanners ?? {})
   // undefined = Auto: let the broker pick from how each recap was started.
   const [recapSuite, setRecapSuite] = useState<RecapSuiteId | undefined>(current.recapSuite)
   const [keytermInput, setKeytermInput] = useState('')
@@ -84,6 +90,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     setOpenCodeModel(c.defaultOpenCodeModel || '')
     setOpenCodeToolPermission((c.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
     setLessonsEnabled(c.lessonsEnabled ?? false)
+    setScanners(c.scanners ?? {})
     setRecapSuite(c.recapSuite)
   }, [projectSettings, project])
 
@@ -108,6 +115,11 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
       defaultOpenCodeModel: openCodeModel.trim() || undefined,
       defaultOpenCodeToolPermission: openCodeToolPermission === 'safe' ? undefined : openCodeToolPermission,
       lessonsEnabled: lessonsEnabled || undefined,
+      // `undefined` when nothing is ticked, which `setProjectSettings` strips --
+      // so all-off leaves no row behind and reads identically to never-configured.
+      // `scannersLastRun` is deliberately NOT sent: the broker owns those stamps
+      // and the merge preserves any key this payload does not mention.
+      scanners: packScannerToggles(scanners),
       recapSuite,
     }
     updateProjectSettings(project, settings)
@@ -162,6 +174,10 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     openCodeModel.trim() !== (current.defaultOpenCodeModel || '') ||
     openCodeToolPermission !== ((current.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission) ||
     lessonsEnabled !== (current.lessonsEnabled ?? false) ||
+    // Per id through the one predicate, not a deep-equal on the maps: `{}`,
+    // `{epics: false}` and a re-ticked box in a different key order are all the
+    // same saved state, and none of them should leave Save lit.
+    SCANNER_IDS.some(id => scannerEnabled({ scanners }, id) !== scannerEnabled(current, id)) ||
     recapSuite !== current.recapSuite
 
   const hasAnySettings =
@@ -566,6 +582,15 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
               </SettingRow>
             )}
           </>
+        )}
+
+        {/* ── Scanners tab ─────────────────────────────────────────── */}
+        {activeTab === 'scanners' && (
+          <ScannersPanel
+            settings={current}
+            toggles={scanners}
+            onToggle={(id: ScannerId, enabled: boolean) => setScanners(prev => ({ ...prev, [id]: enabled }))}
+          />
         )}
 
         {/* ── Security tab ─────────────────────────────────────────── */}

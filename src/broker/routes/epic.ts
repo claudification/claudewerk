@@ -24,6 +24,7 @@ import { sendEpicOp } from '../epic-broker-rpc'
 import { forgetArmedEpic, noteArmedEpic } from '../epic-registry'
 import { buildSweepDeps } from '../epic-sweep-loop'
 import type { Permission } from '../permissions'
+import { scannerEnabledForProject } from '../project-settings'
 import { type ActionInput, BROKER_ACTIONS, BROKER_WRITE_ACTIONS } from './epic-actions'
 import { readJsonBody } from './json-body'
 
@@ -87,8 +88,15 @@ function isWrite(op: string): boolean {
 }
 
 /**
- * The two gates, together: is this action drivable from outside, and may this
- * caller drive it? Returns the refusal or null.
+ * The three gates, together: is this action drivable from outside, may this
+ * caller drive it, and -- for `start` alone -- has this project opted in to being
+ * swept at all? Returns the refusal or null.
+ *
+ * THE OPT-IN CHECK IS HERE BECAUSE ARMING IS THE OTHER CALLER. The sweep drops an
+ * armed run in an opted-out project (epic-sweep-loop.ts), so without this a
+ * `start` would report success and then sit `armed` forever with nothing coming
+ * to beat it -- the silent hang, told at the one moment a human could have fixed
+ * it in two clicks.
  */
 function refuse(
   body: EpicHttpBodyReady,
@@ -101,6 +109,14 @@ function refuse(
   const permission: Permission = isWrite(body.op) ? 'files' : 'files:read'
   if (!helpers.httpHasPermission(req, permission, body.project)) {
     return { error: `Forbidden: ${permission} permission required`, status: 403 }
+  }
+  if (body.op === 'start' && !scannerEnabledForProject(body.project, 'epics')) {
+    return {
+      error:
+        `the "epics" scanner is off for ${body.project}, so an armed run would never be swept -- ` +
+        `tick it in Project Settings > Scanners first`,
+      status: 400,
+    }
   }
   return null
 }

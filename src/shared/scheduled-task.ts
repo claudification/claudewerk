@@ -92,6 +92,20 @@ export const scheduledTaskSchema = z.object({
   prompt: z.string().min(1, 'prompt is required').max(SCHEDULE_MAX_PROMPT, 'prompt exceeds 64 KB'),
   profileId: z.string().optional(),
   spawn: scheduleSpawnSchema,
+  /**
+   * The WORK ORDER this schedule spends -- `REFINER@1` and nothing else, today.
+   *
+   * The order supplies the seat's caps (model, effort, budget, deny rules) and
+   * its share of the scheduler's concurrency pool. Absent is the ordinary case
+   * and means what it always meant: the schedule's own `spawn` snapshot, bounded
+   * by the global ceiling alone.
+   *
+   * Kept as a plain id rather than an inlined order so a cap change is one edit
+   * to the order and not a migration over every schedule that names it. An id no
+   * build recognises is IGNORED, not an error -- a schedule must not go dark
+   * because an order was renamed.
+   */
+  orderId: z.string().max(64).optional(),
 
   // -- WHO --
   createdBy: z.string().min(1),
