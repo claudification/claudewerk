@@ -49,6 +49,39 @@ docker compose start broker
 | `sentinel-registry.json` | File copy | MEDIUM - sentinel host records |
 | `blobs/` | File copy (opt-in) | OPTIONAL - 7-day TTL reaper |
 
+That table is exhaustive. Everything in it lives in the broker's own cache
+directory; nothing outside that directory is in any archive.
+
+## Project boards are NOT here -- git covers them
+
+`.rclaude/project/` (the kanban board: cards, epics, priority) is **outside every
+backup on this page, by design and permanently.**
+
+The broker never reads or writes a project tree. CWD IS INFORMATIONAL is a
+covenant with `lint:boundary` Rule 4 enforcing it, so `src/broker/backup/`
+structurally cannot reach a board, and teaching it to would be the wrong
+component. **Do not add `.rclaude/` to the broker backup.** If a second copy is
+ever wanted beyond git, it belongs to the sentinel, which already owns board file
+I/O.
+
+So the board's durability is git, and only git:
+
+```
+.rclaude/*                          # contents, NOT the directory
+!.rclaude/project/                  # the board -- tracked
+!.rclaude/rclaude.json              # project config -- tracked
+```
+
+Excluding the **directory** (`.rclaude/`) instead of its **contents**
+(`.rclaude/*`) is the trap. Git never descends into an excluded directory, so a
+nested `!project/` negation is not merely overridden, it is never read. That is
+how the board sat in no backup and no git at once until 2026-08-21: 604 cards,
+7.1 MB, zero copies, with a `.rclaude/.gitignore` claiming otherwise.
+
+`src/shared/board-gitignore.test.ts` asserts both directions -- the board is
+offered to `git add`, and `settings/` (687 MB of session logs and secrets) is
+not. Both, because over-correcting fails just as silently as under-correcting.
+
 ## How It Works
 
 1. **VACUUM INTO** each SQLite database to a temp directory. This creates a
