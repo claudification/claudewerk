@@ -47,7 +47,7 @@ import { cardRelPath } from '../../shared/card-path'
 import { epicBucket } from '../../shared/epic-cards'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
-import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER } from '../../shared/refiner-order'
+import { REFINER_INSTRUCTIONS, REFINER_ORDER } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
@@ -71,12 +71,20 @@ export const REFINE_EPIC_ID = 'refine'
  * MAX REFINER SEATS IN FLIGHT, quoted from the ORDER rather than picked here.
  *
  * "A backlog of 40 tagged cards must not consume every seat" is the card's own
- * requirement, and `SeatOrder.reservation` is where a role's appetite already
- * lives -- see `seat-reservation.ts`, which enforces the identical number on the
+ * requirement, and `Order.reservation` is where a role's appetite already lives
+ * -- see `seat-reservation.ts`, which enforces the identical number on the
  * scheduler's own pool. Re-picking it here would be the second number that
  * quietly disagrees with the first.
+ *
+ * AN ORDER THAT DECLARES NO RESERVATION FALLS BACK TO ONE SEAT HERE, and that
+ * is deliberately NOT what an absent reservation means to the scheduler, where
+ * it means "unreserved" and `MAX_CONCURRENT_SCHEDULED_SPAWNS` still bounds it.
+ * This scanner has no second ceiling: the reservation IS its ceiling, so
+ * "unreserved" would read as unbounded and a backlog of 40 tagged cards would
+ * dispatch 40 seats in one pass. One seat is the conservative reading of a role
+ * that never said.
  */
-export const DEFAULT_REFINE_CONCURRENCY = REFINER.reservation
+export const DEFAULT_REFINE_CONCURRENCY = REFINER_ORDER.reservation ?? 1
 
 /**
  * Every way this scanner can decline a `needs-refine` card. Closed, so a reason
@@ -224,7 +232,7 @@ function compileSeat(deps: RefineDeps, card: ProjectTaskMeta): SeatCompilation {
     epic: { epicId: REFINE_EPIC_ID, role: 'implementer', gen, cardId: card.slug },
     settingsInline: buildUnattendedSettings(deps.permissions),
   }
-  const applied = applyOrderToRequest(base, REFINER)
+  const applied = applyOrderToRequest(base, REFINER_ORDER)
   if (!applied.ok) return { ok: false, reason: applied.reason }
   return { ok: true, request: applied.request }
 }

@@ -203,13 +203,59 @@ describe('composeSeatPrompt', () => {
   })
 })
 
+/**
+ * THE TWO CAPS THAT USED TO LIVE ON A WRAPPER.
+ *
+ * `REFINER@1` carried `maxTurns` and `reservation` in a `SeatOrder` type beside
+ * the order, because `order@1` had nowhere to put either. Both are now on the
+ * artifact, which means both go through this validator -- and both are COUNTS,
+ * so the interesting refusals are the ones a `> 0` check would wave through.
+ */
+describe('the counts: caps.maxTurns and reservation', () => {
+  test('both round-trip when declared', () => {
+    const order = validateOrder({ ...OK, caps: { maxTurns: 30 }, reservation: 1 })
+    expect(order.caps.maxTurns).toBe(30)
+    expect(order.reservation).toBe(1)
+  })
+
+  test('both stay absent when undeclared -- an absent cap is not zero', () => {
+    const order = validateOrder(OK)
+    expect(order.caps).not.toHaveProperty('maxTurns')
+    expect(order).not.toHaveProperty('reservation')
+  })
+
+  test.each([2.5, 0, -1, '30', null, Number.NaN, Number.POSITIVE_INFINITY])(
+    'caps.maxTurns refuses %p -- a turn count is a whole positive number',
+    value => {
+      expect(field({ ...OK, caps: { maxTurns: value } })).toBe('caps.maxTurns')
+    },
+  )
+
+  test('a reservation of ZERO is legal -- it parks the order rather than unsetting it', () => {
+    expect(validateOrder({ ...OK, reservation: 0 }).reservation).toBe(0)
+  })
+
+  test.each([1.5, -1, '1', null, Number.NaN])('reservation refuses %p', value => {
+    expect(field({ ...OK, reservation: value })).toBe('reservation')
+  })
+})
+
 describe('the default-deny flag allowlist', () => {
-  test('the four allowed flags pass', () => {
+  test('every allowed flag passes, and the two ceilings are both on the list', () => {
     const order = validateOrder({
       ...OK,
-      flags: { '--model': 'claude-opus-5', '--effort': 'high', '--agent': 'code-reviewer', '--max-budget-usd': '5' },
+      flags: {
+        '--model': 'claude-opus-5',
+        '--effort': 'high',
+        '--agent': 'code-reviewer',
+        '--max-budget-usd': '5',
+        '--max-turns': '30',
+      },
     })
     expect(Object.keys(order.flags ?? {}).sort()).toEqual([...ORDER_FLAG_ALLOWLIST].sort())
+    // The raw escape hatch has to reach the turn cap too. Before this card it
+    // did not, so an order could neither TYPE the cap nor spell it by hand.
+    expect(ORDER_FLAG_ALLOWLIST).toContain('--max-turns')
   })
 
   /**

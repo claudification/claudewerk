@@ -197,6 +197,15 @@ export const spawnRequestSchema = z.object({
     .describe(
       'Max spend in USD before auto-stop. NEVER set this unless the user explicitly asks to cap or set a budget. Omit by default - the project/global default applies.',
     ),
+  maxTurns: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      'Max agentic turns before CC stops the run (`--max-turns`). NEVER set this unless the user explicitly asks ' +
+        'to cap turns, or a work order declares `caps.maxTurns`. Honored on the headless transport only.',
+    ),
   includePartialMessages: z
     .boolean()
     .optional()
