@@ -503,51 +503,103 @@ function emptyPlan(): EpicPlan {
   }
 }
 
-/** THE FOLD, which does not care how its cohort was chosen. */
-function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
-  const inFlight = new Set(input.inFlight)
-  const inVerify = new Set(input.inVerify)
-  const dead = new Set(input.unspawnable ?? [])
-  const verify = cohort.children
-    .filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug) && !dead.has(c.card.slug))
-    .map(c => c.card)
-  const questions = cohort.children
-    .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isQuestion(c.card))
-    .map(c => c.card)
-  const unspawnable = cohort.children.filter(c => dead.has(c.card.slug)).map(c => c.card)
-  // Rough cards, minus the ones already counted as questions -- see the field's
-  // doc on `EpicPlan`. Terminal cards are excluded for the reason `questions`
-  // excludes them: a tag left on a `done` card is history, not a stall.
-  const needsRefine = cohort.children
-    .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isRough(c.card) && !isQuestion(c.card))
-    .map(c => c.card)
+/** The four lanes that are pure SELECTION over the cohort -- nothing here looks
+ *  at liveness beyond the two sets it is handed, and nothing here dispatches. */
+interface AttentionLanes {
+  verify: ProjectTaskMeta[]
+  questions: ProjectTaskMeta[]
+  unspawnable: ProjectTaskMeta[]
+  needsRefine: ProjectTaskMeta[]
+}
 
+/** Is this card terminal? Both `questions` and `needsRefine` exclude terminal
+ *  cards for the same reason: a tag left on a `done` card is history, not a
+ *  stall. Said once so the two lanes cannot drift apart. */
+function isTerminal(child: EpicChild): boolean {
+  return child.bucket === 'done' || child.bucket === 'dropped'
+}
+
+/**
+ * THE LANES THAT ARE NOT THE DISPATCH LANE -- everything the pane needs a name
+ * for that does not depend on the ceiling, the DAG or the seat ledger.
+ *
+ * Split out of `foldCohort` because these four are four independent filters over
+ * the same list, and reading them next to a stateful loop invited the assumption
+ * that the loop's ordering rules apply here too. They do not: a card can be in
+ * `questions` and in `verify` at once, and that is correct -- one says a verdict
+ * is owed, the other says a human owes an answer.
+ */
+function attentionLanes(
+  children: readonly EpicChild[],
+  inVerify: ReadonlySet<string>,
+  dead: ReadonlySet<string>,
+): AttentionLanes {
+  return {
+    verify: children
+      .filter(c => needsVerdict(c.card) && !inVerify.has(c.card.slug) && !dead.has(c.card.slug))
+      .map(c => c.card),
+    questions: children.filter(c => !isTerminal(c) && isQuestion(c.card)).map(c => c.card),
+    unspawnable: children.filter(c => dead.has(c.card.slug)).map(c => c.card),
+    // Rough cards, minus the ones already counted as questions -- see the field's
+    // doc on `EpicPlan`.
+    needsRefine: children.filter(c => !isTerminal(c) && isRough(c.card) && !isQuestion(c.card)).map(c => c.card),
+  }
+}
+
+/** What the dispatch triage needs to know that the cohort itself does not: who
+ *  is alive, who has already been paid for, and whether this cohort gets the
+ *  bounce lane. */
+interface DispatchGates {
+  inFlight: ReadonlySet<string>
+  dead: ReadonlySet<string>
+  settled: ReadonlySet<string>
+  dispatches: Readonly<Record<string, number>>
+  bounceLane: boolean
+}
+
+/** The dispatch lane, split four ways. `ready` is pre-ceiling: the concurrency
+ *  slice happens in `foldCohort`, which is the only place that knows how many
+ *  seats are already out. */
+interface DispatchTriage {
+  ready: ProjectTaskMeta[]
+  waitingOnDeps: EpicPlan['waitingOnDeps']
+  exhausted: ProjectTaskMeta[]
+  alreadyRun: ProjectTaskMeta[]
+}
+
+/**
+ * WHO CAN BE SENT WORK, and a named lane for every reason the rest cannot.
+ *
+ * ITS OWN FUNCTION BECAUSE THE ORDER IS THE DESIGN. Every `continue` and every
+ * push below is placed relative to the ones around it for a stated reason, and a
+ * reader auditing that order should be able to see the whole sequence at once
+ * rather than scrolling past four selection filters to reach it.
+ */
+function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates): DispatchTriage {
   const ready: ProjectTaskMeta[] = []
   const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
   const exhausted: ProjectTaskMeta[] = []
   const alreadyRun: ProjectTaskMeta[] = []
-  const dispatches = input.dispatches ?? {}
-  const settled = new Set(input.settled ?? [])
-  for (const child of cohort.children) {
+  for (const child of children) {
     // LIVENESS FIRST, and it is now the load-bearing half of the predicate rather
     // than a rider on the bucket: `notStarted` cards were never in flight by
     // construction, whereas a bounced card at `in-progress` is exactly as likely
     // to have a seat on it as not. A live seat needs no bucket of its own -- the
     // aggregate "N card(s) still in flight" already names it.
-    if (inFlight.has(child.card.slug)) continue
-    if (!inDispatchLane(child, cohort.bounceLane)) continue
+    if (gates.inFlight.has(child.card.slug)) continue
+    if (!inDispatchLane(child, gates.bounceLane)) continue
     if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
     // A rough card is not ready, and it is refused BEFORE the dependency check
     // so it never reaches `waitingOnDeps` -- being rough is the story, and a
     // card reported as blocked on a dependency that just landed would send the
     // engine looking for a graph problem it does not have.
     if (isRough(child.card)) continue
-    if (dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
+    if (gates.dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
     // BEFORE the ceiling, because it is the more specific story of the two and a
     // card that trips both should be reported as the thing that actually happened.
     // A not-started card with a settled seat has been worked once and left where
     // it was; saying "it has cost six seats" instead would be true and useless.
-    if (alreadyRan(child, settled)) {
+    if (alreadyRan(child, gates.settled)) {
       alreadyRun.push(child.card)
       continue
     }
@@ -555,13 +607,41 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     // check, for `isRough`'s reason: "this card has burned six seats" is the
     // story, and reporting it as blocked on a dependency would send the engine
     // looking for a graph problem it does not have.
-    if (overSeatCeiling(child, dispatches)) {
+    if (overSeatCeiling(child, gates.dispatches)) {
       exhausted.push(child.card)
       continue
     }
     if (child.waitingOn.length > 0) waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
     else ready.push(child.card)
   }
+  return { ready, waitingOnDeps, exhausted, alreadyRun }
+}
+
+/**
+ * THE FOLD, which does not care how its cohort was chosen.
+ *
+ * Three steps and the ceiling: the lanes that need no ledger
+ * ({@link attentionLanes}), the lane that does ({@link triageDispatchLane}), the
+ * concurrency slice, and the assembly. The ceiling lives HERE and in neither
+ * helper because `inFlight.size` is the only input to it, and splitting a
+ * ceiling away from the number it is checked against is how two of them end up
+ * disagreeing.
+ */
+function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
+  const inFlight = new Set(input.inFlight)
+  const dead = new Set(input.unspawnable ?? [])
+  const { verify, questions, unspawnable, needsRefine } = attentionLanes(
+    cohort.children,
+    new Set(input.inVerify),
+    dead,
+  )
+  const { ready, waitingOnDeps, exhausted, alreadyRun } = triageDispatchLane(cohort.children, {
+    inFlight,
+    dead,
+    settled: new Set(input.settled ?? []),
+    dispatches: input.dispatches ?? {},
+    bounceLane: cohort.bounceLane,
+  })
 
   const slots = Math.max(0, input.concurrency - inFlight.size)
   const dispatch = ready.slice(0, slots)
