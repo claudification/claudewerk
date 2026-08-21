@@ -23,7 +23,7 @@ import type { CompletionContext, CompletionResult } from '@codemirror/autocomple
 // react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import type { EditorView } from '@codemirror/view'
 import { candidatesFor } from '@/lib/cards/task-token-candidates'
-import { cutRange, scanTaskToken, type ScanKind, type TaskTokenContext, type TokenKind } from '@/lib/cards/task-tokens'
+import { cutRange, type ScanKind, scanTaskToken, type TaskTokenContext, type TokenKind } from '@/lib/cards/task-tokens'
 
 /** `#tag` scan. Its own regex: tags allow no bare trigger row cap and never eat. */
 const TAG_TRIGGER = /(?:^|\s)#([a-zA-Z0-9][a-zA-Z0-9_-]*|)$/

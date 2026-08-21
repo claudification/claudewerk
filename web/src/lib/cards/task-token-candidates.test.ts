@@ -15,7 +15,11 @@ const BOARD: ProjectTaskMeta[] = [
 ]
 
 const PROJECTS: ProjectOption[] = [
-  { uri: 'claude://studio/Users/j/projects/remote-claude', name: 'CLAUDEWERK', path: '/Users/j/projects/remote-claude' },
+  {
+    uri: 'claude://studio/Users/j/projects/remote-claude',
+    name: 'CLAUDEWERK',
+    path: '/Users/j/projects/remote-claude',
+  },
   { uri: 'claude://studio/Users/j/projects/yemaya', name: 'YEMAYA', path: '/Users/j/projects/yemaya' },
 ]
 
