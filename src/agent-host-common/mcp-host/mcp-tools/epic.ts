@@ -28,8 +28,10 @@ const DESCRIPTION = [
   'action=start        arm (or resume) the run. `when` is the DISPATCH GATE, re-evaluated every beat: "now"',
   '                    ignores the clock, "window" defers to the project night window, "queue" waits until no',
   '                    other epic in this project has work in flight and then holds the runner EXCLUSIVELY until',
-  '                    this run goes dry (everything else keeps verifying, but stops dispatching). Comma-separate',
-  '                    to compose -- `when=window,queue` means both must pass. `concurrency` defaults to 3 -- that',
+  '                    this run goes dry (everything else keeps verifying, but stops dispatching), and an ISO',
+  '                    INSTANT WITH AN OFFSET (`when=2026-08-22T02:00:00+07:00`) waits until that moment passes --',
+  '                    arm it now, it starts then. Comma-separate to compose -- `when=window,queue` means both',
+  '                    must pass. Waiting on an appointment costs NO wall clock. `concurrency` defaults to 3 -- that',
   '                    is a REVIEW ceiling, not a machine one; raising it means choosing to stop reviewing',
   '                    per-change.',
   '                    THREE HANDBRAKES, none of them infinity: `max_gens` (40) bounds how often the overseer',
@@ -47,6 +49,9 @@ const DESCRIPTION = [
   '                    and it REFUSES an armed or running run -- pause or abort first.',
   'action=beat         run ONE beat RIGHT NOW instead of waiting up to 45s for the sweep. Use this after arming',
   '                    to see immediately whether the run does anything, and to step a stalled run by hand.',
+  '                    It OVERRIDES an appointment (`when=<iso>`) and records that it did. It does NOT override',
+  '                    "window" or "queue": those are a project policy and a promise to other epics, not one',
+  "                    person's preference, and the beat says which of them is holding instead of going quiet.",
   '',
   'INSPECT',
   'action=list         every run this project has: status, generation, cards in flight, whether armed.',
@@ -167,8 +172,11 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
             description:
               'start: the gate(s) a ready card must pass before it dispatches -- "now" (no gate), "window" (the ' +
               'project\'s night window), "queue" (wait until no other epic in this project is running, then hold ' +
-              'the runner exclusively until this run goes dry). Comma-separate to compose them: "window,queue" ' +
-              'means ALL of them must pass on the same beat. Evaluated every beat, not once at arm time.',
+              'the runner exclusively until this run goes dry), or an ISO INSTANT to arm a run now and start it ' +
+              'later ("2026-08-22T02:00:00+07:00"). Comma-separate to compose them: "window,queue" means ALL of ' +
+              'them must pass on the same beat. Evaluated every beat, not once at arm time. ' +
+              'ALWAYS GIVE THE INSTANT AN OFFSET or a trailing Z -- a zoneless time is read as UTC, and the ' +
+              'broker container runs UTC while you almost certainly do not.',
           },
           cadence: {
             type: 'string',

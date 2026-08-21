@@ -128,6 +128,26 @@ describe('the run artifact', () => {
     expect(readFileSync(epicRunFile(root, 'e2'), 'utf8')).toContain('cadence: queue')
   })
 
+  /**
+   * AN APPOINTMENT SURVIVES THE FRONTMATTER ROUND TRIP UNQUOTED.
+   *
+   * `at:2026-08-22T02:00:00+07:00` carries a colon, and `frontmatter.ts` takes a
+   * line's key as everything before the FIRST one -- so the value has to come back
+   * whole, and the quoting rules have to leave it alone (it has no `": "`, no
+   * trailing colon and no leading bracket). If either half were wrong the run
+   * would reload with no appointment at all and dispatch immediately, which is the
+   * one direction this gate must never fail in.
+   */
+  test('an appointment round-trips through frontmatter, scalar and in a list', () => {
+    startEpicRun(root, { epicId: 'e1', project: 'p', cadence: '2026-08-22T02:00:00+07:00' }, T0)
+    expect(readEpicRun(root, 'e1')?.cadence).toEqual(['at:2026-08-22T02:00:00+07:00'])
+    expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).toContain('cadence: at:2026-08-22T02:00:00+07:00')
+
+    startEpicRun(root, { epicId: 'e2', project: 'p', cadence: 'window,2026-08-22T02:00:00+07:00' }, T0)
+    expect(readEpicRun(root, 'e2')?.cadence).toEqual(['window', 'at:2026-08-22T02:00:00+07:00'])
+    expect(readFileSync(epicRunFile(root, 'e2'), 'utf8')).toContain('cadence: [window, at:2026-08-22T02:00:00+07:00]')
+  })
+
   test('an artifact from before the axis existed keeps its gate, not the default', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
     const file = epicRunFile(root, 'e1')

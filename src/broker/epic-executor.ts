@@ -65,6 +65,14 @@ export type { BeatDeps, BeatOutcome } from './epic-types'
 export interface BeatContext {
   view?: EpicRunView
   queue?: QueueVerdict
+  /**
+   * A HUMAN ASKED FOR THIS BEAT BY HAND (`epic_run action=beat`).
+   *
+   * The one thing it changes is the APPOINTMENT gate -- see `EpicBeatInput.forced`
+   * for why `window` and `queue` stay unoverridable. Absent means the sweep, so a
+   * caller that forgets it under-fires rather than over-fires.
+   */
+  forced?: boolean
 }
 
 /**
@@ -273,6 +281,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     inFlight: withPendingSeats(group.inFlight, pendingSeats),
     overseerAlive: group.overseerAlive,
     ...(ctx.queue ? { queue: ctx.queue } : {}),
+    ...(ctx.forced ? { forced: true } : {}),
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is
     // exactly what the overseer needs to be woken FOR. The baton write above is
     // what stops the NEXT sweep re-discovering the same settle forever.

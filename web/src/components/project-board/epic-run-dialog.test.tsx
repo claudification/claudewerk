@@ -149,6 +149,43 @@ describe('the planning generation', () => {
   })
 })
 
+/**
+ * THE `when` AXIS THIS DIALOG CANNOT EXPRESS.
+ *
+ * Three exclusive buttons over a field that holds a LIST and can hold an
+ * APPOINTMENT. Both cases must light NO button and say what the run actually
+ * carries -- an appointment that lit nothing AND explained nothing would open
+ * this dialog on a run armed for 02:00 looking exactly like a fresh
+ * unconfigured one.
+ */
+describe('a `when` axis the three buttons cannot show', () => {
+  const resume = (cadence: EpicRunState['cadence']) =>
+    render(
+      <EpicRunDialog
+        rollup={ROLLUP}
+        project="claude://host/proj"
+        existing={{ ...RUN_STATE, gen: 3, planned: true, cadence }}
+        onClose={() => {}}
+        onStarted={() => {}}
+      />,
+    )
+
+  it('says what a COMPOSED axis carries instead of lighting one of its halves', () => {
+    resume(['window', 'queue'])
+    expect(screen.getByText(/This run carries window \+ queue/)).toBeTruthy()
+  })
+
+  it('says what an APPOINTMENT carries, offset and all', () => {
+    resume(['at:2026-08-22T02:00:00+07:00'])
+    expect(screen.getByText(/This run carries not before 2026-08-22T02:00:00\+07:00/)).toBeTruthy()
+  })
+
+  it('stays quiet when a button genuinely does say it', () => {
+    resume(['queue'])
+    expect(screen.queryByText(/This run carries/)).toBeNull()
+  })
+})
+
 it('carries its own epic colour, because it portals outside the pane that sets them', () => {
   open()
   const content = document.querySelector('[data-slot="dialog-content"]') as HTMLElement

@@ -95,6 +95,25 @@ describe('formatEpicRunCaps', () => {
   test('marks the ceiling that actually stopped the run', () => {
     expect(formatEpicRunCaps(run({ spentUsd: 250 }), T0)).toContain('spend $250.00/$100.00 ($0.00 left) OVER')
   })
+
+  /**
+   * A RUN WAITING ON AN APPOINTMENT ANSWERS THE SAME QUESTION THE CEILINGS DO --
+   * "why is this not moving, and how long until it is" -- so it belongs on the
+   * same line rather than in a fourth place a reader has to know to look. Every
+   * text surface that prints the caps (the `epic_run` tool's header, the
+   * overseer's briefing) gets it from here, so none of them can disagree with the
+   * beat that is holding the run.
+   */
+  test('carries the appointment a waiting run is held on, with its zone and a countdown', () => {
+    const line = formatEpicRunCaps(run({ cadence: ['at:2026-08-21T11:00:00+07:00'] }), T0)
+    expect(line).toContain('waiting until 2026-08-21T11:00:00+07:00 (in 4 hours)')
+    expect(line).toContain('spend $0.00/$100.00')
+  })
+
+  test('says nothing about an appointment that has already passed', () => {
+    const line = formatEpicRunCaps(run({ cadence: ['at:2026-08-20T11:00:00+07:00'] }), T0)
+    expect(line).not.toContain('waiting until')
+  })
 })
 
 test('formatUsd always shows cents', () => {

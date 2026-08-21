@@ -4,6 +4,8 @@
  * request, the busy flag, the error) and this owns the CHOICES.
  */
 
+import type { EpicCadence } from '@shared/epic-run-types'
+import { formatWhen } from '@shared/epic-when'
 import { cn } from '@/lib/utils'
 import { firstBeat, type RunPlan } from './epic-run-plan'
 import type { RunSettings as RunSettings_ } from './use-run-settings'
@@ -28,6 +30,24 @@ const WHENS = [
       'run goes dry. Everything else keeps verifying but stops dispatching while it holds.',
   },
 ]
+
+type NamedWhen = (typeof WHENS)[number]['value']
+
+/**
+ * Which button, if any, this axis lights.
+ *
+ * NULL FOR EVERYTHING THESE THREE BUTTONS CANNOT SAY, and that is now two cases
+ * rather than one: a composed axis (`window + queue`) and an APPOINTMENT
+ * (`at:2026-08-22T02:00:00+07:00`, set from `epic_run action=start when=<iso>`).
+ * Both then print what the run actually carries instead of lighting a button that
+ * would be a lie -- an appointment lighting nothing AND explaining nothing was
+ * the hole this closes: a run armed for 02:00 would have opened this dialog
+ * looking exactly like a fresh unconfigured one.
+ */
+function pickedWhen(gates: readonly EpicCadence[]): NamedWhen | null {
+  if (gates.length !== 1) return null
+  return WHENS.find(w => w.value === gates[0])?.value ?? null
+}
 
 const TARGETS = [
   { value: 'pr' as const, label: 'pr', hint: 'Green on a branch, raised for review. Nothing reaches main.' },
@@ -96,15 +116,10 @@ export function RunSettings({ settings, plan }: { settings: RunSettings_; plan: 
   return (
     <>
       {planApplies && <PlanField value={options.plan} onChange={setPlan} />}
-      <Choice
-        label="when"
-        options={WHENS}
-        value={options.cadence.length === 1 ? options.cadence[0] : null}
-        onChange={setCadence}
-      />
-      {options.cadence.length > 1 && (
+      <Choice label="when" options={WHENS} value={pickedWhen(options.cadence)} onChange={setCadence} />
+      {pickedWhen(options.cadence) === null && (
         <span className="text-chrome text-fg-muted leading-snug">
-          {`This run carries ${options.cadence.join(' + ')} -- all of them must pass. Picking one above replaces both.`}
+          {`This run carries ${formatWhen(options.cadence)} -- all of them must pass. Picking one above replaces the lot.`}
         </span>
       )}
       <Choice label="target" options={TARGETS} value={options.target} onChange={setTarget} />

@@ -110,4 +110,32 @@ describe('consequence', () => {
     const s = consequence({ cadence: ['window', 'queue'], target: 'merged', concurrency: 3, plan: false })
     expect(s).toContain('night window, and waits until no other epic')
   })
+
+  /**
+   * This sentence is the last thing read before the RUN button is pressed, so an
+   * APPOINTMENT has to appear in it -- with its zone. "Waits until 02:00" without
+   * one is exactly the ambiguity the scheduled-tasks rule exists to refuse: the
+   * broker's clock is UTC and the reader's is not.
+   */
+  it('names the appointment an armed run is waiting for, offset and all', () => {
+    const s = consequence({
+      cadence: ['at:2026-08-22T02:00:00+07:00'],
+      target: 'merged',
+      concurrency: 3,
+      plan: false,
+    })
+    expect(s).toBe(
+      'Waits until 2026-08-22T02:00:00+07:00, up to 3 at a time, and stops once each card is merged to main.',
+    )
+  })
+
+  it('states the appointment AND the gate it composes with', () => {
+    const s = consequence({
+      cadence: ['window', 'at:2026-08-22T02:00:00+07:00'],
+      target: 'merged',
+      concurrency: 1,
+      plan: false,
+    })
+    expect(s).toContain('night window, and waits until 2026-08-22T02:00:00+07:00')
+  })
 })
