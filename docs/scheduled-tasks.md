@@ -119,11 +119,20 @@ every schedule written before the field existed meant.
 | `board-sweep` | the morning report's board op, via the sentinel | `swept` | none |
 | `epic-start` | arms an epic run, via `armEpicRun` | `armed` | `epic` (required) |
 
-`prompt` is required for a `spawn` and **refused** for the other two; `epic` is
-required for an `epic-start` and refused for the other two (`checkAction`,
-`src/shared/scheduled-task.ts`). An `epic` block sitting on a `spawn` is somebody
-who filled in the epic and forgot the action -- silently ignoring it would arm
-nothing, weekly, with no error anywhere.
+`prompt` is required for a `spawn` and **ignored** by the other two; `epic` is
+required for an `epic-start` and **refused** on the other two (`checkAction`,
+`src/shared/scheduled-task.ts`). The asymmetry is on purpose: a stray `prompt`
+is an inert string, where an `epic` block sitting on a `spawn` is somebody who
+filled in the epic and forgot the action -- ignoring THAT would arm nothing,
+weekly, with no error anywhere. Refusing a stray prompt would also break the
+one-field patch that flips an existing spawn schedule to `board-sweep`.
+
+The refusal binds on PATCH as well as on create. `mergedEpic`
+(`src/broker/scheduled-tasks/operations.ts`) clears the block only when the
+action actually CHANGES away from `epic-start` and the patch sends no block of
+its own; every other stray `epic` reaches `checkAction` and is refused there.
+Clearing them instead is how `schedule_update id=<a spawn> epic_id=e1
+max_usd=200` used to answer `200 OK`, change nothing, and arm nothing, forever.
 
 A `board-sweep` launches **no conversation**, so it records `swept` and not
 `spawned` -- a run row claiming a conversation nobody can open is the kind of

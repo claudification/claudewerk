@@ -59,16 +59,27 @@ export function createSchedule(store: StoreDriver, body: ScheduledTaskCreate, cr
  * the epic id beside it; the top-level spread would otherwise replace the whole
  * block with the one knob and the record would fail validation.
  *
- * CLEARS when the action stops being `epic-start`, because that is the only way
- * to turn an epic schedule back into a spawn: an `epic` block left behind on
+ * CLEARS on a CHANGE away from `epic-start`, because that is the only way to
+ * turn an epic schedule back into a spawn: an `epic` block left behind on
  * another action is refused by `checkAction`, and a patch has no spelling for
  * "remove this field".
+ *
+ * Clearing is deliberately narrow. It fires only when the action ACTUALLY
+ * changes and the patch sends no block of its own; every other stray `epic`
+ * reaches `checkAction` and is REFUSED there. Clearing them instead would
+ * silently drop the one field whose loss is invisible -- `schedule_update
+ * id=<a spawn> epic_id=e1 max_usd=200` would answer 200, change nothing, and
+ * arm nothing, forever. A patch that both changes the action away AND sends an
+ * epic block contradicts itself and is refused for the same reason.
  */
 function mergedEpic(existing: ScheduledTask, patch: ScheduledTaskPatch): Pick<ScheduledTask, 'epic'> | undefined {
   const action = patch.action ?? existing.action
-  if (action !== 'epic-start') return { epic: undefined }
-  if (!patch.epic) return undefined
-  return { epic: { ...existing.epic, ...patch.epic } as ScheduledTask['epic'] }
+  if (action === 'epic-start') {
+    if (!patch.epic) return undefined
+    return { epic: { ...existing.epic, ...patch.epic } as ScheduledTask['epic'] }
+  }
+  if (existing.action === 'epic-start' && !patch.epic) return { epic: undefined }
+  return undefined
 }
 
 /**

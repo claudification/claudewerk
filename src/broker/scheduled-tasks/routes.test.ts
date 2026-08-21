@@ -287,6 +287,27 @@ describe('epic-start schedules', () => {
     })
   })
 
+  it('refuses an epic block PATCHED onto a spawn, exactly as create does', async () => {
+    // The expensive silent failure: somebody raises a ceiling on the schedule
+    // they THINK arms the epic, gets a 200, and the schedule arms nothing
+    // forever. A create with the same shape is refused; a patch must be too.
+    const id = ((await (await create()).json()) as { scheduledTask: { id: string } }).scheduledTask.id
+    const res = await patch(id, { epic: { epicId: 'epic-the-wall', maxUsd: 200 } })
+
+    expect(res.status).toBe(400)
+    expect(((await res.json()) as { error: string }).error).toContain('epic-start')
+    expect(store.scheduledTasks.get(id)?.epic).toBeUndefined()
+  })
+
+  it('refuses a patch that changes the action away AND sends an epic block -- that is self-contradictory', async () => {
+    const id = await createEpic()
+    const res = await patch(id, { action: 'spawn', prompt: 'do it by hand', epic: { maxUsd: 200 } })
+
+    expect(res.status).toBe(400)
+    // Untouched: a refused patch stores nothing, half or whole.
+    expect(store.scheduledTasks.get(id)?.action).toBe('epic-start')
+  })
+
   it('turning it back into a spawn clears the epic block instead of deadlocking', async () => {
     const id = await createEpic()
     // Both halves in one patch: the action changes AND the prompt arrives. A

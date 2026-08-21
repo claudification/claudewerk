@@ -184,6 +184,12 @@ function opReply(result: EpicResult): Reply {
  * badge broadcast are one indivisible act, and a schedule arms runs through the
  * very same function. See `epic-arm.ts` for what an arm that skipped any of it
  * would leave behind.
+ *
+ * `baton` and `reason` are NOT forwarded, unlike `toSentinelOp` -- and nothing
+ * is lost. In `src/sentinel/epic-handlers.ts`, `msg.baton` is read by `get`
+ * alone and `msg.reason` by `abort` and `delete` alone; a `start` reads
+ * neither, so the old path was sending two fields into a handler that never
+ * looked at them.
  */
 async function runArm(store: ConversationStore, body: EpicHttpBodyReady): Promise<Reply> {
   const armed = await armEpicRun(store, {

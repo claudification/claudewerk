@@ -24,7 +24,7 @@ const ACTION = {
     description:
       'WHAT fires. "spawn" (default) launches a conversation from `prompt`. "board-sweep" runs the morning ' +
       'report\'s board op and launches nothing. "epic-start" ARMS an epic run (`epic_id`) and launches nothing -- ' +
-      'the epic engine dispatches from there. Only "spawn" needs a prompt; the other two refuse to invent one.',
+      'the epic engine dispatches from there. Only "spawn" reads `prompt`; the other two never look at one.',
   },
   epic_id: {
     type: 'string',
@@ -85,7 +85,7 @@ export const SCHEDULE_TOOL_SCHEMAS = {
       `The schedule runs as a real USER (see \`owner\`), whose spawn permission is re-checked at every fire. ${WHEN_NOTE} ` +
       'WHAT it fires is `action`: a spawn from `prompt` (the default), the morning board sweep, or an EPIC ARM ' +
       '(`action=epic-start` + `epic_id`) -- which is how "start the migration epic at 02:00 on Saturday" happens ' +
-      'without a human pressing RUN. `prompt` is required for a spawn and refused for the other two. ' +
+      'without a human pressing RUN. `prompt` is required for a spawn and ignored by the other two. ' +
       'WHERE defaults to your own project and its root directory (any worktree path is folded back to the repo, since a worktree outlives its schedule by less than the schedule outlives it).',
     inputSchema: {
       type: 'object' as const,
