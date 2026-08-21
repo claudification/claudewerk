@@ -380,6 +380,7 @@ Everything an epic run can be driven, inspected or debugged by is one MCP tool,
 | Action | Does | Costs |
 |---|---|---|
 | `start` | arm or RESUME. Never resets the generation counter. | sentinel |
+| ↳ | answers with the STATUS BLOCK only -- no digest, see below | |
 | `pause` | stop dispatching, release the lease | sentinel |
 | `abort` | terminal, `reason` into the baton | sentinel |
 | `beat` | **run one beat NOW** instead of waiting up to 45s | broker |
@@ -393,6 +394,24 @@ over HTTP: exposing them would let a caller forge a generation or hand-edit the
 append-only baton, which is the one thing the baton exists to prevent.
 `break_lease` is `release`'s audited public face -- it refuses a live holder
 unless forced, and writes who broke it and why into the baton.
+
+### `start` is cheap on purpose
+
+`start` merges rather than clobbers, so sending one knob changes one knob and
+nothing else -- which makes it the reconfigure verb as much as the arm verb, and
+raising a parked run's `max_usd` its most common call by far.
+
+So it answers with the STATUS BLOCK ALONE: run state, cadence, target,
+concurrency, the three caps and the lease, plus a line saying where the digest
+went. Roughly what `list` costs. It used to return the whole plan-of-record
+digest on every call, ~1500 tokens of context the caller usually wrote itself
+ten minutes earlier, which made the verb that RELEASES a brake feel expensive
+enough to avoid.
+
+`get` is the digest's home and is one call away. There is no flag: making
+callers opt in to the cheap behaviour would tax the common case to serve the
+rare one, and a fresh arm has no digest yet anyway -- only the placeholder the
+first overseer generation replaces.
 
 ### `inspect` -- reach for this first when an epic looks stuck
 
