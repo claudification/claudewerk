@@ -179,13 +179,28 @@ function renderInspect(i: EpicInspectResult): string {
   ].join('\n')
 }
 
+/**
+ * THE BURIAL SUFFIX. Cleared runs are MARKED here rather than dropped: `list` is
+ * the enumeration surface an agent uses to FIND a run, so hiding one leaves it
+ * with no name anything can reach. The date is not decoration -- "cleared" with
+ * no when reads as a state rather than as something a human did on a day.
+ */
+function clearedSuffix(r: EpicRunListEntry): string {
+  if (!r.cleared) return ''
+  const day = r.clearedAt?.slice(0, 10) ?? 'unknown date'
+  return r.cleared === 'acknowledged'
+    ? ` . CLEARED ${day} (acknowledged -- a human has seen this run end)`
+    : ` . CLEARED ${day} (aged out -- dead longer than 7 days, nobody acknowledged it)`
+}
+
 function renderList(runs: readonly EpicRunListEntry[]): string {
   if (runs.length === 0) return 'No epic runs visible in this project (none armed, none with live conversations).'
+  const buried = runs.filter(r => r.cleared !== null).length
   return [
-    `${runs.length} epic run(s):`,
+    `${runs.length} epic run(s)${buried > 0 ? ` (${buried} cleared, listed last)` : ''}:`,
     ...runs.map(
       r =>
-        `- ${r.epicId}: ${r.status ?? 'no run artifact'} gen ${r.gen} . armed ${r.armed ? 'yes' : 'no'} . ${r.inFlight} in flight . overseer ${r.overseerAlive ? 'alive' : 'not running'}`,
+        `- ${r.epicId}: ${r.status ?? 'no run artifact'} gen ${r.gen} . armed ${r.armed ? 'yes' : 'no'} . ${r.inFlight} in flight . overseer ${r.overseerAlive ? 'alive' : 'not running'}${clearedSuffix(r)}`,
     ),
   ].join('\n')
 }

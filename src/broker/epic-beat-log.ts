@@ -57,6 +57,15 @@ export function recentBeats(project: string, epicId: string, limit = 10): BeatRe
   return ring.slice(Math.max(0, ring.length - Math.max(1, limit)))
 }
 
+/** WHEN THIS EPIC LAST BEAT, or null if it never has. The ring keeps newest
+ *  LAST, and getting that end wrong dates a stalled run to its first beat --
+ *  which is why the slice lives here once rather than at each of the two feeds
+ *  (`epic-active`'s badge row and `epic-inspect`'s `list`) that need it. */
+export function lastBeatAt(project: string, epicId: string): string | null {
+  const beats = recentBeats(project, epicId, 1)
+  return beats.length > 0 ? (beats[beats.length - 1]?.at ?? null) : null
+}
+
 /**
  * Deliberately NO `forget` twin to `forgetArmedEpic`. A run that just parked or
  * completed is precisely the one somebody comes to inspect, and dropping its

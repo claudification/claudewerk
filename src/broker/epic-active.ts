@@ -23,7 +23,7 @@
 
 import { beatStale, isVitallyLive, STALE_BEAT_MS } from '../shared/epic-vitality'
 import type { EpicActivityEntry } from '../shared/protocol'
-import { recentBeats } from './epic-beat-log'
+import { lastBeatAt } from './epic-beat-log'
 import { epicIo } from './epic-io'
 import { listArmedEpics } from './epic-registry'
 import { type EpicGroup, epicsToWatch } from './epic-sweep'
@@ -38,18 +38,12 @@ export type { EpicActivityEntry }
  */
 export { STALE_BEAT_MS }
 
-/** The last beat's wall clock, or null. The ring keeps newest LAST. */
-function lastBeat(project: string, epicId: string): string | null {
-  const beats = recentBeats(project, epicId, 1)
-  return beats.length > 0 ? (beats[beats.length - 1]?.at ?? null) : null
-}
-
 async function toEntry(deps: SweepDeps, group: EpicGroup, nowMs: number): Promise<EpicActivityEntry> {
   // `limit: 1` and not 0: the sentinel's `get` wants a query, and one entry is
   // the cheapest honest answer. The baton itself is dropped -- the window's
   // inspect fetches it properly.
   const view = await epicIo().fetchEpicRun(deps, group.project, group.epicId, { limit: 1 })
-  const at = lastBeat(group.project, group.epicId)
+  const at = lastBeatAt(group.project, group.epicId)
   return {
     epicId: group.epicId,
     project: group.project,

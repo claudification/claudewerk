@@ -9,6 +9,7 @@ import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
 import type { DialogLayout, DialogResult } from './dialog-schema'
 import type { EpicLease } from './epic-lease'
+import type { ClearedReason } from './epic-run-cleared'
 import type {
   EpicCadence,
   EpicLaunchTag,
@@ -5357,6 +5358,23 @@ export interface EpicRunListEntry {
   armed: boolean
   inFlight: number
   overseerAlive: boolean
+  /**
+   * HAS A HUMAN BURIED THIS RUN? -- `acknowledged` (somebody pressed CLEAR) or
+   * `aged-out` (dead longer than `RUN_AGE_OUT_MS`). Null while the run is still
+   * on the wall's tail, and null for every live run whatever stamps it carries.
+   *
+   * MARKED, NOT HIDDEN, and the asymmetry with the wall is deliberate. The wall
+   * is an ATTENTION surface, so a buried row leaves it. `list` is the
+   * ENUMERATION surface an agent reaches for to FIND a run, and a verb that
+   * makes a run invisible to the tool that finds runs is how a run gets
+   * stranded with nothing able to name it. So the row stays, says it is over,
+   * and sorts last.
+   */
+  cleared: ClearedReason | null
+  /** ISO the burial is dated from -- the `clear` stamp, or the death the age-out
+   *  was measured from. Null exactly when `cleared` is null; carried so the row
+   *  can say WHEN rather than just that it happened. */
+  clearedAt: string | null
 }
 
 // ===========================================================================
