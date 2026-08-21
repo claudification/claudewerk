@@ -294,6 +294,127 @@ function sortProposals(proposals: Proposal[]): Proposal[] {
 }
 
 /**
+ * THE CANDIDATE GATE. Every proposal kind goes through this and only this to
+ * reach a card, so none of them can select a card behind the accounting's back:
+ * a slug that gets a verdict bag is, by construction, in `selected`.
+ *
+ * Returns the bag to write into, or `null` when the card is refused outright.
+ */
+type Consider = (slug: string) => CardVerdicts | null
+
+/** The gate, bound to one sweep's live set and verdict map. */
+function candidateGate(live: ReadonlySet<string>, verdicts: Map<string, CardVerdicts>): Consider {
+  return slug => {
+    // Rule 4 is checked BEFORE the memo, not inside it. Checking it only on a
+    // card's first consideration would leave a live card open to a proposal from
+    // the second kind that looked at it, which is the exact bug the rule exists
+    // to prevent -- and it needs three signals on one card to reproduce.
+    if (live.has(slug)) {
+      if (!verdicts.has(slug)) {
+        verdicts.set(slug, {
+          proposals: [],
+          refusals: [{ unit: slug, bucket: 'live-conversation', detail: 'a conversation is working this card' }],
+        })
+      }
+      return null
+    }
+    const existing = verdicts.get(slug)
+    if (existing) return existing
+    const fresh: CardVerdicts = { proposals: [], refusals: [] }
+    verdicts.set(slug, fresh)
+    return fresh
+  }
+}
+
+/**
+ * promote-delivered. Keyed off the ledger, and only rows whose card is still on
+ * the board: a promise naming a card nobody can find is a ledger defect, which
+ * `closedWithoutCommit` reports and this sweep must not re-report.
+ */
+function considerDelivered(deps: BoardSweepDeps, bySlug: ReadonlyMap<string, SweepCard>, consider: Consider): void {
+  for (const row of deps.getPromises()) {
+    if (row.verdict !== 'delivered') continue
+    const card = bySlug.get(row.id)
+    if (!card) continue
+    const out = consider(card.slug)
+    if (out) promoteVerdicts(card, row, out)
+  }
+}
+
+/**
+ * archive-cold and note-delete-at, both straight date arithmetic. One card can
+ * earn both, so each kind asks the gate for itself rather than sharing a lookup
+ * -- a live card must be refused once per signal that reached it.
+ */
+function considerDates(cards: readonly SweepCard[], now: number, coldAfterDays: number, consider: Consider): void {
+  for (const card of cards) {
+    if (card.status === 'inbox') {
+      const out = consider(card.slug)
+      if (out) coldVerdicts(card, now, coldAfterDays, out)
+    }
+    if (card.deleteAt) {
+      const out = consider(card.slug)
+      if (out) deleteAtVerdicts(card, card.deleteAt, now, out)
+    }
+  }
+}
+
+/** One shortlisted pair, both sides. A judge that failed and a pair judged
+ *  distinct are both REFUSALS on each side, never a silent drop. */
+function considerPair(
+  pair: DuplicateCandidate,
+  verdict: DuplicateJudgement | undefined,
+  failure: { bucket: BoardSweepBucket; detail: string } | undefined,
+  consider: Consider,
+): void {
+  for (const slug of [pair.a, pair.b]) {
+    const out = consider(slug)
+    if (!out) continue
+    if (failure) {
+      out.refusals.push({ unit: slug, bucket: failure.bucket, detail: `${failure.detail} (pair ${pair.a}/${pair.b})` })
+      continue
+    }
+    if (!verdict?.duplicate) {
+      out.refusals.push({
+        unit: slug,
+        bucket: 'not-duplicate',
+        detail: verdict ? `judged distinct from ${otherOf(pair, slug)}` : `no verdict returned for ${pair.a}/${pair.b}`,
+      })
+      continue
+    }
+    out.proposals.push(
+      flagDuplicate({ card: slug, other: otherOf(pair, slug), confidence: verdict.confidence, reason: verdict.reason }),
+    )
+  }
+}
+
+/** The pairs the cap cut. Both sides are still SELECTED and refused with their
+ *  score, so a truncation shows up in the report instead of vanishing. */
+function considerOverflow(overflow: readonly DuplicateCandidate[], consider: Consider): void {
+  for (const pair of overflow) {
+    for (const slug of [pair.a, pair.b]) {
+      consider(slug)?.refusals.push({
+        unit: slug,
+        bucket: 'shortlist-capped',
+        detail: `pair ${pair.a}/${pair.b} scored ${pair.score.toFixed(2)}, below the top ${MAX_DUPLICATE_PAIRS}`,
+      })
+    }
+  }
+}
+
+/** flag-duplicate. Prefilter, cap, then the model on what survives. */
+async function considerDuplicates(
+  deps: BoardSweepDeps,
+  cards: readonly SweepCard[],
+  consider: Consider,
+): Promise<void> {
+  const { pairs, overflow } = shortlistDuplicates(cards, MAX_DUPLICATE_PAIRS)
+  const { judgements, failure } = await judge(deps, pairs)
+  for (const pair of pairs) considerPair(pair, judgementFor(judgements, pair), failure, consider)
+  considerOverflow(overflow, consider)
+}
+
+/**
  * ONE SWEEP.
  *
  * Selection is the CANDIDATE set, not the whole board: a card is selected when it
@@ -301,6 +422,11 @@ function sortProposals(proposals: Proposal[]): Proposal[] {
  * `delete_at`, a shortlisted duplicate pair). Selecting all ~600 cards would make
  * the refusal list a per-card census of a board that is mostly finished, and a
  * denominator nobody reads is a denominator that hides the one card that matters.
+ *
+ * The four proposal kinds each live in their own `consider*` above; what stays
+ * HERE is the accounting. Every selected card is either acted or refused exactly
+ * once, and that is the contract -- scattering the fold across the kinds is how a
+ * card gets counted twice, or dropped, without any single helper looking wrong.
  */
 export async function sweepBoard(deps: BoardSweepDeps): Promise<BoardSweepOutcome> {
   const cards = deps.getCards()
@@ -325,97 +451,11 @@ export async function sweepBoard(deps: BoardSweepDeps): Promise<BoardSweepOutcom
   const live = cardsBeingWorked(deps)
   const bySlug = new Map(cards.map(card => [card.slug, card]))
   const verdicts = new Map<string, CardVerdicts>()
+  const consider = candidateGate(live, verdicts)
 
-  const consider = (slug: string): CardVerdicts | null => {
-    // Rule 4 is checked BEFORE the memo, not inside it. Checking it only on a
-    // card's first consideration would leave a live card open to a proposal from
-    // the second kind that looked at it, which is the exact bug the rule exists
-    // to prevent -- and it needs three signals on one card to reproduce.
-    if (live.has(slug)) {
-      if (!verdicts.has(slug)) {
-        verdicts.set(slug, {
-          proposals: [],
-          refusals: [{ unit: slug, bucket: 'live-conversation', detail: 'a conversation is working this card' }],
-        })
-      }
-      return null
-    }
-    const existing = verdicts.get(slug)
-    if (existing) return existing
-    const fresh: CardVerdicts = { proposals: [], refusals: [] }
-    verdicts.set(slug, fresh)
-    return fresh
-  }
-
-  // -- promote-delivered. Keyed off the ledger, and only rows whose card is still
-  //    on the board: a promise naming a card nobody can find is a ledger defect,
-  //    which `closedWithoutCommit` reports and this sweep must not re-report.
-  for (const row of deps.getPromises()) {
-    if (row.verdict !== 'delivered') continue
-    const card = bySlug.get(row.id)
-    if (!card) continue
-    const out = consider(card.slug)
-    if (out) promoteVerdicts(card, row, out)
-  }
-
-  // -- archive-cold and note-delete-at, both straight date arithmetic.
-  for (const card of cards) {
-    if (card.status === 'inbox') {
-      const out = consider(card.slug)
-      if (out) coldVerdicts(card, now, coldAfterDays, out)
-    }
-    if (card.deleteAt) {
-      const out = consider(card.slug)
-      if (out) deleteAtVerdicts(card, card.deleteAt, now, out)
-    }
-  }
-
-  // -- flag-duplicate. Prefilter, cap, then the model on what survives.
-  const { pairs, overflow } = shortlistDuplicates(cards, MAX_DUPLICATE_PAIRS)
-  const { judgements, failure } = await judge(deps, pairs)
-  for (const pair of pairs) {
-    const verdict = judgementFor(judgements, pair)
-    for (const slug of [pair.a, pair.b]) {
-      const out = consider(slug)
-      if (!out) continue
-      if (failure) {
-        out.refusals.push({
-          unit: slug,
-          bucket: failure.bucket,
-          detail: `${failure.detail} (pair ${pair.a}/${pair.b})`,
-        })
-        continue
-      }
-      if (!verdict?.duplicate) {
-        out.refusals.push({
-          unit: slug,
-          bucket: 'not-duplicate',
-          detail: verdict
-            ? `judged distinct from ${otherOf(pair, slug)}`
-            : `no verdict returned for ${pair.a}/${pair.b}`,
-        })
-        continue
-      }
-      out.proposals.push(
-        flagDuplicate({
-          card: slug,
-          other: otherOf(pair, slug),
-          confidence: verdict.confidence,
-          reason: verdict.reason,
-        }),
-      )
-    }
-  }
-  for (const pair of overflow) {
-    for (const slug of [pair.a, pair.b]) {
-      const out = consider(slug)
-      out?.refusals.push({
-        unit: slug,
-        bucket: 'shortlist-capped',
-        detail: `pair ${pair.a}/${pair.b} scored ${pair.score.toFixed(2)}, below the top ${MAX_DUPLICATE_PAIRS}`,
-      })
-    }
-  }
+  considerDelivered(deps, bySlug, consider)
+  considerDates(cards, now, coldAfterDays, consider)
+  await considerDuplicates(deps, cards, consider)
 
   const proposals: Proposal[] = []
   const acted: string[] = []
@@ -459,7 +499,6 @@ function idleReason(selected: number, acted: number): string | undefined {
  */
 // The fabric's registry that iterates the scanners is a separate card; this
 // binding is the contract conformance, and is consumed by the wiring card.
-// fallow-ignore-next-line unused-export
 export const boardSweepScanner: Scanner<BoardSweepDeps, BoardSweepBucket> = {
   id: 'morning-report',
   tag: '[board-sweep]',

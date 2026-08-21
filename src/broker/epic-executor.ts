@@ -29,7 +29,14 @@ import { planEpic } from '../shared/epic-ready'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
-import { applyCardRenames, cardRenames, orphanedAckLine, orphanedCardIds, renameAwareAcks } from './epic-card-rename'
+import {
+  applyCardRenames,
+  cardRenames,
+  orphanedAckLine,
+  orphanedCardIds,
+  renameAwareAcks,
+  renameAwareCounts,
+} from './epic-card-rename'
 import { epicIo, tag } from './epic-io'
 import { recordFinalPromises, recordSettledPromises } from './epic-promise'
 import { type EpicGroup, generationMismatch, unacknowledgedCards, unacknowledgedFailedLegs } from './epic-sweep'
@@ -174,6 +181,11 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     inFlight: group.inFlight,
     inVerify: group.inVerify,
     unspawnable: group.unspawnable,
+    // THE CEILING ON THE BOUNCE LANE, from the SAME `get` the run and the baton
+    // came from. Rename-aware for `renameAwareAcks`'s reason: the log names a
+    // card by whatever id it had when the seat went out, so a renamed card would
+    // otherwise start its seat count over at zero.
+    dispatches: renameAwareCounts(view.dispatchCounts, renames),
   })
 
   const windowOpen = run.cadence === 'window' ? await deps.windowOpen(group.project) : true

@@ -62,6 +62,10 @@ export async function inspectEpic(
     concurrency: view.run?.concurrency ?? 3,
     inFlight: group.inFlight,
     inVerify: group.inVerify,
+    // From the same `get` as the run: an inspect that showed a card as
+    // dispatchable while the beat was withholding it on the seat ceiling would be
+    // a debug read that lies about the engine, which is the one thing it is for.
+    dispatches: view.dispatchCounts,
   })
 
   return {

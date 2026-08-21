@@ -107,6 +107,32 @@ export function renameAwareAcks(acknowledged: readonly string[], renames: CardRe
 }
 
 /**
+ * The per-card seat counts, keyed by the id each card goes by NOW.
+ *
+ * SUMMED rather than overwritten, and that is the whole reason this is not a
+ * one-line `map`: a card dispatched under `old`, renamed, then dispatched again
+ * under `new` has entries under both names, and a ceiling that saw only the
+ * newer half would give a renamed card a fresh six seats -- which turns "rename
+ * the card" into the documented way to defeat the ceiling.
+ *
+ * Not the additive shape `renameAwareAcks` uses: an acknowledgement is a boolean
+ * that both names may carry, a count is a quantity that must be attributed to
+ * exactly one card or it is double-spent.
+ */
+export function renameAwareCounts(
+  counts: Readonly<Record<string, number>>,
+  renames: CardRenames,
+): Record<string, number> {
+  if (renames.size === 0) return { ...counts }
+  const out: Record<string, number> = {}
+  for (const [id, n] of Object.entries(counts)) {
+    const key = current(renames, id)
+    out[key] = (out[key] ?? 0) + n
+  }
+  return out
+}
+
+/**
  * Live seats whose card id matches NOTHING on the board -- an orphaned
  * acknowledgement key.
  *

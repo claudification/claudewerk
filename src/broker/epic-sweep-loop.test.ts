@@ -52,7 +52,14 @@ beforeEach(() => {
     fetchEpicRun: async (_d, project) => {
       beats.push(project)
       if (release) await new Promise<void>(r => (release = r))
-      return { run: null, baton: [], acknowledgedCardIds: [], lease: null, error: 'no run in this test' }
+      return {
+        run: null,
+        baton: [],
+        acknowledgedCardIds: [],
+        dispatchCounts: {},
+        lease: null,
+        error: 'no run in this test',
+      }
     },
     fetchBoardCards: async () => [],
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
@@ -89,7 +96,7 @@ describe('sweepEpics', () => {
           throw new Error('sentinel exploded')
         }
         beats.push(project)
-        return { run: null, baton: [], acknowledgedCardIds: [], lease: null }
+        return { run: null, baton: [], acknowledgedCardIds: [], dispatchCounts: {}, lease: null }
       },
     })
     await sweepEpics(deps())
@@ -130,7 +137,7 @@ describe('sweepEpics', () => {
     configureEpicIo({
       fetchEpicRun: async (_d, project) => {
         beats.push(project)
-        return { run: null, baton: [], acknowledgedCardIds: [], lease: null }
+        return { run: null, baton: [], acknowledgedCardIds: [], dispatchCounts: {}, lease: null }
       },
     })
     await sweepEpics(deps())
@@ -237,7 +244,7 @@ describe('beatOneEpic -- the forced beat', () => {
     configureEpicIo({
       fetchEpicRun: async (_d, project) => {
         beats.push(project)
-        return { run: null, baton: [], acknowledgedCardIds: [], lease: null }
+        return { run: null, baton: [], acknowledgedCardIds: [], dispatchCounts: {}, lease: null }
       },
     })
     convs = [conv('e1', 'implementer', 't1')]
