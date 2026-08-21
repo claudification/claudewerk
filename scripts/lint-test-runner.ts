@@ -20,6 +20,7 @@
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { type LintFinding, reportAndExit } from './lib/lint-report'
 import { scanSourceFiles } from './lib/source-files'
 
 const ROOT = join(import.meta.dir, '..')
@@ -35,13 +36,6 @@ const RULES: Rule[] = [
   { dir: 'web', runner: 'vitest', banned: 'bun:test' },
 ]
 
-interface Violation {
-  file: string
-  line: number
-  banned: string
-  runner: string
-}
-
 /** `import ... from '<module>'` for the banned runner, anywhere in the file. */
 function bannedImportLine(source: string, banned: string): number {
   const pattern = new RegExp(`from\\s*['"]${banned}['"]`)
@@ -52,29 +46,25 @@ function bannedImportLine(source: string, banned: string): number {
   return 0
 }
 
-function scanRule(rule: Rule): Violation[] {
+function scanRule(rule: Rule): LintFinding[] {
   const abs = join(ROOT, rule.dir)
-  const found: Violation[] = []
+  const found: LintFinding[] = []
   for (const rel of scanSourceFiles(abs, '**/*.{test,spec}.{ts,tsx}')) {
     const line = bannedImportLine(readFileSync(join(abs, rel), 'utf8'), rule.banned)
-    if (line > 0) found.push({ file: join(rule.dir, rel), line, banned: rule.banned, runner: rule.runner })
+    if (line > 0) {
+      found.push({
+        file: join(rule.dir, rel),
+        line,
+        detail: `imports '${rule.banned}' but this path runs under '${rule.runner}' -- the tests will not execute`,
+      })
+    }
   }
   return found
 }
 
-const violations = RULES.flatMap(scanRule)
-
-if (violations.length === 0) {
-  console.log('test-runner: every test file imports its own runner -- OK')
-  process.exit(0)
-}
-
-console.error(`\ntest-runner: ${violations.length} test file(s) importing the WRONG runner\n`)
-for (const v of violations) {
-  console.error(`  ${v.file}:${v.line}`)
-  console.error(`    imports '${v.banned}' but this path runs under '${v.runner}' -- the tests will not execute`)
-  console.error()
-}
-console.error("Fix: import from the runner that owns the path (src/ -> 'bun:test', web/ -> 'vitest').\n")
-
-process.exit(1)
+reportAndExit(
+  RULES.flatMap(scanRule),
+  'test-runner: every test file imports its own runner -- OK',
+  n => `test-runner: ${n} test file(s) importing the WRONG runner`,
+  "Fix: import from the runner that owns the path (src/ -> 'bun:test', web/ -> 'vitest').",
+)

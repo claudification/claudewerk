@@ -74,7 +74,7 @@ export type WorkOrderBucket =
   | 'not-actionable'
   | 'dispatch-failed'
 
-export const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
+const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
   'live-conversation',
   'epic-owned',
   'already-run',
