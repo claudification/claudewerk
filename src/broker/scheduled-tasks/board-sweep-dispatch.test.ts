@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import type { Conversation } from '../../shared/protocol'
+import type { BoardSweepResult, Conversation } from '../../shared/protocol'
 import { scannerEnabled } from '../../shared/scanner-opt-in'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { BoardRpcResult } from '../board-rpc'
@@ -65,6 +65,7 @@ const STAMPED_AT = Date.parse('2026-08-22T04:00:00Z')
 function harness(opts: { conversations?: Conversation[]; dead?: string[]; result?: BoardRpcResult } = {}) {
   const sent: { project: string; op: unknown }[] = []
   const stamps: { project: string; at: number }[] = []
+  const recorded: { project: string; tz: string; date: string; at: number }[] = []
   const dead = new Set(opts.dead ?? [])
   const deps = {
     callBoard: async (project: string, op: never) => {
@@ -76,9 +77,11 @@ function harness(opts: { conversations?: Conversation[]; dead?: string[]; result
     // sweep consumes is the ANSWER, so the answer is what a test supplies.
     isLive: (c: Conversation) => !dead.has(c.id),
     stampRun: (project: string, at: number) => stamps.push({ project, at }),
+    recordReport: (project: string, tz: string, sweep: BoardSweepResult, at: number) =>
+      recorded.push({ project, tz, date: sweep.reportDate, at }),
     now: () => STAMPED_AT,
   }
-  return { deps, sent, stamps }
+  return { deps, sent, stamps, recorded }
 }
 
 describe('the liveness answer, not the registry, crosses the wire', () => {
@@ -146,6 +149,30 @@ describe('the last-run stamp', () => {
     const { deps, stamps } = harness({ result: { ok: false, error: 'sentinel timed out (10s)' } })
     await dispatchBoardSweep(makeTask(), deps)
     expect(stamps).toEqual([])
+  })
+})
+
+/**
+ * The surface renders what this records and nothing else, so a report recorded
+ * for a sweep that did not happen would be a brew nobody brewed.
+ */
+describe('recording the brew for the surface', () => {
+  test('a completed pass records the report, in the SCHEDULE zone', async () => {
+    const { deps, recorded } = harness()
+    await dispatchBoardSweep(makeTask({ tz: 'Asia/Bangkok' }), deps)
+    expect(recorded).toEqual([{ project: PROJECT, tz: 'Asia/Bangkok', date: '2026-08-22', at: STAMPED_AT }])
+  })
+
+  test('a failed sweep records NOTHING -- an absent brew must stay absent', async () => {
+    const { deps, recorded } = harness({ result: { ok: false, error: 'sentinel timed out (10s)' } })
+    await dispatchBoardSweep(makeTask(), deps)
+    expect(recorded).toEqual([])
+  })
+
+  test('an `ok` with no payload records nothing either', async () => {
+    const { deps, recorded } = harness({ result: { ok: true } })
+    await dispatchBoardSweep(makeTask(), deps)
+    expect(recorded).toEqual([])
   })
 })
 

@@ -35,6 +35,18 @@ export interface BoardSweepDispatchDeps {
    * timestamp store is the drift the scanner fabric exists to end.
    */
   stampRun(project: string, at: number): void
+  /**
+   * "This report exists." Recorded by the CALLER, from what the sentinel
+   * returned, and only ever after a sweep that came back.
+   *
+   * The markdown artifact beside the cards is the human's copy; this is the
+   * machine-readable one the surface renders as tickable rows. Without it the
+   * morning report is a file nobody can execute, because the panel has no way to
+   * ask for a report that is not on its own side of the wire -- and asking the
+   * sentinel to produce one on open is exactly the on-demand sweep this feature
+   * refuses to do.
+   */
+  recordReport(project: string, tz: string, sweep: BoardSweepResult, at: number): void
   now(): number
 }
 
@@ -72,7 +84,11 @@ export async function dispatchBoardSweep(task: ScheduledTask, deps: BoardSweepDi
   // Stamped only on a pass that actually completed. "Enabled, last ran never" is
   // the shape of every engine that died quietly in this codebase, and a stamp
   // written on a failed fire would hide exactly that.
-  deps.stampRun(task.projectUri, deps.now())
+  const at = deps.now()
+  deps.stampRun(task.projectUri, at)
+  // Same rule, same reason: the report is recorded only for a sweep that came
+  // back, so the surface can never render a brew that did not happen.
+  deps.recordReport(task.projectUri, task.tz, sweep, at)
   console.log(`[sched] board-sweep id=${task.id} project=${task.projectUri} tz=${task.tz} ${describe(sweep)}`)
   return { ok: true }
 }

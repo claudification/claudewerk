@@ -3,6 +3,10 @@
 `git merge` never went through the fallow gate. Two git post-hooks now audit the
 post-merge tree and **warn, never block**.
 
+For what the gate measures when it *does* fire -- and why a complexity finding
+that disappeared is usually unmeasured rather than fixed -- see
+[what `fallow audit` is actually looking at](fallow-audit-scope.md).
+
 ## Install
 
 ```bash
