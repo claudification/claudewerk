@@ -66,6 +66,13 @@ export async function inspectEpic(
     // dispatchable while the beat was withholding it on the seat ceiling would be
     // a debug read that lies about the engine, which is the one thing it is for.
     dispatches: view.dispatchCounts,
+    // Same reason, one lane over. NOTE that `groupFor` folds without a
+    // `producedOutput` probe, which defaults to "it produced something" -- so
+    // inspect's `settled` is the COARSER of the two reads and may name a card the
+    // beat would call `unspawnable`. That divergence is pre-existing (`live.
+    // unacknowledged` below is folded from the same set) and is left alone here
+    // rather than widened: fixing it means giving `inspectEpic` a store handle.
+    settled: group.settled,
   })
 
   return {

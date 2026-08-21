@@ -745,6 +745,99 @@ describe('a bounced card, against the real sentinel seam', () => {
 })
 
 /**
+ * THE OPEN LANE'S RUNAWAY, end to end.
+ *
+ * An implementer that ran, produced output and died without moving its own card
+ * leaves that card in `open`. The card is therefore still `notStarted`, its
+ * conversation is dead so it is not `inFlight`, and it produced output so it is
+ * `settled` rather than `unspawnable` -- which means `MAX_LAUNCH_ATTEMPTS` does
+ * not apply and the next beat dispatches it again. Every 45 seconds, until a
+ * spend cap parks the run.
+ *
+ * These pin the repair through the REAL sentinel handler: the card is withheld on
+ * the FIRST repeat, it is named, and the run goes dry-then-parked instead of
+ * billing forever.
+ */
+describe('an `open` card its seat already ran for, against the real sentinel seam', () => {
+  const NOW = Date.parse('2026-08-21T13:40:00.000Z')
+  let root = ''
+
+  const sentinel = (op: 'get' | 'log_append', extra: Record<string, unknown> = {}) =>
+    handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'epic-open-lane-'))
+    mkdirSync(join(root, '.rclaude', 'project', 'cards'), { recursive: true })
+    writeFileSync(
+      cardPath(root, 'e1', false),
+      '---\ntitle: The epic\nstatus: open\ntags: [epic]\n---\n\nBody.\n',
+      'utf8',
+    )
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'start', epicId: 'e1', start: { plan: false } },
+      NOW,
+    )
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { gen: 3 } },
+      NOW,
+    )
+    // The seat that went out, and the settle the beat already acknowledged -- so
+    // what these tests observe is the DISPATCH decision and not a pending wake.
+    sentinel('log_append', {
+      logAppend: { kind: 'dispatch', convId: 'conv_t1_0', cardId: 't1', body: 'Implementer dispatched.' },
+    })
+    sentinel('log_append', { logAppend: { kind: 'completion', convId: 'broker', cardId: 't1', body: 'settled' } })
+    // The card the implementer never moved.
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+
+    configureEpicIo({
+      fetchEpicRun: async (_d, _p, epicId, q?: EpicBatonQuery) =>
+        toEpicRunView(sentinel('get', { ...(q ? { baton: q } : {}) }) as EpicResult & { epicId: typeof epicId }),
+      appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
+    })
+  })
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('gets NO second implementer -- one settled seat is the bound, not six', async () => {
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+  })
+
+  test('and is NAMED in the beat note, with the moves that re-authorise it', async () => {
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(out.note).toContain('t1')
+    expect(out.note).toContain('in-review')
+    expect(out.note).not.toContain('nothing ready')
+  })
+
+  test('a card with no prior seat is still dispatched normally', async () => {
+    cards = [...cards, card('t2', 'open', { epic: 'e1' })]
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(spawns.filter(s => s.epic.role === 'implementer').map(s => s.epic.cardId)).toEqual(['t2'])
+  })
+
+  test('the run stops instead of billing forever: dry generation now, park on the next', async () => {
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(out.note).toContain('already ran')
+    expect(patchOps().find(p => p.dryGens !== undefined)).toMatchObject({ dryGens: 1 })
+
+    ops = []
+    spawns = []
+    handleEpicOp(
+      root,
+      { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { dryGens: 1 } },
+      NOW,
+    )
+    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    expect(statusPatch()).toMatchObject({ status: 'paused' })
+    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+  })
+})
+
+/**
  * THE 2026-08-20 INCIDENT, end to end.
  *
  * A verifier for `t1` died at exit=1 in 1209ms without writing a transcript
