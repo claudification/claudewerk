@@ -7,6 +7,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { DENY_FLOOR_RULES, denyFloorHookCommand } from '../../shared/unattended-permissions'
@@ -357,6 +358,16 @@ describe('runNow', () => {
   })
 })
 
+/** Readers for the settings fragment a fire dispatched with. Shared by the floor
+ *  tests and the order/floor composition tests below -- one accessor each, so a
+ *  shape change is one edit rather than a hunt through two describes. */
+const inlineOf = (req: SpawnRequest) => req.settingsInline as Record<string, unknown>
+const permsOf = (req: SpawnRequest) => inlineOf(req).permissions as { allow?: string[]; deny: string[] }
+const denyOf = (req: SpawnRequest) => permsOf(req).deny
+const hooksOf = (req: SpawnRequest) =>
+  inlineOf(req).hooks as { PreToolUse: Array<{ hooks: Array<{ command: string }> }>; SessionStart?: unknown[] }
+const guardsOf = (req: SpawnRequest) => hooksOf(req).PreToolUse
+
 /**
  * THE DENY-FLOOR, THROUGH A REAL TICK.
  *
@@ -367,13 +378,6 @@ describe('runNow', () => {
  * claims, and until this card only one branch of one order path reached it.
  */
 describe('the unattended deny-floor on a scheduled fire', () => {
-  const inlineOf = (req: SpawnRequest) => req.settingsInline as Record<string, unknown>
-  const permsOf = (req: SpawnRequest) => inlineOf(req).permissions as { allow?: string[]; deny: string[] }
-  const denyOf = (req: SpawnRequest) => permsOf(req).deny
-  const hooksOf = (req: SpawnRequest) =>
-    inlineOf(req).hooks as { PreToolUse: Array<{ hooks: Array<{ command: string }> }>; SessionStart?: unknown[] }
-  const guardsOf = (req: SpawnRequest) => hooksOf(req).PreToolUse
-
   test('a schedule naming no order and carrying no fragment still gets the floor', async () => {
     const h = harness()
     h.store.scheduledTasks.upsert(makeTask())
@@ -450,6 +454,139 @@ describe('the unattended deny-floor on a scheduled fire', () => {
 
     expect(h.requests).toHaveLength(0)
     expect(h.store.scheduledTasks.listRuns(task.id)[0]?.error).toContain('settingsPath')
+  })
+})
+
+/**
+ * AN ORDER *AND* A FRAGMENT, ON THE SAME FIRE.
+ *
+ * Two cards a day apart rewrote how deny rules are composed into
+ * `settingsInline` in the same function -- `order-deny-union-settings-inline`
+ * (the order's rules are unioned into a fragment the caller already wrote) and
+ * `sched-settings-inline-deny-floor` (the floor goes on every fire). Each
+ * card's tests exercise only its own half: the order tests never see the floor
+ * and the floor tests never name an `orderId`. So the merge was textually clean
+ * and green while the COMPOSITION of the two was covered by nothing.
+ *
+ * These tests bind the composition itself: three sources of deny rules (the
+ * human's fragment, the order, the floor), stacked in that order, additive,
+ * deduped, with everything else in the fragment left alone.
+ */
+describe('an order and a settingsInline fragment composed on one fire', () => {
+  /** The order's own rule. Asserted against `REFINER_ORDER` inside the test, so
+   *  an order that stops carrying it fails loudly instead of testing nothing. */
+  const ORDER_RULE = 'mcp__rclaude__project_set_status'
+  /** The human's own rule -- nobody else carries it. */
+  const CALLER_RULE = 'Bash(terraform apply:*)'
+  /** The human's SECOND rule, deliberately one the floor also carries: the
+   *  dedupe across two layers is only provable when a rule arrives twice. */
+  const SHARED_WITH_FLOOR = 'Bash(sudo:*)'
+
+  /** How many times `rule` shows up. `toContain` cannot see a duplicate. */
+  const countIn = (rules: string[], rule: string) => rules.filter(r => r === rule).length
+  /** PreToolUse entries that ARE the floor's guard hook. */
+  const guardCount = (req: SpawnRequest) =>
+    guardsOf(req).filter(entry => entry.hooks?.some(hook => hook.command === denyFloorHookCommand())).length
+
+  function orderedTaskWithFragment(deny: string[]): ScheduledTask {
+    return makeTask({
+      name: 'refine with settings',
+      orderId: REFINER_ORDER_ID,
+      spawn: {
+        ...DEFAULT_SCHEDULE_SPAWN,
+        permissionMode: 'dontAsk',
+        settingsInline: {
+          permissions: { allow: ['Bash(deno test:*)'], deny },
+          hooks: { SessionStart: [{ matcher: '', hooks: [] }] },
+          // A key neither module has ever heard of. `settingsInline` is an opaque
+          // bag by schema, and both layers claim to spread it through untouched.
+          statusLine: { type: 'command', command: 'echo scheduled' },
+        },
+      },
+    })
+  }
+
+  test("the caller's rules, the order's rule and the whole floor all land, each exactly once", async () => {
+    expect(REFINER_ORDER.permissions?.deny).toContain(ORDER_RULE)
+
+    const h = harness()
+    h.store.scheduledTasks.upsert(orderedTaskWithFragment([CALLER_RULE, SHARED_WITH_FLOOR]))
+
+    await h.engine.tick()
+
+    expect(h.requests).toHaveLength(1)
+    const req = h.requests[0] as SpawnRequest
+    const deny = denyOf(req)
+
+    // 1. THE LAYERING CONTRACT, as an exact list: what the human wrote stays at
+    //    the head, the order's rule goes on next, the floor last. Asserted as an
+    //    array rather than three `toContain`s because the ORDER of the two calls
+    //    in `fireSchedule` is precisely what nothing else pins -- swap them and
+    //    every membership check still passes.
+    expect(deny).toEqual([
+      CALLER_RULE,
+      SHARED_WITH_FLOOR,
+      ORDER_RULE,
+      ...DENY_FLOOR_RULES.filter(rule => rule !== SHARED_WITH_FLOOR),
+    ])
+
+    // 2. DEDUPE HOLDS ACROSS BOTH LAYERS. `SHARED_WITH_FLOOR` arrived from the
+    //    human AND from the floor; it is in the list once.
+    expect(countIn(deny, SHARED_WITH_FLOOR)).toBe(1)
+    expect(countIn(deny, CALLER_RULE)).toBe(1)
+    expect(countIn(deny, ORDER_RULE)).toBe(1)
+    expect(deny).toHaveLength(new Set(deny).size)
+
+    // 3. EVERYTHING ELSE IN THE FRAGMENT SURVIVES -- the allowlist the human
+    //    configured, their unrelated hook, and a key neither layer knows about.
+    expect(permsOf(req).allow).toEqual(['Bash(deno test:*)'])
+    expect(hooksOf(req).SessionStart).toHaveLength(1)
+    expect(inlineOf(req).statusLine).toEqual({ type: 'command', command: 'echo scheduled' })
+
+    // 4. ONE guard hook, not two. Both layers can add it; only one may.
+    expect(guardCount(req)).toBe(1)
+  })
+
+  test("a caller that already denies the order's own rule gets it once, and still gets the floor", async () => {
+    // The union short-circuits here -- the order adds nothing new, so
+    // `applyOrderToRequest` leaves the fragment alone entirely. The floor is a
+    // separate step and must land anyway.
+    const h = harness()
+    h.store.scheduledTasks.upsert(orderedTaskWithFragment([ORDER_RULE]))
+
+    await h.engine.tick()
+
+    const req = h.requests[0] as SpawnRequest
+    expect(countIn(denyOf(req), ORDER_RULE)).toBe(1)
+    for (const rule of DENY_FLOOR_RULES) expect(countIn(denyOf(req), rule)).toBe(1)
+    expect(permsOf(req).allow).toEqual(['Bash(deno test:*)'])
+    expect(guardCount(req)).toBe(1)
+  })
+
+  test("an order refusal ends the fire with the ORDER's reason -- the floor is never reached", async () => {
+    // A `deny` that is a string, not an array of strings: BOTH layers refuse
+    // this fragment, with different reasons, which is what makes it an ordering
+    // probe. The same fixture without an `orderId` fails on the floor instead
+    // (see "a fragment the floor cannot be folded into FAILS the fire" above).
+    const h = harness()
+    const task = makeTask({
+      name: 'refine with junk settings',
+      orderId: REFINER_ORDER_ID,
+      spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsInline: { permissions: { deny: 'Bash(sudo:*)' } } },
+    })
+    h.store.scheduledTasks.upsert(task)
+
+    await h.engine.tick()
+
+    expect(h.requests).toHaveLength(0)
+    const run = h.store.scheduledTasks.listRuns(task.id)[0]
+    expect(run?.outcome).toBe('error')
+    expect(run?.error).toContain(`order ${REFINER_ORDER_ID}`)
+    expect(run?.error).toContain('cannot apply its deny rules')
+    // The floor never got a say: its refusal wording is absent.
+    expect(run?.error).not.toContain('deny-floor')
+    // A refused fire still counts toward the backoff.
+    expect(h.store.scheduledTasks.get(task.id)?.consecutiveFailures).toBe(1)
   })
 })
 
