@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { REFINER, REFINER_ORDER_ID, type SeatOrder } from '../../shared/refiner-order'
+import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER_ID, type SeatOrder } from '../../shared/refiner-order'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { createMemoryDriver } from '../store/memory/driver'
@@ -350,6 +350,49 @@ describe('a scheduled fire whose request already carries settingsInline', () => 
     expect(runs[0]?.error).toContain(REFINER_ORDER_ID)
     // A failed fire counts against the schedule, so one nobody fixes disarms.
     expect(store.scheduledTasks.get(task.id)?.consecutiveFailures).toBe(1)
+    engine.stop()
+  })
+})
+
+/**
+ * THE INSTRUCTION BLOCK REACHES THE SEAT THAT LAUNCHES -- the half of `order@1`
+ * that was inert.
+ *
+ * An order for a seat no broker builder covers carries its own `instructions`.
+ * Validating that field and delivering it to nobody would leave a scheduled
+ * `REFINER@1` running on a refiner's BUDGET while never having been told what
+ * refining is -- caps without a definition. So the assertion is made where it
+ * counts: on the `SpawnRequest` the engine actually handed to dispatch.
+ */
+describe('an order that carries its own instructions', () => {
+  test('the dispatched seat is handed the block, after the schedule’s own prompt', async () => {
+    const task = makeTask({ name: 'refine', orderId: REFINER_ORDER_ID, prompt: 'REFINE the card `foo`.' })
+    const { requests, release, engine } = hangingEngine([task])
+
+    const tick = engine.tick()
+    expect(requests).toHaveLength(1)
+    const prompt = requests[0]?.prompt ?? ''
+    // The schedule's own prompt survives -- the order appends, never replaces.
+    expect(prompt.startsWith('REFINE the card `foo`.')).toBe(true)
+    // And the seat's definition arrives with it, tag removal included: step 6 is
+    // what drains the queue, and a refiner that never read it refines forever.
+    expect(prompt).toContain(REFINER_INSTRUCTIONS)
+    expect(prompt).toContain('REMOVE the `needs-refine` tag')
+
+    for (const resolve of release) resolve()
+    await tick
+    engine.stop()
+  })
+
+  test('a schedule naming NO order gets its prompt verbatim', async () => {
+    const task = makeTask({ name: 'plain', prompt: 'just do the thing' })
+    const { requests, release, engine } = hangingEngine([task])
+
+    const tick = engine.tick()
+    expect(requests[0]?.prompt).toBe('just do the thing')
+
+    for (const resolve of release) resolve()
+    await tick
     engine.stop()
   })
 })

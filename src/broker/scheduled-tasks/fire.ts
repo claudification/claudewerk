@@ -12,6 +12,7 @@
  */
 
 import type { LaunchProfile } from '../../shared/launch-profile'
+import { composeSeatPrompt, type Order } from '../../shared/order'
 import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
 import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
@@ -92,8 +93,28 @@ export interface FireResult {
  * Build the spawn request: launch profile underneath, the schedule's own `spawn`
  * on top, and the fields the schedule OWNS applied last so nothing inherited can
  * redirect the target or replace the prompt.
+ *
+ * THE ORDER'S INSTRUCTION BLOCK IS FOLDED INTO THE PROMPT HERE, and here is the
+ * only place a scheduled fire has one. An `order@1` for a seat no broker builder
+ * covers carries its own `instructions` (`REFINER@1` is the first), and until
+ * something turns that field into prompt text a schedule naming such an order
+ * gets the seat's CAPS and never its definition -- a refiner that was never told
+ * to drain the tag, running on a refiner's budget.
+ *
+ * NOT IN `applyOrderToRequest`, DELIBERATELY. That function is shared with
+ * `refine-scanner.ts`, which composes its own prompt from the same block
+ * (`buildRefinerPrompt`) because it has a CARD to point at and no schedule
+ * prompt at all. Folding the block in there too would hand that seat its
+ * instructions twice. The caps composition is genuinely common to both callers;
+ * the prompt is not, and pretending otherwise is how a shared function grows a
+ * flag.
  */
-export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | null, firedAt: number): SpawnRequest {
+export function buildSpawnRequest(
+  task: ScheduledTask,
+  profile: LaunchProfile | null,
+  firedAt: number,
+  order?: Order,
+): SpawnRequest {
   const stamp = new Date(firedAt).toISOString().slice(0, 16).replace('T', ' ')
   return {
     ...(profile?.spawn ?? {}),
@@ -102,7 +123,7 @@ export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | 
     // `?? ''` never fires for a spawn schedule -- `checkAction` rejects one with
     // no prompt at both create and PATCH. It is here because the field became
     // optional for `board-sweep`, which does not reach this function at all.
-    prompt: task.prompt ?? '',
+    prompt: composeSeatPrompt(order, task.prompt ?? ''),
     sentinel: task.sentinel ?? profile?.sentinel,
     name: `${task.name} ${stamp}`.slice(0, 80),
     description: `Scheduled run of "${task.name}" (${task.cron} ${task.tz})`,
@@ -240,7 +261,7 @@ function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: S
   }
 
   const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
-  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt), order)
+  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt, order?.order), order)
   // An order that asks for more privilege than the scheduler holds is a FAILED
   // fire, not a quiet downgrade: dispatching the seat with caps its order did
   // not describe is worse than not dispatching it, and the failure counter is
