@@ -149,7 +149,24 @@ clears it. Agent-turn quality is not judged here -- only whether the spawn
 happened.
 
 **Concurrency.** At most 3 scheduler-originated spawns in flight globally;
-excess records `skipped_overlap`.
+excess records `skipped_overlap`. A slot is held only for the duration of the
+dispatch, so a fire that is *refused* never occupies one. (Until 2026-08-21 the
+count was the engine's double-fire set, which included the schedule asking, so
+the ceiling of 3 actually admitted 2.)
+
+**Work orders and reserved seats.** A schedule may name an `orderId` -- today
+only `REFINER@1` (`src/shared/refiner-order.ts`). The order supplies the seat's
+caps (model, effort, budget, deny rules), composed through `composeOrderCaps` so
+it can only ever *narrow* what the scheduler already holds, and it declares a
+`reservation`: how many of the 3 slots that role may hold at once. `REFINER@1`
+reserves 1, so a backlog of `#needs-refine` cards leaves 2 slots permanently
+reachable by the nightly sweep and the recap. A schedule naming no order is
+bounded by the global ceiling alone.
+
+| Refusal in `error` | Means |
+|---|---|
+| `scheduler at its concurrency ceiling (3)` | The whole pool is busy -- raise the pool |
+| `order X holds its reserved N of 3 scheduler slots` | That role is at its share while the pool has room -- raise the reservation |
 
 ## Run history
 
