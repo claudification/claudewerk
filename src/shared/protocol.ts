@@ -3727,6 +3727,8 @@ export interface LaunchConfig {
   permissionMode?: string
   autocompactPct?: number
   maxBudgetUsd?: number
+  /** CC `--max-turns` for this launch, if a work order or caller capped it. */
+  maxTurns?: number
   includePartialMessages?: boolean
   env?: Record<string, string>
   appendSystemPrompt?: string
@@ -5312,6 +5314,16 @@ export interface EpicInspectResult {
   live: EpicInspectLive
   beats: EpicBeatRecord[]
   baton: EpicLogEntry[]
+  /**
+   * THE QUEUE AXIS, ANSWERED FOR THIS EPIC. "Queued, position 2 of 3, behind
+   * `epic-morning-report`" is the whole point of the gate being inspectable: the
+   * failure it guards against is a queued run that waits forever with every
+   * surface reporting nothing more than "armed".
+   *
+   * Absent when the axis has nothing to say -- and, unlike the plan, computed
+   * across the epic's PROJECT PEERS, because no single epic can answer it.
+   */
+  queue?: EpicQueueReading
   error?: string
 }
 
@@ -5349,6 +5361,36 @@ export interface EpicActivityEntry {
    *  age-out half of the tail rule measures from here; `lastBeatAt` is not the
    *  same fact, since a paused run stops beating and keeps being updated. */
   updatedAt?: string
+  /**
+   * WHAT THE QUEUE AXIS SAYS ABOUT THIS RUN RIGHT NOW.
+   *
+   * On the summary rather than behind an `inspect`, and for the same reason
+   * `acknowledgedAt` is: a run held by the queue gate is WAITING, not IDLE, and a
+   * rail that could not tell the two apart would reproduce the exact failure this
+   * engine keeps having -- a run going quiet with nothing saying why. Absent
+   * whenever the axis has nothing to say, which is every ordinary run.
+   */
+  queue?: EpicQueueReading
+}
+
+/**
+ * The queue gate's verdict, flattened for the wire.
+ *
+ * A projection of `QueueVerdict` (`src/broker/epic-queue.ts`) rather than the
+ * type itself: the broker's fold carries the scopes it compared, and the panel
+ * needs the answer, not the working.
+ */
+export interface EpicQueueReading {
+  /** Is new dispatch being withheld from this run by the queue axis? */
+  blocked: boolean
+  /** 1-based place among waiting queued runs; 0 when this run is not one. */
+  position: number
+  /** How many runs are queued and waiting in this project. */
+  total: number
+  /** The queued run holding the runner, when that is what blocks this one. */
+  heldBy?: string
+  /** The one line: "queued, position 2 of 3, behind epic-morning-report". */
+  reason: string
 }
 
 /** One row of `action=list` -- every run the broker can see in a project. */
@@ -6526,6 +6568,9 @@ export interface SpawnConversation {
   // Limits
   autocompactPct?: number
   maxBudgetUsd?: number
+  /** CC `--max-turns`: hard turn ceiling for the run. Headless transport only,
+   *  exactly like `maxBudgetUsd`. Usually set by a work order's `caps.maxTurns`. */
+  maxTurns?: number
   // Ad-hoc task runner fields
   prompt?: string
   adHoc?: boolean

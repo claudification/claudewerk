@@ -14,7 +14,7 @@
 import type { LaunchProfile } from '../../shared/launch-profile'
 import { composeSeatPrompt, type Order } from '../../shared/order'
 import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
-import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
+import { seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
 import { isSpawnSchedule, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
@@ -190,6 +190,13 @@ function withDenyRules(settings: Record<string, unknown> | undefined, deny: stri
  * re-implemented so a scheduled seat gets byte-identical refusals to an epic
  * seat. What is left here is the mapping back onto a `SpawnRequest`.
  *
+ * THE TURN CEILING RIDES ALONG WITH THE BUDGET. `caps.maxTurns` composes
+ * exactly like `maxBudgetUsd` -- `min()` with whatever the request already
+ * carried -- and lands on the `SpawnRequest`, which the sentinel spends as CC's
+ * `--max-turns`. Before `order-caps-turns-and-reservation` the number existed
+ * on a wrapper type beside the order and nothing downstream read it, which is
+ * the same inertness as a deny rule nobody applies.
+ *
  * THE DENY RULES ARE UNIONED, NEVER SKIPPED. A schedule that already carries
  * its own `settingsInline` gets the order's rules merged INTO that fragment:
  * the caller's rules go in as `composeOrderCaps`' base so the union is the same
@@ -205,23 +212,24 @@ function withDenyRules(settings: Record<string, unknown> | undefined, deny: stri
  * caller holds. Dispatching a seat with more privilege than its order allows is
  * the one outcome that must not happen here.
  */
-export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | undefined): OrderApplication {
+export function applyOrderToRequest(request: SpawnRequest, order: Order | undefined): OrderApplication {
   if (order === undefined) return { ok: true, request }
   const existing = inlineDeny(request.settingsInline)
   if (!existing.ok) {
     return {
       ok: false,
-      reason: `order ${order.order.id}: cannot apply its deny rules -- ${existing.reason}`,
+      reason: `order ${order.id}: cannot apply its deny rules -- ${existing.reason}`,
     }
   }
   const composed = composeOrderCaps(
-    order.order,
+    order,
     {
       model: request.model,
       effort: request.effort,
       agent: request.agent,
       mcpConfigPath: request.mcpConfigPath,
       maxBudgetUsd: request.maxBudgetUsd,
+      maxTurns: request.maxTurns,
       permissionMode: request.permissionMode as never,
       deny: existing.deny,
     },
@@ -251,7 +259,7 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
  */
 type FirePlan = { ok: true; run: () => Promise<DispatchOutcome>; outcome: RunOutcome } | { ok: false; reason: string }
 
-function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: SeatOrder | undefined): FirePlan {
+function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: Order | undefined): FirePlan {
   if (!isSpawnSchedule(task)) {
     // A `board-sweep` with no runner is a FAILED fire with a reason, never a
     // quiet success -- see `FireDeps.runBoardSweep`.
@@ -261,7 +269,7 @@ function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: S
   }
 
   const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
-  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt, order?.order), order)
+  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt, order), order)
   // An order that asks for more privilege than the scheduler holds is a FAILED
   // fire, not a quiet downgrade: dispatching the seat with caps its order did
   // not describe is worse than not dispatching it, and the failure counter is
@@ -442,7 +450,7 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
   const order = seatOrder(task.orderId)
   const admission = decideSeatAdmission({
     order,
-    census: { total: deps.inFlight(), forOrder: order ? deps.inFlightForOrder(order.order.id) : 0 },
+    census: { total: deps.inFlight(), forOrder: order ? deps.inFlightForOrder(order.id) : 0 },
     maxInFlight: deps.maxInFlight,
   })
   if (!admission.admit) {
@@ -461,7 +469,7 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
   // Claimed here, released in the `finally`: everything that could still refuse
   // this fire has already run, and nothing between the claim and the dispatch
   // awaits, so a sibling due in the same minute sees the slot taken.
-  const releaseSlot = deps.claimSlot(order?.order.id)
+  const releaseSlot = deps.claimSlot(order?.id)
   let dispatched: DispatchOutcome
   try {
     dispatched = await plan.run()

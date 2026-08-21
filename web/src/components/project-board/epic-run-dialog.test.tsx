@@ -21,7 +21,7 @@ const RUN_STATE: EpicRunState = {
   status: 'paused',
   gen: 0,
   maxGens: 40,
-  cadence: 'now',
+  cadence: ['now'],
   target: 'merged',
   concurrency: 3,
   plan: true,

@@ -21,9 +21,9 @@ import {
   type EpicRunMeta,
   type EpicRunStatus,
 } from './epic-run-types'
+import { parseWhen, serializeWhen } from './epic-when'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 
-const CADENCES: readonly EpicCadence[] = ['now', 'window']
 const STATUSES: readonly EpicRunStatus[] = ['armed', 'running', 'paused', 'complete', 'aborted']
 const TARGETS = ['pr', 'merged', 'shipped'] as const
 
@@ -78,7 +78,11 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
   return {
     epicId: typeof meta.epicId === 'string' ? meta.epicId : epicId,
     project: typeof meta.project === 'string' ? meta.project : '',
-    cadence: pick(meta.cadence, CADENCES, EPIC_RUN_DEFAULTS.cadence),
+    // THE `when` AXIS, and the one field here that is not a `pick`: it reads a
+    // bare scalar (every run.md written before the axis could hold more than one
+    // gate), an inline array, and a joined string, all into one normalised list.
+    // A run armed before `queue` existed therefore reads as exactly what it was.
+    cadence: parseWhen(meta.cadence),
     status: pick(meta.status, STATUSES, 'armed'),
     gen: num(meta.gen, 0),
     target: pick(meta.target, TARGETS, EPIC_RUN_DEFAULTS.target),
@@ -111,14 +115,22 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
 function writeRun(root: string, run: EpicRun): EpicRun {
   mkdirSync(epicDir(root, run.epicId), { recursive: true })
   const { digest, ...meta } = run
-  writeFileSync(epicRunFile(root, run.epicId), serializeFrontmatter(meta, digest), 'utf8')
+  // The gate list goes back as a bare scalar when there is only one of it, so a
+  // run that never touched this axis keeps the exact bytes it has always had.
+  const frontmatter = { ...meta, cadence: serializeWhen(run.cadence) }
+  writeFileSync(epicRunFile(root, run.epicId), serializeFrontmatter(frontmatter, digest), 'utf8')
   return run
 }
 
 export interface StartEpicRunInput {
   epicId: string
   project: string
-  cadence?: EpicCadence
+  /**
+   * The `when` axis, in whatever spelling the caller sent -- one gate, a list, or
+   * a joined string. Normalised by `parseWhen`; absent leaves the run's existing
+   * gates alone, which is what makes `start` a merge rather than a clobber.
+   */
+  cadence?: EpicCadence | EpicCadence[] | string
   target?: EpicRun['target']
   concurrency?: number
   maxGens?: number
@@ -151,7 +163,9 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
   const base: EpicRun = existing ?? {
     epicId: input.epicId,
     project: input.project,
-    cadence: EPIC_RUN_DEFAULTS.cadence,
+    // COPIED, never shared: `EPIC_RUN_DEFAULTS.cadence` is one array instance and
+    // handing it to every fresh run would make them all the same object.
+    cadence: [...EPIC_RUN_DEFAULTS.cadence],
     status: 'armed',
     gen: 0,
     target: EPIC_RUN_DEFAULTS.target,
@@ -170,7 +184,7 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
   return writeRun(root, {
     ...base,
     project: input.project || base.project,
-    cadence: input.cadence ?? base.cadence,
+    cadence: input.cadence === undefined ? base.cadence : parseWhen(input.cadence),
     target: input.target ?? base.target,
     concurrency: input.concurrency ?? base.concurrency,
     maxGens: input.maxGens ?? base.maxGens,

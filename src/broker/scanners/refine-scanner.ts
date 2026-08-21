@@ -48,8 +48,9 @@ import { cardRelPath } from '../../shared/card-path'
 import { epicBucket } from '../../shared/epic-cards'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import { openEpicRoster, wantsEpicRoster } from '../../shared/epic-roster'
+import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
-import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER } from '../../shared/refiner-order'
+import { REFINER_ORDER } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
@@ -87,12 +88,20 @@ const REFINE_TAG = '[refine]'
  * MAX REFINER SEATS IN FLIGHT, quoted from the ORDER rather than picked here.
  *
  * "A backlog of 40 tagged cards must not consume every seat" is the card's own
- * requirement, and `SeatOrder.reservation` is where a role's appetite already
- * lives -- see `seat-reservation.ts`, which enforces the identical number on the
+ * requirement, and `Order.reservation` is where a role's appetite already lives
+ * -- see `seat-reservation.ts`, which enforces the identical number on the
  * scheduler's own pool. Re-picking it here would be the second number that
  * quietly disagrees with the first.
+ *
+ * AN ORDER THAT DECLARES NO RESERVATION FALLS BACK TO ONE SEAT HERE, and that
+ * is deliberately NOT what an absent reservation means to the scheduler, where
+ * it means "unreserved" and `MAX_CONCURRENT_SCHEDULED_SPAWNS` still bounds it.
+ * This scanner has no second ceiling: the reservation IS its ceiling, so
+ * "unreserved" would read as unbounded and a backlog of 40 tagged cards would
+ * dispatch 40 seats in one pass. One seat is the conservative reading of a role
+ * that never said.
  */
-export const DEFAULT_REFINE_CONCURRENCY = REFINER.reservation
+export const DEFAULT_REFINE_CONCURRENCY = REFINER_ORDER.reservation ?? 1
 
 /**
  * Every way this scanner can decline a `needs-refine` card. Closed, so a reason
@@ -183,11 +192,18 @@ function refinerName(cardId: string, gen: number): string {
  * The prompt: WHICH card, the open-epic roster when it can be used, then the
  * order's own instructions verbatim.
  *
- * The instruction block is imported, never restated -- it is the half of the
- * seat that says what refining means, including the tag removal that drains the
- * queue. All this function adds is the pointer, which is the half `REFINER@1`
- * deliberately does not carry ("there is deliberately no dispatcher here"), and
- * the roster, which is the only board context the seat gets.
+ * THIS FUNCTION BUILDS ONLY THE HALF IT OWNS -- the CONTEXT: the pointer, which
+ * is the half `REFINER@1` deliberately does not carry ("there is deliberately no
+ * dispatcher here"), and the roster, which is the only board context the seat
+ * gets. The instruction half comes off the ORDER, through `composeSeatPrompt`,
+ * which is the one function that turns an order's `instructions` into prompt
+ * text -- the scheduler's `buildSpawnRequest` calls the same one.
+ *
+ * That seam is the point. This file used to join the two halves itself out of
+ * the `REFINER_INSTRUCTIONS` constant, which is what `REFINER@1` is built from,
+ * so the two compositions could not disagree TODAY -- but that was a fact about
+ * one order, not a property. An order edited to carry a different block would
+ * have changed what a scheduled refiner is told and not what a scanned one is.
  *
  * THE ROSTER IS SKIPPED FOR A CARD THAT ALREADY HAS AN EPIC. Step 6 of the
  * instructions can only ever add a parent to a card that has none -- a refiner
@@ -198,14 +214,13 @@ function refinerName(cardId: string, gen: number): string {
  */
 function buildRefinerPrompt(projectRoot: string, card: ProjectTaskMeta, cards: readonly ProjectTaskMeta[]): string {
   const roster = wantsEpicRoster(true, [card]) ? openEpicRoster(cards) : ''
-  return [
+  const context = [
     `REFINE the board card \`${card.slug}\`.`,
     '',
     `Card file: ${projectRoot}/${cardRelPath(card.slug)}`,
     ...(roster ? ['', roster] : []),
-    '',
-    REFINER_INSTRUCTIONS,
   ].join('\n')
+  return composeSeatPrompt(REFINER_ORDER, context)
 }
 
 /** One card's attempt number, used only for the seat NAME, so a re-tagged card
@@ -263,7 +278,7 @@ function compileSeat(deps: RefineDeps, card: ProjectTaskMeta, cards: readonly Pr
     epic: { epicId: REFINE_EPIC_ID, role: 'implementer', gen, cardId: card.slug },
     settingsInline: buildUnattendedSettings(deps.permissions),
   }
-  const applied = applyOrderToRequest(base, REFINER)
+  const applied = applyOrderToRequest(base, REFINER_ORDER)
   if (!applied.ok) return { ok: false, reason: applied.reason }
   return { ok: true, request: applied.request }
 }

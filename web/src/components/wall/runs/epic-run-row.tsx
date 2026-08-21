@@ -15,6 +15,7 @@
  * else on the row is allowed to be louder.
  */
 
+import type { EpicQueueReading } from '@shared/protocol'
 import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
 import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
@@ -46,6 +47,18 @@ function StallBanner({ stall }: { stall: RunStall }) {
 function LeaseLine({ lease }: { lease: LeaseState }) {
   const tone = lease.kind === 'stale' ? 'wall-run-overseer wall-run-overseer-bad' : 'wall-run-overseer'
   return <div className={tone}>{leaseSentence(lease)}</div>
+}
+
+/**
+ * WAITING IS NOT IDLE. A run held by the queue gate has nothing in flight and no
+ * beat to show for itself, which on every other line of this row is
+ * indistinguishable from a run that has quietly died -- so it says which, with
+ * its position, every tick. The broker computes the sentence (`epic-queue.ts`);
+ * this only refuses to throw it away.
+ */
+function QueueLine({ queue }: { queue: EpicQueueReading | undefined }) {
+  if (!queue) return null
+  return <div className={queue.blocked ? 'wall-run-why' : 'wall-run-overseer'}>{queue.reason}</div>
 }
 
 /** WHY IT IS NOT MOVING. The broker computes this sentence every beat and, until
@@ -84,6 +97,9 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
       {/* WHY the tag says what it says. The tag alone is what let three surfaces
           each print a different confident word for the same run. */}
       <div className="wall-run-why">{view.why}</div>
+      {/* The inspect read is a beat fresher when it has one; the entry is what
+          put the row on screen and is never absent. Same rule as `gen`. */}
+      <QueueLine queue={inspect?.queue ?? entry.queue} />
       <BucketStrip buckets={runBuckets(inspect)} />
       <CapStrip caps={runCaps(run, nowMs)} />
       <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />

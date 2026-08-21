@@ -11,7 +11,7 @@ import { describe, expect, test } from 'bun:test'
 import { orderRole } from './epic-orders'
 import { validateOrder } from './order'
 import { composeOrderCaps, internalOrderCaller } from './order-caps'
-import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
+import { REFINER_INSTRUCTIONS, REFINER_ORDER, REFINER_ORDER_ID, seatOrder } from './refiner-order'
 import { taskMode } from './task-modes'
 
 describe('REFINER@1, the artifact', () => {
@@ -26,8 +26,10 @@ describe('REFINER@1, the artifact', () => {
     expect(REFINER_ORDER.caps.model).toBe('claude-haiku-4-5')
     expect(REFINER_ORDER.caps.effort).toBe('low')
     expect(REFINER_ORDER.caps.maxBudgetUsd).toBe(0.5)
-    // Declared on the seat order, because `OrderCaps` has nowhere to put it yet.
-    expect(REFINER.maxTurns).toBeGreaterThan(0)
+    // ON THE ORDER NOW, not on a wrapper beside it. `order@1` grew both of the
+    // caps this seat used to carry outside the schema.
+    expect(REFINER_ORDER.caps.maxTurns).toBe(30)
+    expect(REFINER_ORDER.reservation).toBe(1)
   })
 
   test('gets no worktree -- the board lives in the main checkout', () => {
@@ -52,11 +54,13 @@ describe('REFINER@1, the artifact', () => {
    * them asks for is a hint that appears or vanishes depending on which door the
    * refine came through, which is the drift `task-modes.ts` exists to record.
    *
-   * READ OFF THE ORDER, NOT THE SEAT WRAPPER. `order-seat-union-is-closed` moved
-   * `instructions` from `SeatOrder` onto the `Order` and asserts the move below
-   * (`REFINER` must NOT have the property); reading `REFINER.instructions` here
-   * would be `undefined` and `toContain` throws on that rather than failing, so
-   * the assertion would have gone quiet instead of red.
+   * READ OFF THE ORDER. There is no seat wrapper left to read off:
+   * `order-seat-union-is-closed` moved `instructions` from `SeatOrder` onto the
+   * `Order`, and `order-caps-turns-and-reservation` then deleted the `REFINER`
+   * wrapper outright once `maxTurns` and `reservation` followed it. Both of the
+   * assertions below used to read `REFINER.instructions`, which resolved to
+   * `undefined` -- and `toContain` THROWS on `undefined` rather than failing, so
+   * they would have gone quiet instead of red.
    */
   test('BOTH copies of the refine prose ask for a `model:` suggestion', () => {
     const refine = taskMode('refine')
@@ -70,7 +74,7 @@ describe('REFINER@1, the artifact', () => {
   })
 
   test('is reachable by id, and an unknown id is absent rather than an error', () => {
-    expect(seatOrder(REFINER_ORDER_ID)).toBe(REFINER)
+    expect(seatOrder(REFINER_ORDER_ID)).toBe(REFINER_ORDER)
     expect(seatOrder('NOPE@1')).toBeUndefined()
     expect(seatOrder(undefined)).toBeUndefined()
   })
@@ -98,8 +102,6 @@ describe('a refiner is spent by the scheduler and never enters a generation', ()
 
   test('it carries its own instruction block, on the order rather than beside it', () => {
     expect(REFINER_ORDER.instructions).toBe(REFINER_INSTRUCTIONS)
-    // The wrapper that existed only because `order@1` could not hold this.
-    expect(REFINER).not.toHaveProperty('instructions')
   })
 
   test('orderRole REFUSES it rather than mapping it to undefined', () => {

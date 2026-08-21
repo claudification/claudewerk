@@ -14,18 +14,23 @@
  * INTO orders when `order@1` is everywhere; growing it first would be building
  * the thing we are replacing.
  *
- * WHAT `order@1` CANNOT HOLD YET, and why this file still has a wrapper type.
- * `OrderCaps` has model, effort, agent, budget, permission mode and MCP config.
- * It has no `maxTurns`, and there is no way to express "this role may hold at
- * most N of the scheduler's slots" -- both are real caps a role carries, and
- * both are carried by {@link SeatOrder} alongside the order until the schema
- * grows them (card `order-caps-turns-and-reservation`).
+ * THERE IS NO WRAPPER TYPE LEFT, and that is the whole of
+ * `order-caps-turns-and-reservation`. This file shipped a `SeatOrder` -- an
+ * `Order` plus the two things `order@1` could not say -- and every one of them
+ * has now moved onto the artifact itself:
  *
- * WHAT IT HOLDS NOW: THE SEAT AND THE INSTRUCTIONS. Both used to be here in the
- * wrapper -- the order declared `seat: 'implementer', prompt: 'implementer'`
- * because `OrderSeat` was a closed union over the epic engine's four, and the
- * instruction block sat in `SeatOrder` because `order@1` had nowhere to put it.
- * `order-seat-union-is-closed` opened both, so `REFINER@1` says what it is.
+ *   `instructions`   moved by `order-seat-union-is-closed`, along with the open
+ *                    seat name, so `REFINER@1` stopped declaring
+ *                    `seat: 'implementer', prompt: 'implementer'` and says what
+ *                    it actually is.
+ *   `maxTurns`       now `caps.maxTurns`, and ENFORCED rather than declared:
+ *                    `composeOrderCaps` narrows it onto the `SpawnRequest` and
+ *                    the sentinel spends it as CC's `--max-turns`.
+ *   `reservation`    now `Order.reservation`, read by `decideSeatAdmission`.
+ *
+ * So a seat order IS an `Order`, and `REFINER@1` is one constant rather than a
+ * constant wrapped in another one. A wrapper beside a schema is a schema that
+ * lost an argument, and every reader after it has to learn both halves.
  */
 
 import { EPIC_SOFT_LINK_STEP } from './epic-roster'
@@ -128,8 +133,16 @@ export const REFINER_ORDER: Order = validateOrder({
     model: 'claude-haiku-4-5',
     effort: 'low',
     maxBudgetUsd: 0.5,
+    // A card is one file. Read it, read what it points at, rewrite it, drop the
+    // tag. A refiner still going at 30 turns has stopped refining and started
+    // implementing, which is the failure this seat exists to not do -- and it is
+    // a failure the BUDGET does not catch, because 30 haiku turns are cheap.
+    maxTurns: 30,
     permissionMode: 'bypassPermissions',
   },
+  // ONE OF THE SCHEDULER'S THREE. Forty tagged cards must not hold every slot:
+  // the nightly board sweep fires once, at a fixed minute, and does not retry.
+  reservation: 1,
   permissions: {
     // THE STATUS VERB, DENIED. `flipsStatus: false` in `TASK_MODES` is a flag a
     // prompt builder may or may not honour; this is the same rule enforced by
@@ -143,54 +156,11 @@ export const REFINER_ORDER: Order = validateOrder({
     "board's max mtime -- refine after the snapshot and every night looks like movement.",
 })
 
-/**
- * An order plus the caps `order@1` cannot express yet.
- *
- * The split is temporary and SHRINKING: `instructions` used to live here too,
- * because `order@1` could not carry a seat's own prompt text, and it moved onto
- * the order itself with `order-seat-union-is-closed`. When the schema grows the
- * last two, `maxTurns` moves into `caps` and `reservation` alongside it, and
- * this type collapses to `Order`.
- */
-export interface SeatOrder {
-  order: Order
-  /**
-   * Turn ceiling for ONE seat. DECLARED, NOT YET ENFORCED: `OrderCaps` has no
-   * `maxTurns` and `SpawnRequest` has no field to carry it either, so nothing
-   * downstream reads this today -- the only turn cap in the repo belongs to
-   * `nightshift-watchdog`. It is stated here because it is a real property of
-   * the role and a number somebody has to pick; wiring it is the same card that
-   * adds it to `OrderCaps`.
-   */
-  maxTurns: number
-  /**
-   * How many scheduler slots this order may hold AT ONCE.
-   *
-   * The scheduler caps itself at `MAX_CONCURRENT_SCHEDULED_SPAWNS` (3) globally.
-   * That cap is the seat pool, and without a per-order share a backlog of 40
-   * tagged cards takes all three -- the nightly sweep and the recap simply never
-   * fire. One of three leaves two permanently reachable by everything else.
-   *
-   * This is a property of the ORDER, which is what makes it sayable at all:
-   * card (the work), tag (the routing) and order (the seat) stay three separate
-   * things precisely so "refiners get 1 of 3" has somewhere to live.
-   */
-  reservation: number
-}
-
-/** `REFINER@1`, with the caps that do not fit in `order@1` yet. */
-export const REFINER: SeatOrder = {
-  order: REFINER_ORDER,
-  // A card is one file. Read it, read what it points at, rewrite it, drop the
-  // tag. A refiner still going at 30 turns has stopped refining and started
-  // implementing, which is the failure this seat exists to not do.
-  maxTurns: 30,
-  reservation: 1,
-}
-
-/** Every seat order a scheduled task may name, by order id. */
-export const SEAT_ORDERS: Readonly<Record<string, SeatOrder>> = {
-  [REFINER_ORDER_ID]: REFINER,
+/** Every seat order a scheduled task may name, by order id. NOT exported: the
+ *  registry is an implementation detail of {@link seatOrder}, and an exported
+ *  table nobody reads is the second way to look an order up. */
+const SEAT_ORDERS: Readonly<Record<string, Order>> = {
+  [REFINER_ORDER_ID]: REFINER_ORDER,
 }
 
 /**
@@ -200,6 +170,6 @@ export const SEAT_ORDERS: Readonly<Record<string, SeatOrder>> = {
  * order that a later build removed must keep firing on the plain path, not go
  * dark. The caller decides whether the absence matters.
  */
-export function seatOrder(orderId: string | undefined): SeatOrder | undefined {
+export function seatOrder(orderId: string | undefined): Order | undefined {
   return orderId === undefined ? undefined : SEAT_ORDERS[orderId]
 }

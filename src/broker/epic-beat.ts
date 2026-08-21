@@ -18,7 +18,9 @@
 
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
+import { gatedBy } from '../shared/epic-when'
 import type { EpicRunSnapshot } from '../shared/protocol'
+import type { QueueVerdict } from './epic-queue'
 
 /** What the caller should do. Order in the array is the order to do it in. */
 export type EpicAction =
@@ -49,8 +51,18 @@ export interface EpicBeatInput {
    *  The standing question that drives the wake. */
   unacknowledged: readonly string[]
   /** Is the project's nightshift window open right now? Only consulted when the
-   *  run's cadence is `window` -- `now` ignores the clock entirely. */
+   *  run's `when` axis carries `window` -- `now` ignores the clock entirely. */
   windowOpen: boolean
+  /**
+   * What the QUEUE gate says about this epic this beat -- computed across every
+   * scope in the project, because "is anything else running" is the one admission
+   * question a single epic's beat cannot answer for itself (`epic-queue.ts`).
+   *
+   * ABSENT MEANS NO GATE, the same convention `scannerOptIn` and `producedOutput`
+   * use: a caller that has not computed the project's verdict gets today's
+   * behaviour rather than a silently withheld dispatch.
+   */
+  queue?: QueueVerdict
   /** The board's dispatch-relevant fingerprint right now (epic-board-fingerprint).
    *  Only meaningful while a planning generation is owed. */
   boardFingerprint: string
@@ -110,9 +122,27 @@ const beat = (note: string, actions: EpicAction[] = [], patch?: EpicBeatPatch): 
   ...(patch === undefined ? {} : { patch }),
 })
 
-/** Cadence gate. `now` runs whenever; `window` defers dispatch to the night. */
-function dispatchAllowed(run: EpicRunSnapshot, windowOpen: boolean): boolean {
-  return run.cadence === 'now' || windowOpen
+/**
+ * THE `when` AXIS, EVALUATED -- every gate this run carries, ALL of which must
+ * pass on the same beat before a ready card may leave the queue.
+ *
+ * ONE PREDICATE AND ONE REASON STRING, which is the whole argument for putting
+ * the gates on one axis instead of giving each its own verb: a run that is
+ * waiting on the clock AND on another epic says both, in one line, in the one
+ * place a reader already looks. This codebase's recurring failure is a run going
+ * quiet with nothing saying why.
+ *
+ * The queue verdict is consulted regardless of what THIS run's axis says, because
+ * it has two directions: a queued epic waits its turn, and every other epic waits
+ * while a queued one holds the runner (`epic-queue.ts`).
+ */
+function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string } {
+  const reasons: string[] = []
+  if (gatedBy(input.run.cadence, 'window') && !input.windowOpen) {
+    reasons.push('when=window and the window is closed')
+  }
+  if (input.queue?.blocked) reasons.push(input.queue.reason ?? 'when=queue and another epic holds the runner')
+  return { allowed: reasons.length === 0, reason: reasons.join('; ') }
 }
 
 /** Terminal run states do nothing at all. Checked first so an aborted run cannot
@@ -285,7 +315,12 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
  */
 function ledgerWrites(input: EpicBeatInput): EpicBeatPatch {
   const clockStarted = Boolean(input.run.startedAt)
-  const mayWork = dispatchAllowed(input.run, input.windowOpen)
+  // THE SAME PREDICATE THE DISPATCH USES, and that identity is what makes
+  // `startedAt` mean "permitted to dispatch" for the queue gate as well as for
+  // the window one. It is also what `epic-queue.ts` reads back as "this queued
+  // run has ENTERED and now holds the runner" -- so a second stamp for the queue
+  // would be a second answer to a question this one already answers.
+  const mayWork = whenGate(input).allowed
   return {
     spentUsd: spentSoFar(input),
     ...(clockStarted || !mayWork ? {} : { startedAt: new Date(input.nowMs).toISOString() }),
@@ -337,8 +372,14 @@ function workBeat(input: EpicBeatInput): EpicBeat {
   const { run, plan } = input
   const actions: EpicAction[] = plan.verify.map(c => ({ kind: 'verify' as const, cardId: c.slug }))
 
-  if (!dispatchAllowed(run, input.windowOpen)) {
-    return beat(`cadence=window and the window is closed; ${plan.dispatch.length} card(s) waiting`, actions)
+  // THE GATE HOLDS DISPATCH ONLY, never verification -- the `verify` actions are
+  // already in `actions` above and go out regardless. A verdict is closing out
+  // work that already happened, and a gate that froze it too would deadlock the
+  // queue: the scope holding the runner could never drain, so the one waiting for
+  // a quiet runner could never enter.
+  const gate = whenGate(input)
+  if (!gate.allowed) {
+    return beat(`${gate.reason}; ${plan.dispatch.length} card(s) waiting`, actions)
   }
 
   actions.push(...plan.dispatch.map(c => ({ kind: 'dispatch' as const, cardId: c.slug, dependsOn: c.dependsOn ?? [] })))

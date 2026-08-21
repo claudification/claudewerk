@@ -14,6 +14,7 @@
  */
 
 import type { EpicRollup } from '@shared/epic-cards'
+import type { EpicCadence } from '@shared/epic-run-types'
 import type { StartEpicOptions } from '@/lib/epic-run-api'
 
 export interface RunPlan {
@@ -46,9 +47,23 @@ export function firstBeat(plan: RunPlan, concurrency: number): number {
   return Math.min(plan.ready, Math.max(0, concurrency))
 }
 
-const CADENCE_CLAUSE: Record<StartEpicOptions['cadence'], string> = {
+const WHEN_CLAUSE: Record<EpicCadence, string> = {
   now: 'Starts now',
   window: "Starts in the project's night window",
+  queue: 'Waits until no other epic in this project is running, then takes the runner exclusively',
+}
+
+/**
+ * The `when` axis as one clause, however many gates it carries.
+ *
+ * ALL of them must pass on the same beat, so they are joined with "and" rather
+ * than listed: "starts in the night window AND waits until no other epic is
+ * running" is a materially different promise from either half, and a sentence
+ * that showed only the first gate would describe a run that does not exist.
+ */
+function whenClause(gates: readonly EpicCadence[]): string {
+  const [first, ...rest] = gates.length > 0 ? gates : (['now'] as const)
+  return [WHEN_CLAUSE[first], ...rest.map(g => lower(WHEN_CLAUSE[g]))].join(', and ')
 }
 
 const TARGET_CLAUSE: Record<StartEpicOptions['target'], string> = {
@@ -67,7 +82,7 @@ export function consequence(options: StartEpicOptions): string {
   // dispatches every ready card up to that number and holds the rest back, so
   // the real figure is min(ready, concurrency) and is usually lower.
   const each = options.concurrency === 1 ? 'one card at a time' : `up to ${options.concurrency} at a time`
-  const sentence = `${CADENCE_CLAUSE[options.cadence]}, ${each}, and ${TARGET_CLAUSE[options.target]}.`
+  const sentence = `${whenClause(options.cadence)}, ${each}, and ${TARGET_CLAUSE[options.target]}.`
   // The planning generation comes BEFORE the cadence clause takes effect, so it
   // is a separate sentence rather than another clause in that one -- "starts
   // now" is not true of the first thing that happens when a plan is owed.

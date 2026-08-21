@@ -17,9 +17,12 @@
  *
  * THREE CLASSES OF FIELD, and the class decides how it composes:
  *
- *   PRIVILEGE  `permissionMode`, `maxBudgetUsd`
- *              -- narrow only. A mode goes through the trust gate; a budget is
- *              `min()` with the base, so an order asking for more gets less.
+ *   PRIVILEGE  `permissionMode`, `maxBudgetUsd`, `maxTurns`
+ *              -- narrow only. A mode goes through the trust gate; a budget and
+ *              a turn ceiling are `min()` with the base, so an order asking for
+ *              more gets less. The two ceilings compose identically because they
+ *              are the same kind of promise about an unwatched seat: a hard stop
+ *              nobody may raise by importing a role.
  *
  *   CAPABILITY `permissions.deny`
  *              -- add only. There is no `allow` on an order at all (order.ts),
@@ -46,6 +49,7 @@ export interface OrderCapBase {
   agent?: string
   mcpConfigPath?: string
   maxBudgetUsd?: number
+  maxTurns?: number
   permissionMode?: OrderCaps['permissionMode']
   /** Deny rules already in force (project config). The order's deny is unioned on. */
   deny?: string[]
@@ -58,6 +62,7 @@ export interface ComposedOrderCaps {
   agent?: string
   mcpConfigPath?: string
   maxBudgetUsd?: number
+  maxTurns?: number
   permissionMode?: OrderCaps['permissionMode']
   deny?: string[]
 }
@@ -163,6 +168,8 @@ export function composeOrderCaps(order: Order, base: OrderCapBase, caller: Spawn
   // PRIVILEGE -- narrow only.
   const budget = narrowest(base.maxBudgetUsd, order.caps.maxBudgetUsd)
   if (budget !== undefined) caps.maxBudgetUsd = budget
+  const turns = narrowest(base.maxTurns, order.caps.maxTurns)
+  if (turns !== undefined) caps.maxTurns = turns
   if (mode !== undefined) caps.permissionMode = mode
   // CAPABILITY -- add only.
   const deny = uniq([...(base.deny ?? []), ...(order.permissions?.deny ?? [])])

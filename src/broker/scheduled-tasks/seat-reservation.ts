@@ -13,16 +13,15 @@
  * A RESERVATION is a per-order share of that pool: an order declaring
  * `reservation: 1` may hold at most one of the three, so two remain reachable by
  * everything else no matter how deep its own queue is. The reservation lives on
- * the ORDER (`SeatOrder.reservation`), not on the schedule and not here -- a
- * role's appetite is a property of the role, and putting it here would mean the
- * broker deciding again what each seat is, which is what `order@1` exists to
- * stop.
+ * the ORDER (`Order.reservation`), not on the schedule and not here -- a role's
+ * appetite is a property of the role, and putting it here would mean the broker
+ * deciding again what each seat is, which is what `order@1` exists to stop.
  *
  * The decision is a pure function so the interesting case -- four refiners due
  * in the same minute -- is a table, not a race.
  */
 
-import type { SeatOrder } from '../../shared/refiner-order'
+import type { Order } from '../../shared/order'
 
 /**
  * Scheduler spawns in flight right now, total and for one order.
@@ -76,27 +75,32 @@ function reservationReason(orderId: string, reservation: number, maxInFlight: nu
  * needs to know which of the two walls they hit, because the fixes are opposite
  * (raise the pool vs. raise one role's share).
  *
- * A fire with NO order is bounded by the global ceiling alone. That is the
- * status quo for every schedule that exists today, and it stays that way: a
- * reservation is something an order opts into, never a tax on schedules that
- * never heard of orders.
+ * A fire with NO order -- or with an order that declares no `reservation` -- is
+ * bounded by the global ceiling alone. That is the status quo for every schedule
+ * that exists today, and it stays that way: a reservation is something an order
+ * opts into, never a tax on schedules that never heard of orders.
  */
 export function decideSeatAdmission(args: {
-  order: SeatOrder | undefined
+  order: Order | undefined
   census: SeatCensus
   maxInFlight: number
 }): SeatAdmission {
   const { order, census, maxInFlight } = args
   if (census.total >= maxInFlight) return { admit: false, reason: ceilingReason(maxInFlight) }
-  if (order === undefined) return { admit: true }
+  // NO ORDER, or an order that DECLARES no reservation: the global ceiling is
+  // the only bound. `Order.reservation` is optional, and an absent one has to
+  // mean "unreserved" rather than a number this function picks -- an order that
+  // never mentioned the scheduler's pool has not asked for a share of it, and
+  // inventing one here would be the broker deciding again what a seat is.
+  if (order?.reservation === undefined) return { admit: true }
   // A reservation at or above the pool is not a reservation -- it can never
   // bind, and treating it as one would spend a comparison per fire to always
   // say yes. Clamped rather than rejected: an order asking for 5 of 3 is asking
   // for "all of them", which is exactly what no reservation means.
   const reservation = Math.min(order.reservation, maxInFlight)
-  if (reservation <= 0) return { admit: false, reason: reservationReason(order.order.id, 0, maxInFlight) }
+  if (reservation <= 0) return { admit: false, reason: reservationReason(order.id, 0, maxInFlight) }
   if (census.forOrder >= reservation) {
-    return { admit: false, reason: reservationReason(order.order.id, reservation, maxInFlight) }
+    return { admit: false, reason: reservationReason(order.id, reservation, maxInFlight) }
   }
   return { admit: true }
 }

@@ -13,7 +13,8 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { REFINER, REFINER_INSTRUCTIONS, REFINER_ORDER_ID, type SeatOrder } from '../../shared/refiner-order'
+import type { Order } from '../../shared/order'
+import { REFINER_INSTRUCTIONS, REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { createMemoryDriver } from '../store/memory/driver'
@@ -24,7 +25,7 @@ import { decideSeatAdmission } from './seat-reservation'
 
 const POOL = MAX_CONCURRENT_SCHEDULED_SPAWNS
 
-function admit(order: SeatOrder | undefined, total: number, forOrder: number) {
+function admit(order: Order | undefined, total: number, forOrder: number) {
   return decideSeatAdmission({ order, census: { total, forOrder }, maxInFlight: POOL })
 }
 
@@ -42,26 +43,36 @@ describe('decideSeatAdmission', () => {
   })
 
   test('REFINER@1 gets its one slot and not the second', () => {
-    expect(admit(REFINER, 0, 0).admit).toBe(true)
-    const second = admit(REFINER, 1, 1)
+    expect(admit(REFINER_ORDER, 0, 0).admit).toBe(true)
+    const second = admit(REFINER_ORDER, 1, 1)
     expect(second.admit).toBe(false)
     if (!second.admit) expect(second.reason).toContain(REFINER_ORDER_ID)
   })
 
   test('the global ceiling is reported before the reservation -- the two fixes are opposite', () => {
-    const full = admit(REFINER, POOL, 1)
+    const full = admit(REFINER_ORDER, POOL, 1)
     expect(full.admit).toBe(false)
     if (!full.admit) expect(full.reason).toContain('concurrency ceiling')
   })
 
   test('a reservation at or above the pool never binds', () => {
-    const greedy: SeatOrder = { ...REFINER, reservation: 99 }
+    const greedy: Order = { ...REFINER_ORDER, reservation: 99 }
     expect(admit(greedy, 2, 2).admit).toBe(true)
   })
 
   test('a reservation of zero locks the order out rather than being ignored', () => {
-    const parked: SeatOrder = { ...REFINER, reservation: 0 }
+    const parked: Order = { ...REFINER_ORDER, reservation: 0 }
     expect(admit(parked, 0, 0).admit).toBe(false)
+  })
+
+  test('an order that DECLARES no reservation is bounded by the global ceiling alone', () => {
+    // `Order.reservation` is optional now that it lives on the artifact rather
+    // than on a wrapper that made it mandatory. Absent has to mean UNRESERVED:
+    // an order that never mentioned the scheduler's pool did not ask for a
+    // share of it, and picking a number for it here would be the broker
+    // deciding again what a seat is.
+    const { reservation: _dropped, ...unreserved } = REFINER_ORDER
+    expect(admit(unreserved, 2, 2).admit).toBe(true)
   })
 })
 
@@ -74,12 +85,16 @@ describe('applyOrderToRequest', () => {
   })
 
   test("REFINER@1's caps land on the spawn", () => {
-    const result = applyOrderToRequest(base, REFINER)
+    const result = applyOrderToRequest(base, REFINER_ORDER)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.request.model).toBe('claude-haiku-4-5')
     expect(result.request.effort).toBe('low')
     expect(result.request.maxBudgetUsd).toBe(0.5)
+    // THE TURN CEILING, which used to be a number on a wrapper type that nothing
+    // downstream read. It composes exactly like the budget and lands on the same
+    // request, which is what the sentinel turns into `--max-turns`.
+    expect(result.request.maxTurns).toBe(30)
     // The deny rule is materialized into the settings fragment, unioned with the
     // deny FLOOR rather than replacing it.
     const permissions = (result.request.settingsInline as { permissions?: { deny?: string[] } } | undefined)
@@ -89,8 +104,16 @@ describe('applyOrderToRequest', () => {
   })
 
   test('a schedule that already chose a model keeps it -- an order fills gaps, it does not redirect', () => {
-    const result = applyOrderToRequest({ ...base, model: 'claude-opus-5' }, REFINER)
+    const result = applyOrderToRequest({ ...base, model: 'claude-opus-5' }, REFINER_ORDER)
     expect(result.ok && result.request.model).toBe('claude-opus-5')
+  })
+
+  test('a TIGHTER turn cap on the request wins -- an order narrows, it never raises', () => {
+    const tighter = applyOrderToRequest({ ...base, maxTurns: 5 }, REFINER_ORDER)
+    expect(tighter.ok && tighter.request.maxTurns).toBe(5)
+    // ...and a looser one is pulled back down to the order's.
+    const looser = applyOrderToRequest({ ...base, maxTurns: 500 }, REFINER_ORDER)
+    expect(looser.ok && looser.request.maxTurns).toBe(30)
   })
 
   /**
@@ -107,7 +130,7 @@ describe('applyOrderToRequest', () => {
 
     test("the caller's own fragment still delivers the order's deny rule", () => {
       const mine = { permissions: { allow: ['Read'], deny: ['Bash(rm:*)'] } }
-      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER_ORDER)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(denyOf(result.request)).toContain('mcp__rclaude__project_set_status')
@@ -118,7 +141,7 @@ describe('applyOrderToRequest', () => {
     test('everything else in the fragment is left exactly as the caller wrote it', () => {
       const hooks = { PreToolUse: [{ matcher: '', hooks: [] }] }
       const mine = { permissions: { allow: ['Read'], defaultMode: 'plan' }, hooks, env: { A: '1' } }
-      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER_ORDER)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       const settings = result.request.settingsInline as {
@@ -136,7 +159,7 @@ describe('applyOrderToRequest', () => {
     })
 
     test('a fragment with no permissions block at all gets one', () => {
-      const result = applyOrderToRequest({ ...base, settingsInline: { env: { A: '1' } } }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: { env: { A: '1' } } }, REFINER_ORDER)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(denyOf(result.request)).toEqual(['mcp__rclaude__project_set_status'])
@@ -144,7 +167,7 @@ describe('applyOrderToRequest', () => {
 
     test('a fragment that already carries the rule is handed back untouched', () => {
       const mine = { permissions: { deny: ['mcp__rclaude__project_set_status'] } }
-      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER_ORDER)
       expect(result.ok && result.request.settingsInline).toBe(mine)
     })
 
@@ -153,14 +176,14 @@ describe('applyOrderToRequest', () => {
       // ['A','A'] dedupes to one entry, so a length test would read the union
       // as a no-op and skip the write.
       const mine = { permissions: { deny: ['Bash(rm:*)', 'Bash(rm:*)'] } }
-      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: mine }, REFINER_ORDER)
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(denyOf(result.request)).toContain('mcp__rclaude__project_set_status')
     })
 
     test('a permissions block that is not an object FAILS the fire, naming the order', () => {
-      const result = applyOrderToRequest({ ...base, settingsInline: { permissions: 'nope' } }, REFINER)
+      const result = applyOrderToRequest({ ...base, settingsInline: { permissions: 'nope' } }, REFINER_ORDER)
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.reason).toContain(REFINER_ORDER_ID)
@@ -168,13 +191,13 @@ describe('applyOrderToRequest', () => {
     })
 
     test('a deny that is not an array of strings FAILS the fire rather than being overwritten', () => {
-      const bad = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: [1, 2] } } }, REFINER)
+      const bad = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: [1, 2] } } }, REFINER_ORDER)
       expect(bad.ok).toBe(false)
       if (bad.ok) return
       expect(bad.reason).toContain(REFINER_ORDER_ID)
       expect(bad.reason).toContain('deny')
 
-      const worse = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: 'all' } } }, REFINER)
+      const worse = applyOrderToRequest({ ...base, settingsInline: { permissions: { deny: 'all' } } }, REFINER_ORDER)
       expect(worse.ok).toBe(false)
     })
   })
@@ -378,6 +401,19 @@ describe('an order that carries its own instructions', () => {
     // what drains the queue, and a refiner that never read it refines forever.
     expect(prompt).toContain(REFINER_INSTRUCTIONS)
     expect(prompt).toContain('REMOVE the `needs-refine` tag')
+
+    for (const resolve of release) resolve()
+    await tick
+    engine.stop()
+  })
+
+  test("the dispatched seat carries the order's turn ceiling, not just its budget", async () => {
+    const task = makeTask({ name: 'refine', orderId: REFINER_ORDER_ID, prompt: 'REFINE the card `foo`.' })
+    const { requests, release, engine } = hangingEngine([task])
+
+    const tick = engine.tick()
+    expect(requests[0]?.maxTurns).toBe(REFINER_ORDER.caps.maxTurns)
+    expect(requests[0]?.maxBudgetUsd).toBe(REFINER_ORDER.caps.maxBudgetUsd)
 
     for (const resolve of release) resolve()
     await tick

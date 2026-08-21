@@ -40,6 +40,82 @@ function applyPatch<T extends Record<string, unknown>>(base: T, diffs: Differenc
 }
 
 // ---------------------------------------------------------------------------
+// Load-tolerant perf harness
+// ---------------------------------------------------------------------------
+
+/*
+ * These perf assertions used to be absolute wall-clock budgets ("50 diffs in
+ * < 5ms"). That flakes: on a box running the full suite the measured window is
+ * sub-millisecond, so a single scheduler preemption -- worth several ms -- is
+ * larger than the whole budget. Observed 0.66ms alone and 7.86ms under load for
+ * work that never changed.
+ *
+ * Two changes make the assertion survive that without going blind:
+ *
+ *  - MIN-OF-N. Repeat the trial and keep the FASTEST run. A preempted trial is
+ *    contaminated with somebody else's CPU time; the fastest is the closest
+ *    thing to the true cost we can observe. Averaging would fold the noise in.
+ *    Short trials matter here: a 0.5ms window usually fits inside one timeslice,
+ *    a 50ms one never does.
+ *  - RELATIVE BUDGET. Express the result as a multiple of a reference workload
+ *    timed in the same process, in the same trial loop. That cancels the machine
+ *    (a slow or busy box slows both) while still failing on a real regression --
+ *    a 10x slower microdiff moves the ratio from ~2.4 to ~24.
+ */
+
+/** Consumes benchmark results so nothing under measurement can be optimised away. */
+let benchSink = 0
+
+/**
+ * The reference workload: a pure-JS recursive walk of an object graph. Chosen
+ * because it is the same KIND of work microdiff does (property enumeration and
+ * traversal over the same fixture), so machine speed and scheduler pressure
+ * move it and the diff together.
+ */
+function walkGraph(node: unknown): number {
+  if (node === null || typeof node !== 'object') return 1
+  let n = 1
+  for (const key in node as Record<string, unknown>) {
+    n += walkGraph((node as Record<string, unknown>)[key])
+  }
+  return n
+}
+
+/** Trials per measurement. >= 9 is where the ratio stops moving (measured). */
+const PERF_TRIALS = 15
+
+/**
+ * Budget as a multiple of the reference workload. Measured ~2.35 on an idle
+ * box for both perf cases below; 8 leaves ~3.4x headroom for a hostile machine
+ * while still catching anything more than a 3x regression.
+ */
+const PERF_BUDGET_MULTIPLE = 8
+
+/** Fastest of `trials` runs of `fn`, in ms. */
+function bestOfMs(trials: number, fn: () => void): number {
+  let best = Number.POSITIVE_INFINITY
+  for (let t = 0; t < trials; t++) {
+    const start = performance.now()
+    fn()
+    const elapsed = performance.now() - start
+    if (elapsed < best) best = elapsed
+  }
+  return best
+}
+
+/** Cost of `work` expressed as a multiple of `reference`, both min-of-N in this process. */
+function relativeCost(work: () => void, reference: () => void) {
+  // Warm the JIT for both before either is timed, so trial 1 is not the outlier.
+  for (let i = 0; i < 3; i++) {
+    work()
+    reference()
+  }
+  const workMs = bestOfMs(PERF_TRIALS, work)
+  const referenceMs = bestOfMs(PERF_TRIALS, reference)
+  return { workMs, referenceMs, ratio: workMs / referenceMs }
+}
+
+// ---------------------------------------------------------------------------
 // Realistic ConversationSummary-shaped fixture
 // ---------------------------------------------------------------------------
 
@@ -367,37 +443,50 @@ describe('microdiff fitness for rclaude state sync', () => {
   })
 
   describe('performance', () => {
-    it('diffs a realistic summary in < 1ms', () => {
+    it(`diffs a realistic summary within ${PERF_BUDGET_MULTIPLE}x a plain object walk`, () => {
       const prev = makeSummary()
       const next = makeSummary({ status: 'idle', lastActivity: 9999999, eventCount: 200 })
 
-      // warmup
-      diff(prev, next)
+      const runs = 200
+      const { workMs, referenceMs, ratio } = relativeCost(
+        () => {
+          for (let i = 0; i < runs; i++) benchSink += diff(prev, next).length
+        },
+        () => {
+          for (let i = 0; i < runs; i++) benchSink += walkGraph(prev)
+        },
+      )
 
-      const runs = 10000
-      const start = performance.now()
-      for (let i = 0; i < runs; i++) {
-        diff(prev, next)
-      }
-      const elapsed = performance.now() - start
-      const perOp = elapsed / runs
-
-      console.log(`  microdiff: ${perOp.toFixed(4)}ms per diff (${runs} runs)`)
-      expect(perOp).toBeLessThan(1)
+      console.log(
+        `  microdiff: ${(workMs / runs).toFixed(4)}ms per diff (best of ${PERF_TRIALS} x ${runs} runs), ` +
+          `${ratio.toFixed(2)}x the reference walk`,
+      )
+      expect(benchSink).toBeGreaterThan(0) // the measured work really ran
+      expect(referenceMs).toBeGreaterThan(0)
+      expect(ratio).toBeLessThan(PERF_BUDGET_MULTIPLE)
     })
 
-    it('diffs 50 summaries (fleet broadcast) in < 5ms', () => {
+    it(`diffs 50 summaries (fleet broadcast) within ${PERF_BUDGET_MULTIPLE}x a plain object walk`, () => {
       const summaries = Array.from({ length: 50 }, (_, i) => makeSummary({ id: `conv_${i}`, eventCount: 100 + i }))
-      const updated = summaries.map((s, i) => ({ ...s, eventCount: s.eventCount + 1, lastActivity: Date.now() }))
+      // Fixed timestamp, not Date.now(): the fixture must not vary between trials.
+      const updated = summaries.map(s => ({ ...s, eventCount: s.eventCount + 1, lastActivity: 1719603999999 }))
 
-      const start = performance.now()
-      for (let i = 0; i < summaries.length; i++) {
-        diff(summaries[i], updated[i])
-      }
-      const elapsed = performance.now() - start
+      const { workMs, referenceMs, ratio } = relativeCost(
+        () => {
+          for (let i = 0; i < summaries.length; i++) benchSink += diff(summaries[i], updated[i]).length
+        },
+        () => {
+          for (let i = 0; i < summaries.length; i++) benchSink += walkGraph(summaries[i])
+        },
+      )
 
-      console.log(`  50-conversation fleet diff: ${elapsed.toFixed(2)}ms`)
-      expect(elapsed).toBeLessThan(5)
+      console.log(
+        `  50-conversation fleet diff: ${workMs.toFixed(2)}ms vs ${referenceMs.toFixed(2)}ms reference ` +
+          `(best of ${PERF_TRIALS}), ${ratio.toFixed(2)}x`,
+      )
+      expect(benchSink).toBeGreaterThan(0) // the measured work really ran
+      expect(referenceMs).toBeGreaterThan(0)
+      expect(ratio).toBeLessThan(PERF_BUDGET_MULTIPLE)
     })
   })
 })

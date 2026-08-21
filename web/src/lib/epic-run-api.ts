@@ -3,12 +3,17 @@
  * and lives on the sentinel, so nothing here caches it.
  */
 
+import type { EpicCadence } from '@shared/epic-run-types'
+
 export interface EpicRunState {
   epicId: string
   status: 'armed' | 'running' | 'paused' | 'complete' | 'aborted'
   gen: number
   maxGens: number
-  cadence: 'now' | 'window'
+  /** The `when` axis: every gate the run must pass before it dispatches, ALL of
+   *  which must pass on the same beat. Spelled `cadence` in storage and on the
+   *  wire; `when` on the verb surface. See `src/shared/epic-when.ts`. */
+  cadence: EpicCadence[]
   target: 'pr' | 'merged' | 'shipped'
   concurrency: number
   /** Armed with a planning generation. */
@@ -36,7 +41,10 @@ export interface EpicRunReply {
 }
 
 export interface StartEpicOptions {
-  cadence: 'now' | 'window'
+  /** One gate, or several -- the route passes it through to the run store, which
+   *  normalises either spelling (`epic-when.ts`). Sending the run's existing list
+   *  unchanged is what lets a RESUME keep gates the dialog cannot express. */
+  cadence: EpicCadence[]
   target: 'pr' | 'merged' | 'shipped'
   concurrency: number
   maxGens?: number

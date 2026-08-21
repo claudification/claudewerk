@@ -7,7 +7,7 @@ const { beatFor, WRITE_OPS } = __testing
 const RUN: EpicRunSnapshot = {
   epicId: 'e1',
   project: 'claude://s/p',
-  cadence: 'now',
+  cadence: ['now'],
   status: 'running',
   gen: 6,
   target: 'merged',

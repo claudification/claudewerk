@@ -21,6 +21,19 @@ import { resolveScript } from './resolve-script'
 
 const REPO_ROOT = join(import.meta.dir, '..', '..')
 
+/**
+ * Hang detector for a real `git` subprocess, NOT a perf budget.
+ *
+ * Every test below builds a scratch repo and shells out to real `git` (init,
+ * worktree add, merge, fast-forward). The number only ever answered "did it
+ * finish"; it never measured our code's speed. Under `bun test --parallel` on a
+ * loaded box -- a worker per core, sometimes alongside another agent's suite --
+ * these overshot bun's 5s default by under 200ms and turned the whole suite red
+ * for scheduler weather. 30s is deliberately generous: a raise to just above the
+ * observed number re-arms the same flake at the next busy moment.
+ */
+const GIT_HANG_TIMEOUT_MS = 30_000
+
 function devCopy(name: string): string {
   return join(REPO_ROOT, 'scripts', name)
 }
@@ -68,7 +81,7 @@ describe.each(COPIES)('worktree-finish.sh (%s)', (_label, resolve) => {
     // uncommitted REVERSALS, which is worse than the failure it replaced.
     expect(fx.baseStatus()).toBe('')
     expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('one\ntwo\n')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('refuses LOUDLY when main has local edits the merge would overwrite', () => {
     const fx = makeFixture()
@@ -82,7 +95,7 @@ describe.each(COPIES)('worktree-finish.sh (%s)', (_label, resolve) => {
     expect(out).toContain('f.txt')
     expect(fx.mainRef()).toBe(before)
     expect(readFileSync(join(fx.base, 'f.txt'), 'utf8')).toBe('locally edited\n')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('merges anyway when main is dirty on a file the merge does not touch', () => {
     // With a dozen live agents the root tree is almost always dirty on
@@ -96,7 +109,7 @@ describe.each(COPIES)('worktree-finish.sh (%s)', (_label, resolve) => {
     expect(code).toBe(0)
     expect(fx.mainRef()).toBe(fx.wtHead)
     expect(readFileSync(join(fx.base, 'other.txt'), 'utf8')).toBe('locally edited\n')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('is a no-op when the branch is already merged', () => {
     const fx = makeFixture()
@@ -104,7 +117,7 @@ describe.each(COPIES)('worktree-finish.sh (%s)', (_label, resolve) => {
     const { code, out } = runFinish(script(), fx.wt)
     expect(code).toBe(0)
     expect(out).toContain('Nothing to merge')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 })
 
 describe.each(COPIES)('worktree-remove.sh (%s)', (_label, resolve) => {
@@ -120,7 +133,7 @@ describe.each(COPIES)('worktree-remove.sh (%s)', (_label, resolve) => {
     expect(out).toContain('Auto-merged')
     expect(code).toBe(0)
     expect(fx.mainRef()).toBe(fx.wtHead)
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 
   test('blocks on a real collision AND prints git’s reason instead of swallowing it', () => {
     const fx = makeFixture()
@@ -132,7 +145,7 @@ describe.each(COPIES)('worktree-remove.sh (%s)', (_label, resolve) => {
     expect(out).toContain('BLOCKED')
     // The `2>/dev/null` that made every failure look identical is gone.
     expect(out).toContain('f.txt')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 })
 
 describe('the four shell copies do not drift', () => {
@@ -173,5 +186,5 @@ describe('the fixture proves the bug is real', () => {
     // could be widened again -- but the merge path stays correct either way.
     expect(res.code).not.toBe(0)
     expect(res.output).toContain('refusing to fetch')
-  })
+  }, GIT_HANG_TIMEOUT_MS)
 })

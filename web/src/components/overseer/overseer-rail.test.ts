@@ -113,15 +113,25 @@ describe('resumeOptions', () => {
   })
 
   it('carries the paused run settings through unchanged', () => {
-    expect(resumeOptions({ cadence: 'window', target: 'pr', concurrency: 5, maxGens: 9 } as never)).toMatchObject({
-      cadence: 'window',
+    expect(resumeOptions({ cadence: ['window'], target: 'pr', concurrency: 5, maxGens: 9 } as never)).toMatchObject({
+      cadence: ['window'],
       target: 'pr',
       concurrency: 5,
       maxGens: 9,
     })
   })
 
+  /** A resume is not an edit. It must hand back every gate the run carries --
+   *  including one this panel has no control for -- or resuming a queued run
+   *  would quietly un-queue it. */
+  it('carries a multi-gate `when` axis through without dropping half of it', () => {
+    expect(resumeOptions({ cadence: ['window', 'queue'], target: 'pr', concurrency: 1 } as never).cadence).toEqual([
+      'window',
+      'queue',
+    ])
+  })
+
   it('mirrors the engine defaults when the artifact could not be read', () => {
-    expect(resumeOptions(null)).toMatchObject({ cadence: 'now', target: 'merged', concurrency: 3 })
+    expect(resumeOptions(null)).toMatchObject({ cadence: ['now'], target: 'merged', concurrency: 3 })
   })
 })

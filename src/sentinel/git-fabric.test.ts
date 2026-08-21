@@ -157,6 +157,13 @@ describe('runGitFabric (live, this repo)', () => {
   // branch + worktree count, and this one carries 70+. It is not slow because
   // anything is wrong, so it gets a budget that fits the work rather than
   // bun's 5s default (which failed it on any well-used checkout).
+  //
+  // MEASURED 2026-08-21, quiet box, this checkout (340 local branches -> the
+  // MAX_BRANCHES=200 cap is saturated, 710 worktrees): 18.6s ALONE, 60.5s under
+  // 10x-parallel full-suite load. Deliberately NOT raised past 60s: unlike the
+  // scratch-repo tests next door, this one's runtime is a function of the
+  // developer's disk, so any number is wrong again next week. The scan-scaling
+  // fix is its own card -- git-fabric-live-scan-test-scales-with-the-box.
   const LIVE_SCAN_TIMEOUT_MS = 60_000
 
   it(

@@ -15,6 +15,7 @@
 
 import { formatEpicRunCaps } from '../../../shared/epic-run-caps'
 import type { EpicLogEntry } from '../../../shared/epic-run-types'
+import { formatWhen } from '../../../shared/epic-when'
 import type {
   EpicInspectCard,
   EpicInspectLive,
@@ -52,7 +53,7 @@ function lane(label: string, cards: readonly EpicInspectCard[]): string[] {
 function runHeader(run: EpicRunSnapshot): string[] {
   return [
     `epic ${run.epicId}: ${run.status} (generation ${run.gen}/${run.maxGens})`,
-    `cadence ${run.cadence} . target ${run.target} . concurrency ${run.concurrency} . dry generations ${run.dryGens}`,
+    `when ${formatWhen(run.cadence)} . target ${run.target} . concurrency ${run.concurrency} . dry generations ${run.dryGens}`,
     // THE THREE HANDBRAKES, on the line under the status, because "how much of
     // its budget has this run left" is a question about the run and not a detail
     // of it. `Date.now()` rather than an injected clock: this is a renderer, the
@@ -170,6 +171,10 @@ const NO_RUN = 'NO RUN ARTIFACT -- never armed, or armed on a broker that has si
 function renderInspect(i: EpicInspectResult): string {
   return [
     ...(i.run ? runHeader(i.run) : [`epic ${i.epicId}: ${NO_RUN}`]),
+    // THE QUEUE, ABOVE THE PLAN. "Why is nothing dispatching" has a different
+    // answer for a queued run than the DAG's, and printing the DAG's first would
+    // send the reader hunting through card lanes for a reason that is not there.
+    ...(i.queue ? [`queue: ${i.queue.reason}`] : []),
     leaseLine(i.lease),
     ...(i.error ? [`error: ${i.error}`] : []),
     ...(i.plan ? planSection(i.plan) : []),

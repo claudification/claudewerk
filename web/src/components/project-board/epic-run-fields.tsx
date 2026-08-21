@@ -8,9 +8,25 @@ import { cn } from '@/lib/utils'
 import { firstBeat, type RunPlan } from './epic-run-plan'
 import type { RunSettings as RunSettings_ } from './use-run-settings'
 
-const CADENCES = [
+/**
+ * THE `when` AXIS -- three exclusive buttons over a field that can hold a LIST.
+ *
+ * Deliberately single-select: composing gates ("not while another epic runs, and
+ * only at night") is reachable from `epic_run action=start when=[window,queue]`
+ * and is rare enough that three buttons plus a line saying what the run already
+ * carries beats a multi-select nobody would use. Pressing one REPLACES the axis;
+ * leaving it alone preserves it, which is what stops a resume un-queueing a run.
+ */
+const WHENS = [
   { value: 'now' as const, label: 'now', hint: 'Dispatch immediately, ignore the clock' },
   { value: 'window' as const, label: 'window', hint: "Defer dispatch to the project's night window" },
+  {
+    value: 'queue' as const,
+    label: 'queue',
+    hint:
+      'Wait until no other epic in this project has work in flight, then hold the runner exclusively until this ' +
+      'run goes dry. Everything else keeps verifying but stops dispatching while it holds.',
+  },
 ]
 
 const TARGETS = [
@@ -39,7 +55,9 @@ function Choice<T extends string>({
   /** `alarming` marks a choice you cannot undo -- its hint is shown in the
    *  destructive tone, the same treatment concurrency-past-5 gets. */
   options: ReadonlyArray<{ value: T; label: string; hint: string; alarming?: boolean }>
-  value: T
+  /** `null` when the current value is not one of the options -- a `when` axis
+   *  carrying two gates lights no button, rather than lying about which one. */
+  value: T | null
   onChange: (v: T) => void
 }) {
   const active = options.find(o => o.value === value)
@@ -78,7 +96,17 @@ export function RunSettings({ settings, plan }: { settings: RunSettings_; plan: 
   return (
     <>
       {planApplies && <PlanField value={options.plan} onChange={setPlan} />}
-      <Choice label="cadence" options={CADENCES} value={options.cadence} onChange={setCadence} />
+      <Choice
+        label="when"
+        options={WHENS}
+        value={options.cadence.length === 1 ? options.cadence[0] : null}
+        onChange={setCadence}
+      />
+      {options.cadence.length > 1 && (
+        <span className="text-chrome text-fg-muted leading-snug">
+          {`This run carries ${options.cadence.join(' + ')} -- all of them must pass. Picking one above replaces both.`}
+        </span>
+      )}
       <Choice label="target" options={TARGETS} value={options.target} onChange={setTarget} />
       <ConcurrencyField value={options.concurrency} plan={plan} onChange={setConcurrency} />
     </>

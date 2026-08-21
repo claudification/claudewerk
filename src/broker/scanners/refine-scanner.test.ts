@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import { SYSTEM_TAGS } from '../../shared/board-system-tags'
 import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import { EPIC_ROSTER_HEADER } from '../../shared/epic-roster'
+import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
-import { REFINER, REFINER_ORDER_ID } from '../../shared/refiner-order'
+import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { TaskStatus } from '../../shared/task-statuses'
 import { MAX_LAUNCH_ATTEMPTS } from '../epic-sweep'
@@ -111,9 +112,12 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(report.acted).toEqual(['a'])
     expect(report.unaccounted).toEqual([])
     const request = dispatched[0]?.request as SpawnRequest
-    expect(request.model).toBe(REFINER.order.caps.model)
-    expect(request.effort).toBe(REFINER.order.caps.effort)
-    expect(request.maxBudgetUsd).toBe(REFINER.order.caps.maxBudgetUsd)
+    expect(request.model).toBe(REFINER_ORDER.caps.model)
+    expect(request.effort).toBe(REFINER_ORDER.caps.effort)
+    expect(request.maxBudgetUsd).toBe(REFINER_ORDER.caps.maxBudgetUsd)
+    // The turn ceiling rides the same seam as the budget now that it is a cap
+    // rather than a number on a wrapper nothing read.
+    expect(request.maxTurns).toBe(REFINER_ORDER.caps.maxTurns)
     expect(request.adHoc).toBe(true)
     expect(request.headless).toBe(true)
   })
@@ -154,6 +158,30 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(prompt).toContain('REMOVE')
   })
 
+  /**
+   * THE SEAM, not the text. This scanner builds only the CONTEXT half -- which
+   * card, which file, the roster -- and the instruction half comes off the ORDER
+   * through `composeSeatPrompt`, the one function the scheduler's
+   * `buildSpawnRequest` also calls.
+   *
+   * The assertion is on the WHOLE prompt, deliberately, because that is the only
+   * shape that catches the failure this pins. Re-deriving the block from the
+   * `REFINER_INSTRUCTIONS` constant reads the same bytes TODAY -- so a
+   * `toContain` would pass either way -- but an order edited to carry a
+   * different block would then move the scheduler's seat and not this one, and
+   * this test fails the moment the two sources disagree.
+   */
+  test("the prompt is the scanner's own context composed with the ORDER's block", async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('rough-card')] }))
+    const context = [
+      'REFINE the board card `rough-card`.',
+      '',
+      'Card file: /p/.rclaude/project/cards/rough-card.md',
+    ].join('\n')
+    expect(REFINER_ORDER.instructions).toBeTruthy()
+    expect(dispatched[0]?.request.prompt).toBe(composeSeatPrompt(REFINER_ORDER, context))
+  })
+
   test("a seat is tagged with the RESERVED lane, never with the card's own epic", async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { epic: 'epic-x' })] }))
     expect(dispatched[0]?.request.epic?.epicId).toBe(REFINE_EPIC_ID)
@@ -161,7 +189,11 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
   })
 
   test("the ceiling is the order's reservation, not a number picked here", () => {
-    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER.reservation)
+    // `Order.reservation` is optional, so this also pins that `REFINER@1` still
+    // DECLARES one -- a dropped declaration would silently fall back to 1 here
+    // and the assertion would pass against a number nobody wrote down.
+    expect(REFINER_ORDER.reservation).toBeDefined()
+    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER_ORDER.reservation as number)
   })
 
   /**
@@ -175,29 +207,29 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
   test('a `model: opus` card dispatched by REFINER@1 still runs on Haiku', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
 
-    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
   })
 
   test('a clamp is LOGGED -- a silent downgrade is the failure this exists to avoid', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
 
-    expect(log.some(line => line.includes('opus') && line.includes(String(REFINER.order.caps.model)))).toBe(true)
+    expect(log.some(line => line.includes('opus') && line.includes(String(REFINER_ORDER.caps.model)))).toBe(true)
   })
 
   test('a hint AT the cap survives, and says nothing about it', async () => {
     await runScan(
       refineScanner,
-      deps({ getCards: async () => [card('a', 'open', { model: REFINER.order.caps.model })] }),
+      deps({ getCards: async () => [card('a', 'open', { model: REFINER_ORDER.caps.model })] }),
     )
 
-    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
     expect(log.some(line => line.includes('running on'))).toBe(false)
   })
 
   test('a card with no hint dispatches exactly as it always did', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
 
-    expect(dispatched[0]?.request.model).toBe(REFINER.order.caps.model)
+    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
     expect(log.some(line => line.includes('running on'))).toBe(false)
   })
 
@@ -460,6 +492,18 @@ describe('the roster of epics the seat may soft-link the card to', () => {
     expect(prompt).toContain('REFINE the board card `rough-card`')
     expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
     expect(prompt).toContain('REMOVE')
+  })
+
+  /** The roster is CONTEXT, so it rides in the half this scanner owns and lands
+   *  ahead of the order's block -- a seat reads its standing rules against a
+   *  target it already has. */
+  test("the roster sits in the context half, ahead of the order's block", async () => {
+    const cards = [card('rough-card'), card('epic-a', 'open', { tags: ['epic'] })]
+    await runScan(refineScanner, deps({ getCards: async () => cards }))
+    const prompt = dispatched[0]?.request.prompt ?? ''
+    const instructions = REFINER_ORDER.instructions ?? ''
+    expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeGreaterThan(-1)
+    expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeLessThan(prompt.indexOf(instructions))
   })
 
   test('it says out loud that a wrong parent is worse than none', async () => {
