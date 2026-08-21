@@ -7,6 +7,13 @@
  * none of them a thing you could read without reading the broker, and a fifth
  * seat meant editing the broker.
  *
+ * A FIFTH SEAT NO LONGER MEANS EDITING THE BROKER, and it no longer means
+ * editing this file either. `order@1`'s `seat` is an open name and an order may
+ * carry its own `instructions`, so a REFINER or a DOC-WRITER is a new order
+ * file and nothing else. What stayed closed is THIS map -- the seats the epic
+ * ENGINE dispatches -- because a scheduler seat has no meaning inside a
+ * generation. `orderRole()` is where the two meet, and it refuses.
+ *
  * These are the same four seats, declared. The compile step in
  * `epic-spawn-plan.ts` reads them; nothing about the dispatched seats changed
  * when they moved here, which is the property `epic-spawn-plan.test.ts` pins.
@@ -31,6 +38,19 @@ import type { EpicRole } from './epic-run-types'
 import { type Order, type OrderSeat, validateOrder } from './order'
 
 /**
+ * THE FOUR SEATS THE EPIC ENGINE DISPATCHES. Closed, and closed HERE.
+ *
+ * `OrderSeat` is an open name -- any lowercase-kebab string is a legal seat for
+ * an `order@1`, which is what makes a REFINER or a DOC-WRITER possible without
+ * a schema edit. This union is the other half of that: the epic engine still
+ * has exactly four seats, it still wants the compiler to tell it when one is
+ * missing an order, and a seat outside these four still has no meaning to a
+ * beat. Opening the schema did not open the ENGINE, and conflating the two is
+ * how a scheduler-only seat would end up dispatched into a generation.
+ */
+export type EpicOrderSeat = 'overseer' | 'planner' | 'implementer' | 'verifier'
+
+/**
  * The seat -> launch-tag role map.
  *
  * PLANNER IS THE OVERSEER SEAT WITH A DIFFERENT PROMPT, and the shared tag is
@@ -39,16 +59,49 @@ import { type Order, type OrderSeat, validateOrder } from './order'
  * `planner` role tag would make generation 0 invisible to the check whose whole
  * job is to hold the beat.
  */
-const SEAT_ROLE: Record<OrderSeat, EpicRole> = {
+const SEAT_ROLE: Record<EpicOrderSeat, EpicRole> = {
   overseer: 'overseer',
   planner: 'overseer',
   implementer: 'implementer',
   verifier: 'verifier',
 }
 
-/** Which `EpicRole` an order's seat reports as. Drives the mute and the tag. */
+/** Is this seat one the epic engine knows how to dispatch? */
+export function isEpicOrderSeat(seat: OrderSeat): seat is EpicOrderSeat {
+  return Object.hasOwn(SEAT_ROLE, seat)
+}
+
+/**
+ * Which `EpicRole` a seat reports as, or `undefined` if it never enters the
+ * epic engine. The non-throwing half, for a caller that wants to ASK.
+ */
+export function orderSeatRole(seat: OrderSeat): EpicRole | undefined {
+  return isEpicOrderSeat(seat) ? SEAT_ROLE[seat] : undefined
+}
+
+/**
+ * Which `EpicRole` an order's seat reports as. Drives the mute and the tag.
+ *
+ * IT REFUSES A NON-EPIC SEAT RATHER THAN MAPPING ONE. `OrderSeat` is open, so
+ * `SEAT_ROLE[order.seat]` would now hand back `undefined` for a `refiner` and
+ * that `undefined` would travel: `buildEpicWorkerSettings(role, ...)` decides
+ * the MUTE from the role, and `mayAskHuman(undefined)` is falsy -- so the seat
+ * would be dispatched, silently muted, tagged with an epic role that is not a
+ * role, and only visible as a hole in the panel. A throw is the correct answer
+ * because there is no right role for a seat the engine does not run: a
+ * scheduler seat reaching `compileSeat` is a routing bug upstream, and the
+ * cheap thing is to fail at the compile step where the caller is still on the
+ * stack.
+ */
 export function orderRole(order: Order): EpicRole {
-  return SEAT_ROLE[order.seat]
+  const role = orderSeatRole(order.seat)
+  if (!role) {
+    throw new Error(
+      `order ${order.id} fills seat "${order.seat}", which the epic engine does not dispatch ` +
+        `(it has: ${Object.keys(SEAT_ROLE).sort().join(', ')})`,
+    )
+  }
+  return role
 }
 
 /**
@@ -138,8 +191,15 @@ export const GUARD_ORDER: Order = validateOrder({
     'escalate -- a verifier that can reach a human turns every hard call into a question.',
 })
 
-/** Every seat the engine can dispatch, keyed by seat. */
-export const EPIC_ORDERS: Record<OrderSeat, Order> = {
+/**
+ * Every seat the engine can dispatch, keyed by seat.
+ *
+ * Keyed by {@link EpicOrderSeat}, NOT by `OrderSeat`: the schema's seat name is
+ * open, and `Record<OrderSeat, Order>` after that opening would have degraded
+ * to `Record<string, Order>` -- which type-checks a map that is missing the
+ * verifier, and hands back `undefined` for every seat that is not here.
+ */
+export const EPIC_ORDERS: Record<EpicOrderSeat, Order> = {
   overseer: OVERSEER_ORDER,
   planner: PLANNER_ORDER,
   implementer: IMPLEMENTER_ORDER,
