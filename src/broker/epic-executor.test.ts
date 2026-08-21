@@ -142,7 +142,9 @@ beforeEach(() => {
       acknowledgedCardIds: acknowledgedCardIds(baton),
       dispatchCounts: dispatchCountsByCard(baton),
       lease: null,
-      ...(run ? {} : { error: 'no run' }),
+      // NO `error` when the run is null: a successful read of an epic nobody
+      // armed is not a failure, and the stub that pretended otherwise is the
+      // same conflation the beat note used to make.
     }),
     fetchBoardCards: async () => cards,
     appendBaton: async (_d, _p, _e, entry) => {
@@ -188,6 +190,41 @@ describe('runEpicBeat', () => {
     expect(out.actions).toBe(0)
     expect(out.note).toContain('no run artifact')
     expect(spawns).toHaveLength(0)
+  })
+
+  /**
+   * The beat NOTE is what the wall row and the beat list render, and on a failed
+   * read it asserted "nothing is on disk for it" about a file it never reached.
+   * BEHAVIOUR is unchanged -- skipping is right either way -- only the sentence.
+   */
+  describe('a read that FAILED, as opposed to an artifact that is absent', () => {
+    const failingRead = () => {
+      configureEpicIo({
+        fetchEpicRun: async () => ({
+          run: null,
+          baton: [],
+          acknowledgedCardIds: [],
+          dispatchCounts: {},
+          lease: null,
+          error: 'sentinel timed out',
+        }),
+      })
+    }
+
+    test('the note says the READ failed, not that the disk is empty', async () => {
+      failingRead()
+      const out = await runEpicBeat(deps(), group())
+      expect(out.note).not.toContain('nothing is on disk')
+      expect(out.note).toContain('sentinel timed out')
+    })
+
+    test('the error still travels alongside, and the beat still skips with zero actions', async () => {
+      failingRead()
+      const out = await runEpicBeat(deps(), group())
+      expect(out.error).toBe('sentinel timed out')
+      expect(out.actions).toBe(0)
+      expect(spawns).toHaveLength(0)
+    })
   })
 
   /**
