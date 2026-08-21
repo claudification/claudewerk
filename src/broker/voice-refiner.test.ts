@@ -58,7 +58,7 @@ test('REGRESSION: an empty refinement prompt is a no-op, not a hardcoded default
 test('a skipped refinement returns the raw transcript verbatim, without calling out', async () => {
   withSettings({ voiceRefinement: true, voiceRefinementPrompt: '' })
   // No fetch mock: if this reached the network the test would hang or throw.
-  expect(await refineTranscript('the raw words', ['keyterm'])).toBe('the raw words')
+  expect(await refineTranscript('the raw dictated words go here', ['keyterm'])).toBe('the raw dictated words go here')
 })
 
 test('the other skip conditions still hold and are named', () => {
@@ -74,7 +74,7 @@ test('the other skip conditions still hold and are named', () => {
 
 test('a fully configured refiner is not skipped', () => {
   withSettings({ voiceRefinement: true, voiceRefinementPrompt: 'You clean transcripts.' })
-  expect(refinementSkipReason('hello')).toBeNull()
+  expect(refinementSkipReason('hello there this is real')).toBeNull()
 })
 
 test('contextBlockFrom degrades to empty on junk instead of throwing', () => {
@@ -147,7 +147,7 @@ test('REGRESSION: a refiner slower than the deadline returns the RAW transcript'
   globalThis.fetch = (() => new Promise(() => {})) as unknown as typeof fetch // never resolves
   try {
     const started = Date.now()
-    expect(await refineTranscript('the raw words', [])).toBe('the raw words')
+    expect(await refineTranscript('the raw dictated words go here', [])).toBe('the raw dictated words go here')
     // Returned on the deadline, not on the (never-arriving) response.
     expect(Date.now() - started).toBeLessThan(1000)
   } finally {
@@ -165,12 +165,12 @@ test('deadline 0 means no deadline -- the refiner is awaited however long it tak
   const realFetch = globalThis.fetch
   globalThis.fetch = (async () => {
     await new Promise(r => setTimeout(r, 60))
-    return new Response(JSON.stringify({ choices: [{ message: { content: 'the clean words' } }] }), {
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'the clean dictated words go here' } }] }), {
       headers: { 'Content-Type': 'application/json' },
     })
   }) as unknown as typeof fetch
   try {
-    expect(await refineTranscript('the raw words', [])).toBe('the clean words')
+    expect(await refineTranscript('the raw dictated words go here', [])).toBe('the clean dictated words go here')
   } finally {
     globalThis.fetch = realFetch
   }
@@ -186,7 +186,7 @@ test('a refiner that throws falls back to raw rather than losing the dictation',
   const realFetch = globalThis.fetch
   globalThis.fetch = (() => Promise.reject(new Error('openrouter is down'))) as unknown as typeof fetch
   try {
-    expect(await refineTranscript('the raw words', [])).toBe('the raw words')
+    expect(await refineTranscript('the raw dictated words go here', [])).toBe('the raw dictated words go here')
   } finally {
     globalThis.fetch = realFetch
   }
@@ -220,7 +220,7 @@ test('REGRESSION: clicking "Use recommended prompt" and saving actually PERSISTS
   expect(errors).toBeUndefined()
   expect(settings.voiceRefinementPrompt).toBe(RECOMMENDED_VOICE_PROMPT)
   // And the refiner agrees it is now configured, rather than silently off.
-  expect(refinementSkipReason('hello')).toBeNull()
+  expect(refinementSkipReason('hello there this is real')).toBeNull()
 })
 
 test('a prompt over the shared cap is rejected LOUDLY, not stripped in silence', () => {
@@ -232,4 +232,85 @@ test('a prompt over the shared cap is rejected LOUDLY, not stripped in silence',
   expect(settings.voiceRefinementPrompt).toBe('keep me')
   // ...and the caller is TOLD, which is what the UI had nothing to render.
   expect(errors?.some(e => e.startsWith('voiceRefinementPrompt'))).toBe(true)
+})
+
+// ─── The output contract (incident 2026-08-21) ──────────────────────
+
+/** One-shot fetch mock returning `content` as the model's completion. */
+function mockCompletion(content: string) {
+  return (async () =>
+    new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+      headers: { 'Content-Type': 'application/json' },
+    })) as unknown as typeof fetch
+}
+
+test('REGRESSION: a model asking for the transcript never becomes the user message', async () => {
+  // Broker log 2026-08-21:
+  //   RAW: "Okay."  ->  OUT: "Please provide the transcript you would like me to clean."
+  //   send_input: 546957bf "Please provide the transcript you would like me to"
+  // `return result || rawText` only defended against an EMPTY answer, so the
+  // model's chatter was sent to the agent as Jonas's own words.
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 2000,
+    voiceRefinementContextPass: false,
+  })
+  const raw = 'so um I want to ship the broker thing today if that is alright'
+  const realFetch = globalThis.fetch
+  globalThis.fetch = mockCompletion('Please provide the transcript you would like me to clean.')
+  try {
+    expect(await refineTranscript(raw, [])).toBe(raw)
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('REGRESSION: "Okay." never reaches the refiner at all', async () => {
+  // The short-circuit half of the fix: a one-word ack has nothing to clean, and
+  // it is exactly the shape a model mistakes for an aside to itself.
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 2000,
+  })
+  expect(refinementSkipReason('Okay.')).toBe('transcript too short to refine')
+  // No fetch mock: reaching the network here would hang or throw.
+  expect(await refineTranscript('Okay.', ['sentinel'])).toBe('Okay.')
+})
+
+test('a good refinement still gets through the guard untouched', async () => {
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 2000,
+    voiceRefinementContextPass: false,
+  })
+  const realFetch = globalThis.fetch
+  globalThis.fetch = mockCompletion('I want to ship the broker thing today.')
+  try {
+    expect(await refineTranscript('so um I want to ship the broker thing today', [])).toBe(
+      'I want to ship the broker thing today.',
+    )
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('a model that summarises a long dictation is rejected, not sent', async () => {
+  withSettings({
+    voiceRefinement: true,
+    voiceRefinementPrompt: 'clean it up',
+    voiceRefinementDeadlineMs: 2000,
+    voiceRefinementContextPass: false,
+  })
+  const raw =
+    'so the thing I want to do today is go through the broker code and find every place where we call out to open router and then make sure that each of those calls has a feature tag on it because otherwise the spend log is useless'
+  const realFetch = globalThis.fetch
+  globalThis.fetch = mockCompletion('Add feature tags to OpenRouter calls.')
+  try {
+    expect(await refineTranscript(raw, [])).toBe(raw)
+  } finally {
+    globalThis.fetch = realFetch
+  }
 })

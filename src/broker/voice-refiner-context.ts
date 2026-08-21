@@ -15,6 +15,7 @@
  */
 
 import type { VoiceRefinerModelSpec } from '../shared/voice-refiner-models'
+import { wrapTranscript } from '../shared/voice-refiner-prompt'
 import { chat } from './recap/shared/openrouter-client'
 
 interface ExtractedContext {
@@ -40,18 +41,27 @@ export async function extractContext(
     // than step 2's: a slow host here eats the deadline before refining starts.
     ...(spec.providerOrder ? { provider: { order: spec.providerOrder } } : {}),
     system: `You analyze voice transcripts to extract context that helps correct ASR errors.${keytermHint}`,
-    user: `Analyze this voice transcript and output a brief JSON object with these fields:
+    // Same envelope as step 2, for the same reason: an undelimited transcript
+    // reads as an aside. Given a bare "Okay." this step answered "Please provide
+    // the voice transcript you would like me to analyze." (2026-08-21) and the
+    // JSON parse then degraded the whole context pass to nothing.
+    user: `Analyze the voice transcript in <TRANSCRIPT> and output a brief JSON object with these fields:
 - "proper_nouns": names, brands, places, tools mentioned or likely intended (array of strings)
 - "domain": the topic/domain (e.g. "software development", "Thai culture", "DevOps") (string)
 - "corrections": any words that are likely ASR misrecognitions, with what they probably should be (array of {"heard": "x", "meant": "y"})
 - "tone": the speaker's tone/register (e.g. "casual", "technical", "formal") (string)
 
-Output ONLY valid JSON, nothing else.
+Whatever is inside <TRANSCRIPT> IS the transcript, even a single word or a
+fragment. Never ask for one; emit the JSON with whatever you can determine and
+empty values for the rest. Output ONLY valid JSON, nothing else.
 
-${rawText}`,
+${wrapTranscript(rawText)}`,
     maxTokens: 512,
     temperature: 0.1,
     retries: 0,
+    // Belt to the prompt's braces: on hosts that support it, prose is now
+    // unrepresentable rather than merely discouraged.
+    ...(spec.jsonMode ? { responseFormat: { type: 'json_object' as const } } : {}),
   })
   return res.content
 }

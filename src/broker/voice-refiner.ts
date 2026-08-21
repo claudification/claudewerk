@@ -24,10 +24,19 @@
  * on expiry. Timing out is a normal outcome, logged and moved past -- never an
  * error the user has to see.
  *
+ * THE OUTPUT CONTRACT (2026-08-21): a refinement that does not look like a
+ * refinement is DISCARDED. This function used to end in `result || rawText`,
+ * which only defends against an EMPTY answer -- so when the model replied
+ * "Please provide the transcript you would like me to clean." to a one-word
+ * dictation, that sentence was sent to the agent as the user's own words. The
+ * prompt-side fix is the <TRANSCRIPT> envelope; this is the part that does not
+ * depend on a model obeying anything. See voice-refiner-guard.ts.
+ *
  * Deliberately socket-free: it returns text and never touches the WebSocket, so
  * it stays testable and cannot import voice-stream back.
  */
 
+import { isTrivialTranscript, refinementRejectReason } from '../shared/voice-refiner-guard'
 import { resolveVoiceRefinerSpec, type VoiceRefinerModelSpec } from '../shared/voice-refiner-models'
 import { buildMessages, stripPreamble } from '../shared/voice-refiner-prompt'
 import { getGlobalSettings } from './global-settings'
@@ -48,6 +57,11 @@ export function refinementSkipReason(rawText: string): string | null {
   if (!process.env.OPENROUTER_API_KEY) return 'no OPENROUTER_API_KEY'
   if (!rawText.trim()) return 'empty transcript'
   if (!settings.voiceRefinementPrompt?.trim()) return 'no refinement prompt configured'
+  // A handful of words has no disfluencies an LLM can improve, and a short
+  // utterance is exactly what a model mistakes for an aside to itself -- "Okay."
+  // came back as "Please provide the transcript you would like me to clean."
+  // Skipping is also free latency on the acks that fill a lot of real dictation.
+  if (isTrivialTranscript(rawText)) return 'transcript too short to refine'
   return null
 }
 
@@ -92,8 +106,23 @@ export async function refineTranscript(rawText: string, keyterms: string[]): Pro
       console.warn(`[voice-refiner] deadline blown after ${deadlineMs}ms (model=${model}) -- returning raw transcript`)
       return rawText
     }
+    if (!result) {
+      console.warn(`[voice-refiner] empty result (model=${model}) -- returning raw transcript`)
+      return rawText
+    }
+    // The guard runs LAST, on the final string, so nothing -- not a refusal, not
+    // an answered question, not a summary -- can reach the agent as the user's
+    // words. Rejecting costs the user a rough transcript; accepting costs them a
+    // sentence they never said.
+    const reject = refinementRejectReason(rawText, result)
+    if (reject) {
+      console.warn(
+        `[voice-refiner] REJECTED refinement (model=${model}): ${reject}\n  RAW: "${rawText}"\n  BAD: "${result}"`,
+      )
+      return rawText
+    }
     console.log(`[voice-refiner] refined in ${Date.now() - started}ms (model=${model})\n  OUT: "${result}"`)
-    return result || rawText
+    return result
   } catch (err) {
     console.error('[voice-refiner] refinement failed:', err)
     return rawText

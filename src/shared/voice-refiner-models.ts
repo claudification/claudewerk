@@ -51,22 +51,35 @@ export interface VoiceRefinerModelSpec {
    *  DeepInfra for identical output. Fallbacks stay ON: a pinned provider's 429
    *  must degrade to a slower host, not to no refinement at all. */
   providerOrder?: string[]
+  /** Whether this model/host accepts `response_format: {type:'json_object'}`.
+   *  Step 1 asks for JSON and used to merely SAY so in prose -- it answered
+   *  "Please provide the voice transcript..." on 2026-08-21 and the parse fell
+   *  through to an empty context block. Real JSON mode makes that unrepresentable.
+   *
+   *  OPT-IN, not assumed: OpenRouter rejects the parameter outright for hosts
+   *  that lack it, and step 1 failing is silent (it degrades to no context), so
+   *  a wrong guess here would quietly delete the whole context pass. Anthropic
+   *  has no such response_format, hence haiku is left off. */
+  jsonMode?: boolean
 }
 
 export const VOICE_REFINER_MODELS: Record<string, VoiceRefinerModelSpec> = {
   'google/gemini-2.5-flash': {
     id: 'google/gemini-2.5-flash',
     blurb: 'Recommended. ~1.3s, best at snapping garbled jargon to your keyterms.',
+    jsonMode: true,
   },
   'google/gemma-4-31b-it': {
     id: 'google/gemma-4-31b-it',
     blurb: 'Fastest good one. ~0.5s via Cerebras, matches the default on quality. Add "React #185" to keyterms.',
     providerOrder: ['cerebras'],
+    jsonMode: true,
   },
   'openai/gpt-oss-120b': {
     id: 'openai/gpt-oss-120b',
     blurb: 'Fastest and cheapest, but misses keyterms and invents plausible names.',
     providerOrder: ['cerebras', 'groq'],
+    jsonMode: true,
   },
   'anthropic/claude-haiku-4.5': {
     id: 'anthropic/claude-haiku-4.5',

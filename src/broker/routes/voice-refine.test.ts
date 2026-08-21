@@ -54,7 +54,14 @@ test('a user without voice permission on that project is forbidden outright', ()
 test('no resolvable project means no project-scoped permission to check', () => {
   // An ad-hoc dictation with no conversation attached must not 403 on a
   // permission that has nothing to be scoped against.
-  expect(screenRefineRequest({ isShareGuest: false, hasVoicePermission: false, project: null }, 'hello')).toBeNull()
+  // The transcript has to clear the trivial-transcript floor or the screen skips
+  // on LENGTH and this stops testing the permission path at all.
+  expect(
+    screenRefineRequest(
+      { isShareGuest: false, hasVoicePermission: false, project: null },
+      'the sentinel dropped its worktree',
+    ),
+  ).toBeNull()
 })
 
 test('the screen still defers to refinementSkipReason for configuration', () => {
