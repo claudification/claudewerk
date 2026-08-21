@@ -12,10 +12,14 @@
  */
 
 import type { LaunchProfile } from '../../shared/launch-profile'
+import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
+import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
 import type { ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
+import { buildUnattendedSettings } from '../../shared/unattended-permissions'
 import { nextFailureState } from './policy'
+import { decideSeatAdmission } from './seat-reservation'
 
 export interface DispatchOutcome {
   ok: boolean
@@ -37,8 +41,20 @@ export interface FireDeps {
   getLaunchProfile?(profileId: string, userName: string): LaunchProfile | null
   persist(task: ScheduledTask): void
   recordRun(run: ScheduledRun): void
-  /** Scheduler-originated spawns currently in flight, for the global ceiling. */
+  /** Dispatched-and-unsettled scheduler spawns, for the global ceiling. */
   inFlight(): number
+  /** Of those, how many run under this order id -- the reservation's counter. */
+  inFlightForOrder(orderId: string): number
+  /**
+   * Take a slot for a dispatch that is about to start; returns its release.
+   *
+   * SEPARATE FROM THE DOUBLE-FIRE GUARD ON PURPOSE. The engine's `firing` set
+   * holds a schedule from the moment it is CONSIDERED, refusals included, and
+   * counting that as occupancy makes every refusal cost a slot it never used.
+   * A slot is taken here, between admission and dispatch, with no await in
+   * between -- so the next schedule in the same tick sees it.
+   */
+  claimSlot(orderId: string | undefined): () => void
   maxInFlight: number
   notify?(message: string): void
   now(): number
@@ -73,6 +89,46 @@ export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | 
     name: `${task.name} ${stamp}`.slice(0, 80),
     description: `Scheduled run of "${task.name}" (${task.cron} ${task.tz})`,
   }
+}
+
+export type OrderApplication = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
+
+/**
+ * Layer a work order's caps onto a spawn request.
+ *
+ * THE ORDER NEVER WINS OVER AN EXPLICIT CHOICE and never widens anything --
+ * both rules belong to `composeOrderCaps`, which is called rather than
+ * re-implemented so a scheduled seat gets byte-identical refusals to an epic
+ * seat. What is left here is the mapping back onto a `SpawnRequest`.
+ *
+ * The deny rules go through `buildUnattendedSettings`, which is also where the
+ * deny FLOOR lives, so an order's rules land unioned with the floor rather than
+ * replacing it. A schedule that already carries its own `settingsInline` keeps
+ * it: overwriting a fragment a human configured, to add one deny rule, would be
+ * the order rewriting the harness.
+ */
+export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | undefined): OrderApplication {
+  if (order === undefined) return { ok: true, request }
+  const composed = composeOrderCaps(
+    order.order,
+    {
+      model: request.model,
+      effort: request.effort,
+      agent: request.agent,
+      mcpConfigPath: request.mcpConfigPath,
+      maxBudgetUsd: request.maxBudgetUsd,
+      permissionMode: request.permissionMode as never,
+    },
+    internalOrderCaller(),
+  )
+  if (!composed.ok) return { ok: false, reason: composed.reason }
+
+  const { deny, ...caps } = composed.caps
+  const next: SpawnRequest = { ...request, ...caps }
+  if (deny?.length && request.settingsInline === undefined) {
+    next.settingsInline = buildUnattendedSettings({ deny })
+  }
+  return { ok: true, request: next }
 }
 
 /** The still-running conversation from this schedule's most recent spawn, if any. */
@@ -162,22 +218,42 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     if (live) return finish(task, deps, opts, firedAt, { outcome: 'skipped_overlap', conversationId: live })
   }
 
-  if (deps.inFlight() >= deps.maxInFlight) {
-    return finish(task, deps, opts, firedAt, {
-      outcome: 'skipped_overlap',
-      error: `scheduler at its concurrency ceiling (${deps.maxInFlight})`,
-    })
+  // The order this schedule spends -- decides both its share of the pool and
+  // the caps its spawn runs under. Absent for every schedule that names none.
+  const order = seatOrder(task.orderId)
+  const admission = decideSeatAdmission({
+    order,
+    census: { total: deps.inFlight(), forOrder: order ? deps.inFlightForOrder(order.order.id) : 0 },
+    maxInFlight: deps.maxInFlight,
+  })
+  if (!admission.admit) {
+    return finish(task, deps, opts, firedAt, { outcome: 'skipped_overlap', error: admission.reason })
   }
 
   const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
-  const request = buildSpawnRequest(task, profile, firedAt)
+  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt), order)
+  // An order that asks for more privilege than the scheduler holds is a FAILED
+  // fire, not a quiet downgrade: dispatching the seat with caps its order did
+  // not describe is worse than not dispatching it, and the failure counter is
+  // what eventually disarms a schedule nobody is fixing.
+  if (!applied.ok) {
+    deps.persist(settleTask(task, deps, { dispatchOk: false, firedAt }))
+    return finish(task, deps, opts, firedAt, { outcome: 'error', error: applied.reason })
+  }
+  const request = applied.request
 
+  // Claimed here, released in the `finally`: everything that could still refuse
+  // this fire has already run, and nothing between the claim and the dispatch
+  // awaits, so a sibling due in the same minute sees the slot taken.
+  const releaseSlot = deps.claimSlot(order?.order.id)
   let dispatched: DispatchOutcome
   try {
     dispatched = await deps.dispatch(request)
   } catch (err) {
     // A throwing dispatch is a failed fire, not a crashed tick.
     dispatched = { ok: false, error: err instanceof Error ? err.message : String(err) }
+  } finally {
+    releaseSlot()
   }
 
   deps.persist(settleTask(task, deps, { dispatchOk: dispatched.ok, firedAt }))
