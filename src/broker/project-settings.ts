@@ -12,6 +12,8 @@
 
 import { cwdToProjectUri, projectIdentityKey } from '../shared/project-uri'
 import type { ProjectSettings } from '../shared/protocol'
+import type { ScannerId } from '../shared/scanner-ids'
+import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { KVStore } from './store/types'
 
 export type { ProjectSettings } from '../shared/protocol'
@@ -103,6 +105,40 @@ export function setProjectSettings(project: string, update: ProjectSettings): vo
   if (Object.keys(settings[key]).length === 0) {
     delete settings[key]
   }
+  save()
+}
+
+/**
+ * May this scanner sweep this project? The store-backed spelling of
+ * `scannerEnabled` -- OFF for a project that has never been configured.
+ *
+ * Here rather than at each call site so a caller needs one import instead of two
+ * and cannot forget which of them carries the default.
+ */
+export function scannerEnabledForProject(project: string, id: ScannerId): boolean {
+  return scannerEnabled(getProjectSettings(project), id)
+}
+
+/**
+ * Stamp "this scanner just finished a pass over this project".
+ *
+ * NOT `setProjectSettings`, and the difference is the bug it avoids:
+ * `setProjectSettings` merges SHALLOWLY, so passing `{ scannersLastRun: { epics: t } }`
+ * would replace the whole map and silently erase every other scanner's stamp.
+ * This merges the one key.
+ *
+ * Written by the CALLER that invoked the scanner, never by the scanner itself --
+ * three scanners each inventing their own timestamp store is exactly the drift
+ * the scanner fabric exists to end.
+ */
+export function stampScannerRun(project: string, id: ScannerId, at: number): void {
+  const key = normalizeKey(project)
+  const existing = settings[key]
+  // No entry at all means the project was never configured, so no scanner can be
+  // enabled on it -- stamping would conjure a settings row for a sweep that the
+  // opt-in says never happened.
+  if (!existing) return
+  existing.scannersLastRun = { ...existing.scannersLastRun, [id]: at }
   save()
 }
 

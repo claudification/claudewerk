@@ -18,6 +18,7 @@
 
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
+import { SCANNER_IDS } from '../shared/scanner-ids'
 import { listArmedEpics } from './epic-registry'
 
 /** What one epic's conversations add up to, from the registry alone. */
@@ -347,6 +348,37 @@ export function generationMismatch(group: EpicGroup, runGen: number): string | n
 }
 
 /**
+ * A RESERVED SCANNER LANE IS NOT AN EPIC.
+ *
+ * `planImplementerSpawn` has no seat without an `EpicLaunchTag`, so a scanner
+ * that dispatches a card belonging to no epic -- the work-order scanner is the
+ * first -- must stamp SOME epic id. It stamps its own scanner id rather than a
+ * real epic's, because a seat wearing a real epic's id gets absorbed into that
+ * epic's group, counted as one of its in-flight legs and acknowledged into its
+ * baton: two engines dispatching one card.
+ *
+ * The cost lands here. `groupEpicConversations` keys purely on the tag and the
+ * registry keeps conversations after they end, so from the first such dispatch
+ * onward the sweep would find a permanent group with no `run.md`, beat it every
+ * 45s forever ("armed but nothing is on disk for it"), and show it as a phantom
+ * epic on every surface that renders `epicsToWatch`.
+ *
+ * Stated ONCE, here, rather than as a suppression in the beat, the log or the
+ * activity feed: the invariant is that a reserved lane is never an epic, and the
+ * next scanner that needs a lane inherits it for free.
+ *
+ * All five scanner ids are reserved, not just the lanes in use: the ids are the
+ * shared vocabulary of `src/shared/scanner-ids.ts`, and a rule that only covered
+ * the ones that happen to dispatch today is a rule the sixth scanner has to
+ * rediscover. The price is that an epic CARD may not be named exactly `refine`,
+ * `nightshift`, `work-orders`, `epics` or `morning-report` -- five words against
+ * a whole engine's worth of special cases.
+ */
+export function isReservedScannerLane(epicId: string): boolean {
+  return (SCANNER_IDS as readonly string[]).includes(epicId)
+}
+
+/**
  * EVERY EPIC WORTH LOOKING AT: the ones with conversations, PLUS the ones merely
  * armed.
  *
@@ -370,5 +402,9 @@ export function epicsToWatch(
     // flight -- so an armed entry only fills a gap, never overwrites one.
     if (!groups.has(epicId)) groups.set(epicId, emptyGroup(epicId, project))
   }
-  return [...groups.values()]
+  // Filtered on the way OUT, after both sources have been unioned, so neither an
+  // arming nor a tagged conversation can smuggle a reserved lane past it.
+  // `groupEpicConversations` itself stays unfiltered on purpose: it is the raw
+  // registry view, and `epic-inspect` wants to SEE a reserved lane's seats.
+  return [...groups.values()].filter(group => !isReservedScannerLane(group.epicId))
 }

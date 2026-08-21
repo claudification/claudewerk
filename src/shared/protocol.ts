@@ -49,6 +49,7 @@ import type {
   QuestTarget,
 } from './quest-schema'
 import type { RecapSuiteId } from './recap-suites'
+import type { ScannerLastRuns, ScannerToggles } from './scanner-opt-in'
 import type { SpawnRequest } from './spawn-schema'
 
 export type { LaunchProfile } from './launch-profile'
@@ -3347,6 +3348,17 @@ export interface ProjectSettings {
    *  `SotuTuning` (models / trigger constants / cutoffs). Absent fields use the baked
    *  defaults. Edited via the `sotu_configure` tool. */
   sotuParams?: SotuTuningOverrides
+  /** WHICH SCANNERS MAY SWEEP THIS PROJECT. Absent map, absent key and `false` all
+   *  mean OFF -- every scanner, every project, until a human ticks the box. Read
+   *  through `scannerEnabled()` (shared/scanner-opt-in.ts) and NEVER inline, so no
+   *  second reader can spell the default `?? true`. Only the true entries are
+   *  stored; an all-off save drops the key. */
+  scanners?: ScannerToggles
+  /** Epoch ms of each scanner's last completed pass over this project, written by
+   *  the CALLER that ran it (never by the scanner). Observability only, in the
+   *  spirit of `lessonsLastRun`: "enabled, last ran never" is the sentence that
+   *  makes someone look at an engine that died quietly. */
+  scannersLastRun?: ScannerLastRuns
 }
 
 /**
