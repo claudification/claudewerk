@@ -11,7 +11,9 @@
  * 40 above threshold. `fallow health` over the same tree analyzed 3589 files /
  * 44769 functions and found 638. `sweepBoard` (cyclomatic 24, cognitive 43,
  * 139 lines, severity critical) sat in the second number and not the first,
- * purely because `src/shared/board-sweep.ts` was not in the diff.
+ * purely because `src/shared/board-sweep.ts` was not in the diff. It has since
+ * been split (324c58f8) -- and this tool is how you tell that apart from the
+ * audit merely having stopped looking.
  *
  * This module joins the two runs so every finding carries `gateVisible`: can
  * the commit gate see this function right now, yes or no.
