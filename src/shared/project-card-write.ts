@@ -70,6 +70,9 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     depends_on: input.dependsOn?.length ? input.dependsOn : undefined,
     relates_to: input.relatesTo?.length ? input.relatesTo : undefined,
     created,
+    archived_reason: input.archivedReason,
+    archived_by: input.archivedBy,
+    delete_at: input.deleteAt,
     [WALL_PINNED_KEY]: input.wallPinned ? true : undefined,
   }
   // No blocks: a card being created has no prior bytes to preserve. A `promise:`
@@ -87,11 +90,47 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
     dependsOn: input.dependsOn,
     relatesTo: input.relatesTo,
     wallPinned: input.wallPinned || undefined,
+    archivedReason: input.archivedReason,
+    archivedBy: input.archivedBy,
+    deleteAt: input.deleteAt,
     created,
     mtime: nowMs,
     bodyPreview: makeBodyPreview(input.body),
   }
 }
+
+/**
+ * Every patch field that is a STRAIGHT overlay: present means write it, absent
+ * means leave whatever the card already had. ONE entry per key (STRATEGY MAPS
+ * OVER CHAINS) -- as a chain of `if`s this was the one function in the file
+ * whose complexity grew every time the board learned a key, which is a poor
+ * reason to think twice about adding one.
+ *
+ * The four fields NOT here each need a rule of their own: `body` is not
+ * frontmatter, `status` falls back to a legacy lane, `wallPinned: false` DELETES
+ * rather than writes, and `blockedBy` is folded into `dependsOn` before this
+ * runs. The `Exclude` is what keeps one of them from being quietly added here
+ * and losing its rule.
+ */
+const OVERLAID_KEYS: readonly [
+  Exclude<keyof ProjectTaskInput, 'body' | 'status' | 'wallPinned' | 'blockedBy'>,
+  string,
+][] = [
+  ['title', 'title'],
+  ['priority', 'priority'],
+  ['tags', 'tags'],
+  ['refs', 'refs'],
+  ['quest', 'quest'],
+  ['epic', 'epic'],
+  ['dependsOn', 'depends_on'],
+  ['relatesTo', 'relates_to'],
+  // THE LIFECYCLE KEYS. `''` is a real instruction here and not a no-op: it is
+  // how an un-archive clears the record, and `serializeCard` drops an ordered
+  // key holding an empty string rather than writing a bare `archived_reason:`.
+  ['archivedReason', 'archived_reason'],
+  ['archivedBy', 'archived_by'],
+  ['deleteAt', 'delete_at'],
+]
 
 /**
  * Patch a card. Unpatched keys survive untouched -- INCLUDING every key this
@@ -107,14 +146,10 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
 
   const patch = foldAliases(rawPatch)
   const meta = { ...raw.meta }
-  if (patch.title !== undefined) meta.title = patch.title
-  if (patch.priority !== undefined) meta.priority = patch.priority
-  if (patch.tags !== undefined) meta.tags = patch.tags
-  if (patch.refs !== undefined) meta.refs = patch.refs
-  if (patch.quest !== undefined) meta.quest = patch.quest
-  if (patch.epic !== undefined) meta.epic = patch.epic
-  if (patch.dependsOn !== undefined) meta.depends_on = patch.dependsOn
-  if (patch.relatesTo !== undefined) meta.relates_to = patch.relatesTo
+  for (const [field, key] of OVERLAID_KEYS) {
+    const value = patch[field]
+    if (value !== undefined) meta[key] = value
+  }
   // UNPIN DELETES THE KEY. `serializeCard` only skips `undefined` for keys it
   // owns the order of; `wall_pinned` is not one, so leaving it set to `false`
   // here would write `wall_pinned: false` and make an unpinned card look

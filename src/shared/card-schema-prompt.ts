@@ -33,13 +33,24 @@ function valueHint(spec: CardKeySpec): string {
   return ''
 }
 
+/**
+ * A key WRITTEN BY A MACHINE at transition time says so, because the prompt's
+ * job is to stop an agent from getting a key structurally wrong and "hand-write
+ * the archive record" is exactly that kind of wrong: it claims a decision nobody
+ * made, in the one tier of the record that is not purgeable. `owner` already
+ * carries the fact, so nothing here is a second copy of it.
+ */
+function ownerHint(spec: CardKeySpec): string {
+  return spec.owner === 'machine' ? ' -- WRITTEN BY THE BOARD, never by hand' : ''
+}
+
 function renderKey(spec: CardKeySpec): string {
   // An alias says nothing its stored form does not, so it gets ONE clause and no
   // repeat of the meaning -- otherwise `blocked_by` and `depends_on` read as two
   // different relations and an agent picks between them by coin-flip.
   if (spec.storedAs) return `- \`${spec.key}:\` -- alias for \`${spec.storedAs}:\`, normalised on write`
   const deprecated = spec.deprecated ? ` **DEPRECATED** -- ${spec.deprecated}` : ''
-  return `- \`${spec.key}:\` -- ${spec.doc}${valueHint(spec)}${deprecated}`
+  return `- \`${spec.key}:\` -- ${spec.doc}${valueHint(spec)}${ownerHint(spec)}${deprecated}`
 }
 
 /**

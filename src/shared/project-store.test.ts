@@ -130,6 +130,64 @@ describe('board CRUD', () => {
 })
 
 /**
+ * THE TRAP THIS EXISTS TO CATCH: a key declared on `ProjectTaskInput` and
+ * nowhere else is accepted by the type and silently dropped on write. `epic`,
+ * `dependsOn` and `relatesTo` all went out that way through `createTask` until
+ * 2026-08-21, and the morning report's `apply` op would have hit it again --
+ * reporting success while archiving cards with no record of why.
+ *
+ * So each of the three is driven all the way to disk and back, not asserted
+ * against the projected object the writer happened to return.
+ */
+describe('the lifecycle keys survive a round trip', () => {
+  const LIFECYCLE = {
+    archivedReason: 'duplicate-of:the-survivor',
+    archivedBy: 'report-2026-08-22',
+    deleteAt: '2026-09-30T00:00:00Z',
+  }
+
+  test('createProjectTask writes all three', () => {
+    createProjectTask(root, { title: 'Archived thing', body: 'b', status: 'archived', ...LIFECYCLE }, 1000)
+
+    const got = getProjectTask(root, 'archived-thing')
+    expect(got?.archivedReason).toBe('duplicate-of:the-survivor')
+    expect(got?.archivedBy).toBe('report-2026-08-22')
+    expect(got?.deleteAt).toBe('2026-09-30T00:00:00Z')
+  })
+
+  test('updateProjectTask adds them to a card that never carried them', () => {
+    createProjectTask(root, { title: 'Cold card', body: 'b' }, 1000)
+    const updated = updateProjectTask(root, 'cold-card', {
+      status: 'archived',
+      archivedReason: 'cold',
+      archivedBy: 'me',
+    })
+
+    expect(updated?.archivedReason).toBe('cold')
+    expect(readFileSync(join(root, '.rclaude/project/cards/cold-card.md'), 'utf8')).toContain('archived_reason: cold')
+    expect(getProjectTask(root, 'cold-card')?.archivedBy).toBe('me')
+  })
+
+  test('a patch that does not mention them leaves them alone', () => {
+    createProjectTask(root, { title: 'Kept', body: 'b', status: 'archived', ...LIFECYCLE }, 1000)
+    updateProjectTask(root, 'kept', { priority: 'high' })
+
+    expect(getProjectTask(root, 'kept')?.archivedReason).toBe('duplicate-of:the-survivor')
+    expect(getProjectTask(root, 'kept')?.deleteAt).toBe('2026-09-30T00:00:00Z')
+  })
+
+  test('an un-archive CLEARS the record rather than leaving a bare key behind', () => {
+    createProjectTask(root, { title: 'Back', body: 'b', status: 'archived', ...LIFECYCLE }, 1000)
+    updateProjectTask(root, 'back', { status: 'open', archivedReason: '', archivedBy: '' })
+
+    const after = readFileSync(join(root, '.rclaude/project/cards/back.md'), 'utf8')
+    expect(after).not.toContain('archived_reason')
+    expect(after).not.toContain('archived_by')
+    expect(getProjectTask(root, 'back')?.archivedReason).toBeUndefined()
+  })
+})
+
+/**
  * The end of the corruption `werk-promise-ledger-card-writer-flattens` names:
  * every board write goes through `serializeCard`, `project_set_status` included,
  * and a flat re-serialisation de-indented a card's `promise:` block and emptied
