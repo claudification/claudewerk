@@ -567,18 +567,15 @@ function buildStreamProcess(
           controlRequestResolvers.delete(id)
           resolve(r)
         }
-        const timer = setTimeout(
-          () => {
-            // A timeout is the same silence as a refusal, one layer out -- diag
-            // it here so the NDJSON records the verb that never came back.
-            options.onDiag?.(
-              'conversation',
-              `${controlDiagLine(id, { subtype }, 'timeout')}: no response after ${timeoutMs}ms`,
-            )
-            finish({ ok: false, timedOut: true, error: `control_request ${subtype} timed out after ${timeoutMs}ms` })
-          },
-          timeoutMs,
-        )
+        const timer = setTimeout(() => {
+          // A timeout is the same silence as a refusal, one layer out -- diag
+          // it here so the NDJSON records the verb that never came back.
+          options.onDiag?.(
+            'conversation',
+            `${controlDiagLine(id, { subtype }, 'timeout')}: no response after ${timeoutMs}ms`,
+          )
+          finish({ ok: false, timedOut: true, error: `control_request ${subtype} timed out after ${timeoutMs}ms` })
+        }, timeoutMs)
         controlRequestResolvers.set(id, {
           subtype,
           resolve: r => {

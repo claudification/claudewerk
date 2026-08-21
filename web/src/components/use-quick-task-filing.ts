@@ -21,25 +21,22 @@ interface FilingArgs {
 export function useQuickTaskFiling({ text, chips, targetProject, onFiled }: FilingArgs) {
   const [flash, setFlash] = useState(false)
 
-  const submit = useCallback(
-    () => {
-      const draft = buildTaskDraft(text, chips)
-      if (!draft || !targetProject) return
-      haptic('tap')
+  const submit = useCallback(() => {
+    const draft = buildTaskDraft(text, chips)
+    if (!draft || !targetProject) return
+    haptic('tap')
 
-      // Logged for recovery in case the WS relay drops it on the floor.
-      console.log('[quick-task] Creating task:', JSON.stringify({ ...draft, project: targetProject }))
-      sendBoardOp(targetProject, 'create', { input: draft }).catch(err => {
-        console.error('[quick-task] Failed to create task:', err, draft)
-      })
+    // Logged for recovery in case the WS relay drops it on the floor.
+    console.log('[quick-task] Creating task:', JSON.stringify({ ...draft, project: targetProject }))
+    sendBoardOp(targetProject, 'create', { input: draft }).catch(err => {
+      console.error('[quick-task] Failed to create task:', err, draft)
+    })
 
-      haptic('success')
-      onFiled()
-      setFlash(true)
-      setTimeout(() => setFlash(false), 1000)
-    },
-    [text, chips, targetProject, onFiled],
-  )
+    haptic('success')
+    onFiled()
+    setFlash(true)
+    setTimeout(() => setFlash(false), 1000)
+  }, [text, chips, targetProject, onFiled])
 
   return { submit, flash }
 }
