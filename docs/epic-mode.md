@@ -1,4 +1,4 @@
-# Epic Mode — running an epic to completion
+# Epic Mode -- running an epic to completion
 
 > **Epic mode is not a fourth engine.** It is nightshift with a scope (one epic
 > card), an ordering (`depends_on`), and a supervisor leg between the workers and
@@ -21,7 +21,7 @@ settings, not a different paragraph in the same prompt.
 
 The implementer/verifier split is not ceremony. Anthropic's harness work found
 that *"agents tend to respond by confidently praising the work"*, and Cognition
-measured a review agent catching ~2 bugs per PR (58% severe) — but only when the
+measured a review agent catching ~2 bugs per PR (58% severe) -- but only when the
 reviewer **did not share the coder's context**. A reviewer that reads the coder's
 reasoning inherits the coder's blind spots. So `planVerifierSpawn` hands over the
 card and the diff, never the transcript.
@@ -76,25 +76,118 @@ card and the diff, never the transcript.
 
 ---
 
-## 3. Why the wake is state-based
+## 3. Generation 0 -- the planning pass
+
+**Nothing dispatches until the board has been read once, with fresh eyes.** An
+epic is usually written as a pile of stories with no thought given to what has to
+happen first, and `depends_on` is the field everybody leaves empty. Generation 0
+exists to fix that before it costs anything.
+
+It is **not a fourth seat.** It is the overseer, with a different prompt and
+dispatch suppressed for one beat: same permissions, same board access, same
+baton, same right to reach a human. A separate role would have duplicated all
+four for no capability anybody needed.
+
+### Why it exists
+
+Readiness is arithmetic over `depends_on` (`epic-ready.ts`) and nothing else
+looks at it -- deliberately, because a model asked to eyeball a dependency list
+will occasionally dispatch against an open one. The price of that correctness is
+that **the DAG is only as good as the edges somebody remembered to write**, and
+nobody writes the edge between "refactor the parser" and "add a parser flag".
+Those two dispatch together, in separate worktrees, and collide.
+
+So this pass does not move the gate to a model. It makes the arithmetic
+trustworthy by **completing the graph the arithmetic runs on**, once, up front.
+From beat 1 the engine enforces it deterministically, for free, forever.
+
+### The job, in order
+
+1. **Read the intent.** The epic card body is what the epic is FOR. Then every
+   child card. Look for the gap between the two.
+2. **Close what is already done.** Verified against the repo, not the board -- a
+   card describing work already in the tree costs a full implementer *plus* a
+   full verifier to rediscover. Uncertain means leave it: a wrongly-closed card
+   is silently dropped scope.
+3. **File what is missing**, with `epic: <id>`. Split any card that is secretly
+   four -- a card an implementer cannot finish in one sitting comes back bounced.
+4. **Drop what stopped making sense**, archived with the reason. `archived`
+   leaves the denominator, so a dropped card cannot fake progress.
+5. **Write the edges.** The part nobody does by hand and the engine cannot infer.
+6. **Write the baton** -- one `intent` entry naming every card created, closed,
+   archived, split or re-ordered, and why -- then the run digest as the plan of
+   record.
+
+### What earns an edge
+
+The question for any pair of cards is not "is one logically after the other" but
+**"would two agents doing these simultaneously, without talking, produce a
+mess"**. Add `depends_on` when:
+
+- they edit the same file, or one renames/moves what the other edits;
+- one establishes an interface, a schema, a migration or a config the other
+  consumes -- *this is the infrastructure-first case*;
+- one is a refactor and the other adds to the thing being refactored (the classic
+  collision, and it almost never has a declared edge);
+- one cannot be verified until the other lands.
+
+Not for priority. Every edge costs parallelism, and an over-serialised epic runs
+one card at a time for no reason. Order that is only a preference belongs in the
+card body.
+
+### The checkpoint gate
+
+When the planner exits, the engine compares the board's dispatch-relevant
+fingerprint (`epic-board-fingerprint.ts`) against the snapshot it took before
+the planner started:
+
+| Board | What happens |
+|---|---|
+| **changed** | `plan-checkpoint` -- the run stops and Jonas reviews the plan before any work goes out |
+| **unchanged** | `plan-accept` -- straight through to beat 1 |
+
+Decided from the board itself, never from the planner's summary -- so the prompt
+tells it to write the baton for the human who has to read it, not to influence
+the gate.
+
+### Defaults and the three states
+
+`plan` defaults **on** (`EPIC_RUN_DEFAULTS`); no caller currently exposes a way
+to turn it off. `planBaseline` is what distinguishes owed / in flight / settled,
+and it is the fingerprint rather than a flag on purpose: the field that says a
+planner ran *is* the evidence used to judge whether it changed anything, so the
+two can never disagree.
+
+A **resume never re-plans** -- gen 0 already happened, the overseer's own replan
+step covers drift from there, and re-planning would churn cards that live workers
+are holding open. A run armed before this stage existed reads as *already
+planned* rather than as owing a plan, for the same reason.
+
+Generation 0 outranks every other beat decision except the caps and a live
+overseer -- including unacknowledged settles -- because dispatching while a plan is
+owed races the pass that exists to say what may run in parallel.
+
+---
+
+## 4. Why the wake is state-based
 
 The obvious design fires the overseer from a "worker ended" event. That loses a
 settle whenever the overseer is mid-turn, and double-fires whenever two workers
-end together — which is the normal case at concurrency 3, not an edge case.
+end together -- which is the normal case at concurrency 3, not an edge case.
 
 So the beat asks a **standing question**: *is there a settled card the baton has
 not acknowledged?* A missed sweep is repaired by the next one, and a duplicate is
 refused by the lease compare-and-swap. Self-healing beats bookkeeping.
 
-The guardian, not the implementer, fires the wake — an implementer that crashes,
+The guardian, not the implementer, fires the wake -- an implementer that crashes,
 hangs, or gets watchdog-killed never gets to call a check-in tool, and those are
 three of the four ways a card settles.
 
 ---
 
-## 4. The blocked channel — an implementer asks the BOARD
+## 5. The blocked channel -- an implementer asks the BOARD
 
-The rule is **no worker BLOCKS on a human** — not "no worker speaks". That
+The rule is **no worker BLOCKS on a human** -- not "no worker speaks". That
 distinction decides the list, and it is enforced by a `PreToolUse` hook keyed on
 tool name (`epic-worker-permissions.ts`), not by prompt text.
 
@@ -119,12 +212,12 @@ When blocked, the implementer:
 4. Sets its card back to `open`, pushes what is safe, and stops.
 
 Three things fall out for free: the DAG stops redispatching the blocked card, the
-question is a first-class board object (and an andon row), and answering it —
-moving the question card to `done` — unblocks the original with no special case.
+question is a first-class board object (and an andon row), and answering it --
+moving the question card to `done` -- unblocks the original with no special case.
 
 ---
 
-## 5. Storage
+## 6. Storage
 
 ```
 <project>/.rclaude/project/
@@ -142,12 +235,12 @@ and breakable by a human reading the board without knowing the engine's layout.
 a number would put two different beats in the baton under one id.
 
 The baton is the overseer's entire memory. Every generation is a fresh
-conversation with no transcript from the last one — which is what lets an epic
+conversation with no transcript from the last one -- which is what lets an epic
 run past any context horizon.
 
 ---
 
-## 6. Cadence is a mode, not an engine
+## 7. Cadence is a mode, not an engine
 
 | `cadence` | Dispatch | Verdicts |
 |---|---|---|
@@ -159,27 +252,53 @@ A verdict lands either way: judging is not night work, and a card stuck in
 
 ---
 
-## 7. Stop conditions
+## 8. Stop conditions
 
 | Condition | What happens |
 |---|---|
-| Every child terminal | `complete` — the overseer reports what landed and what was dropped |
-| An irreversible step, or a decision that is Jonas's | `checkpoint` — one crisp question, recommendation first. The only path to a human. |
-| Two consecutive generations with nothing dispatchable | `park` — the overseer gets exactly one chance to replan first |
-| `gen >= maxGens` (default 40) | `park` — the run is thrashing, not working |
+| Every child terminal | `complete` -- the overseer reports what landed and what was dropped |
+| An irreversible step, or a decision that is Jonas's | `checkpoint` -- one crisp question, recommendation first. The only path to a human. |
+| Generation 0 rewrote the board | `plan-checkpoint` -- the plan is reviewed before any work goes out (§3) |
+| Two consecutive generations with nothing dispatchable | `park` -- the overseer gets exactly one chance to replan first |
+| `spentUsd >= maxUsd` (default **$100**) | `park` -- see below |
+| `maxWallClockMinutes` since first dispatch (default **480**) | `park` -- see below |
+| `gen >= maxGens` (default 40) | `park` -- the run is thrashing, not working |
+
+**The ceilings are checked dollars, then wall clock, then generations** -- most
+expensive unit first, so a run over two at once reports the one that actually
+cost something. `0` disarms any of them, and it has to be typed: none of the
+defaults is infinity.
+
+`maxGens` was the only brake for the life of the feature, and it is a unit of
+**planning** rather than of spend: it bounds how many times the overseer thinks
+and bounds nothing about what the seats underneath it burn. On 2026-08-19 this
+project billed **$2,481 in one calendar day** with an epic running unattended,
+and no cap of any kind was involved in stopping it. `$100` is about 4% of that
+day -- set where a human reading *"this run has spent $100 and is not finished"*
+would say stop. Raise it per run when an epic genuinely warrants more.
+
+`spentUsd` is **sticky**: it is folded fresh each beat from `turns.cost_usd`
+across every conversation the run spawned, but turns are pruned and the
+conversation registry forgets, so the fold is a *floor on the truth*. The higher
+of banked and folded wins -- a brake that garbage collection can release is not a
+brake. Re-arming a parked run therefore does not launder its spend; it parks
+again on the next beat, which is the brake working. The wall clock, by contrast,
+**does** restart on re-arm: it measures the current unattended stretch, and it
+starts on the first beat the run was *permitted* to dispatch, so a `window` run
+armed at noon does not burn its budget waiting for the night.
 
 ---
 
-## 8. Relationship to the WERK cards
+## 9. Relationship to the WERK cards
 
 Epic mode is the delivery vehicle for two cards on
 [werk-epic](../.rclaude/project/cards/werk-epic.md):
 
-- **[werk-done-gate](../.rclaude/project/cards/werk-done-gate.md)** — Tier 1 and
+- **[werk-done-gate](../.rclaude/project/cards/werk-done-gate.md)** -- Tier 1 and
   Tier 2 already shipped (`board-gate.ts`, wired into `project_set_status`).
   Tier 3, the judge leg with no shared context, was written as
   `buildGuardPrompt` and had **zero callers** until `planVerifierSpawn`.
-- **[werk-andon](../.rclaude/project/cards/werk-andon.md)** — the concurrency
+- **[werk-andon](../.rclaude/project/cards/werk-andon.md)** -- the concurrency
   default is **3**, and cards over the ceiling are reported as `heldBack` rather
   than silently truncated. The ceiling is a *review* ceiling.
 
@@ -190,13 +309,15 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 
 ---
 
-## 9. Status
+## 10. Status
 
 | Piece | State |
 |---|---|
 | Baton, run store, lease CAS, paths | **done**, sentinel-side, tested |
 | `planEpic` (DAG + ceiling + lanes) | **done**, tested |
 | `planBeat` (the decision) | **done**, tested |
+| Generation 0 -- planner prompt, checkpoint gate, fingerprint | **done**, tested, default on |
+| Spend + wall-clock ceilings | **done**, tested -- needs `build:packages` to be live (see below) |
 | Prompts for all three seats | **done**, tested |
 | The mute | **done**, tested |
 | `launchConfig.epic` tag | **done** |
@@ -213,7 +334,7 @@ The loop is closed. On 2026-08-18 an epic went arm -> dispatch -> in-review ->
 independent verifier -> done -> next card -> complete with nobody watching -- the
 first completed unattended run in this codebase.
 
-That run also found what §10's verbs exist to fix: the plan was computed every
+That run also found what §11's verbs exist to fix: the plan was computed every
 beat and discarded, the beat log barely reached `docker logs`, and the only way
 to see a run's state was to wait 45s and read the sentinel's files by hand. Four
 findings from that smoke are still open on
@@ -221,6 +342,16 @@ findings from that smoke are still open on
 importantly that the deterministic DONE-gate never runs for an epic card, so the
 implementer/verifier separation currently holds by CONVENTION rather than by the
 mechanism built to enforce it.
+
+**A STALE SENTINEL BUNDLE SILENTLY DISARMS THE CEILINGS.** The sentinel owns
+`run.md`, so its `readEpicRun` is what populates the snapshot the broker's beat
+judges the caps against. A bundle built before the ceilings landed knows none of
+`maxUsd` / `maxWallClockMinutes` / `spentUsd`, returns them absent, and the
+broker's `run.maxUsd > 0` test is then false -- **the run is uncapped, and nothing
+anywhere says so.** Worse, `writeRun` serialises whatever it parsed, so an old
+bundle strips those fields from a `run.md` a newer one wrote. Verify with
+`grep -c maxUsd packages/sentinel/bin/sentinel` before trusting a ceiling; `0`
+means run `build:packages` and restart the sentinel.
 
 **Deploying the new verbs needs an explicit go, twice.** The executor, the sweep
 and the broker actions live in the BROKER, so they need the image rebuilt and the
@@ -232,7 +363,7 @@ survive the bounce, and are re-adopted from the PID registry -- but it does kill
 every host shell (web terminal) and fails any spawn/revive in flight while the
 sentinel is down. Neither is covered by the standing web-deploy licence.
 
-## 10. Running one
+## 11. Running one
 
 ```
 epic_run(project="claude://...", epic_id="werk-epic", action="start",
@@ -282,7 +413,7 @@ One call, no mutation, and it answers the question in this order:
 Two fields are worth knowing by name because each marks a specific failure:
 
 - `armed: NO` on a run whose status says `armed` means **the broker restarted and
-  forgot it** (the registry is in memory -- see §5). Re-arm; `start` resumes.
+  forgot it** (the registry is in memory -- see §6). Re-arm; `start` resumes.
 - `generationMismatch` means spawns are being tagged with a generation the run
   file does not have, i.e. **spawns are racing the lease**, which freezes a run
   silently. It was a log line nobody read; it is now a field.
