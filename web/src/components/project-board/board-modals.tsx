@@ -7,8 +7,7 @@
  * lanes, grouping or filters.
  */
 
-import { useConversationsStore } from '@/hooks/use-conversations'
-import { enqueueNightshiftTask } from '@/hooks/use-nightshift-queue'
+import { NIGHTSHIFT_TAG } from '@shared/nightshift-types'
 import type { ProjectTask, TaskStatus } from '@/hooks/use-project'
 import { haptic } from '@/lib/utils'
 import { RunTaskDialog } from './run-task-dialog'
@@ -36,15 +35,24 @@ export function BoardModals({
   moveTask,
   updateTask,
 }: BoardModalsProps) {
+  /**
+   * Put the card on tonight's list by TAGGING it.
+   *
+   * This used to `enqueueNightshiftTask` -- copy the card's title and body into
+   * `.nightshift/queue/` with a `boardRef` string pointing back. The copy went
+   * stale the moment anyone edited the card, the pointer dangled the moment
+   * anyone renamed it, and the board could not show you that a card was queued
+   * at all. Now the card IS the item: the scanner reads `#nightshift` off the
+   * board and builds the task from the card's current body at dispatch time
+   * (`src/broker/scanners/nightshift-scanner.ts`).
+   *
+   * Idempotent, because the tag is a state and not an event -- pressing the
+   * button twice cannot put a card on the list twice.
+   */
   function promote(task: ProjectTask) {
-    const uri = useConversationsStore.getState().conversationsById[conversationId]?.project
-    if (!uri) return
-    void enqueueNightshiftTask(uri, {
-      title: task.title,
-      description: task.body || undefined,
-      source: 'board',
-      boardRef: task.slug,
-    })
+    if (!task.tags.includes(NIGHTSHIFT_TAG)) {
+      void updateTask(task.slug, { tags: [...task.tags, NIGHTSHIFT_TAG] })
+    }
     setEditingTask(null)
     haptic('success')
   }

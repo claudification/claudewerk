@@ -1,12 +1,20 @@
 /**
  * NIGHTSHIFT orchestrator -- the Night Run engine (plan-nightshift.md §2.4 EVENTS tier).
  *
- * Turns a project's queued tasks into actual work: opens a run, dispatches guarded
- * headless workers into isolated worktrees (capped by concurrency + total), and
- * drains the queue as workers finish, then finalizes the run. The deterministic
- * WATCHDOG (nightshift-watchdog.ts) already caps each tagged worker (time/token/
- * idle/turn); the unattended SAFE-TO-DO preamble auto-rides every nightshift spawn
- * (spawn-dispatch.ts). This module is just the dispatch loop + completion tracking.
+ * Turns a project's `#nightshift` CARDS into actual work: scans the board, opens a
+ * run, dispatches guarded headless workers into isolated worktrees (capped by
+ * concurrency + total), and drains the list as workers finish, then finalizes the
+ * run.
+ *
+ * THE INPUT IS THE BOARD, not `.nightshift/queue/`. Selecting a card used to copy
+ * it into a queue store; now `nightshift-scanner.ts` reads the tag and builds each
+ * task from the card's body at the moment the run opens, so nothing can drift out
+ * of date between filing and running and no `boardRef` can dangle.
+ *
+ * The deterministic WATCHDOG (nightshift-watchdog.ts) already caps each tagged
+ * worker (time/token/idle/turn); the unattended SAFE-TO-DO preamble auto-rides
+ * every nightshift spawn (spawn-dispatch.ts). This module is just the dispatch
+ * loop + completion tracking.
  *
  * Workers self-report their outcome via the `nightshift` MCP tool (writeTask
  * overwrites the running placeholder this orchestrator seeds). A worker that ends
@@ -16,6 +24,7 @@
 
 import {
   DEFAULT_NIGHTSHIFT_CONFIG,
+  NIGHTSHIFT_TAG,
   type NightshiftCaps,
   type NightshiftConfig,
   type NightshiftQueueItem,
@@ -24,16 +33,21 @@ import {
 import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import { buildUnattendedSettings } from '../shared/unattended-permissions'
+import { callBoard } from './board-rpc'
 import { fillSlotsWithAdmission, taskRefOf } from './capacity-admission'
 import { CapacityLedger } from './capacity-ledger'
 import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
+import { type CallBoard, listBoardCards, readBoardCard, untagBoardCard } from './nightshift-board'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { settleWorkerFromStore } from './nightshift-guardians'
 import { computeWindowEndMs } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
+import { type NightshiftScanDeps, nightshiftScanner } from './scanners/nightshift-scanner'
+import { runScan } from './scanners/scanner'
 import { dispatchSpawn } from './spawn-dispatch'
+import { werkLiveness } from './werk-liveness'
 
 /** How often the engine advances in-flight runs (reaps finished workers, dispatches next). */
 const ORCH_TICK_MS = 20_000
@@ -69,9 +83,13 @@ export function configureCapacityAdmission(next: CapacityLedger): void {
 export interface NightshiftIo {
   dispatchSpawn: typeof dispatchSpawn
   sendNightshiftOp: typeof sendNightshiftOp
+  /** The BOARD hop, added when the run's input moved from `.nightshift/queue/`
+   *  to `#nightshift` cards. Same seam, same reason: a test that stubs it never
+   *  needs a sentinel to open a run. */
+  callBoard: CallBoard
 }
 
-const REAL_IO: NightshiftIo = { dispatchSpawn, sendNightshiftOp }
+const REAL_IO: NightshiftIo = { dispatchSpawn, sendNightshiftOp, callBoard }
 let io: NightshiftIo = REAL_IO
 
 /** Swap the IO seam (tests only). Call `resetNightshiftIo()` when done. */
@@ -123,7 +141,10 @@ export interface RunNightshiftOutcome {
   ok: boolean
   runId?: string
   dispatched?: number
-  /** A non-error reason the run did nothing (empty queue / not enabled / already running). */
+  /** A non-error reason the run did nothing (nothing tagged / not enabled /
+   *  already running). When the board had tagged cards but none were runnable
+   *  this carries the scan's own `idleReason`, so "5 tagged, none runnable" and
+   *  "nothing tagged" never read the same. */
   skipped?: string
   error?: string
 }
@@ -170,11 +191,23 @@ function taskPrompt(item: NightshiftQueueItem, runId: string, project: string): 
     .join('\n\n')
 }
 
-/** Seed the running artifact, remove from the queue, and spawn the guarded worker. */
+/** Seed the running artifact, take the card off tonight's list, and spawn the
+ *  guarded worker.
+ *
+ *  THE UNTAG IS THE DEQUEUE. It used to be `op: 'dequeue'` against
+ *  `.nightshift/queue/`; the run's input is now the `#nightshift` tag, so what
+ *  stops a card being picked up again is removing that tag -- written on the
+ *  card, where a human can see it, rather than in a store nobody opens. A card
+ *  whose untag fails is logged and still dispatched: a duplicate next run beats
+ *  losing tonight's work. */
 async function dispatchTask(store: ConversationStore, state: RunState, item: NightshiftQueueItem): Promise<void> {
   const { runId, project } = state
   await io.sendNightshiftOp(store, project, { op: 'report', runId, report: runningReport(item, project) })
-  await io.sendNightshiftOp(store, project, { op: 'dequeue', dequeueId: item.id })
+  if (item.boardRef && !(await untagBoardCard(io.callBoard, store, project, item.boardRef))) {
+    console.warn(
+      `[nightshift-orch] could not drop #${NIGHTSHIFT_TAG} from card=${item.boardRef} run=${runId} -- it may be picked up again`,
+    )
+  }
 
   const res = await io.dispatchSpawn(
     {
@@ -338,9 +371,52 @@ async function advanceRun(store: ConversationStore, state: RunState): Promise<vo
   }
 }
 
+/** The registry reads the scan needs. Structural, so a test hands over a plain
+ *  object rather than a whole ConversationStore. */
+interface ScanStore {
+  getAllConversations: () => Conversation[]
+  getActiveConversationCount: (id: string) => number
+}
+
 /**
- * Open a nightshift run for a project: read config + queue, start the run, dispatch
- * the first wave of workers. The tick (startNightshiftOrchestrator) drains the rest.
+ * THE RUN'S INPUT: the board, not a queue file.
+ *
+ * `runScan` is self-catching, so a sentinel that is down or a board that will
+ * not answer comes back as `crashed` and the run declines to open, rather than
+ * throwing out of `runNightshift` and wedging the scheduler. Every card the scan
+ * saw and did not take is already in a NAMED bucket by the time we get here --
+ * including the ones a `totalTasks` cap pushed out, which the old
+ * `queue.slice(0, n)` dropped without a word.
+ */
+async function scanBoardForTasks(
+  store: ConversationStore,
+  project: string,
+  totalTasks: number,
+): Promise<{ tasks: NightshiftQueueItem[]; idleReason?: string; crashed?: string }> {
+  const s = store as unknown as ScanStore
+  const admitted: NightshiftQueueItem[] = []
+  const deps: NightshiftScanDeps = {
+    getAllConversations: s.getAllConversations,
+    isLive: werkLiveness(s.getActiveConversationCount),
+    log: line => console.log(line),
+    now: () => Date.now(),
+    project,
+    listCards: () => listBoardCards(io.callBoard, store, project),
+    readCard: slug => readBoardCard(io.callBoard, store, project, slug),
+    totalTasks,
+    admitted,
+  }
+  const report = await runScan(nightshiftScanner, deps)
+  for (const r of report.refused) {
+    console.log(`[nightshift-scan] ${r.unit} REFUSED(${r.bucket}) project=${project}: ${r.detail}`)
+  }
+  return { tasks: admitted, idleReason: report.idleReason, crashed: report.crashed }
+}
+
+/**
+ * Open a nightshift run for a project: read config, scan the board for
+ * `#nightshift` cards, start the run, dispatch the first wave of workers. The
+ * tick (startNightshiftOrchestrator) drains the rest.
  * `trigger: 'scheduler'` respects `config.enabled`; `'manual'` (Run-now) ignores it.
  */
 // This body is byte-identical to the `runNightshift` that lived here before the
@@ -361,13 +437,12 @@ async function runNightshiftImpl(
   if (opts.trigger === 'scheduler' && !config.enabled)
     return { ok: false, skipped: 'nightshift not enabled for project' }
 
-  const qRes = await io.sendNightshiftOp(store, project, { op: 'queue_list' })
-  if (!qRes.ok) return { ok: false, error: qRes.error ?? 'queue read failed' }
-  const queue = (qRes.queue ?? []) as NightshiftQueueItem[]
-  if (queue.length === 0) return { ok: false, skipped: 'queue is empty' }
-
   const caps = resolveCaps(config.caps)
-  const tasks = queue.slice(0, caps.totalTasks)
+  const scan = await scanBoardForTasks(store, project, caps.totalTasks)
+  if (scan.crashed) return { ok: false, error: `board scan failed: ${scan.crashed}` }
+  const tasks = scan.tasks
+  if (tasks.length === 0) return { ok: false, skipped: scan.idleReason ?? `no cards tagged #${NIGHTSHIFT_TAG}` }
+
   const runId = todayStr()
   const startedAt = Date.now()
   const startRes = await io.sendNightshiftOp(store, project, {
