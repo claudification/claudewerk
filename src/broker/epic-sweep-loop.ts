@@ -9,6 +9,7 @@
  * cheaper and more obvious than making every action idempotent.
  */
 
+import { isSameProject } from '../shared/project-uri'
 import type { Conversation } from '../shared/protocol'
 import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
@@ -16,7 +17,7 @@ import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
-import type { IsLive, ProducedOutput } from './epic-sweep'
+import type { EpicGroup, IsLive, ProducedOutput } from './epic-sweep'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -294,6 +295,44 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
 }
 
 /**
+ * The group BEAT NOW beats: the REAL one when the engine already knows this
+ * epic, a synthetic empty one when it does not.
+ *
+ * The fallback is deliberate -- right after arming there are no conversations
+ * yet, and refusing there would make the verb useless exactly when it is needed.
+ * What is NOT deliberate is reaching it by accident, which is why the match runs
+ * on project IDENTITY rather than raw string equality: `project` arrives from
+ * the RPC caller as `claude:///path` while `g.project` comes off the
+ * conversation store as `claude://default/path`. Spelt differently, `.find()`
+ * missed, and the beat ran against a group with no `inFlight`, no `inVerify` and
+ * a dead overseer -- so every seat-ceiling check inside it saw zero seats and a
+ * manual beat could dispatch a second seat onto a card that already had a live
+ * implementer. That is the same duplicate-fleet failure the restart quarantine
+ * below guards; the quarantine covers the restart window, this covers the
+ * spelling.
+ *
+ * Exported for the test that holds the two spellings apart: the resolved
+ * group's lanes are observable from no other seam.
+ */
+export function resolveBeatGroup(deps: SweepDeps, project: string, epicId: string): EpicGroup {
+  return (
+    epicsToBeat(deps).find(g => g.epicId === epicId && isSameProject(g.project, project)) ?? {
+      epicId,
+      project,
+      inFlight: [],
+      inVerify: [],
+      overseerAlive: false,
+      liveOverseers: [],
+      settled: [],
+      failedLegs: [],
+      unspawnable: [],
+      convIds: [],
+      maxGenSeen: 0,
+    }
+  )
+}
+
+/**
  * Beat ONE epic right now, instead of waiting up to 45s for the tick.
  *
  * This is the verb the first live smoke needed and did not have: arming a run
@@ -337,20 +376,7 @@ export async function beatOneEpic(
   }
   sweeping = true
   try {
-    const group = epicsToBeat(deps).find(g => g.epicId === epicId && g.project === project) ?? {
-      epicId,
-      project,
-      inFlight: [],
-      inVerify: [],
-      overseerAlive: false,
-      liveOverseers: [],
-      settled: [],
-      failedLegs: [],
-      unspawnable: [],
-      convIds: [],
-      maxGenSeen: 0,
-    }
-    const outcome = await runEpicBeat(deps, group)
+    const outcome = await runEpicBeat(deps, resolveBeatGroup(deps, project, epicId))
     // BEAT NOW exists because a human is watching and does not want to wait 45s
     // for the tick. Making them then wait 45s to SEE what it did would give back
     // exactly what the verb was for.

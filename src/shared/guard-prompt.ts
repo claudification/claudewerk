@@ -17,6 +17,7 @@
  * is spawned by the engine, distrusts by design, and integrates NOTHING itself.
  */
 
+import { SEAT_RELEASE_ORDER, seatClaimOrder } from './epic-seat-lease'
 import { cardRelPath } from './project-paths'
 
 export interface GuardPromptCtx {
@@ -28,6 +29,15 @@ export interface GuardPromptCtx {
   cardId: string
   /** Quest selector (petname) when the card belongs to a quest. */
   quest?: string
+  /**
+   * The epic this Guard was dispatched by, when the EPIC ENGINE dispatched it.
+   *
+   * Its only job is to switch the seat-lease order on. `epic_seat` is gated to
+   * WERK-launched seats, so ordering a QUEST Guard to call it would hand every
+   * quest verification a 403 it can do nothing about -- and an instruction that
+   * reliably fails is how an agent learns to ignore instructions.
+   */
+  epicId?: string
 }
 
 const DISTRUST =
@@ -43,6 +53,10 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     DISTRUST,
     questLine,
     '',
+    // Joined into ONE entry: the whole array is `.filter(Boolean)`-ed below, so
+    // a trailing '' separator would be swallowed and the block would run into
+    // the next heading.
+    ctx.epicId ? `${seatClaimOrder('verifier', ctx.cardId)}\n` : '',
     'THE CARD (source of truth is its YAML frontmatter):',
     `  ${ctx.projectRoot}/${cardRelPath(ctx.cardId)}`,
     "Read it FIRST. IF this board's gate was enabled when the worker moved the card to in-review, it",
@@ -74,6 +88,7 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     '  Then append a `## Guard Findings` section to the card body listing EXACTLY what failed and the command',
     '  output that proves it, so the next worker leg can act on it. Be specific; "looks wrong" is not findings.',
     '',
+    ctx.epicId ? `\nWHEN YOUR VERDICT IS WRITTEN: ${SEAT_RELEASE_ORDER}` : '',
     'Finish with a one-line verdict (APPROVED / BOUNCED + the single decisive reason), then stop.',
   ]
     .filter(Boolean)

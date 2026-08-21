@@ -43,6 +43,20 @@ export function safeEpicId(epicId: string): string {
   return epicId
 }
 
+/**
+ * The SAME rule, said about a card.
+ *
+ * The seat lease writes a card that is not the epic's own (epic-seat-lease.ts),
+ * so it reaches `cardPath` with an id the epic path helpers never see -- and
+ * `cardPath` does no checking of its own. Its own function rather than a reuse
+ * of `safeEpicId` because the message a traversal attempt produces has to name
+ * the thing that was actually wrong.
+ */
+export function safeCardId(cardId: string): string {
+  if (!isValidEpicId(cardId)) throw new Error(`invalid card id: ${cardId}`)
+  return cardId
+}
+
 export function nowIso(nowMs: number): string {
   return new Date(nowMs).toISOString()
 }

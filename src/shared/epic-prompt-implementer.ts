@@ -17,6 +17,7 @@
  */
 
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { SEAT_RELEASE_ORDER, seatClaimOrder } from './epic-seat-lease'
 import { cardRelPath } from './project-paths'
 
 /** One `depends_on` edge, resolved to the git branch that dependency's work is on. */
@@ -94,8 +95,9 @@ function blockedProtocol(ctx: ImplementerPromptCtx): string {
     '',
     `  4. project_set_status(id="${ctx.cardId}", status="open")`,
     '',
-    '  5. Commit and push whatever partial work is safe to keep, then STOP. Do not guess, do not pick a',
-    '     direction and run with it, and do not quietly shrink the card to something you can finish.',
+    '  5. Commit and push whatever partial work is safe to keep, release your seat',
+    '     (`epic_seat(action="release")`), then STOP. Do not guess, do not pick a direction and run with it,',
+    '     and do not quietly shrink the card to something you can finish.',
     '',
     'The overseer answers by moving the question card to `done`, which unblocks yours automatically.',
   ].join('\n')
@@ -153,6 +155,8 @@ export function buildImplementerPrompt(ctx: ImplementerPromptCtx): string {
     '',
     NO_HUMAN,
     '',
+    seatClaimOrder('implementer', ctx.cardId),
+    '',
     'YOUR CARD (read it first, in full -- its body is the spec):',
     `  ${cardPath}`,
     '',
@@ -178,6 +182,7 @@ export function buildImplementerPrompt(ctx: ImplementerPromptCtx): string {
     `3. Do NOT set status="done". You may not approve your own work; a separate verifier that has never seen`,
     '   this conversation reads your diff and decides. That separation is the point, not bureaucracy.',
     '4. Fill in the card body: what you did, how to verify it, anything non-obvious you decided.',
+    `5. ${SEAT_RELEASE_ORDER}`,
     '',
     blockedProtocol(ctx),
     '',

@@ -9,7 +9,16 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { EPIC_ORDERS, GUARD_ORDER, IMPLEMENTER_ORDER, OVERSEER_ORDER, orderRole, PLANNER_ORDER } from './epic-orders'
+import {
+  EPIC_ORDERS,
+  GUARD_ORDER,
+  IMPLEMENTER_ORDER,
+  isEpicOrderSeat,
+  OVERSEER_ORDER,
+  orderRole,
+  orderSeatRole,
+  PLANNER_ORDER,
+} from './epic-orders'
 import { mayAskHuman } from './epic-run-types'
 import { ORDER_KIND, validateOrder } from './order'
 
@@ -44,6 +53,49 @@ describe('the seat -> role map, which decides the mute', () => {
   test('an implementer and a guard report their own roles', () => {
     expect(orderRole(IMPLEMENTER_ORDER)).toBe('implementer')
     expect(orderRole(GUARD_ORDER)).toBe('verifier')
+  })
+})
+
+/**
+ * WHERE THE OPEN SCHEMA MEETS THE CLOSED ENGINE.
+ *
+ * `OrderSeat` is now any lowercase-kebab name, so `SEAT_ROLE[order.seat]` will
+ * hand back `undefined` for a seat the engine does not run -- and that
+ * `undefined` travels quietly: `buildEpicWorkerSettings(role, ...)` decides the
+ * MUTE from the role and `mayAskHuman(undefined)` is falsy, so the seat would be
+ * dispatched, muted, and tagged with a role that is not a role. The only place
+ * that is cheap to catch is here, with the caller still on the stack.
+ */
+describe('a seat the epic engine does not dispatch', () => {
+  const REFINER = validateOrder({
+    kind: ORDER_KIND,
+    id: 'REFINER@1',
+    title: 'Refiner -- drains #needs-refine',
+    seat: 'refiner',
+    instructions: 'REFINE this card -- do not implement it.',
+    caps: {},
+  })
+
+  test('is a perfectly legal order@1 -- the SCHEMA is what opened', () => {
+    expect(REFINER.seat).toBe('refiner')
+    expect(REFINER.instructions).toBeTruthy()
+  })
+
+  test('orderRole REFUSES it rather than mapping it to undefined', () => {
+    expect(() => orderRole(REFINER)).toThrow(/refiner/)
+    expect(() => orderRole(REFINER)).toThrow(/does not dispatch/)
+  })
+
+  test('orderSeatRole is the non-throwing half, for a caller that wants to ASK', () => {
+    expect(orderSeatRole('refiner')).toBeUndefined()
+    expect(orderSeatRole('planner')).toBe('overseer')
+  })
+
+  test('isEpicOrderSeat answers for the four and nothing else', () => {
+    for (const seat of Object.keys(EPIC_ORDERS)) expect(isEpicOrderSeat(seat)).toBe(true)
+    for (const seat of ['refiner', 'doc-writer', 'triage', 'toString', 'constructor']) {
+      expect(isEpicOrderSeat(seat)).toBe(false)
+    }
   })
 })
 

@@ -55,8 +55,12 @@ import { TaskEditor } from './task-editor'
 // The editor now shows the card's epic at the top, which reads the project
 // cache. These tests are about the LAUNCH handoff, so the board is empty and
 // the strip renders nothing -- but the hook still has to exist.
+// A `vi.mock` factory REPLACES the module wholesale (see the note on the
+// use-conversations mock below). `useProjectTasksList` is how the run dialog
+// reads the board for the open-epic roster it hands a refine run.
 vi.mock('@/hooks/use-project', () => ({
   useProject: () => ({ tasks: [], readTask: async () => null }),
+  useProjectTasksList: () => [],
 }))
 
 vi.mock('@/hooks/use-conversations', () => ({

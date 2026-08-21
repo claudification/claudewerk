@@ -125,6 +125,12 @@ export const MCP_CATALOG: readonly CatalogTool[] = [
     sites: HOST_ONLY,
     summary: 'Start / inspect / pause / abort an epic run (the engine plans AND executes the epic)',
   },
+  {
+    name: 'epic_seat',
+    group: 'epic',
+    sites: HOST_ONLY,
+    summary: 'Claim (or release) the per-card seat lease -- the mutex that stops two seats working one card',
+  },
   { name: 'list_quests', group: 'quest', sites: HOST_ONLY, summary: 'List quests for a project' },
 
   // ── conversation control ───────────────────────────────────────────

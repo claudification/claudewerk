@@ -16,6 +16,7 @@ import type {
   EpicResult,
   EpicRunPatchInput,
   EpicRunSnapshot,
+  EpicSeatInput,
   ProjectBoardResult,
   ProjectReadFileResult,
   ProjectWriteFileResult,
@@ -111,6 +112,8 @@ export interface EpicOpInput {
   patch?: EpicRunPatchInput
   logAppend?: EpicLogAppendInput
   lease?: EpicLeaseInput
+  /** The per-card seat mutex -- `seat_get` / `seat_claim` / `seat_release`. */
+  seat?: EpicSeatInput
   baton?: EpicBatonQuery
   reason?: string
 }

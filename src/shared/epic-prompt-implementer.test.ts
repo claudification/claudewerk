@@ -74,6 +74,38 @@ describe('what the section actually orders', () => {
   })
 })
 
+/**
+ * THE SEAT ORDER. The claim only protects anything if it happens BEFORE there is
+ * something to corrupt, so its position in the prompt is the property under
+ * test, not merely its presence.
+ */
+describe('the seat claim comes first', () => {
+  const prompt = buildImplementerPrompt(CTX)
+
+  test('the claim is ordered before the card is read and before any git work', () => {
+    expect(prompt).toContain('epic_seat(action="claim")')
+    expect(prompt.indexOf('CLAIM YOUR SEAT FIRST')).toBeLessThan(prompt.indexOf('YOUR CARD (read it first'))
+    expect(prompt.indexOf('CLAIM YOUR SEAT FIRST')).toBeLessThan(prompt.indexOf('WORK RULES'))
+  })
+
+  /** A worker told only "claim your seat" reads an unreachable broker as a
+   *  failure and stops -- which turns the mutex into an engine-wide halt. */
+  test('all three answers are spelled out, including PROCEED on unreachable', () => {
+    expect(prompt).toContain('REFUSED')
+    expect(prompt).toContain('UNREACHABLE')
+    expect(prompt).toContain('PROCEED WITH YOUR WORK')
+  })
+
+  test('a finished worker is told to give the seat back', () => {
+    expect(prompt).toContain('epic_seat(action="release")')
+    expect(prompt.indexOf('WHEN THE WORK IS DONE')).toBeLessThan(prompt.lastIndexOf('epic_seat(action="release")'))
+  })
+
+  test('a BLOCKED worker releases too, rather than sitting on the card until it dies', () => {
+    expect(prompt.slice(prompt.indexOf('WHEN YOU ARE BLOCKED'))).toContain('epic_seat(action="release")')
+  })
+})
+
 describe('overseer constraints and the base check coexist', () => {
   test('both are emitted, constraints first', () => {
     const prompt = buildImplementerPrompt({

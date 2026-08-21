@@ -22,6 +22,7 @@
  */
 
 import { beatStale, isVitallyLive, STALE_BEAT_MS } from '../shared/epic-vitality'
+import { isSameProject } from '../shared/project-uri'
 import type { EpicActivityEntry } from '../shared/protocol'
 import { recentBeats } from './epic-beat-log'
 import { epicIo } from './epic-io'
@@ -58,7 +59,11 @@ async function toEntry(deps: SweepDeps, group: EpicGroup, nowMs: number): Promis
     maxGens: view.run?.maxGens ?? 0,
     inFlight: group.inFlight.length,
     overseerAlive: group.overseerAlive,
-    armed: listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
+    // BY PROJECT IDENTITY, never by raw string. The registry holds whatever the
+    // MCP caller armed with (`claude:///path`); the group's project comes off
+    // the conversation store (`claude://default/path`). Raw equality showed a
+    // run that IS armed as unarmed on the wall's activity feed.
+    armed: listArmedEpics().some(a => isSameProject(a.project, group.project) && a.epicId === group.epicId),
     lastBeatAt: at,
     stale: beatStale(at, nowMs),
     ...runStamps(view.run),

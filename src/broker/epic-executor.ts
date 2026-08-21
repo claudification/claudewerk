@@ -25,6 +25,7 @@
 
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
 import { renderEpicLogTail } from '../shared/epic-log'
+import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats'
 import { planEpic } from '../shared/epic-ready'
 import { type EpicBeat, type EpicBeatPatch, isInertRun, planBeat } from './epic-beat'
 import { acknowledge, noteFailedLaunches, performActions } from './epic-beat-actions'
@@ -174,12 +175,31 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
     await noteFailedLaunches(deps, group, failed)
   }
 
+  // THE SEATS THE REGISTRY HAS NOT CAUGHT UP WITH YET. A card dispatched on the
+  // last beat is in NO lane until its agent host connects, which read as "nobody
+  // is working this" and sent a second seat into the SAME worktree -- twice on
+  // 2026-08-21, once per lane. The baton knows: it recorded the spawn and the
+  // conversation id at the moment it happened. Unioned into BOTH lanes because a
+  // `dispatch` entry does not say which role went out, and the incident proves
+  // both lanes need it. Released the instant `convIds` shows the conversation.
+  const pendingSeats = pendingSeatCards({
+    baton: view.baton,
+    knownConvIds: group.convIds,
+    nowMs: deps.now(),
+  })
+  if (pendingSeats.length > 0) {
+    deps.log(
+      `${tag(group.epicId, run.gen)} ${pendingSeats.length} card(s) held for an unattached seat: ` +
+        pendingSeats.join(', '),
+    )
+  }
+
   const plan = planEpic({
     cards,
     epicId: group.epicId,
     concurrency: run.concurrency,
-    inFlight: group.inFlight,
-    inVerify: group.inVerify,
+    inFlight: withPendingSeats(group.inFlight, pendingSeats),
+    inVerify: withPendingSeats(group.inVerify, pendingSeats),
     unspawnable: group.unspawnable,
     // THE SAME `settled` the acknowledgement pass above reads, and deliberately
     // the post-rename one: a card acknowledged under its old id must not be
@@ -197,7 +217,11 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup): Promise<Bea
   const beat: EpicBeat = planBeat({
     run,
     plan,
-    inFlight: group.inFlight,
+    // THE SAME UNION the plan was computed from, and it must be: a beat that
+    // withheld a card because a seat is arriving has work in flight, and telling
+    // `planBeat` otherwise is how a held card reads as a DRY generation, wakes
+    // the overseer and parks a run that is simply mid-launch.
+    inFlight: withPendingSeats(group.inFlight, pendingSeats),
     overseerAlive: group.overseerAlive,
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is
     // exactly what the overseer needs to be woken FOR. The baton write above is

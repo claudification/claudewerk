@@ -89,6 +89,76 @@ export interface ScanOutcome<Bucket extends string = string> {
 }
 
 /**
+ * THE BUCKET FOR "THE DISPATCH ITSELF DID NOT HAPPEN", owned here and spelled
+ * once.
+ *
+ * Every dispatching scanner needs it, and two of them had already written the
+ * string out by hand. A third would have been free to spell it `dispatch_failed`
+ * or `spawn-refused` and nothing would have noticed until a pane tried to count
+ * the column. Scanners compose their own vocabulary from this type
+ * ({@link DispatchFailedBucket}) rather than restating the literal, so the name
+ * cannot drift.
+ */
+export const DISPATCH_FAILED_BUCKET = 'dispatch-failed'
+
+/** The bucket name as a type, for a scanner's own `Bucket` union to include. */
+export type DispatchFailedBucket = typeof DISPATCH_FAILED_BUCKET
+
+/**
+ * One thing to dispatch: what to call it in the accounting, and how to send it.
+ *
+ * `send` is a thunk rather than a request object because the two scanners
+ * compile their seats differently -- one runs a card through `applyOrderToRequest`
+ * ahead of time, the other builds a spawn plan at the call. What the shared tail
+ * owns is the RESULT handling, which is the part they had written twice.
+ */
+export interface DispatchUnit {
+  /** The unit id -- a card slug. What lands in `acted` or in the refusal. */
+  id: string
+  /** Send it. `false` means the spawn was refused. May throw; the tail catches. */
+  send: () => Promise<boolean>
+}
+
+/** Where a dispatch pass files its results. The scanner's own two accumulators,
+ *  handed in so the tail appends rather than returning a third thing to merge. */
+export interface DispatchSink<Bucket extends string> {
+  acted: string[]
+  refused: Refusal<Bucket>[]
+}
+
+/**
+ * DISPATCH, CATCH, AND FILE THE RESULT -- the tail every dispatching scanner
+ * ends with, written once.
+ *
+ * Three rules, and all three were already the behaviour both scanners had
+ * hand-rolled:
+ *
+ *   1. A THROW IS A REFUSAL, not a crash. One spawn that blows up must not cost
+ *      the rest of the pass its dispatches, and `runScan`'s catch is too coarse
+ *      for that -- it would lose every unit after the throwing one.
+ *   2. `false` IS A REFUSAL TOO. A dispatch nobody accepted moved nothing, so it
+ *      is refused into {@link DISPATCH_FAILED_BUCKET} rather than counted as
+ *      acted on.
+ *   3. SEQUENTIAL, deliberately. These are spawns; firing a backlog of them
+ *      concurrently is how a ceiling that was already checked stops meaning
+ *      anything.
+ */
+export async function dispatchUnits<Bucket extends string>(
+  units: readonly DispatchUnit[],
+  ctx: { tag: string; log: (line: string) => void },
+  sink: DispatchSink<Bucket | DispatchFailedBucket>,
+): Promise<void> {
+  for (const unit of units) {
+    const ok = await unit.send().catch(err => {
+      ctx.log(`${ctx.tag} dispatch threw for ${unit.id}: ${err instanceof Error ? err.message : String(err)}`)
+      return false
+    })
+    if (ok) sink.acted.push(unit.id)
+    else sink.refused.push({ unit: unit.id, bucket: DISPATCH_FAILED_BUCKET, detail: 'the spawn was refused' })
+  }
+}
+
+/**
  * A scanner. Generic over its deps and its refusal vocabulary so the vocabulary
  * is checked at the call site: a scanner cannot invent a bucket name in one
  * branch that nothing else knows about.

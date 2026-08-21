@@ -6,6 +6,7 @@ import { registerDialogTool } from './dialog'
 import { registerDialogControlTools } from './dialog-control'
 import { registerDialogTaxonomyTool } from './dialog-taxonomy'
 import { registerEpicTools } from './epic'
+import { registerEpicSeatTools } from './epic-seat'
 import { registerHostTools } from './hosts'
 import { registerIdentityTools } from './identity'
 import { registerNightshiftTools } from './nightshift'
@@ -41,6 +42,7 @@ export function registerAllTools(ctx: McpToolContext): Record<string, ToolDef> {
     ...registerProjectBoardTools(ctx),
     ...registerQuestTools(ctx),
     ...registerEpicTools(ctx),
+    ...registerEpicSeatTools(ctx),
     ...registerCanvasTools(ctx),
     ...registerNightshiftTools(ctx),
     ...registerScheduleTools(ctx),

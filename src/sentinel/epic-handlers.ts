@@ -15,12 +15,13 @@
  * Op dispatch is a strategy map (STRATEGY MAPS covenant), not a switch.
  */
 
-import { evaluateLease, leasePatch, readLease, releasePatch } from '../shared/epic-lease'
+import { OVERSEER_KEY_PREFIX, readLease, releasePatch } from '../shared/epic-lease'
 import { acknowledgedCardIds, appendEpicLog, dispatchCountsByCard, readEpicLog, sliceEpicLog } from '../shared/epic-log'
 import { nowIso } from '../shared/epic-paths'
 import { patchEpicRun, readEpicRun, startEpicRun } from '../shared/epic-run-store'
 import type { EpicOp, EpicOpKind, EpicResult, EpicRunSnapshot } from '../shared/protocol'
-import { patchCardMeta, readCardMeta } from './epic-card-meta'
+import { casLeaseOnCard, patchCardMeta, readCardMeta } from './epic-card-meta'
+import { SEAT_HANDLERS } from './epic-seat-handlers'
 
 type OpOutcome = Omit<EpicResult, 'type' | 'requestId' | 'op'>
 type EpicOpHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
@@ -39,6 +40,10 @@ function snapshot(root: string, epicId: string): EpicRunSnapshot | null {
 }
 
 const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
+  // The three CARD-scoped ops. Spread in rather than written here: they share
+  // none of the epic-scoped helpers below and they address a different file.
+  ...(SEAT_HANDLERS as Record<'seat_get' | 'seat_claim' | 'seat_release', EpicOpHandler>),
+
   /**
    * Arm / resume / reconfigure. Carries the LEASE back for the same reason `get`
    * does: a start reply is now read as the run's status block, and a status
@@ -95,15 +100,13 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
     const meta = readCardMeta(root, msg.epicId)
     if (!meta) return fail(`epic card not found: ${msg.epicId}`)
 
-    // No await between this read and the write below -- that is the CAS.
-    const decision = evaluateLease(readLease(meta), req, nowMs)
-    if (!decision.grant) {
-      const h = decision.holder
-      return { ok: true, lease: { granted: false, convId: h.convId, gen: h.gen, at: h.at, reason: decision.reason } }
-    }
-    patchCardMeta(root, msg.epicId, leasePatch(decision.lease))
-    patchEpicRun(root, msg.epicId, { gen: decision.lease.gen, status: 'running' }, nowMs)
-    return { ok: true, lease: { granted: true, ...decision.lease } }
+    // The CAS itself is `casLeaseOnCard` -- shared with the per-card seat lease,
+    // because the read-evaluate-write is identical and only the keys differ.
+    const lease = casLeaseOnCard(root, msg.epicId, OVERSEER_KEY_PREFIX, meta, req, nowMs)
+    // The one thing that is NOT shared: a granted overseer lease advances the
+    // RUN, and a seat lease has no run to advance.
+    if (lease.granted) patchEpicRun(root, msg.epicId, { gen: lease.gen, status: 'running' }, nowMs)
+    return { ok: true, lease }
   },
 
   release(root, msg) {

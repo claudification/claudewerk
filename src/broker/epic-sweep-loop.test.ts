@@ -8,6 +8,7 @@ import {
   quarantineRemainingMs,
   RESTART_QUARANTINE_MS,
   resetSweepGuard,
+  resolveBeatGroup,
   type SweepDeps,
   sweepEpics,
 } from './epic-sweep-loop'
@@ -250,6 +251,60 @@ describe('beatOneEpic -- the forced beat', () => {
     convs = [conv('e1', 'implementer', 't1')]
     await sweepEpics(deps())
     expect(beats).toEqual(['claude://s/e1'])
+  })
+})
+
+/**
+ * BEAT NOW runs the same dispatch the sweep does, off a group it looks up by
+ * project. The RPC caller types `claude:///path`; the conversation store holds
+ * `claude://default/path`. Raw string equality made the lookup MISS and the `??`
+ * fall through to a synthetic empty group -- so every seat-ceiling check inside
+ * the beat saw zero seats and a manual beat could re-dispatch a card that
+ * already had a live implementer on it.
+ */
+describe('beatOneEpic -- the project URI is matched by identity, not by spelling', () => {
+  /** What the store holds. */
+  const STORED = 'claude://default/Users/jonas/projects/alpha'
+  /** What the RPC caller types. Same project, other spelling. */
+  const TYPED = 'claude:///Users/jonas/projects/alpha'
+
+  const seat = (): Conversation =>
+    ({
+      id: 'conv_live_t1',
+      project: STORED,
+      status: 'active',
+      launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 1 } },
+    }) as unknown as Conversation
+
+  /** `inFlight` is the LIVE half of the card lanes, so the seat has to be live. */
+  const live = (): SweepDeps => ({ ...deps(), isLive: () => true })
+
+  test('resolves the REAL group -- the synthetic one hides every live seat from the ceiling', () => {
+    convs = [seat()]
+    expect(resolveBeatGroup(live(), TYPED, 'e1').inFlight).toEqual(['t1'])
+  })
+
+  test('beats against the group the sweep would beat, carrying the STORE spelling onward', async () => {
+    convs = [seat()]
+    const res = await beatOneEpic(live(), TYPED, 'e1')
+    expect(res.ok).toBe(true)
+    expect(beats).toEqual([STORED])
+  })
+
+  test('an epic nobody has seen yet still gets an empty group -- the case right after arming', () => {
+    convs = []
+    expect(resolveBeatGroup(deps(), TYPED, 'ghost')).toMatchObject({
+      epicId: 'ghost',
+      project: TYPED,
+      inFlight: [],
+      overseerAlive: false,
+      maxGenSeen: 0,
+    })
+  })
+
+  test('a DIFFERENT project with the same epic id is still a miss', () => {
+    convs = [seat()]
+    expect(resolveBeatGroup(live(), 'claude:///Users/jonas/projects/beta', 'e1').inFlight).toEqual([])
   })
 })
 

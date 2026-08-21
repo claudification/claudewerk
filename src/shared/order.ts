@@ -41,13 +41,35 @@
  *      dispatched by the engine or submitted by a human, never by the artifact.
  *      Nothing in this module spawns anything, and nothing downstream may treat
  *      a validated order as an instruction to launch.
+ *
+ * THIS MODULE KNOWS NOTHING ABOUT THE EPIC ENGINE, and that is the point of the
+ * `order-seat-union-is-closed` revision. `seat` used to be a closed union over
+ * the epic engine's four seats and `prompt` had to name one of the broker's four
+ * prompt builders, so "a fifth seat type is cheap" -- the win `werk-work-orders`
+ * claimed -- was false: REVIEWER, MERGER, DOC-WRITER, TRIAGE each still meant
+ * editing this file AND the broker. A seat is now any lowercase-kebab name, and
+ * an order that no builder covers carries its own `instructions`. Which of those
+ * names the EPIC engine will actually dispatch is the epic engine's business,
+ * declared in `epic-orders.ts` and enforced by `orderRole()` -- see there.
  */
 
 /** The schema discriminator. Bump the number, never the meaning of a number. */
 export const ORDER_KIND = 'order@1' as const
 
-/** Which of the engine's seats an order fills. */
-export type OrderSeat = 'overseer' | 'planner' | 'implementer' | 'verifier'
+/**
+ * Which seat an order fills. AN OPEN NAME, not a union.
+ *
+ * Nothing here enumerates the legal seats, because the seat an order fills is
+ * decided by whoever DISPATCHES it, not by the schema: the epic engine spends
+ * `overseer` / `planner` / `implementer` / `verifier` (`EPIC_ORDERS`), the
+ * scheduler spends its own, and neither one gets to shrink the other's
+ * vocabulary. The alias exists so the intent has a name and a future narrowing
+ * has exactly one place to happen.
+ *
+ * The FORM is still checked -- see {@link ORDER_SEAT} -- because a seat name is
+ * read by humans in a picker and joined into conversation names.
+ */
+export type OrderSeat = string
 
 /** Thinking-effort tiers, mirroring the spawn schema's `effort`. */
 export type OrderEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -142,17 +164,42 @@ export interface Order {
   id: string
   /** One line a human reads in a picker. */
   title: string
-  /** Which seat this order fills. */
+  /** Which seat this order fills. Lowercase-kebab, and OPEN -- see {@link OrderSeat}. */
   seat: OrderSeat
   /**
-   * The prompt builder that compiles a card into this seat's prompt, NAMED
-   * rather than referenced. The four builders take four different context
+   * The broker prompt builder that compiles a card into this seat's prompt,
+   * NAMED rather than referenced. The four builders take four different context
    * types, so a union-typed dispatch would buy nothing but a cast; the planners
    * still call their builder directly and a test asserts the declaration and
    * the call agree. The name is here so an order is READABLE -- "which prompt
    * does GUARD@1 use" should not require reading the broker.
+   *
+   * EXACTLY ONE OF `prompt` AND `instructions` IS SET. A seat whose prompt no
+   * builder covers carries {@link Order.instructions} instead; requiring one of
+   * the two means an order always says where its prompt comes from, which is
+   * the readable property this whole file exists for.
    */
-  prompt: 'implementer' | 'guard' | 'overseer' | 'planner'
+  prompt?: 'implementer' | 'guard' | 'overseer' | 'planner'
+  /**
+   * This seat's instruction block, carried BY THE ORDER, for a seat no broker
+   * builder covers.
+   *
+   * THIS IS THE HALF THAT MAKES A NEW SEAT CHEAP. Before it, an order could only
+   * point at one of four builders compiled into the broker, so a REFINER or a
+   * DOC-WRITER had no way to carry what it was supposed to do -- {@link
+   * Order.notes} is prose for a human and reaches no agent. `REFINER@1` shipped
+   * as `seat: 'implementer', prompt: 'implementer'` with its real instructions
+   * in a wrapper type beside the order, for exactly this reason.
+   *
+   * IT IS PROMPT PAYLOAD, NOT ARGV, and the argv character allowlist is
+   * deliberately NOT applied -- an instruction block is numbered lists,
+   * backticks and newlines, so `isCommandLineSafe` would reject every real one,
+   * which is how a security check gets switched off wholesale six months later.
+   * What IS checked is the class that matters for a payload: a length bound, and
+   * control characters that are not ordinary whitespace (a NUL or a bare ESC in
+   * an imported order is terminal-injection, not instruction).
+   */
+  instructions?: string
   /** Prepended to the conversation name, e.g. `verify `. */
   namePrefix?: string
   /** Absent = this seat gets no worktree. */
@@ -161,8 +208,40 @@ export interface Order {
   /** Raw flag escape hatch. Default-deny against `ORDER_FLAG_ALLOWLIST`. */
   flags?: Record<string, string>
   permissions?: OrderPermissions
-  /** Free prose for a human reading the order. Never reaches a command line. */
+  /**
+   * Free prose for a human reading the order. Never reaches a command line AND
+   * never reaches an agent -- {@link Order.instructions} is the field an agent
+   * is handed.
+   */
   notes?: string
+}
+
+/**
+ * The prompt a seat actually launches with: WHAT to do, then WHO is doing it.
+ *
+ * THIS IS THE FUNCTION THAT MAKES {@link Order.instructions} REAL. A field that
+ * validates and reaches no spawn is the same inertness `REFINER@1`'s wrapper
+ * type already shipped once, with a nicer type on it -- so the schema half of
+ * "a new seat is cheap" is only true once something turns the block into prompt
+ * text. An order that NAMES a builder returns `context` untouched: the builder
+ * produced the whole prompt and there is nothing to fold in.
+ *
+ * CONTEXT FIRST, INSTRUCTIONS SECOND, matching the one hand-rolled composition
+ * that predates this function (`refine-scanner.ts`'s `buildRefinerPrompt`:
+ * which card, then the block verbatim). The context is the half that changes per
+ * dispatch -- which card, which minute, which project -- and the instruction
+ * block is the standing half, so a seat reads its standing rules against a
+ * target it already has rather than the other way round.
+ *
+ * IT APPENDS, IT DOES NOT REPLACE. Dropping the caller's own context in favour
+ * of the order's block would silently discard the one thing a human wrote for
+ * this particular dispatch, which for a scheduled fire is the prompt the schema
+ * makes mandatory.
+ */
+export function composeSeatPrompt(order: Order | undefined, context: string): string {
+  const instructions = order?.instructions
+  if (instructions === undefined) return context
+  return context.length === 0 ? instructions : `${context}\n\n${instructions}`
 }
 
 /** Thrown by {@link validateOrder}. `field` names the offending path. */
@@ -175,13 +254,54 @@ export class OrderValidationError extends Error {
   }
 }
 
-const SEATS: readonly OrderSeat[] = ['overseer', 'planner', 'implementer', 'verifier']
 const EFFORTS: readonly OrderEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODES: readonly OrderPermissionMode[] = ['plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions']
-const PROMPTS: readonly Order['prompt'][] = ['implementer', 'guard', 'overseer', 'planner']
+const PROMPTS: readonly NonNullable<Order['prompt']>[] = ['implementer', 'guard', 'overseer', 'planner']
 
 /** `NAME@VERSION`, upper-kebab name and an integer version. */
 const ORDER_ID = /^[A-Z][A-Z0-9-]*@\d+$/
+
+/**
+ * A seat NAME: lowercase kebab, starts with a letter.
+ *
+ * The seat union is open (see {@link OrderSeat}), so this is what stands in for
+ * it. Strictly narrower than {@link COMMAND_LINE_SAFE}, so a seat name is
+ * argv-safe by construction rather than by a second check -- `Refiner`,
+ * `refiner_2` and `refiner; id` are all refused, and one canonical spelling per
+ * seat is what keeps `EPIC_ORDERS`-style lookups from missing on case.
+ */
+const ORDER_SEAT = /^[a-z][a-z0-9-]*$/
+
+/** Longest a seat name may be. A label in a picker, not a sentence. */
+const SEAT_MAX = 32
+
+/**
+ * Longest an instruction block may be.
+ *
+ * A bound rather than a right number: nothing today comes close (`REFINER@1`'s
+ * block is well under a kilobyte), and the reason to have one at all is that the
+ * day an order arrives over a wire, an unbounded string field is the cheapest
+ * way to make a spawn carry a megabyte of someone else's text.
+ */
+export const ORDER_INSTRUCTIONS_MAX = 20_000
+
+/**
+ * Does this string carry a control character that is not ordinary whitespace?
+ *
+ * Written as a code-point scan rather than a regex literal on purpose: the
+ * escape-heavy character class this replaces is unreadable, and a reviewer
+ * cannot tell one hex escape from a neighbouring one at a glance. Tab, newline
+ * and carriage return are the three that belong in an instruction block;
+ * everything below `0x20`, plus `DEL`, is a payload trying to be a terminal.
+ */
+function hasControlChars(value: string): boolean {
+  for (const ch of value) {
+    const code = ch.codePointAt(0) as number
+    if (code === 0x09 || code === 0x0a || code === 0x0d) continue
+    if (code < 0x20 || code === 0x7f) return true
+  }
+  return false
+}
 
 function fail(message: string, field: string): never {
   throw new OrderValidationError(message, field)
@@ -197,6 +317,60 @@ function requireString(record: Record<string, unknown>, key: string): string {
 function requireCommandLineSafe(value: string, field: string): string {
   if (!isCommandLineSafe(value)) fail(`${field} contains characters that may not reach a command line`, field)
   return value
+}
+
+/**
+ * The SEAT, which is an open name rather than a member of a union.
+ *
+ * The check is on the FORM, and it is what replaced the closed union: `seat`
+ * used to be validated against a hardcoded list of the epic engine's four,
+ * which is precisely why a fifth seat type was not cheap. Whether a given
+ * well-formed seat is one the EPIC engine will dispatch is asked separately, of
+ * `epic-orders.ts`, and asking it here would put the epic engine back inside the
+ * generic schema.
+ */
+function validateSeat(raw: Record<string, unknown>): OrderSeat {
+  const seat = requireString(raw, 'seat')
+  if (seat.length > SEAT_MAX) fail(`seat must be at most ${SEAT_MAX} characters`, 'seat')
+  if (!ORDER_SEAT.test(seat)) fail('seat must be a lowercase-kebab name, e.g. implementer or doc-writer', 'seat')
+  return seat
+}
+
+/**
+ * `prompt` XOR `instructions` -- where this seat's prompt comes from.
+ *
+ * NEITHER is refused rather than defaulted: an order that names no builder and
+ * carries no text is an order nobody can dispatch, and silently picking
+ * `implementer` for it is how `REFINER@1` came to declare a seat it does not
+ * fill. BOTH is refused because the two would then disagree and nothing says
+ * which wins.
+ */
+function validatePromptSource(raw: Record<string, unknown>): Pick<Order, 'prompt' | 'instructions'> {
+  const prompt = optionalMember(raw, 'prompt', PROMPTS, 'prompt')
+  const rawInstructions = raw.instructions
+  if (rawInstructions !== undefined && typeof rawInstructions !== 'string') {
+    fail('instructions must be a string', 'instructions')
+  }
+  const instructions = rawInstructions as string | undefined
+
+  if (prompt !== undefined && instructions !== undefined) {
+    fail('an order sets either prompt or instructions, never both', 'instructions')
+  }
+  if (prompt === undefined && instructions === undefined) {
+    fail(`an order must set prompt (one of: ${PROMPTS.join(', ')}) or instructions`, 'prompt')
+  }
+  if (instructions === undefined) return { prompt }
+
+  if (instructions.length === 0) fail('instructions must be a non-empty string', 'instructions')
+  if (instructions.length > ORDER_INSTRUCTIONS_MAX) {
+    fail(`instructions must be at most ${ORDER_INSTRUCTIONS_MAX} characters`, 'instructions')
+  }
+  // NOT the argv allowlist -- see Order.instructions. Newlines and backticks are
+  // what an instruction block is MADE of; a NUL or a bare ESC is not.
+  if (hasControlChars(instructions)) {
+    fail('instructions may not contain control characters other than tab, newline and carriage return', 'instructions')
+  }
+  return { instructions }
 }
 
 function optionalMember<T extends string>(
@@ -311,19 +485,18 @@ export function validateOrder(input: unknown): Order {
   const id = requireString(raw, 'id')
   if (!ORDER_ID.test(id)) fail('id must look like NAME@VERSION, e.g. IMPLEMENTER@1', 'id')
 
-  const seat = optionalMember(raw, 'seat', SEATS, 'seat')
-  if (!seat) fail(`seat must be one of: ${SEATS.join(', ')}`, 'seat')
-  const prompt = optionalMember(raw, 'prompt', PROMPTS, 'prompt')
-  if (!prompt) fail(`prompt must be one of: ${PROMPTS.join(', ')}`, 'prompt')
+  const seat = validateSeat(raw)
+  const source = validatePromptSource(raw)
 
   const order: Order = {
     kind: ORDER_KIND,
     id,
     title: requireString(raw, 'title'),
     seat,
-    prompt,
     caps: validateCaps(raw.caps),
   }
+  put(order, 'prompt', source.prompt)
+  put(order, 'instructions', source.instructions)
   put(order, 'namePrefix', optionalSafeString(raw, 'namePrefix', 'namePrefix'))
   put(order, 'worktree', validateWorktree(raw.worktree))
   put(order, 'flags', validateFlags(raw.flags))

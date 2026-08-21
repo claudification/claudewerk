@@ -131,6 +131,20 @@ describe('listActiveEpicRuns', () => {
     expect(rows.find(r => r.epicId === 'bad')).toMatchObject({ status: null, stale: true })
   })
 
+  /**
+   * The MCP caller arms with whatever it typed -- `claude:///path` -- while the
+   * conversation store holds `claude://default/path`. Raw string equality on the
+   * two showed a run that IS armed as unarmed on the wall's activity feed.
+   */
+  test('armed is true when the registry and the conversation group spell the project differently', async () => {
+    stubRun({ status: 'running', gen: 1, maxGens: 10 })
+    noteArmedEpic('claude:///Users/jonas/projects/alpha', 'e1')
+
+    const [row] = await listActiveEpicRuns(deps([conv({ id: 'a' })]), NOW)
+
+    expect(row).toMatchObject({ epicId: 'e1', armed: true })
+  })
+
   test('sorts by project then epic so the rail does not jitter between ticks', async () => {
     stubRun({ status: 'running', gen: 1, maxGens: 5 })
     noteArmedEpic(OTHER, 'zeta')

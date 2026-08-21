@@ -12,6 +12,14 @@
  * human reading the board, not require knowing that `.rclaude/project/epics/`
  * exists. `overseer_at` is there so a human can see how long it has been stuck.
  *
+ * ONE LEASE, TWO SCOPES. `evaluateLease` decides an EPIC's overseer singleton and
+ * a CARD's per-role seat singleton (epic-seat-lease.ts), because they are the
+ * same question at different scope: may this conversation write here, given who
+ * holds it, whether that holder is alive, and how long it has held. The only
+ * thing that differs is WHICH FRONTMATTER KEYS carry the grip -- so that, and
+ * only that, is what `keyPrefix` parameterises. A second implementation would
+ * drift, and the one that drifted would be the one nobody re-argued.
+ *
  * Pure. Liveness is the caller's to know (the broker owns the conversation
  * registry); this module only decides what that fact means.
  */
@@ -62,36 +70,44 @@ export type LeaseDecision =
 export const LEASE_STALE_MS = 10 * 60 * 1000
 
 /**
+ * THE DEFAULT SCOPE -- the epic's overseer singleton, on the epic card. Keys
+ * `overseer`, `overseer_gen`, `overseer_at`. A seat lease passes its own prefix
+ * (`seatLeaseKeyPrefix`), and nothing else about the three functions changes.
+ */
+export const OVERSEER_KEY_PREFIX = 'overseer'
+
+/**
  * Read a lease out of card frontmatter. `null` means the epic has NEVER been
  * run; a lease with an empty `convId` means it ran and released, which is a
  * different fact -- the generation counter must survive a release or the next
  * wake would reuse a generation number that is already in the baton.
  */
-export function readLease(meta: Record<string, unknown>): EpicLease | null {
-  const convId = typeof meta.overseer === 'string' ? meta.overseer : ''
-  const rawGen = meta.overseer_gen
+export function readLease(meta: Record<string, unknown>, keyPrefix = OVERSEER_KEY_PREFIX): EpicLease | null {
+  const convId = typeof meta[keyPrefix] === 'string' ? (meta[keyPrefix] as string) : ''
+  const rawGen = meta[`${keyPrefix}_gen`]
   const gen = typeof rawGen === 'number' ? rawGen : Number.parseInt(String(rawGen ?? ''), 10)
   const hasGen = Number.isFinite(gen)
   if (!convId && !hasGen) return null
+  const at = meta[`${keyPrefix}_at`]
   return {
     convId,
     gen: hasGen ? gen : 0,
-    at: typeof meta.overseer_at === 'string' ? meta.overseer_at : '',
+    at: typeof at === 'string' ? at : '',
   }
 }
 
 /** The frontmatter patch that records a lease. */
-export function leasePatch(lease: EpicLease): Record<string, unknown> {
-  return { overseer: lease.convId, overseer_gen: lease.gen, overseer_at: lease.at }
+export function leasePatch(lease: EpicLease, keyPrefix = OVERSEER_KEY_PREFIX): Record<string, unknown> {
+  return { [keyPrefix]: lease.convId, [`${keyPrefix}_gen`]: lease.gen, [`${keyPrefix}_at`]: lease.at }
 }
 
 /**
- * The frontmatter patch that releases one. `overseer_gen` is deliberately NOT
+ * The frontmatter patch that releases one. `<prefix>_gen` is deliberately NOT
  * cleared: it is the run's generation counter, not part of the grip, and reusing
  * a generation number would put two different beats in the baton under one id.
  */
-export function releasePatch(): Record<string, unknown> {
-  return { overseer: '', overseer_at: '' }
+export function releasePatch(keyPrefix = OVERSEER_KEY_PREFIX): Record<string, unknown> {
+  return { [keyPrefix]: '', [`${keyPrefix}_at`]: '' }
 }
 
 /** The holder reported when there is none -- a refusal still owes the caller a
