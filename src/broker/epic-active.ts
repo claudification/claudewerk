@@ -86,6 +86,7 @@ async function readRun(deps: SweepDeps, group: EpicGroup): Promise<RunRead> {
  * that fetched its own run could only ever be told about itself.
  */
 function toEntry(group: EpicGroup, read: RunRead, queue: QueueVerdict, nowMs: number): EpicActivityEntry {
+  if (read.failed) return degradedEntry(group)
   const at = lastBeat(group.project, group.epicId)
   const reading = toQueueReading(queue)
   const run = read.run
@@ -97,13 +98,34 @@ function toEntry(group: EpicGroup, read: RunRead, queue: QueueVerdict, nowMs: nu
     maxGens: run?.maxGens ?? 0,
     inFlight: group.inFlight.length,
     overseerAlive: group.overseerAlive,
-    armed: read.failed ? false : listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
-    lastBeatAt: read.failed ? null : at,
-    // A run nobody could READ is stale by definition -- the alternative reads as
-    // "beating fine", which is the one thing a degraded row must never claim.
-    stale: read.failed || beatStale(at, nowMs),
+    armed: listArmedEpics().some(a => a.project === group.project && a.epicId === group.epicId),
+    lastBeatAt: at,
+    stale: beatStale(at, nowMs),
     ...runStamps(run),
     ...(reading ? { queue: reading } : {}),
+  }
+}
+
+/**
+ * A row for an epic whose run could not be read at all.
+ *
+ * STALE, deliberately, and with no beat age: everything else on the row would be
+ * a guess, and the one thing a degraded row must never do is read as "beating
+ * fine". It stays ON the feed rather than vanishing -- a project whose sentinel
+ * is offline is exactly when a human wants to see the row.
+ */
+function degradedEntry(group: EpicGroup): EpicActivityEntry {
+  return {
+    epicId: group.epicId,
+    project: group.project,
+    status: null,
+    gen: group.maxGenSeen,
+    maxGens: 0,
+    inFlight: group.inFlight.length,
+    overseerAlive: group.overseerAlive,
+    armed: false,
+    lastBeatAt: null,
+    stale: true,
   }
 }
 

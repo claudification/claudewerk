@@ -3,6 +3,7 @@ import type { EpicPlan } from '../shared/epic-ready'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import { type EpicBeatInput, planBeat } from './epic-beat'
+import type { QueueVerdict } from './epic-queue'
 
 function card(slug: string): ProjectTaskMeta {
   return { slug, status: 'open', title: slug, tags: [], refs: [], created: '', mtime: 0, bodyPreview: '' }
@@ -61,6 +62,18 @@ function beat(over: Partial<EpicBeatInput> = {}, plan: Partial<EpicPlan> = {}, r
 }
 
 const kinds = (b: ReturnType<typeof planBeat>) => b.actions.map(a => a.kind)
+
+/** What `epic-queue.ts` hands a beat that must wait its turn. The exact fold that
+ *  produces it is that module's own test; here it is an input. */
+const BLOCKED: QueueVerdict = {
+  blocked: true,
+  position: 2,
+  total: 3,
+  behind: ['epic-morning-report'],
+  reason: 'queued, position 2 of 3, behind epic-morning-report (waiting 4m)',
+}
+
+const FREE: QueueVerdict = { blocked: false, position: 1, total: 1, behind: [], reason: null }
 
 describe('planBeat', () => {
   test('every beat explains itself, even an empty one', () => {
@@ -389,5 +402,93 @@ describe('startedAt -- the wall clock starts when the run can work', () => {
   test('an already-stamped run is not re-stamped', () => {
     const b = beat({ nowMs: at(5) }, {}, { startedAt: '2026-08-21T00:00:00.000Z' })
     expect(b.patch?.startedAt).toBeUndefined()
+  })
+
+  /**
+   * THE SAME RULE, FOR THE QUEUE GATE -- and here it is doing double duty. A
+   * queued run that has not been permitted to dispatch must not burn its
+   * wall-clock budget waiting its turn, AND `startedAt` is what `epic-queue.ts`
+   * reads back as "this run has entered and now holds the runner". A stamp while
+   * blocked would both start the wrong clock and hand the runner to an epic that
+   * had not taken it.
+   */
+  test('a queued run that is still waiting does NOT start the clock', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['queue'] })
+    expect(b.patch?.startedAt).toBeUndefined()
+  })
+})
+
+/**
+ * THE QUEUE GATE, AT THE BEAT.
+ *
+ * The cross-epic arithmetic lives in `epic-queue.ts` and is tested there; what
+ * these pin is the half a beat owns -- that a blocked verdict withholds DISPATCH
+ * and nothing else, that it never counts as a dry generation, and that it
+ * composes with the window rather than replacing it.
+ */
+describe('when=queue', () => {
+  test('a blocked epic dispatches nothing, and says where it is in the queue', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1'), card('t2')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('position 2 of 3')
+    expect(b.note).toContain('epic-morning-report')
+  })
+
+  test('it dispatches on the first beat after the other epic goes idle', () => {
+    const b = beat({ queue: FREE }, { dispatch: [card('t1')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+
+  /**
+   * A QUEUED EPIC IS EXCLUDED FROM THE SEAT RESERVE, stated at the only layer
+   * that exists today: blocked means ZERO seats, however much room the
+   * concurrency ceiling has and however ready its cards are. When
+   * `runner-seat-pool-and-reserve` lands its floor of "every armed epic with
+   * ready work is guaranteed a seat", this is the case that must NOT get one --
+   * an epic guaranteed a seat is not queued at all. That card's tests own the
+   * other half of this constraint.
+   */
+  test('no seat is granted to a blocked epic, however ready its board is', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1'), card('t2'), card('t3')] }, { cadence: ['queue'] })
+    expect(b.actions).toEqual([])
+  })
+
+  test('a blocked beat is NOT a dry generation -- waiting is not thrashing', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['queue'], dryGens: 1 })
+    expect(kinds(b)).toEqual([])
+    expect(b.patch?.dryGens).toBeUndefined()
+  })
+
+  test('a verdict still lands while the gate holds -- judging is what drains the runner', () => {
+    const b = beat({ queue: BLOCKED }, { dispatch: [card('t1')], verify: [card('t2')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual(['verify'])
+  })
+
+  /**
+   * THE OTHER DIRECTION. A run on no queue at all is held while a queued one
+   * holds the runner -- without this half, `queue` would be a promise the engine
+   * breaks on the very next beat.
+   */
+  test('an epic on no queue is held while a queued one holds the runner', () => {
+    const held = { ...BLOCKED, position: 0, total: 1, heldBy: 'epic-project-runner', reason: 'held: ...' }
+    const b = beat({ queue: held }, { dispatch: [card('t1')] }, { cadence: ['now'] })
+    expect(kinds(b)).toEqual([])
+  })
+
+  test('window and queue COMPOSE -- both gates must pass, and the note says both', () => {
+    const b = beat({ windowOpen: false, queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['window', 'queue'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('window is closed')
+    expect(b.note).toContain('position 2 of 3')
+
+    const open = beat(
+      { windowOpen: true, queue: BLOCKED },
+      { dispatch: [card('t1')] },
+      { cadence: ['window', 'queue'] },
+    )
+    expect(kinds(open)).toEqual([])
+
+    const both = beat({ windowOpen: true, queue: FREE }, { dispatch: [card('t1')] }, { cadence: ['window', 'queue'] })
+    expect(kinds(both)).toEqual(['dispatch'])
   })
 })

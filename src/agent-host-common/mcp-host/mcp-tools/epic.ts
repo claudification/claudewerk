@@ -166,7 +166,7 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
             type: 'string',
             description:
               'start: the gate(s) a ready card must pass before it dispatches -- "now" (no gate), "window" (the ' +
-              "project's night window), \"queue\" (wait until no other epic in this project is running, then hold " +
+              'project\'s night window), "queue" (wait until no other epic in this project is running, then hold ' +
               'the runner exclusively until this run goes dry). Comma-separate to compose them: "window,queue" ' +
               'means ALL of them must pass on the same beat. Evaluated every beat, not once at arm time.',
           },

@@ -97,4 +97,17 @@ describe('consequence', () => {
       "Starts in the project's night window, one card at a time, and does not stop until it is deployed.",
     )
   })
+
+  it('says what QUEUE actually commits you to, which is exclusivity', () => {
+    const s = consequence({ cadence: ['queue'], target: 'merged', concurrency: 3, plan: false })
+    expect(s).toContain('no other epic in this project is running')
+    expect(s).toContain('exclusively')
+  })
+
+  /** ALL the gates must pass, so the sentence has to state all of them -- one
+   *  that showed only the first would describe a run that does not exist. */
+  it('joins a composed axis rather than describing half of it', () => {
+    const s = consequence({ cadence: ['window', 'queue'], target: 'merged', concurrency: 3, plan: false })
+    expect(s).toContain('night window, and waits until no other epic')
+  })
 })

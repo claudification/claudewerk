@@ -127,27 +127,39 @@ async function inspectQueue(
   if (!gatedBy(run?.cadence, 'queue')) return undefined
 
   const groups = groupEpicConversations(convs, deps.isLive)
-  const peers = new Map<string, EpicGroup>()
-  for (const [id, group] of groups) if (group.project === project && id !== epicId) peers.set(id, group)
-  for (const armed of listArmedEpics()) {
-    if (armed.project === project && armed.epicId !== epicId && !peers.has(armed.epicId)) {
-      peers.set(armed.epicId, emptyGroup(armed.epicId, project))
-    }
-  }
-
-  const others = [...peers.values()]
-  const runs = await Promise.all(
-    others.map(peer =>
-      fetchEpicRun(deps, project, peer.epicId, { limit: 1 })
-        .then(v => v.run ?? null)
-        .catch(() => null),
-    ),
-  )
+  const others = projectPeers(groups, project, epicId)
+  const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
   const scopes = [
     toQueueScope(groups.get(epicId) ?? emptyGroup(epicId, project), run),
     ...others.map((peer, i) => toQueueScope(peer, runs[i] ?? null)),
   ]
   return toQueueReading(planProjectQueues(scopes, deps.now()).verdict(project, epicId))
+}
+
+/**
+ * Every OTHER epic in this project the broker can see -- the same union
+ * `epicsToBeat` walks (conversation-derived groups PLUS the armed set), because
+ * a freshly armed epic has no conversations and is exactly the one that might be
+ * about to take the runner.
+ */
+function projectPeers(groups: Map<string, EpicGroup>, project: string, epicId: string): EpicGroup[] {
+  const peers = new Map<string, EpicGroup>()
+  for (const [id, group] of groups) if (group.project === project && id !== epicId) peers.set(id, group)
+  for (const armed of listArmedEpics()) {
+    const fresh = armed.project === project && armed.epicId !== epicId && !peers.has(armed.epicId)
+    if (fresh) peers.set(armed.epicId, emptyGroup(armed.epicId, project))
+  }
+  return [...peers.values()]
+}
+
+/** A peer's run, or nothing. An inspect must never fail because a NEIGHBOUR's
+ *  artifact could not be read -- the queue line degrades, the read does not. */
+async function peerRun(deps: SweepDeps, project: string, epicId: string): Promise<EpicRunSnapshot | null> {
+  try {
+    return (await fetchEpicRun(deps, project, epicId, { limit: 1 })).run ?? null
+  } catch {
+    return null
+  }
 }
 
 /**

@@ -36,7 +36,7 @@ import type { EpicCadence } from './epic-run-types'
  * would make the run artifact churn and the board fingerprint jitter for no
  * reason a reader could see.
  */
-export const WHEN_GATES: readonly EpicCadence[] = ['now', 'window', 'queue']
+const WHEN_GATES: readonly EpicCadence[] = ['now', 'window', 'queue']
 
 /** `now` is the ABSENCE of a gate, so it never rides alongside a real one. */
 const NO_GATE: EpicCadence = 'now'
