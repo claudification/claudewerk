@@ -4,6 +4,7 @@ import type { EpicLaunchTag, EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
 import { SCANNER_IDS } from '../shared/scanner-ids'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
+import type { SeatReaper } from './epic-seat-vitality'
 import {
   epicsToWatch,
   generationMismatch,
@@ -103,6 +104,103 @@ describe('groupEpicConversations', () => {
   test('the highest generation seen is reported for diagnostics', () => {
     const groups = groupEpicConversations([conv(impl('t1', 3), true), conv(impl('t2', 7), true)], isLive)
     expect(groups.get('e1')?.maxGenSeen).toBe(7)
+  })
+})
+
+/**
+ * THE 2026-08-21 INCIDENT: A DEAD SEAT THAT NEVER SETTLED.
+ *
+ * `runner-run-delete-verb` was dispatched at 16:38:35Z on `epic-project-runner`.
+ * Twelve minutes later the engine still counted it in flight: no `completion`
+ * entry existed, the card sat at `open`, and generation 7 planned against
+ * `dispatch (1)` of a ceiling of 2 with two cards "HELD BACK by the concurrency
+ * ceiling". The second slot was being held for a conversation that had been dead
+ * the whole time.
+ *
+ * The mechanism is `werkLiveness`: live unless the row says `ended`. Nothing in
+ * the store ever writes `ended` on a clock, so a seat whose end was never
+ * recorded reads live forever, and the slot is held by a BELIEF with no expiry.
+ */
+describe('a seat that dies without its end being recorded is reaped', () => {
+  /** Every seat here CLAIMS to be live -- that is the whole failure. */
+  const reaped: SeatReaper = c => (c.id === 'conv_dead' ? { silentForMs: 12 * 60_000 } : null)
+  const named = (tag: EpicLaunchTag, id: string, output = true) =>
+    // `status: 'idle'` is the shape the incident actually wore: the maintenance
+    // pass demotes `active` -> `idle` on silence and stops there, so a seat whose
+    // end was never recorded sits at `idle` for the life of the broker.
+    ({ ...conv(tag, true, output), id, status: 'idle', lastActivity: 0 }) as unknown as Conversation
+
+  const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput, reaped).get('e1')
+
+  test('THE LEAK: without a reaper the card stays in flight forever, holding its slot', () => {
+    const g = groupEpicConversations([named(impl('t1'), 'conv_dead')], isLive, producedOutput).get('e1')
+    expect(g?.inFlight).toEqual(['t1'])
+    expect(g?.settled).toEqual([])
+  })
+
+  test('with the reaper the card leaves the in-flight lane -- the slot comes back', () => {
+    expect(group([named(impl('t1'), 'conv_dead')])?.inFlight).toEqual([])
+  })
+
+  test('and it SETTLES, so the beat acknowledges it instead of rediscovering it forever', () => {
+    expect(group([named(impl('t1'), 'conv_dead')])?.settled).toEqual(['t1'])
+  })
+
+  /** The whole point of the lane: a settle caused by a death must be tellable
+   *  apart from a settle caused by a finish. */
+  test('the reaping is reported with the evidence a human can check', () => {
+    const g = group([named(impl('t1'), 'conv_dead')])
+    expect(g?.abandonedSeats).toEqual([
+      {
+        cardId: 't1',
+        convId: 'conv_dead',
+        role: 'implementer',
+        gen: 1,
+        lastActivity: 0,
+        silentForMs: 12 * 60_000,
+        status: 'idle',
+      },
+    ])
+  })
+
+  test('an ordinary finished seat is NOT reported as abandoned', () => {
+    const g = groupEpicConversations([conv(impl('t1'), false)], isLive, producedOutput, reaped).get('e1')
+    expect(g?.abandonedSeats).toEqual([])
+    expect(g?.settled).toEqual(['t1'])
+  })
+
+  test('a reaped VERIFIER leaves the verify lane too, or the verdict is never rewritten', () => {
+    const g = group([named(verifier('t1'), 'conv_dead')])
+    expect(g?.inVerify).toEqual([])
+    expect(g?.abandonedSeats[0]?.role).toBe('verifier')
+  })
+
+  /** The OR-fold still rules. A reaped predecessor must not settle a card whose
+   *  retry is genuinely running, or the engine would strand live work. */
+  test('a reaped seat does NOT settle a card that has a live retry', () => {
+    const g = group([named(impl('t1'), 'conv_dead'), named(impl('t1'), 'conv_live')])
+    expect(g?.inFlight).toEqual(['t1'])
+    expect(g?.settled).toEqual([])
+  })
+
+  /** A seat that attached, said nothing and vanished never started -- it is a
+   *  failed launch, and folding it into `settled` is the 2026-08-20 bug. */
+  test('a reaped seat that produced NOTHING is a failed leg, not a completion', () => {
+    const g = group([named(impl('t1'), 'conv_dead', false)])
+    expect(g?.settled).toEqual([])
+    expect(g?.failedLegs).toHaveLength(1)
+  })
+
+  /**
+   * BOUNDED ON PURPOSE. An overseer stuck at a non-`ended` status holds
+   * `overseerAlive`, which holds the WHOLE beat, and unfreezing it means granting
+   * the lease to a second overseer -- a full generation if it is wrong. That is
+   * `epic-overseer-seat-never-reaped`, not this card.
+   */
+  test('the overseer is deliberately NOT reaped', () => {
+    const g = group([named(overseer(), 'conv_dead')])
+    expect(g?.overseerAlive).toBe(true)
+    expect(g?.abandonedSeats).toEqual([])
   })
 })
 
@@ -311,6 +409,7 @@ describe('generationMismatch', () => {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    abandonedSeats: [],
     unspawnable: [],
     convIds: [],
     maxGenSeen: 5,

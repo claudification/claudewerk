@@ -45,6 +45,7 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     liveOverseers: [],
     settled: [],
     failedLegs: [],
+    abandonedSeats: [],
     unspawnable: [],
     convIds: [],
     maxGenSeen: 0,

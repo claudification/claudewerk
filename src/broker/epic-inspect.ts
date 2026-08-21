@@ -39,7 +39,12 @@ import type { SweepDeps } from './epic-sweep-loop'
  *  instant, or a conversation that ends mid-call appears in one and not the
  *  other. */
 function groupFor(convs: readonly Conversation[], deps: SweepDeps, project: string, epicId: string): EpicGroup {
-  return groupEpicConversations(convs, deps.isLive).get(epicId) ?? emptyGroup(epicId, project)
+  // Reaper included, for `epic-active.ts`'s reason: an inspect that still showed
+  // a reaped seat in `inFlight` would contradict the beat running beside it.
+  return (
+    groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.seatReaper).get(epicId) ??
+    emptyGroup(epicId, project)
+  )
 }
 
 export interface InspectOptions {
@@ -180,7 +185,7 @@ async function inspectQueue(
 ): Promise<EpicQueueReading | undefined> {
   if (!gatedBy(run?.cadence, 'queue')) return undefined
 
-  const groups = groupEpicConversations(convs, deps.isLive)
+  const groups = groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.seatReaper)
   const others = projectPeers(groups, project, epicId)
   const runs = await Promise.all(others.map(peer => peerRun(deps, project, peer.epicId)))
   // ONE SPELLING FOR THE WHOLE FOLD, and it is the CALLER's. `planProjectQueues`
@@ -253,7 +258,7 @@ export async function listEpicRuns(
   project: string,
   nowMs: number = Date.now(),
 ): Promise<EpicRunListEntry[]> {
-  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive)
+  const groups = groupEpicConversations(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.seatReaper)
   const ids = new Set<string>()
   // BY PROJECT IDENTITY, never by raw string. The caller types
   // `claude:///path` while the conversation store holds `claude://default/path`
