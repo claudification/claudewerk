@@ -80,6 +80,23 @@ export function resolvePromiseBase(cwd: string): string | null {
   return null
 }
 
+/**
+ * `git rev-parse HEAD`, verbatim -- half of the board sweep's short-circuit
+ * snapshot (`boardSnapshot`).
+ *
+ * Lives here rather than in the sweep's own module because `git()` above is
+ * already the one place this process spawns git with a `-C` and a never-throws
+ * contract, and a second private `git()` next door is how two helpers drift into
+ * two behaviours.
+ *
+ * `''` when the directory is not a repo, and that is a USABLE answer: a snapshot
+ * built on an empty HEAD simply never matches the stored one, so the sweep
+ * recomputes every run instead of short-circuiting on a repo it cannot read.
+ */
+export function gitHead(cwd: string): string {
+  return git(cwd, ['rev-parse', 'HEAD']).stdout
+}
+
 const UNKNOWN: CommitStanding = { sha: '', exists: null, onMain: null }
 
 /**

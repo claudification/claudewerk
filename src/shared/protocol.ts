@@ -3,6 +3,7 @@
  * Defines the message format between agent host and broker
  */
 
+import type { Proposal, ProposalKind } from './board-sweep-proposals'
 import type { CanvasSelection } from './canvas-selection'
 import type { JobRecord } from './cc-daemon/types'
 import type { DialogOp, DialogSnapshot } from './dialog-live'
@@ -3304,6 +3305,18 @@ export interface ProjectSettings {
    *  scavenger produces a lessons-learned recap for this project. Default off
    *  (opt-in). [[project_lessons_scavenger]] */
   lessonsEnabled?: boolean
+  /**
+   * MORNING REPORT (the board sweep) per-project opt-in. When true, a
+   * `board-sweep` schedule bound to this project is allowed to fire; when
+   * false or unset every fire records `skipped_disabled` and mutates nothing.
+   *
+   * OFF BY DEFAULT, like `lessonsEnabled` and `sotuEnabled`, and for the
+   * sharper version of the same reason: this one WRITES TO THE BOARD. A sweep
+   * that switched itself on would be an unattended agent re-filing cards in a
+   * repo whose owner never asked for it. `scanner-opt-in` will eventually own
+   * the whole checkbox row; this is the flag until it lands.
+   */
+  morningReportEnabled?: boolean
   /** DEFAULT model suite for this project's recaps ('accurate' | 'cheap' --
    *  shared/recap-suites.ts). Overrides the provenance fallback, and is itself
    *  overridden by a suite named on an individual recap_create. Unset = let the
@@ -4230,7 +4243,19 @@ export interface ProjectBoardOp {
   type: 'project_board_op'
   requestId: string
   projectRoot: string
-  op: 'list' | 'manifest' | 'get' | 'getBatch' | 'create' | 'update' | 'move' | 'delete' | 'pinned' | 'promises'
+  op:
+    | 'list'
+    | 'manifest'
+    | 'get'
+    | 'getBatch'
+    | 'create'
+    | 'update'
+    | 'move'
+    | 'delete'
+    | 'pinned'
+    | 'promises'
+    | 'sweep'
+    | 'apply'
   /** Canonical project URI, for ops whose RESULT has to name the project it came
    *  from (`pinned`, `promises` -- a row is an address you can click). The sentinel
    *  never derives a path from it; `projectRoot` above is still the only path input. */
@@ -4253,6 +4278,114 @@ export interface ProjectBoardOp {
   fromStatus?: ProjectTaskStatus
   /** move: the target lane. */
   toStatus?: ProjectTaskStatus
+  /** sweep: the morning report's inputs. */
+  sweep?: BoardSweepRequest
+  /** apply: the ticked proposals to perform. */
+  apply?: BoardApplyRequest
+}
+
+/**
+ * THE MORNING REPORT'S `sweep` OP -- what the broker has to tell the sentinel
+ * before the fold can run beside the files.
+ *
+ * Everything here is something the SENTINEL cannot know and the BROKER cannot
+ * do the other half of. The board, the promise ledger and git all live next to
+ * the cards, so they are read over there; liveness and the schedule's zone live
+ * in the broker, so they come across the wire.
+ */
+export interface BoardSweepRequest {
+  /**
+   * Card ids with a conversation still alive on them -- the ANSWER to
+   * `cardsBeingWorked`, not the registry it is computed from.
+   *
+   * The broker owns the conversation registry and the liveness rule
+   * (`werk-liveness.ts`); the sentinel owns no part of either. Sending the
+   * answer keeps the rule in ONE place rather than shipping a second liveness
+   * predicate to a process that cannot see a socket.
+   */
+  liveCards: string[]
+  /**
+   * IANA zone the report is DATED in. REQUIRED, and not defaultable: the broker
+   * container runs in UTC, so a 00:30 Europe/Berlin sweep dated from the
+   * container's clock would file itself under YESTERDAY. A schedule already
+   * carries its zone; this is that zone, forwarded.
+   */
+  tz: string
+  /** Override for `DEFAULT_COLD_AFTER_DAYS`. Absent = the fold's own default. */
+  coldAfterDays?: number
+}
+
+/** One refusal row, widened for the wire -- `bucket` is a `BoardSweepBucket`,
+ *  kept as a plain string here so protocol.ts owns no scanner vocabulary. */
+export interface BoardSweepRefusal {
+  unit: string
+  bucket: string
+  detail: string
+}
+
+/** What one `sweep` produced: the fold's own outcome plus what became of the
+ *  artifact, because "the report is on disk" is the property the epic rests on. */
+export interface BoardSweepResult {
+  proposals: Proposal[]
+  /** Hand back as the next run's `lastSnapshot`. The SENTINEL persists it beside
+   *  the reports; this copy is for the log, not for the caller to store. */
+  snapshot: string
+  /** The short-circuit fired -- HEAD and the board are unchanged. */
+  skipped: boolean
+  selected: string[]
+  acted: string[]
+  refused: BoardSweepRefusal[]
+  idleReason?: string
+  /** `YYYY-MM-DD` in `tz` -- the report's own name, and `apply`'s default actor. */
+  reportDate: string
+  /** Project-relative path of the artifact, whether or not this run wrote it. */
+  reportPath: string
+  /** FALSE means today's report was already on disk and this run left it alone
+   *  (the short-circuit). Never means "the write failed" -- that throws. */
+  reportWritten: boolean
+}
+
+/**
+ * One proposal as `apply` addresses it: the identity, not the sentence.
+ *
+ * `detail`, `confidence` and the rest of a `Proposal` are for a human reading
+ * the report; the mutation needs the kind, the card, and -- for a duplicate --
+ * the card it points at. Sending back the whole proposal would invite the
+ * surface to edit the parts it did not compute.
+ */
+export interface BoardProposalRef {
+  kind: ProposalKind
+  card: string
+  /** `flag-duplicate` only: the other card, which becomes `duplicate-of:<id>`. */
+  other?: string
+}
+
+export interface BoardApplyRequest {
+  proposals: BoardProposalRef[]
+  /** The schedule's zone -- how `report-<date>` is dated when no date is named. */
+  tz: string
+  /** `YYYY-MM-DD` of the report being executed. Absent = today in `tz`. The
+   *  surface passes it so a report executed on Tuesday still stamps Monday's
+   *  `archived_by`, which is the backlink D5 asks for. */
+  reportDate?: string
+}
+
+/**
+ * What became of ONE proposal. Per-proposal on purpose: a single boolean over a
+ * batch cannot say which card moved, and "some of them worked" logged as
+ * success is the confident-but-untrue record this epic exists to stop.
+ */
+export interface BoardApplyOutcome {
+  kind: ProposalKind
+  card: string
+  /** The write LANDED. Never set from intent -- the write runs first. */
+  ok: boolean
+  /** The lane the card is in now, read back from disk after the write. */
+  status?: ProjectTaskStatus
+  /** What was written to `archived_reason:`. */
+  archivedReason?: string
+  /** Why it did not happen: refused (F18), no such card, or a failed write. */
+  error?: string
 }
 
 /** Sentinel -> Broker: board op result. Populated field depends on `op`. */
@@ -4284,6 +4417,10 @@ export interface ProjectBoardResult {
   slug?: string | null
   /** delete */
   removed?: boolean
+  /** sweep: the fold's outcome + where the dated artifact ended up. */
+  sweep?: BoardSweepResult
+  /** apply: one row per proposal it was handed, in the order it was handed them. */
+  applied?: BoardApplyOutcome[]
   error?: string
 }
 

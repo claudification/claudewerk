@@ -16,6 +16,7 @@
 
 import type { SpawnCallerContext } from '../../shared/spawn-permissions'
 import { getUser } from '../auth'
+import { callBoard } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
 import { getGlobalSettings } from '../global-settings'
 import { getLaunchProfilesRaw } from '../launch-profiles/storage'
@@ -24,6 +25,8 @@ import { getProjectSettings } from '../project-settings'
 import { isPushConfigured, sendPushToAll } from '../push'
 import { dispatchSpawn } from '../spawn-dispatch'
 import type { StoreDriver } from '../store/types'
+import { werkLiveness } from '../werk-liveness'
+import { dispatchBoardSweep, morningReportEnabled } from './board-sweep-dispatch'
 import { broadcastScheduledRun, broadcastScheduledTasks } from './broadcast'
 import { type ScheduledTaskEngine, startScheduledTaskEngine } from './engine'
 
@@ -87,6 +90,23 @@ export function wireScheduledTasks(store: StoreDriver, conversationStore: Conver
       const profiles = getLaunchProfilesRaw(store.kv, userName)
       return profiles?.find(p => p.id === profileId) ?? null
     },
+
+    /**
+     * THE MORNING REPORT. `werkLiveness` rather than `LIVE_STATUSES` above:
+     * the overlap check asks "is the conversation this schedule spawned still
+     * running", the sweep asks "is anybody working this card", and the second
+     * is the werk fabric's own rule (a conversation is live unless it has ended
+     * AND holds no socket). Two questions, two predicates, deliberately.
+     */
+    runBoardSweep: task =>
+      dispatchBoardSweep(task, {
+        callBoard: (project, op) => callBoard(conversationStore, project, op),
+        getAllConversations: conversationStore.getAllConversations,
+        isLive: werkLiveness(conversationStore.getActiveConversationCount),
+        getProjectSettings,
+      }),
+
+    morningReportEnabled: projectUri => morningReportEnabled({ getProjectSettings }, projectUri),
 
     notify(message) {
       if (!isPushConfigured()) return

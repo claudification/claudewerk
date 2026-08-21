@@ -101,7 +101,11 @@ export function draftFromTask(task: ScheduledTask): ScheduleDraft {
   return {
     ...blank,
     name: task.name,
-    prompt: task.prompt,
+    // A `board-sweep` schedule carries no prompt -- its work is a board op, not
+    // a sentence. The editor only ever creates spawn schedules, and its own
+    // validation still demands one, so this coalesce is about RENDERING a record
+    // this panel did not write.
+    prompt: task.prompt ?? '',
     mode: task.runAt !== undefined ? 'once' : 'repeating',
     // Keep the untouched side at its default so toggling mode offers something sane.
     cron: task.cron ?? blank.cron,

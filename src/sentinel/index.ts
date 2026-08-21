@@ -4255,7 +4255,7 @@ function connect(
         case 'project_board_op': {
           const m = msg as ProjectBoardOp
           const root = expandPath(m.projectRoot, spawnRoot)
-          ws.send(JSON.stringify(handleProjectBoardOp(root, m, Date.now())))
+          ws.send(JSON.stringify(await handleProjectBoardOp(root, m, Date.now())))
           rearmAfterBoardWrite(root)
           break
         }

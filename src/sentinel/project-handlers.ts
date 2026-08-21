@@ -5,6 +5,8 @@
  */
 
 import { pinnedEpicRows } from '../shared/pinned-epic-rows'
+import { applyProposals } from './board-sweep-apply'
+import { runBoardSweep } from './board-sweep-op'
 import {
   createProjectTask,
   deleteProjectTask,
@@ -47,7 +49,10 @@ export function handleProjectMoveFile(root: string, msg: ProjectMoveFile): Proje
 
 /** What a board op returns on success -- merged onto the result envelope. */
 type OpPayload = Partial<Omit<ProjectBoardResult, 'type' | 'requestId' | 'op' | 'ok'>>
-type OpHandler = (root: string, msg: ProjectBoardOp, nowMs: number) => OpPayload | { error: string }
+type OpResult = OpPayload | { error: string }
+/** Async is allowed because ONE op needs it (`sweep` awaits the fold's optional
+ *  duplicate judge). Every other op stays synchronous and pays nothing for it. */
+type OpHandler = (root: string, msg: ProjectBoardOp, nowMs: number) => OpResult | Promise<OpResult>
 
 /**
  * One entry per op (STRATEGY MAPS OVER CHAINS). `msg.status` / `msg.fromStatus`
@@ -86,14 +91,33 @@ const OPS: Record<ProjectBoardOp['op'], OpHandler> = {
     return { slug: moved ? msg.slug : null }
   },
   delete: (root, msg) => (msg.slug ? { removed: deleteProjectTask(root, msg.slug) } : { error: 'slug required' }),
+  // THE MORNING REPORT, both halves. Beside the files for the same reason
+  // `promises` is, one step stronger: the sweep reads the board AND runs git AND
+  // writes an artifact, and the broker may do none of the three.
+  //
+  // TWO OPS, NOT ONE, and the split is the safety property: `sweep` proposes and
+  // mutates nothing, `apply` mutates only what it was handed. A single op that
+  // did both would make "run the report" and "execute the report" the same
+  // button, which is exactly the button nobody should be able to press by
+  // accident at 06:00.
+  sweep: (root, msg, nowMs) =>
+    msg.sweep
+      ? runBoardSweep(root, msg.project ?? '', msg.sweep, nowMs).then(sweep => ({ sweep }))
+      : { error: 'sweep params required' },
+  apply: (root, msg, nowMs) =>
+    msg.apply ? { applied: applyProposals(root, msg.apply, nowMs) } : { error: 'apply params required' },
 }
 
-export function handleProjectBoardOp(root: string, msg: ProjectBoardOp, nowMs: number): ProjectBoardResult {
+export async function handleProjectBoardOp(
+  root: string,
+  msg: ProjectBoardOp,
+  nowMs: number,
+): Promise<ProjectBoardResult> {
   const base = { type: 'project_board_result' as const, requestId: msg.requestId, op: msg.op }
   const handler = OPS[msg.op]
   if (!handler) return { ...base, ok: false, error: `unknown op: ${msg.op}` }
   try {
-    const result = handler(root, msg, nowMs)
+    const result = await handler(root, msg, nowMs)
     if ('error' in result && typeof result.error === 'string') return { ...base, ok: false, error: result.error }
     return { ...base, ok: true, ...result }
   } catch (err) {

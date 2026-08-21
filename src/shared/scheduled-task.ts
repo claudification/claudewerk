@@ -89,7 +89,29 @@ export const scheduledTaskSchema = z.object({
   overlap: z.enum(OVERLAP_MODES).default('skip'),
 
   // -- WHAT --
-  prompt: z.string().min(1, 'prompt is required').max(SCHEDULE_MAX_PROMPT, 'prompt exceeds 64 KB'),
+  /**
+   * WHICH KIND OF WORK this schedule fires. Absent = `spawn`, which is what
+   * every schedule written before this field existed meant.
+   *
+   * `board-sweep` runs the morning report's board op against the sentinel and
+   * launches NO conversation. It is a schedule rather than its own timer on
+   * purpose: cron parsing, the required IANA zone, missed-fire reconciliation,
+   * the 3-in-flight ceiling, the owner re-check and the run history are all
+   * rules about firing unattended work, none of them are rules about spawning,
+   * and a second scheduler would have had to re-implement every one.
+   *
+   * OPTIONAL rather than `.default('spawn')` on purpose: every schedule stored
+   * before this field existed genuinely has no `action`, and a default would
+   * make the type claim otherwise. `isSpawnSchedule` is the one place that
+   * absence is read as `spawn`.
+   */
+  action: z.enum(['spawn', 'board-sweep']).optional(),
+  /**
+   * The prompt a `spawn` schedule launches with. REQUIRED for `spawn` (enforced
+   * in `checkAction` -- a spawn schedule with no prompt has nothing to run) and
+   * meaningless for `board-sweep`, whose work is the op, not a sentence.
+   */
+  prompt: z.string().max(SCHEDULE_MAX_PROMPT, 'prompt exceeds 64 KB').optional(),
   profileId: z.string().optional(),
   spawn: scheduleSpawnSchema,
   /**
@@ -125,7 +147,13 @@ export function isOneShot(task: Pick<ScheduledTask, 'runAt'>): boolean {
   return task.runAt !== undefined
 }
 
+/** A schedule that launches a conversation, as opposed to running a board op. */
+export function isSpawnSchedule(task: Pick<ScheduledTask, 'action'>): boolean {
+  return (task.action ?? 'spawn') === 'spawn'
+}
+
 type WhenFields = Pick<ScheduledTask, 'cron' | 'runAt' | 'tz' | 'startAt' | 'endAt'>
+type ActionFields = Pick<ScheduledTask, 'action' | 'prompt'>
 
 /**
  * Cross-field rules a plain object schema cannot express.
@@ -164,6 +192,19 @@ function checkWhenValue(task: WhenFields, ctx: z.RefinementCtx, nowMs: number): 
   }
 }
 
+/**
+ * WHAT it fires has to be runnable. A `spawn` with no prompt would dispatch a
+ * conversation with nothing to say; the old schema made `prompt` unconditionally
+ * required, and this keeps that exact rule for every schedule that spawns while
+ * letting a board op carry no prompt at all rather than a decorative one.
+ */
+function checkAction(task: ActionFields, ctx: z.RefinementCtx): void {
+  if (!isSpawnSchedule(task)) return
+  if (!task.prompt || task.prompt.trim() === '') {
+    ctx.addIssue({ code: 'custom', message: 'prompt is required', path: ['prompt'] })
+  }
+}
+
 /** Zone + window rules, shared by both kinds. */
 function checkZoneAndWindow(task: WhenFields, ctx: z.RefinementCtx): void {
   if (!isValidTimeZone(task.tz)) {
@@ -181,10 +222,11 @@ function checkZoneAndWindow(task: WhenFields, ctx: z.RefinementCtx): void {
  * SERVER's clock decides -- a browser with a skewed clock cannot smuggle a past
  * one-shot through, and one already due would otherwise fire the moment it saved.
  */
-function refineSchedule(task: WhenFields, ctx: z.RefinementCtx, nowMs: number = Date.now()): void {
+function refineSchedule(task: WhenFields & ActionFields, ctx: z.RefinementCtx, nowMs: number = Date.now()): void {
   checkWhenKind(task, ctx)
   checkWhenValue(task, ctx, nowMs)
   checkZoneAndWindow(task, ctx)
+  checkAction(task, ctx)
 }
 
 /**
@@ -192,7 +234,7 @@ function refineSchedule(task: WhenFields, ctx: z.RefinementCtx, nowMs: number = 
  * exists. A one-shot that has fired (or is mid-flight) has a `runAt` in the
  * past by definition, and re-saving it must not become impossible.
  */
-function refineStoredSchedule(task: WhenFields, ctx: z.RefinementCtx): void {
+function refineStoredSchedule(task: WhenFields & ActionFields, ctx: z.RefinementCtx): void {
   refineSchedule(task, ctx, 0)
 }
 

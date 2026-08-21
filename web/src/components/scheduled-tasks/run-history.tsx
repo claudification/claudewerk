@@ -17,6 +17,9 @@ import { useScheduledTasksStore } from './store'
 
 const OUTCOME_STYLE: Record<RunOutcome, { label: string; className: string }> = {
   spawned: { label: 'ran', className: 'text-primary' },
+  // Distinct from `spawned` because it IS distinct: a board sweep runs an op and
+  // launches no conversation, so the row has no conversation to open.
+  swept: { label: 'swept', className: 'text-primary' },
   error: { label: 'failed', className: 'text-red-400' },
   skipped_overlap: { label: 'skipped', className: 'text-amber-400' },
   skipped_disabled: { label: 'disabled', className: 'text-comment' },

@@ -98,6 +98,34 @@ export function cardPath(root: string, id: string, create = true): string {
   return join(cardsDir(root, create), `${id}.md`)
 }
 
+/**
+ * The morning report's artifacts (`<root>/.rclaude/project/reports`).
+ *
+ * A SIBLING of `cards/`, never inside it: everything under `cards/` is a card,
+ * and `listCardIds` walks that directory for `*.md`. A dated report dropped in
+ * there would be read back as a card with no frontmatter on the very next board
+ * read. The directory does not exist until the first sweep writes one.
+ */
+export const REPORTS_DIR = 'reports'
+
+/** `<root>/.rclaude/project/reports`, created on demand. */
+export function reportsDir(root: string, create = true): string {
+  const dir = join(boardRoot(root), REPORTS_DIR)
+  if (create) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/** Absolute path of one dated report. `date` is `YYYY-MM-DD` in the SCHEDULE's
+ *  zone, never the container's -- see `BoardSweepRequest.tz`. */
+export function reportPath(root: string, date: string, create = true): string {
+  return join(reportsDir(root, create), `${date}.md`)
+}
+
+/** Board-relative path of one dated report -- the form a report is LINKED as. */
+export function reportRelPath(date: string): string {
+  return `.rclaude/project/${REPORTS_DIR}/${date}.md`
+}
+
 /** A legacy lane directory (`<root>/.rclaude/project/<status>`). READ ONLY. */
 export function legacyLaneDir(root: string, status: string): string {
   return join(boardRoot(root), status)

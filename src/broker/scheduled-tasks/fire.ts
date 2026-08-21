@@ -15,7 +15,7 @@ import type { LaunchProfile } from '../../shared/launch-profile'
 import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
 import { type SeatOrder, seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
-import type { ScheduledTask } from '../../shared/scheduled-task'
+import { isSpawnSchedule, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings } from '../../shared/unattended-permissions'
 import { nextFailureState } from './policy'
@@ -56,6 +56,21 @@ export interface FireDeps {
    */
   claimSlot(orderId: string | undefined): () => void
   maxInFlight: number
+  /**
+   * Run the morning report's board op for a `board-sweep` schedule.
+   *
+   * OPTIONAL because the engine is dependency-injected and most of its tests
+   * arm nothing but spawns. Absent when a `board-sweep` schedule fires is a
+   * FAILED fire with a reason, never a silent no-op -- a schedule that quietly
+   * does nothing is indistinguishable from one that works.
+   */
+  runBoardSweep?(task: ScheduledTask): Promise<DispatchOutcome>
+  /**
+   * Is the morning report opted in for this project? OFF BY DEFAULT: absent, or
+   * returning false, refuses the fire. A sweep that switched itself on would be
+   * an unattended agent re-filing cards in a repo nobody opted in.
+   */
+  morningReportEnabled?(projectUri: string): boolean
   notify?(message: string): void
   now(): number
 }
@@ -84,7 +99,10 @@ export function buildSpawnRequest(task: ScheduledTask, profile: LaunchProfile | 
     ...(profile?.spawn ?? {}),
     ...task.spawn,
     cwd: task.cwd,
-    prompt: task.prompt,
+    // `?? ''` never fires for a spawn schedule -- `checkAction` rejects one with
+    // no prompt at both create and PATCH. It is here because the field became
+    // optional for `board-sweep`, which does not reach this function at all.
+    prompt: task.prompt ?? '',
     sentinel: task.sentinel ?? profile?.sentinel,
     name: `${task.name} ${stamp}`.slice(0, 80),
     description: `Scheduled run of "${task.name}" (${task.cron} ${task.tz})`,
@@ -129,6 +147,37 @@ export function applyOrderToRequest(request: SpawnRequest, order: SeatOrder | un
     next.settingsInline = buildUnattendedSettings({ deny })
   }
   return { ok: true, request: next }
+}
+
+/**
+ * WHAT this fire actually does, resolved before a slot is claimed.
+ *
+ * Two actions, one fire path. Everything around this -- the owner re-check, the
+ * overlap rule, seat admission, the run row, the failure backoff -- is shared
+ * because those are rules about firing unattended work, and none of them is a
+ * rule about spawning. Only the middle differs, so only the middle branches.
+ */
+type FirePlan =
+  | { ok: true; run: () => Promise<DispatchOutcome>; outcome: RunOutcome }
+  | { ok: false; reason: string }
+
+function planFire(task: ScheduledTask, deps: FireDeps, firedAt: number, order: SeatOrder | undefined): FirePlan {
+  if (!isSpawnSchedule(task)) {
+    // A `board-sweep` with no runner is a FAILED fire with a reason, never a
+    // quiet success -- see `FireDeps.runBoardSweep`.
+    const run = deps.runBoardSweep
+    if (!run) return { ok: false, reason: 'this broker has no board-sweep runner wired' }
+    return { ok: true, run: () => run(task), outcome: 'swept' }
+  }
+
+  const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
+  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt), order)
+  // An order that asks for more privilege than the scheduler holds is a FAILED
+  // fire, not a quiet downgrade: dispatching the seat with caps its order did
+  // not describe is worse than not dispatching it, and the failure counter is
+  // what eventually disarms a schedule nobody is fixing.
+  if (!applied.ok) return { ok: false, reason: applied.reason }
+  return { ok: true, run: () => deps.dispatch(applied.request), outcome: 'spawned' }
 }
 
 /** The still-running conversation from this schedule's most recent spawn, if any. */
@@ -213,6 +262,18 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     })
   }
 
+  // OPT-IN, RE-CHECKED AT EVERY FIRE, exactly like the owner's grants above and
+  // for the same reason: a project that opts out after a schedule was armed must
+  // stop being swept. `skipped_disabled` rather than `error` on purpose -- an
+  // opted-out project is a schedule correctly declining to run, and counting
+  // that as a dispatch failure would disarm it after five quiet mornings.
+  if (!isSpawnSchedule(task) && !deps.morningReportEnabled?.(task.projectUri)) {
+    return finish(task, deps, opts, firedAt, {
+      outcome: 'skipped_disabled',
+      error: `the morning report is not enabled for ${task.projectUri}`,
+    })
+  }
+
   if (task.overlap === 'skip') {
     const live = liveConversationFor(task, deps)
     if (live) return finish(task, deps, opts, firedAt, { outcome: 'skipped_overlap', conversationId: live })
@@ -230,17 +291,11 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     return finish(task, deps, opts, firedAt, { outcome: 'skipped_overlap', error: admission.reason })
   }
 
-  const profile = task.profileId ? (deps.getLaunchProfile?.(task.profileId, task.createdBy) ?? null) : null
-  const applied = applyOrderToRequest(buildSpawnRequest(task, profile, firedAt), order)
-  // An order that asks for more privilege than the scheduler holds is a FAILED
-  // fire, not a quiet downgrade: dispatching the seat with caps its order did
-  // not describe is worse than not dispatching it, and the failure counter is
-  // what eventually disarms a schedule nobody is fixing.
-  if (!applied.ok) {
+  const plan = planFire(task, deps, firedAt, order)
+  if (!plan.ok) {
     deps.persist(settleTask(task, deps, { dispatchOk: false, firedAt }))
-    return finish(task, deps, opts, firedAt, { outcome: 'error', error: applied.reason })
+    return finish(task, deps, opts, firedAt, { outcome: 'error', error: plan.reason })
   }
-  const request = applied.request
 
   // Claimed here, released in the `finally`: everything that could still refuse
   // this fire has already run, and nothing between the claim and the dispatch
@@ -248,7 +303,7 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
   const releaseSlot = deps.claimSlot(order?.order.id)
   let dispatched: DispatchOutcome
   try {
-    dispatched = await deps.dispatch(request)
+    dispatched = await plan.run()
   } catch (err) {
     // A throwing dispatch is a failed fire, not a crashed tick.
     dispatched = { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -264,7 +319,7 @@ export async function fireSchedule(task: ScheduledTask, deps: FireDeps, opts: Fi
     opts,
     firedAt,
     dispatched.ok
-      ? { outcome: 'spawned', conversationId: dispatched.conversationId }
+      ? { outcome: plan.outcome, conversationId: dispatched.conversationId }
       : { outcome: 'error', error: dispatched.error ?? 'dispatch failed' },
     dispatched.jobId,
   )

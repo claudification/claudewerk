@@ -9,8 +9,16 @@
 
 /** How a run was triggered. */
 const RUN_TRIGGERS = ['cron', 'manual', 'catchup'] as const
-/** What came of it -- including the outcomes where nothing launched. */
-const RUN_OUTCOMES = ['spawned', 'skipped_overlap', 'skipped_disabled', 'error', 'missed'] as const
+/**
+ * What came of it -- including the outcomes where nothing launched.
+ *
+ * `swept` is NOT `spawned`. A `board-sweep` schedule runs a board op against the
+ * sentinel and launches no conversation, so a row reading `spawned` with an
+ * empty `conv=` would be a run row claiming something that did not happen --
+ * the exact class of confident-but-untrue record the morning report exists to
+ * stop. Two words, because they are two events.
+ */
+const RUN_OUTCOMES = ['spawned', 'swept', 'skipped_overlap', 'skipped_disabled', 'error', 'missed'] as const
 export type RunTrigger = (typeof RUN_TRIGGERS)[number]
 export type RunOutcome = (typeof RUN_OUTCOMES)[number]
 
