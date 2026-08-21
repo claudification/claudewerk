@@ -18,13 +18,13 @@
  * `totalTasks` -- the same reads the real run does, which is what makes the
  * preview honest about the `unreadable` bucket instead of guessing.
  *
- * WHY THE WIRING IS HERE AND NOT SHARED WITH THE ORCHESTRATOR. `runNightshift`
- * builds the same deps in `scanBoardForTasks`, and one builder would be better
- * than two. `nightshift-orchestrator.ts` belongs to another card in this wave
- * (consume, never reshape), so the extraction is filed as its own card --
- * `nightshift-scan-deps-one-builder` -- rather than taken here. The thing that
- * MUST NOT be duplicated, the selection itself, is not: both paths call
- * `runScan(nightshiftScanner, ...)`.
+ * ONE BUILDER, TWO PATHS. The deps are wired by `buildNightshiftScanDeps`
+ * (`nightshift-board.ts`), which `runNightshift`'s `scanBoardForTasks` also
+ * calls -- so neither the selection NOR the wiring can drift. This module owned
+ * a second copy of that wiring while `nightshift-orchestrator.ts` was fenced off
+ * to another card in the same wave; `nightshift-scan-deps-one-builder` collapsed
+ * the two. The only field still built per-caller is `admitted`, which is exactly
+ * the field the two paths must disagree about.
  */
 
 import {
@@ -32,14 +32,13 @@ import {
   type NightshiftConfig,
   type NightshiftQueueItem,
 } from '../../shared/nightshift-types'
-import type { Conversation, NightshiftOutlook } from '../../shared/protocol'
+import type { NightshiftOutlook } from '../../shared/protocol'
 import { callBoard } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
-import { type CallBoard, listBoardCards, readBoardCard } from '../nightshift-board'
+import { buildNightshiftScanDeps, type CallBoard } from '../nightshift-board'
 import { sendNightshiftOp } from '../nightshift-broker-rpc'
 import { type NightshiftScanDeps, nightshiftScanner } from '../scanners/nightshift-scanner'
 import { runScan } from '../scanners/scanner'
-import { werkLiveness } from '../werk-liveness'
 
 /** Everything the scan needs, minus the array it fills. Injected so every branch
  *  of this module is exercised without a broker, a sentinel or a board. */
@@ -67,13 +66,6 @@ export async function nightshiftOutlook(deps: OutlookDeps): Promise<NightshiftOu
     idleReason: report.idleReason,
     crashed: report.crashed,
   }
-}
-
-/** The registry reads the scan needs. Structural, so a test hands over a plain
- *  object rather than a whole ConversationStore. */
-interface ScanStore {
-  getAllConversations: () => Conversation[]
-  getActiveConversationCount: (id: string) => number
 }
 
 /** `caps.totalTasks` for a project, defaulted exactly as the run defaults it. A
@@ -105,20 +97,18 @@ export function resetNightshiftOutlookIo(): void {
   io = REAL_IO
 }
 
-/** The real wiring: board + registry + config, for one project. */
+/**
+ * The real wiring: board + registry + config, for one project.
+ *
+ * The deps come from `buildNightshiftScanDeps`, the SAME builder
+ * `scanBoardForTasks` uses, so the preview cannot be wired differently from the
+ * run it previews. What keeps it a dry run is that the builder wires the two
+ * READ ops and nothing else -- `untagBoardCard` is not in it, and the run
+ * opening/spawning lives entirely in the orchestrator.
+ */
 export async function outlookForProject(store: ConversationStore, project: string): Promise<NightshiftOutlook> {
-  const s = store as unknown as ScanStore
   const totalTasks = await totalTasksFor(store, project, io.sendNightshiftOp)
-  return nightshiftOutlook({
-    getAllConversations: s.getAllConversations,
-    isLive: werkLiveness(s.getActiveConversationCount),
-    log: line => console.log(line),
-    now: () => Date.now(),
-    project,
-    listCards: () => listBoardCards(io.callBoard, store, project),
-    readCard: slug => readBoardCard(io.callBoard, store, project, slug),
-    totalTasks,
-  })
+  return nightshiftOutlook(buildNightshiftScanDeps(io.callBoard, store, project, totalTasks))
 }
 
 /** The handler's call, behind a seam so the handler test never scans a board. */
