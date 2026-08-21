@@ -40,9 +40,21 @@ export interface OpenRouterSpendRecord {
   error?: string
 }
 
-/** Query windows. Capped at the retention bound on purpose -- a 90d window over
- *  a 30d table is a wrong number with a confident label. */
-export type SpendPeriod = '24h' | '7d' | '30d'
+/**
+ * Query windows. Capped at the retention bound on purpose -- a 90d window over a
+ * 30d table is a wrong number with a confident label.
+ *
+ * The short end exists because THE WALL's period control offers it
+ * (`wall-stats-default-window`): the project split and this split have to answer
+ * the SAME window or the pane shows two different periods side by side under one
+ * label. Nothing here is bucketed -- rows carry a real per-call `ts` -- so a
+ * shorter window is a smaller `WHERE`, not a new aggregation.
+ */
+export type SpendPeriod = '1h' | '6h' | '24h' | '3d' | '7d' | '30d'
+
+/** Every window this store will answer, in order. The route validates against
+ *  this rather than a second hand-written list that can drift from the type. */
+export const SPEND_PERIODS: readonly SpendPeriod[] = ['1h', '6h', '24h', '3d', '7d', '30d']
 
 /** Rollup row. `costUsd` counts SUCCESSFUL calls only: a failed call returns no
  *  usage body, so its provider-side cost (if any) is unknowable here. `failedMs`
@@ -261,15 +273,22 @@ function sumGroups(groups: SpendGroup[]): Omit<SpendGroup, 'key'> {
   return total
 }
 
+const HOUR_MS = 60 * 60 * 1000
+
+/** A table, not a switch: the default arm of a switch would silently answer `30d`
+ *  for a period added to the type and forgotten here, which is the one failure
+ *  mode a window mapping must not have. */
+const PERIOD_MS: Record<SpendPeriod, number> = {
+  '1h': HOUR_MS,
+  '6h': 6 * HOUR_MS,
+  '24h': 24 * HOUR_MS,
+  '3d': 3 * 24 * HOUR_MS,
+  '7d': 7 * 24 * HOUR_MS,
+  '30d': 30 * 24 * HOUR_MS,
+}
+
 function periodToMs(period: SpendPeriod): number {
-  switch (period) {
-    case '24h':
-      return 24 * 60 * 60 * 1000
-    case '7d':
-      return 7 * 24 * 60 * 60 * 1000
-    default:
-      return 30 * 24 * 60 * 60 * 1000
-  }
+  return PERIOD_MS[period]
 }
 
 // ─── Retention ──────────────────────────────────────────────────────
