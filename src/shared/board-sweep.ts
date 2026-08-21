@@ -56,18 +56,15 @@ import type { ProjectTaskMeta } from './project-task-types'
 import { isFiledLane, type PromiseRow } from './promise-ledger'
 
 /**
- * A card, as this fold needs it.
+ * A card, as this fold needs it -- the board's own wire shape, unwidened.
  *
- * `ProjectTaskMeta` is the board's own wire shape and carries everything but one
- * key: `delete_at` is a lifecycle marker no wire projection reads yet (the card
- * validating it is `card-doctor-lifecycle-keys`). It is added here rather than to
- * `ProjectTaskMeta` because widening the wire type is a change to every board
- * reader in the repo, and this fold is the only thing that wants it today.
+ * `ProjectTaskMeta` already carries every key this sweep reads, `deleteAt`
+ * included: `card-doctor-lifecycle-keys` put the three lifecycle keys on the wire
+ * and validates them at write time. An alias rather than an extension on purpose
+ * -- a `SweepCard extends ProjectTaskMeta { deleteAt?: string }` written here
+ * would be a second, unvalidated declaration of a key the board already owns.
  */
-export interface SweepCard extends ProjectTaskMeta {
-  /** Raw `delete_at:` front matter, ISO 8601. Absent on almost every card. */
-  deleteAt?: string
-}
+export type SweepCard = ProjectTaskMeta
 
 /** Every way this sweep can decline to propose against a card it looked at. */
 export type BoardSweepBucket =
