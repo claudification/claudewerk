@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { handleEpicOp } from '../sentinel/epic-handlers'
 import type { CommitRow } from '../shared/commit-ledger'
 import { acknowledgedCardIds, dispatchCountsByCard, readEpicLog } from '../shared/epic-log'
+import { SEAT_ATTACH_GRACE_MS } from '../shared/epic-pending-seats'
 import { MAX_CARD_SEATS } from '../shared/epic-ready'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import { cardPath } from '../shared/project-paths'
@@ -355,6 +356,77 @@ describe('runEpicBeat', () => {
     expect(baton.some(e => e.kind === 'dispatch' && e.cardId === 't1')).toBe(true)
   })
 
+  /**
+   * THE REGISTRY-LAG WINDOW, and the reason this whole file's harness stamps
+   * `ts: ''` on the entries it writes: a seat dispatched on beat N does not
+   * appear in `EpicGroup.inFlight` on beat N+1, because the group is folded from
+   * the conversation registry and a spawned conversation carries no epic tag
+   * until its agent host connects. Live 2026-08-21 that sent a second
+   * implementer into the SAME worktree as a live one -- one working directory,
+   * two writers, and whichever committed last buried the other's half.
+   */
+  test('a card whose seat was just dispatched is NOT dispatched again while the registry is behind', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+    baton = [
+      {
+        ts: new Date(nowMs - 30_000).toISOString(),
+        kind: 'dispatch',
+        convId: 'conv_just_spawned',
+        cardId: 't1',
+        body: 'Implementer dispatched for `t1` at generation 3.',
+      },
+    ]
+    // The registry has NOT caught up: `conv_just_spawned` is in no lane at all.
+    await runEpicBeat(deps(), group())
+    expect(spawns).toHaveLength(0)
+  })
+
+  test('and the SAME hold protects the verifier lane, which is how the pair on 2026-08-21 happened', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    baton = [
+      {
+        ts: new Date(nowMs - 11_000).toISOString(),
+        kind: 'dispatch',
+        convId: 'conv_verifier_arriving',
+        cardId: 't1',
+        body: 'Verifier dispatched for `t1` at generation 3.',
+      },
+    ]
+    await runEpicBeat(deps(), group())
+    expect(spawns).toHaveLength(0)
+  })
+
+  test('the hold is released by EVIDENCE -- the registry seeing that conversation, not the clock', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
+    baton = [
+      {
+        ts: new Date(nowMs - 1_000).toISOString(),
+        kind: 'dispatch',
+        convId: 'conv_dead_leg',
+        cardId: 't1',
+        body: 'Verifier dispatched for `t1` at generation 2.',
+      },
+    ]
+    // Seconds old, but the registry HAS it -- so its silence is a real answer.
+    await runEpicBeat(deps(), group({ convIds: ['conv_dead_leg'] }))
+    expect(spawns[0].epic).toMatchObject({ role: 'verifier', cardId: 't1' })
+  })
+
+  test('a launch that never attaches stops holding its card once the grace is spent', async () => {
+    cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
+    baton = [
+      {
+        ts: new Date(nowMs - SEAT_ATTACH_GRACE_MS - 1_000).toISOString(),
+        kind: 'dispatch',
+        convId: 'conv_never_landed',
+        cardId: 't1',
+        body: 'Implementer dispatched for `t1` at generation 1.',
+      },
+    ]
+    await runEpicBeat(deps(), group())
+    expect(spawns[0].epic).toMatchObject({ role: 'implementer', cardId: 't1' })
+  })
+
   test('a card whose dependency is unfinished is NOT dispatched', async () => {
     cards = [
       card('e1', 'open', { tags: ['epic'] }),
@@ -651,13 +723,25 @@ describe('a bounced card, against the real sentinel seam', () => {
   const sentinel = (op: 'get' | 'log_append', extra: Record<string, unknown> = {}) =>
     handleEpicOp(root, { type: 'epic_op', requestId: 'r', projectRoot: root, op, epicId: 'e1', ...extra } as never, NOW)
 
-  /** One seat going out, exactly as `spawnForCard` records it. */
+  /**
+   * One seat going out, exactly as `spawnForCard` records it. Returns the
+   * conversation ids it spent, because a bounced card's EARLIER seats are seats
+   * the registry has already seen -- `EpicGroup.convIds` is every conversation
+   * the epic has ever had, live or dead, and a card cannot be `settled` without
+   * its conversation being in there. Handing them to `group()` is what keeps
+   * these fixtures shaped like production now that a seat the registry has NOT
+   * seen holds its card (`epic-pending-seats.ts`).
+   */
   const recordDispatch = (cardId: string, n: number) => {
+    const convIds: string[] = []
     for (let i = 0; i < n; i++) {
+      const convId = `conv_${cardId}_${i}`
+      convIds.push(convId)
       sentinel('log_append', {
-        logAppend: { kind: 'dispatch', convId: `conv_${cardId}_${i}`, cardId, body: `Implementer dispatched.` },
+        logAppend: { kind: 'dispatch', convId, cardId, body: `Implementer dispatched.` },
       })
     }
+    return convIds
   }
 
   beforeEach(() => {
@@ -693,8 +777,8 @@ describe('a bounced card, against the real sentinel seam', () => {
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
   test('gets a fresh IMPLEMENTER -- the generation this project lost to it', async () => {
-    recordDispatch('t1', 2)
-    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    const spent = recordDispatch('t1', 2)
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
     expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
     expect(spawns[0].epic).toMatchObject({ cardId: 't1' })
     expect(out.note).toContain('dispatching 1')
@@ -714,14 +798,14 @@ describe('a bounced card, against the real sentinel seam', () => {
   /** THE CEILING, crossing the wire. The count is folded over the whole log by
    *  the sentinel, so this is the test that proves the field is actually sent. */
   test('stops at the seat ceiling rather than billing a seat every 45s', async () => {
-    recordDispatch('t1', MAX_CARD_SEATS)
-    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    const spent = recordDispatch('t1', MAX_CARD_SEATS)
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
     expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
   })
 
   test('and says so in the beat note, naming the card', async () => {
-    recordDispatch('t1', MAX_CARD_SEATS)
-    const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    const spent = recordDispatch('t1', MAX_CARD_SEATS)
+    const out = await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
     expect(out.note).toContain('t1')
     expect(out.note).toContain(String(MAX_CARD_SEATS))
   })
@@ -730,8 +814,8 @@ describe('a bounced card, against the real sentinel seam', () => {
    *  the only reason the ceiling can close at all: the conversation behind that
    *  seat carries no epic tag until its agent host connects. */
   test('the seat it spends is counted immediately, without waiting for the conversation', async () => {
-    recordDispatch('t1', MAX_CARD_SEATS - 1)
-    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    const spent = recordDispatch('t1', MAX_CARD_SEATS - 1)
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
     expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
     // Second beat, same board, same dead seat -- and the registry still knows
     // nothing about the conversation the first beat spawned. The ceiling closes
@@ -739,7 +823,7 @@ describe('a bounced card, against the real sentinel seam', () => {
     // comes out instead is the overseer, woken once on a dry generation, which is
     // the visible-and-stopped shape `unspawnable` already has.
     spawns = []
-    await runEpicBeat(deps(), group({ settled: ['t1'] }))
+    await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
     expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
   })
 })
