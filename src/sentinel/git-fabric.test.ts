@@ -2,8 +2,10 @@ import { describe, expect, it } from 'bun:test'
 import {
   deriveAlerts,
   deriveIntegration,
+  MAX_BRANCHES,
   parseMergeTreeConflicts,
   parseWorktreeList,
+  resolveBranchLimit,
   runGitFabric,
   shortRef,
 } from './git-fabric'
@@ -150,32 +152,58 @@ describe('deriveAlerts', () => {
   })
 })
 
+describe('resolveBranchLimit', () => {
+  it('passes a sane bound through untouched', () => {
+    expect(resolveBranchLimit(20)).toBe(20)
+  })
+  it('refuses to let a caller loosen the pathological-repo guard', () => {
+    // One-way knob: tighter is a caller's business, looser is not.
+    expect(resolveBranchLimit(10_000)).toBe(MAX_BRANCHES)
+  })
+  it('clamps zero and negatives up to one branch', () => {
+    expect(resolveBranchLimit(0)).toBe(1)
+    expect(resolveBranchLimit(-5)).toBe(1)
+  })
+  it('floors a fractional bound', () => {
+    expect(resolveBranchLimit(7.9)).toBe(7)
+  })
+  it('falls back to the default ceiling for NaN/Infinity', () => {
+    expect(resolveBranchLimit(Number.NaN)).toBe(MAX_BRANCHES)
+    expect(resolveBranchLimit(Number.POSITIVE_INFINITY)).toBe(MAX_BRANCHES)
+  })
+})
+
 // ─── LIVE smoke on THIS repo (multi-worktree + diverged state) ──────
 
 describe('runGitFabric (live, this repo)', () => {
-  // A REAL scan of whatever repo the developer is sitting in: cost scales with
-  // branch + worktree count, and this one carries 70+. It is not slow because
-  // anything is wrong, so it gets a budget that fits the work rather than
-  // bun's 5s default (which failed it on any well-used checkout).
-  //
-  // MEASURED 2026-08-21, quiet box, this checkout (340 local branches -> the
-  // MAX_BRANCHES=200 cap is saturated, 710 worktrees): 18.6s ALONE, 60.5s under
-  // 10x-parallel full-suite load. Deliberately NOT raised past 60s: unlike the
-  // scratch-repo tests next door, this one's runtime is a function of the
-  // developer's disk, so any number is wrong again next week. The scan-scaling
-  // fix is its own card -- git-fabric-live-scan-test-scales-with-the-box.
-  const LIVE_SCAN_TIMEOUT_MS = 60_000
+  // A REAL scan of whatever repo the developer is sitting in -- that is the whole
+  // point of the smoke (real git, real worktrees, real divergence). What is NOT
+  // the point is paying for the developer's disk: unbounded, the walk covers up
+  // to MAX_BRANCHES=200 heads at ~90ms each (~1200 git subprocesses, 18.6s
+  // measured on a 340-branch checkout, 60.5s under a 10x-parallel suite).
+  // Bounding the walk to 20 branches keeps every property under test -- the same
+  // ladder, the same repo -- while making the runtime a function of this constant
+  // instead of the box.
+  const LIVE_SCAN_BRANCHES = 20
+  // 20 branches x ~90ms/branch = ~1.8s quiet; the parent card measured a 3.3x
+  // multiplier under the 10x-parallel full suite, so ~6s loaded. 15s is that with
+  // 2.5x headroom -- and unlike the old 60s, it is a number tied to the bound
+  // above rather than to how many branches happen to be lying around.
+  const LIVE_SCAN_TIMEOUT_MS = 15_000
 
   it(
     'scans the current repo and returns a sensible fabric snapshot',
     () => {
-      const out = runGitFabric(process.cwd(), 123_456)
+      const out = runGitFabric(process.cwd(), 123_456, LIVE_SCAN_BRANCHES)
       expect(out.error).toBeUndefined()
       expect(out.fabric).toBeDefined()
       const fabric = out.fabric!
       expect(fabric.scannedAt).toBe(123_456)
       // This repo has local branches; every entry is well-formed.
       expect(fabric.branches.length).toBeGreaterThan(0)
+      // THE budget guard: the walk honours the bound, so this test's cost does
+      // not track how many branches the developer's checkout carries.
+      expect(fabric.branches.length).toBeLessThanOrEqual(LIVE_SCAN_BRANCHES)
       for (const b of fabric.branches) {
         expect(typeof b.branch).toBe('string')
         expect(b.branch.length).toBeGreaterThan(0)
@@ -189,6 +217,12 @@ describe('runGitFabric (live, this repo)', () => {
     },
     LIVE_SCAN_TIMEOUT_MS,
   )
+
+  it('clamps a non-positive branch budget to one branch rather than scanning none', () => {
+    const out = runGitFabric(process.cwd(), 1, 0)
+    expect(out.error).toBeUndefined()
+    expect(out.fabric!.branches.length).toBe(1)
+  })
 
   it('returns an error for a non-git directory without throwing', () => {
     const out = runGitFabric('/nonexistent-sotu-git-fabric-probe', 1)

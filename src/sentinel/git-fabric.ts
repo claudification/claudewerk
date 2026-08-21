@@ -31,8 +31,11 @@ import type { BranchFabric, GitAlert, GitFabric, IntegrationStatus } from '../sh
  *  unmerged commits is "rotting" -- the STALLED alert. The design's example was a
  *  branch "165 behind". Liveness (idle conv) sharpens this in the Phase-4 decay. */
 const STALE_BEHIND_THRESHOLD = 50
-/** Pathological-repo guard: cap how many local heads one scan walks. */
-const MAX_BRANCHES = 200
+/** Pathological-repo guard: the CEILING on how many local heads one scan walks,
+ *  and the default when a caller does not bound it. A caller may ask for FEWER
+ *  (see `runGitFabric`'s `maxBranches`) but never more -- the guard is not
+ *  negotiable from outside. */
+export const MAX_BRANCHES = 200
 
 export interface GitFabricOutcome {
   fabric?: GitFabric
@@ -211,15 +214,24 @@ function resolveBase(cwd: string): { base: string; oid: string; viaOrigin: boole
   return null
 }
 
-/** List local branch names (short), capped, newest-committed first. */
-function listBranches(cwd: string): string[] {
+/** List local branch names (short), capped at `limit`, newest-committed first. */
+function listBranches(cwd: string, limit: number): string[] {
   const r = git(cwd, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads'])
   if (!r.ok) return []
   return r.stdout
     .split('\n')
     .map(l => l.trim())
     .filter(Boolean)
-    .slice(0, MAX_BRANCHES)
+    .slice(0, limit)
+}
+
+/** Clamp a requested branch budget into [1, MAX_BRANCHES]. A caller may bound the
+ *  walk tighter than the pathological-repo guard; it can never loosen it.
+ *  Exported for unit testing -- the upper clamp cannot be proven by a live scan
+ *  without paying for the 200-branch walk it exists to prevent. */
+export function resolveBranchLimit(requested: number): number {
+  if (!Number.isFinite(requested)) return MAX_BRANCHES
+  return Math.min(Math.max(Math.floor(requested), 1), MAX_BRANCHES)
 }
 
 /** Whether a worktree path has uncommitted changes. Failure (path gone) = clean. */
@@ -292,9 +304,19 @@ function scanBranch(
 }
 
 /** Run the full git-fabric ladder in `cwd`. Never throws -- returns
- *  `{ error }` when `cwd` is not a git repo or the base ref is missing. */
+ *  `{ error }` when `cwd` is not a git repo or the base ref is missing.
+ *
+ *  `maxBranches` bounds how many local heads the walk covers (newest-committed
+ *  first), clamped into [1, MAX_BRANCHES]. The sentinel leaves it at the default;
+ *  it exists so a caller whose COST matters -- the live smoke test, which scans
+ *  whatever repo the developer is sitting in -- can make its runtime a function
+ *  of the bound instead of the host's branch count. */
 // fallow-ignore-next-line complexity
-export function runGitFabric(cwd: string, now: number = Date.now()): GitFabricOutcome {
+export function runGitFabric(
+  cwd: string,
+  now: number = Date.now(),
+  maxBranches: number = MAX_BRANCHES,
+): GitFabricOutcome {
   if (!cwd) return { error: 'no cwd' }
   const inside = git(cwd, ['rev-parse', '--is-inside-work-tree'])
   if (!inside.ok) return { error: inside.stderr || 'not a git repository' }
@@ -307,7 +329,7 @@ export function runGitFabric(cwd: string, now: number = Date.now()): GitFabricOu
   for (const w of worktrees) if (w.branch) byBranch.set(w.branch, w)
 
   const branches: BranchFabric[] = []
-  for (const branch of listBranches(cwd)) {
+  for (const branch of listBranches(cwd, resolveBranchLimit(maxBranches))) {
     const bf = scanBranch(cwd, branch, base, byBranch.get(branch))
     if (bf) branches.push(bf)
   }
