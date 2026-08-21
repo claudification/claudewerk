@@ -42,13 +42,6 @@ function Footer({ onSubmit, disabled }: { onSubmit: () => void; disabled: boolea
         </KbdGroup>{' '}
         newline
         <span className="text-fg-faint">·</span>
-        {/* A keybinding nobody can see is a keybinding nobody uses. */}
-        <KbdGroup>
-          <Kbd>⌘</Kbd>
-          <Kbd>↵</Kbd>
-        </KbdGroup>{' '}
-        refine later
-        <span className="text-fg-faint">·</span>
         <Kbd>Esc</Kbd> close
       </span>
       <Button type="button" variant="accent" size="sm" onClick={onSubmit} disabled={disabled}>
@@ -102,7 +95,6 @@ export function QuickTaskModal() {
               value={q.text}
               onChange={q.setText}
               onSubmit={q.submit}
-              onSubmitAlt={q.submitRefine}
               placeholder="Title, then body. /project @epic !priority +waits-on &see-also #tag"
               autoFocus
               inline

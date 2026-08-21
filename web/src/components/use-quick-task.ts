@@ -91,7 +91,7 @@ export function useQuickTask() {
     setOpen(false)
   }, [resetCapture])
 
-  const { submit, submitRefine, flash } = useQuickTaskFiling({ text, chips, targetProject, onFiled })
+  const { submit, flash } = useQuickTaskFiling({ text, chips, targetProject, onFiled })
 
   return {
     open,
@@ -102,7 +102,6 @@ export function useQuickTask() {
     onRemoveChip: drop,
     taskTokens,
     submit,
-    submitRefine,
     flash,
     targetProject,
     /** True when the target was chosen explicitly rather than inherited. */

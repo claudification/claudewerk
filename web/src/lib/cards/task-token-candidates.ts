@@ -6,6 +6,7 @@
  * same row shape, so the popup has one renderer for four different triggers.
  */
 
+import { SYSTEM_TAGS } from '@shared/board-system-tags'
 import { buildEpicIndex, type EpicRollup } from '@shared/epic-cards'
 import { fuzzyScore } from '@/components/input-editor/autocomplete-shared'
 import type { ProjectTaskMeta } from '@/hooks/use-project'
@@ -76,14 +77,31 @@ function priorityRows(query: string): TokenCandidate[] {
   )
 }
 
-/** Tags already on the board. The KEPT token -- accepting completes the word. */
+/**
+ * Tags. The KEPT token -- accepting completes the word rather than eating it.
+ *
+ * SYSTEM TAGS COME FIRST, IN REGISTRY ORDER, and are deliberately NOT fuzzy-
+ * sorted against each other: a routing tag's position should be somewhere the
+ * hand can learn, not somewhere the scorer moved it to this keystroke. Board
+ * tags follow, fuzzy-ranked, with any system tag already shown filtered out so
+ * a tag in use on the board cannot appear twice.
+ *
+ * This is what replaced the `Mod-Enter` shortcut for `#needs-refine`: a
+ * keybinding nobody can see is worse than a list entry everybody can, and it
+ * works on a touchscreen, where there is no Cmd key at all.
+ */
 function tagRows(tasks: readonly ProjectTaskMeta[], query: string): TokenCandidate[] {
-  return rank(
-    boardTags(tasks),
+  const system = SYSTEM_TAGS.flatMap(s =>
+    !query || fuzzyScore(query, s.tag) > 0 ? [{ value: s.tag, label: `#${s.tag}`, detail: s.detail }] : [],
+  )
+  const shown = new Set(system.map(s => s.value))
+  const board = rank(
+    boardTags(tasks).filter(t => !shown.has(t)),
     query,
     t => t,
     t => ({ value: t, label: `#${t}` }),
   )
+  return [...system, ...board].slice(0, MAX_ROWS)
 }
 
 /** Projects the capture can be re-filed into. Matched on name AND path. */

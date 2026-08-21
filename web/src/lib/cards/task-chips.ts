@@ -32,15 +32,6 @@ export interface TaskDraft {
 }
 
 /**
- * The tag a `Mod-Enter` capture carries: "filed rough, improve it later".
- *
- * Deliberately JUST a tag -- durable in frontmatter, survives a broker restart,
- * and degrades to "a tag nobody acted on" rather than work silently lost. The
- * pickup mechanism is a separate decision. Same routing convention the epic
- * engine already uses for `needs-overseer` (src/shared/epic-ready.ts).
- */
-export const NEEDS_REFINE_TAG = 'needs-refine'
-
 /**
  * Fold text + chips into the create payload.
  *
@@ -48,16 +39,11 @@ export const NEEDS_REFINE_TAG = 'needs-refine'
  * capture uses that line as BOTH -- matching what the modal did before tokens
  * existed, so a bare one-liner still lands with readable body text.
  *
- * `extraTags` are tags the SUBMIT PATH adds rather than the text (today: the
- * `needs-refine` variant). They join the parsed `#tags` in one deduped list --
- * lower-cased first, because that is what `parseTags` emits, and a card tagged
- * both `needs-refine` and `Needs-Refine` is the bug this normalisation kills.
- *
  * Empty lists are sent as `undefined`, never `[]`: the card writer omits an
  * undefined key and would otherwise write `depends_on: []` onto every card
  * captured without a dependency.
  */
-export function buildTaskDraft(text: string, chips: TaskChips, extraTags: string[] = []): TaskDraft | null {
+export function buildTaskDraft(text: string, chips: TaskChips): TaskDraft | null {
   const trimmed = text.trim()
   if (!trimmed) return null
   const lines = trimmed.split('\n')
@@ -67,7 +53,7 @@ export function buildTaskDraft(text: string, chips: TaskChips, extraTags: string
     // empty would hand the card writer a blank title and a `task-<millis>` id.
     title: stripTags(lines[0]) || lines[0],
     body: rest || trimmed,
-    tags: [...new Set([...parseTags(trimmed), ...extraTags.map(t => t.toLowerCase())])],
+    tags: parseTags(trimmed),
     epic: chips.epic,
     priority: chips.priority,
     dependsOn: chips.dependsOn.length ? chips.dependsOn : undefined,
