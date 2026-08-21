@@ -24,6 +24,25 @@
  * questions, unspawnable, the idle table -- is one body, because a second
  * readiness fold answering the same arithmetic slightly differently is the exact
  * drift the scanner fabric exists to end (scanner-work-orders).
+ *
+ * A ROUGH CARD IS NOT READY -- the `needsRefine` bucket, and it is a
+ * PRECONDITION rather than an ordering (scanner-refine).
+ *
+ * The obvious design for "refine before you build" is to run the refine scanner
+ * first and the work scanner second. That requires both to run, in order,
+ * without overlap: miss a run, crash halfway, or run them concurrently and a
+ * rough card goes out to an implementer anyway. Stated here instead, as an
+ * arithmetic fact about readiness, it needs none of that -- the refiner may run
+ * before, after, concurrently or never and a card carrying `needs-refine` is
+ * still not dispatchable. It is also self-healing: a refiner killed mid-pass
+ * leaves the tag on, so the card simply stays undispatched rather than going out
+ * half-refined.
+ *
+ * It lives HERE for the reason stated at the top of this file: an LLM asked to
+ * eyeball a card and judge whether it is specific enough will occasionally say
+ * yes. Being a named bucket rather than a filter is what makes the refusal
+ * logged, counted and renderable by construction -- nobody has to remember to
+ * log it, and "7 cards are too rough to build" is a number a pane can show.
  */
 
 import {
@@ -36,6 +55,20 @@ import {
 } from './epic-cards'
 import { NEEDS_OVERSEER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
+
+/**
+ * The tag that says "filed rough -- improve it later", and therefore "nobody
+ * builds this yet".
+ *
+ * DECLARED HERE, beside the fold that refuses on it, for the same reason
+ * `NEEDS_OVERSEER_TAG` is declared beside the engine that answers it:
+ * `board-system-tags.ts` is a REGISTRY of `{tag, detail}` rows for a picker, not
+ * a constants module, and importing a display list to get a routing decision
+ * would make every consumer of the tag depend on the picker. `refine-scanner.
+ * test.ts` asserts this string is still in that registry, so the two cannot
+ * drift without a test going red.
+ */
+export const NEEDS_REFINE_TAG = 'needs-refine'
 
 /** Everything the fold needs that is NOT about how the cohort was chosen. */
 export interface PlanCohortInput {
@@ -131,6 +164,24 @@ export interface EpicPlan {
    *  Named rather than silently dropped: a card the engine has given up on is
    *  the single most important thing on the pane. */
   unspawnable: ProjectTaskMeta[]
+  /**
+   * Cards still carrying `needs-refine`. Withheld from `dispatch` -- a rough
+   * card is not ready, whatever its dependencies say (scanner-refine).
+   *
+   * WITHHELD FROM `dispatch` AND NOT FROM `verify`, and that asymmetry is
+   * deliberate. `dispatch` hands a card to somebody who has to build from it, so
+   * roughness is disqualifying; `verify` judges a diff that already exists, and
+   * the refiner cannot rescue a card it blocked there -- `REFINER@1` is denied
+   * the status verb, so an `in-review` card withheld from the verify lane would
+   * sit in `in-review` with nobody able to move it. A stall the machinery cannot
+   * clear is worse than a verdict on a card whose prose could be better.
+   *
+   * A card that is BOTH a question and rough is reported as a question and not
+   * here: the buckets are refusal reasons a scanner counts, so one card falling
+   * into two of them would double-count the same stall, and the overseer answers
+   * a question whereas the refiner only rewrites prose.
+   */
+  needsRefine: ProjectTaskMeta[]
   /** Every child terminal, and there was at least one. */
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. Goes straight into the baton. */
@@ -145,6 +196,11 @@ function needsVerdict(card: ProjectTaskMeta): boolean {
 /** A question an implementer parked for the overseer, not a unit of work. */
 function isQuestion(card: ProjectTaskMeta): boolean {
   return card.tags.includes(NEEDS_OVERSEER_TAG)
+}
+
+/** Filed rough. Nobody builds it until a refiner drains the tag. */
+function isRough(card: ProjectTaskMeta): boolean {
+  return card.tags.includes(NEEDS_REFINE_TAG)
 }
 
 /** The cohort a selector produced, plus the two things only the selector knows:
@@ -206,6 +262,7 @@ function emptyPlan(): EpicPlan {
     heldBack: [],
     waitingOnDeps: [],
     unspawnable: [],
+    needsRefine: [],
     complete: false,
   }
 }
@@ -222,12 +279,23 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isQuestion(c.card))
     .map(c => c.card)
   const unspawnable = cohort.children.filter(c => dead.has(c.card.slug)).map(c => c.card)
+  // Rough cards, minus the ones already counted as questions -- see the field's
+  // doc on `EpicPlan`. Terminal cards are excluded for the reason `questions`
+  // excludes them: a tag left on a `done` card is history, not a stall.
+  const needsRefine = cohort.children
+    .filter(c => c.bucket !== 'done' && c.bucket !== 'dropped' && isRough(c.card) && !isQuestion(c.card))
+    .map(c => c.card)
 
   const ready: ProjectTaskMeta[] = []
   const waitingOnDeps: EpicPlan['waitingOnDeps'] = []
   for (const child of cohort.children) {
     if (child.bucket !== 'notStarted' || inFlight.has(child.card.slug)) continue
     if (isQuestion(child.card)) continue // the overseer answers these; nobody implements them
+    // A rough card is not ready, and it is refused BEFORE the dependency check
+    // so it never reaches `waitingOnDeps` -- being rough is the story, and a
+    // card reported as blocked on a dependency that just landed would send the
+    // engine looking for a graph problem it does not have.
+    if (isRough(child.card)) continue
     if (dead.has(child.card.slug)) continue // the seat cannot launch; another one will not either
     if (child.waitingOn.length > 0) waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
     else ready.push(child.card)
@@ -246,6 +314,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     heldBack,
     waitingOnDeps,
     unspawnable,
+    needsRefine,
     complete,
     idleReason: idleReason({
       complete,
@@ -257,6 +326,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
       questions,
       waitingOnDeps,
       unspawnable,
+      needsRefine,
       inFlight: inFlight.size,
     }),
   }
@@ -275,6 +345,7 @@ interface IdleInput {
   questions: ProjectTaskMeta[]
   waitingOnDeps: EpicPlan['waitingOnDeps']
   unspawnable: ProjectTaskMeta[]
+  needsRefine: ProjectTaskMeta[]
   inFlight: number
 }
 
@@ -298,6 +369,16 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
   {
     when: i => i.questions.length > 0,
     say: i => `${i.questions.length} open question(s) for the overseer: ${i.questions.map(c => c.slug).join(', ')}`,
+  },
+  {
+    // ABOVE the verify lane: an awaiting-verdict card has had its work done and
+    // resolves itself the moment a verifier runs, whereas a rough card blocks
+    // its own work entirely and stays blocked until something drains the tag --
+    // which, if the refine scanner is off for this project, is never.
+    when: i => i.needsRefine.length > 0,
+    say: i =>
+      `${i.needsRefine.length} card(s) too rough to build, still tagged \`${NEEDS_REFINE_TAG}\`: ` +
+      `${i.needsRefine.map(c => c.slug).join(', ')} -- a refiner drains the tag`,
   },
   {
     when: i => i.verify.length > 0,
