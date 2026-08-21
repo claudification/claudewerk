@@ -58,53 +58,69 @@ function runHook(repo: string, name: string): { exit: number; stdout: string; st
 }
 
 describe('worktree-create.sh', () => {
-  test('FRESH: creates worktree + branch when neither exists', () => {
-    const repo = fresh()
-    const r = runHook(repo, 'feat-a')
-    expect(r.exit).toBe(0)
-    expect(r.stdout).toBe(`${repo}/.claude/worktrees/feat-a`)
-    expect(existsSync(r.stdout)).toBe(true)
-    expect(r.stderr).toContain("Preparing worktree (new branch 'worktree-feat-a')")
-  }, GIT_HANG_TIMEOUT_MS)
+  test(
+    'FRESH: creates worktree + branch when neither exists',
+    () => {
+      const repo = fresh()
+      const r = runHook(repo, 'feat-a')
+      expect(r.exit).toBe(0)
+      expect(r.stdout).toBe(`${repo}/.claude/worktrees/feat-a`)
+      expect(existsSync(r.stdout)).toBe(true)
+      expect(r.stderr).toContain("Preparing worktree (new branch 'worktree-feat-a')")
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('REUSE: re-running with same name + path is idempotent (exit 0, REUSE log)', () => {
-    const repo = fresh()
-    const first = runHook(repo, 'feat-b')
-    expect(first.exit).toBe(0)
+  test(
+    'REUSE: re-running with same name + path is idempotent (exit 0, REUSE log)',
+    () => {
+      const repo = fresh()
+      const first = runHook(repo, 'feat-b')
+      expect(first.exit).toBe(0)
 
-    const second = runHook(repo, 'feat-b')
-    expect(second.exit).toBe(0)
-    expect(second.stdout).toBe(first.stdout)
-    expect(second.stderr).toContain('REUSE existing worktree')
-    expect(second.stderr).toContain('feat-b')
-  }, GIT_HANG_TIMEOUT_MS)
+      const second = runHook(repo, 'feat-b')
+      expect(second.exit).toBe(0)
+      expect(second.stdout).toBe(first.stdout)
+      expect(second.stderr).toContain('REUSE existing worktree')
+      expect(second.stderr).toContain('feat-b')
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('ATTACH: re-running after the worktree dir is removed reuses the branch', () => {
-    const repo = fresh()
-    const first = runHook(repo, 'feat-c')
-    expect(first.exit).toBe(0)
-    const wtPath = first.stdout
-    // Remove the worktree (branch ref stays).
-    execSync(`git worktree remove "${wtPath}"`, { cwd: repo })
-    expect(existsSync(wtPath)).toBe(false)
+  test(
+    'ATTACH: re-running after the worktree dir is removed reuses the branch',
+    () => {
+      const repo = fresh()
+      const first = runHook(repo, 'feat-c')
+      expect(first.exit).toBe(0)
+      const wtPath = first.stdout
+      // Remove the worktree (branch ref stays).
+      execSync(`git worktree remove "${wtPath}"`, { cwd: repo })
+      expect(existsSync(wtPath)).toBe(false)
 
-    const second = runHook(repo, 'feat-c')
-    expect(second.exit).toBe(0)
-    expect(second.stdout).toBe(wtPath)
-    expect(second.stderr).toContain('ATTACH existing branch worktree-feat-c')
-    expect(existsSync(wtPath)).toBe(true)
-  }, GIT_HANG_TIMEOUT_MS)
+      const second = runHook(repo, 'feat-c')
+      expect(second.exit).toBe(0)
+      expect(second.stdout).toBe(wtPath)
+      expect(second.stderr).toContain('ATTACH existing branch worktree-feat-c')
+      expect(existsSync(wtPath)).toBe(true)
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 
-  test('ERROR: path already used by a different branch -> exit 1, no clobber', () => {
-    const repo = fresh()
-    const wtPath = `${repo}/.claude/worktrees/feat-d`
-    execSync(`mkdir -p "${dirname(wtPath)}"`, { cwd: repo })
-    execSync(`git worktree add "${wtPath}" -b worktree-other HEAD`, { cwd: repo })
+  test(
+    'ERROR: path already used by a different branch -> exit 1, no clobber',
+    () => {
+      const repo = fresh()
+      const wtPath = `${repo}/.claude/worktrees/feat-d`
+      execSync(`mkdir -p "${dirname(wtPath)}"`, { cwd: repo })
+      execSync(`git worktree add "${wtPath}" -b worktree-other HEAD`, { cwd: repo })
 
-    const r = runHook(repo, 'feat-d')
-    expect(r.exit).toBe(1)
-    expect(r.stderr).toContain('ERROR')
-    expect(r.stderr).toContain("'worktree-other'")
-    expect(r.stderr).toContain("'worktree-feat-d'")
-  }, GIT_HANG_TIMEOUT_MS)
+      const r = runHook(repo, 'feat-d')
+      expect(r.exit).toBe(1)
+      expect(r.stderr).toContain('ERROR')
+      expect(r.stderr).toContain("'worktree-other'")
+      expect(r.stderr).toContain("'worktree-feat-d'")
+    },
+    GIT_HANG_TIMEOUT_MS,
+  )
 })
