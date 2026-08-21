@@ -3,7 +3,7 @@ import { RUN_AGE_OUT_MS } from '../shared/epic-run-cleared'
 import type { EpicLaunchTag } from '../shared/epic-run-types'
 import type { Conversation, EpicRunSnapshot } from '../shared/protocol'
 import { recordBeat, resetBeatLog } from './epic-beat-log'
-import { listEpicRuns } from './epic-inspect'
+import { inspectEpic, listEpicRuns } from './epic-inspect'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
 import type { SweepDeps } from './epic-sweep-loop'
@@ -15,6 +15,10 @@ const TYPED = 'claude:///Users/jonas/projects/remote-claude'
 const SCARRED = 'claude:////Users/jonas/projects/remote-claude/'
 const CANONICAL = 'claude://default/Users/jonas/projects/remote-claude'
 const OTHER = 'claude:///Users/jonas/projects/elsewhere'
+
+/** One fixed instant for every clock in this file -- `deps().now()` and the
+ *  explicit `nowMs` the burial tests pass are the same moment. */
+const NOW_MS = Date.parse('2026-08-21T12:00:00.000Z')
 
 let n = 0
 function conv(project: string, epicId: string): Conversation {
@@ -34,6 +38,7 @@ function deps(convs: Conversation[]): SweepDeps {
     getSentinelByAlias: () => undefined,
     addProjectListener: () => {},
     removeProjectListener: () => {},
+    now: () => NOW_MS,
   } as unknown as SweepDeps
 }
 
@@ -170,5 +175,100 @@ describe('listEpicRuns burial', () => {
     )
     const rows = await listEpicRuns(deps([conv(TYPED, 'e1')]), TYPED, NOW)
     expect(rows[0]?.cleared).toBe('aged-out')
+  })
+})
+
+/**
+ * THE QUEUE AXIS OF AN INSPECT, ACROSS TWO SPELLINGS OF ONE PROJECT.
+ *
+ * The queue line is the ONE answer an inspect cannot get from the epic it was
+ * asked about -- it has to enumerate the project's OTHER runs. It enumerated
+ * them with raw `===`, comparing the caller's spelling (`claude:///path`)
+ * against the store's (`claude://default/path`), so the peer set came back
+ * EMPTY and the read said nothing was holding the run while the beat -- which
+ * goes through `isSameProject` -- was holding it.
+ *
+ * TWO COMPARISONS HAD TO MOVE, not one. Past the peer filter the scopes are
+ * bucketed by project inside `planProjectQueues`, and the verdict is looked up
+ * under the CALLER's spelling: a peer that survived the filter still landed in
+ * a different bucket and the lookup missed, which reads as no queue line at
+ * all. Both halves are pinned below.
+ */
+describe('inspectEpic queue peers', () => {
+  const ago = (ms: number) => new Date(NOW_MS - ms).toISOString()
+
+  /** One run view per epic id, as the burial suite does it -- plus an empty
+   *  board, because `inspectEpic` also plans and no sentinel is connected. */
+  function stubRuns(runs: Record<string, Partial<EpicRunSnapshot>>): void {
+    configureEpicIo({
+      fetchEpicRun: async (_deps, project, epicId) => ({
+        run: runs[epicId] ? ({ epicId, project, gen: 1, ...runs[epicId] } as EpicRunSnapshot) : null,
+        baton: [],
+        acknowledgedCardIds: [],
+        dispatchCounts: {},
+        lease: null,
+      }),
+      fetchBoardCards: async () => [],
+    })
+  }
+
+  /** A `when=queue` run that has never been permitted to dispatch: it waits. */
+  const WAITING: Partial<EpicRunSnapshot> = {
+    status: 'running',
+    cadence: ['queue'],
+    created: ago(10 * 60_000),
+    updated: ago(10 * 60_000),
+  }
+
+  /** A `when=queue` run that HAS been permitted to dispatch: it holds. */
+  const HOLDING: Partial<EpicRunSnapshot> = {
+    status: 'running',
+    cadence: ['queue'],
+    created: ago(20 * 60_000),
+    updated: ago(20 * 60_000),
+    startedAt: ago(19 * 60_000),
+  }
+
+  afterEach(() => resetEpicIo())
+
+  test('a BUSY peer stored under the canonical spelling still blocks a queued run the caller spelt bare', async () => {
+    stubRuns({ e1: WAITING })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e2')]), TYPED, 'e1')
+    expect(result.queue?.blocked).toBe(true)
+    expect(result.queue?.reason).toContain('e2')
+  })
+
+  test('a QUEUED peer HOLDING the runner is named in heldBy, across spellings', async () => {
+    stubRuns({ e1: WAITING, e2: HOLDING })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e2')]), TYPED, 'e1')
+    expect(result.queue?.heldBy).toBe('e2')
+    expect(result.queue?.blocked).toBe(true)
+  })
+
+  test('an ARMED peer with no conversations, registered under the quad-slash scar, is still a peer', async () => {
+    noteArmedEpic(SCARRED, 'e2')
+    stubRuns({ e1: WAITING, e2: HOLDING })
+    const result = await inspectEpic(deps([]), TYPED, 'e1')
+    expect(result.queue?.heldBy).toBe('e2')
+  })
+
+  test('the run under inspect keeps its queue reading when its OWN conversations carry the store spelling', async () => {
+    stubRuns({ e1: WAITING })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.queue?.blocked).toBe(false)
+    expect(result.queue?.reason).toContain('runner is free')
+  })
+
+  test('a busy epic in a genuinely DIFFERENT project is still not a peer', async () => {
+    stubRuns({ e1: WAITING })
+    const result = await inspectEpic(deps([conv(OTHER, 'e2')]), TYPED, 'e1')
+    expect(result.queue?.blocked).toBe(false)
+    expect(result.queue?.reason).toContain('runner is free')
+  })
+
+  test('an ordinary run is given no queue reading at all -- the axis stays silent', async () => {
+    stubRuns({ e1: { status: 'running', cadence: ['now'], created: ago(10 * 60_000) } })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e2')]), TYPED, 'e1')
+    expect(result.queue).toBeUndefined()
   })
 })
