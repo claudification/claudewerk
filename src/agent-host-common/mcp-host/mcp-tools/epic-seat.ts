@@ -82,6 +82,14 @@ async function ask(ctx: McpToolContext, action: 'claim' | 'release'): Promise<Se
   if (!conversationId) return { unreachable: 'this host does not know its own conversation id yet' }
   if (ctx.noBroker || !ctx.brokerUrl) return { unreachable: 'no broker connection' }
 
+  // FOURTH COPY of the broker-POST preamble (epic.ts, quest.ts, nightshift.ts),
+  // suppressed the same way quest.ts:26 already suppresses it. Extracting it is
+  // a real cleanup and it is NOT this card's: the other three all fold the
+  // response into a `ToolResult` inside the same function, and this one must
+  // NOT -- an unreachable broker and a refusal mean opposite things to a seat,
+  // so a shared helper that returns a ToolResult would have to grow a mode to
+  // serve it. Extract the four-line transport, not the four `post`s.
+  // fallow-ignore-next-line code-duplication
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (ctx.brokerSecret) headers.Authorization = `Bearer ${ctx.brokerSecret}`
 
