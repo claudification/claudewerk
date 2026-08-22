@@ -12,7 +12,7 @@
  * separate, explicit verb for "and now do something about it".
  */
 
-import { planEpic } from '../shared/epic-ready'
+import { type EpicPlan, planEpic } from '../shared/epic-ready'
 import { clearedReason, clearStamps } from '../shared/epic-run-cleared'
 import { beatStale, isVitallyLive } from '../shared/epic-vitality'
 import { gatedBy } from '../shared/epic-when'
@@ -27,6 +27,7 @@ import type {
   EpicRunSnapshot,
 } from '../shared/protocol'
 import { lastBeatAt, recentBeats } from './epic-beat-log'
+import type { EpicRunView } from './epic-broker-rpc'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
 import { epicIo } from './epic-io'
 import { resolveLandings, wantsFabric } from './epic-landing'
@@ -103,34 +104,16 @@ export async function inspectEpic(
   const convs = deps.getAllConversations()
   const group = groupFor(convs, deps, project, epicId)
   const queue = await inspectQueue(deps, project, epicId, convs, view.run)
-  const cards = await epicIo().fetchBoardCards(deps, project)
-  const fabric = await inspectFabric(deps, project, cards, epicId)
-  const plan = planEpic({
-    cards,
-    epicId,
-    concurrency: view.run?.concurrency ?? 3,
-    inFlight: group.inFlight,
-    inVerify: group.inVerify,
-    // From the same `get` as the run: an inspect that showed a card as
-    // dispatchable while the beat was withholding it on the seat ceiling would be
-    // a debug read that lies about the engine, which is the one thing it is for.
-    dispatches: view.dispatchCounts,
-    // Same reason, one lane over. NOTE that `groupFor` folds without a
-    // `producedOutput` probe, which defaults to "it produced something" -- so
-    // inspect's `settled` is the COARSER of the two reads and may name a card the
-    // beat would call `unspawnable`. That divergence is pre-existing (`live.
-    // unacknowledged` below is folded from the same set) and is left alone here
-    // rather than widened: fixing it means giving `inspectEpic` a store handle.
-    settled: group.settled,
-    // THE LANDING GATE, for the reason `dispatches` is here: an inspect that
-    // reported a run as `complete` while the beat was refusing it completion over
-    // an unmerged branch would be a debug read that lies about the engine. The
-    // SAME scan the beat uses, so the two cannot disagree -- and an inspect is a
-    // read a human is deliberately waiting on, which is the one caller that can
-    // afford it. A deps bag with no `gitDirt` wired reports `unscanned`, so the
-    // view withholds nothing and claims nothing.
-    landings: resolveLandings({ epicId, target: view.run?.target ?? 'merged', fabric }, cards),
-  })
+  // WITH ITS FAILURE INTACT (`fetchBoardRead`, not `fetchBoardCards`). A board
+  // read that timed out used to arrive here as `[]`, and `planEpic` answers an
+  // empty board with `no epic ... on the board (no card carries it and no card
+  // claims it as a parent)` plus `0 child card(s)` -- a confident assertion of
+  // DELETION, made on behalf of a transport that never answered, in the same
+  // payload whose run header already said the sentinel had timed out.
+  const board = await epicIo().fetchBoardRead(deps, project)
+  // NOT COMPUTED AT ALL on a failed board read. `planEpic` over `[]` is a
+  // perfectly well-formed answer to a question nobody got to ask.
+  const plan = board.ok ? await inspectPlan(deps, project, epicId, board.cards, group, view) : null
 
   return {
     epicId,
@@ -139,8 +122,9 @@ export async function inspectEpic(
     lease: view.lease ?? null,
     // A null rollup means no card on the board carries or claims this epic --
     // `planEpic` already says so in `idleReason`, so the plan is still returned
-    // rather than nulled: the reason is the useful half.
-    plan: toInspectPlan(plan),
+    // rather than nulled: the reason is the useful half. A null PLAN is the
+    // other case entirely, and `boardError` beside it is what tells them apart.
+    plan: plan ? toInspectPlan(plan) : null,
     live: toInspectLive({
       group,
       armed: isArmed(project, epicId),
@@ -158,7 +142,57 @@ export async function inspectEpic(
     baton: view.baton,
     ...(queue ? { queue } : {}),
     ...(view.error ? { error: view.error } : {}),
+    // ITS OWN FIELD, never folded into `error`. `error` is the RUN read's failure
+    // and the renderer already spends the headline on it; these are two
+    // transports and a payload that named one of them would still be asserting
+    // absence on behalf of the other.
+    ...(board.ok ? {} : { boardError: board.error ?? 'board read failed' }),
   }
+}
+
+/**
+ * THE DAG'S VERDICT, over a board that was actually read.
+ *
+ * Its own function so the one caller can decline to call it: a failed board read
+ * has no card graph, and the previous shape -- fold `[]` through `planEpic` and
+ * publish the result -- is what turned a sentinel timeout into `0 child card(s)`.
+ */
+async function inspectPlan(
+  deps: SweepDeps,
+  project: string,
+  epicId: string,
+  cards: readonly ProjectTaskMeta[],
+  group: EpicGroup,
+  view: EpicRunView,
+): Promise<EpicPlan> {
+  const fabric = await inspectFabric(deps, project, cards, epicId)
+  return planEpic({
+    cards,
+    epicId,
+    concurrency: view.run?.concurrency ?? 3,
+    inFlight: group.inFlight,
+    inVerify: group.inVerify,
+    // From the same `get` as the run: an inspect that showed a card as
+    // dispatchable while the beat was withholding it on the seat ceiling would be
+    // a debug read that lies about the engine, which is the one thing it is for.
+    dispatches: view.dispatchCounts,
+    // Same reason, one lane over. NOTE that `groupFor` folds without a
+    // `producedOutput` probe, which defaults to "it produced something" -- so
+    // inspect's `settled` is the COARSER of the two reads and may name a card the
+    // beat would call `unspawnable`. That divergence is pre-existing (`live.
+    // unacknowledged` in the caller is folded from the same set) and is left
+    // alone here rather than widened: fixing it means giving `inspectEpic` a
+    // store handle.
+    settled: group.settled,
+    // THE LANDING GATE, for the reason `dispatches` is here: an inspect that
+    // reported a run as `complete` while the beat was refusing it completion over
+    // an unmerged branch would be a debug read that lies about the engine. The
+    // SAME scan the beat uses, so the two cannot disagree -- and an inspect is a
+    // read a human is deliberately waiting on, which is the one caller that can
+    // afford it. A deps bag with no `gitDirt` wired reports `unscanned`, so the
+    // view withholds nothing and claims nothing.
+    landings: resolveLandings({ epicId, target: view.run?.target ?? 'merged', fabric }, cards),
+  })
 }
 
 /** The burial half of a list row: `cleared` and `clearedAt`, which are null

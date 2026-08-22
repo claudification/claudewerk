@@ -5392,8 +5392,24 @@ export interface EpicInspectResult {
   /** The werk-master singleton's grip, read off the epic CARD. `convId: ''` means
    *  it ran and released; `null` means it has never run. */
   lease: EpicLease | null
-  /** Null when the epic is not on the board at all -- see `error`. */
+  /**
+   * Null for TWO different reasons, and the difference is `boardError`: with no
+   * `boardError` the board was read and this epic is not on it; with one, the
+   * board was never read and the card graph is UNKNOWN.
+   */
   plan: EpicInspectPlan | null
+  /**
+   * THE BOARD READ THAT NEVER HAPPENED.
+   *
+   * Present only when the board `list` FAILED. `plan` is then null and every
+   * card-graph fact -- children, lanes, `complete`, `idleReason` -- is absent
+   * rather than empty. Observed 2026-08-22: a sentinel timeout rendered as `no
+   * epic on the board (no card carries it and no card claims it as a parent)`
+   * and `0 child card(s)` about an epic with 31 children on disk. That is a
+   * strictly more dangerous lie than the run.md one it sat beside, because the
+   * action it justifies is ABORTING the run.
+   */
+  boardError?: string
   live: EpicInspectLive
   beats: EpicBeatRecord[]
   baton: EpicLogEntry[]

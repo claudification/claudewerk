@@ -197,6 +197,28 @@ describe('the DAG', () => {
 
     expect(screen.getByText(/No card on the board carries or claims this epic/)).toBeTruthy()
   })
+
+  /**
+   * A FAILED BOARD READ REACHES THIS PANE AS `plan: null` TOO, and until
+   * `boardError` existed the two were one state: a sentinel timeout printed "no
+   * card carries this epic" about an epic with 31 children on disk (2026-08-22).
+   * "The epic has no children" is the sentence that justifies aborting a run.
+   */
+  it('says the board was NOT READ instead of claiming no card carries the epic', () => {
+    show(inspect({ plan: null, boardError: 'sentinel timed out' }))
+
+    expect(screen.getByText(/BOARD NOT READ/)).toBeTruthy()
+    expect(screen.getByText(/unknown, not empty/)).toBeTruthy()
+    expect(screen.queryByText(/No card on the board carries or claims this epic/)).toBeNull()
+  })
+
+  it('withholds the board-derived stats rather than reporting them as zero', () => {
+    show(inspect({ plan: null, boardError: 'sentinel timed out' }))
+
+    for (const label of ['DONE', 'READY', 'BLOCKED']) {
+      expect(screen.getByText(label).previousSibling?.textContent).toBe('-')
+    }
+  })
 })
 
 describe('the baton', () => {

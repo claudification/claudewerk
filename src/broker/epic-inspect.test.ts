@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { RUN_AGE_OUT_MS } from '../shared/epic-run-cleared'
 import type { EpicLaunchTag } from '../shared/epic-run-types'
+import type { ProjectTaskMeta } from '../shared/project-task-types'
 import type { Conversation, EpicRunSnapshot } from '../shared/protocol'
 import { recordBeat, resetBeatLog } from './epic-beat-log'
 import { inspectEpic, listEpicRuns } from './epic-inspect'
@@ -244,7 +245,7 @@ describe('inspectEpic queue peers', () => {
         dispatchCounts: {},
         lease: null,
       }),
-      fetchBoardCards: async () => [],
+      fetchBoardRead: async () => ({ ok: true, cards: [] }),
     })
   }
 
@@ -330,7 +331,7 @@ describe('inspectEpic after a failed read', () => {
         lease: null,
         ...(error ? { error } : {}),
       }),
-      fetchBoardCards: async () => [],
+      fetchBoardRead: async () => ({ ok: true, cards: [] }),
     })
   }
 
@@ -345,5 +346,67 @@ describe('inspectEpic after a failed read', () => {
     stubFailedRead()
     const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
     expect(result.live.generationMismatch).toContain('the lease says 0')
+  })
+})
+
+/**
+ * THE BOARD IS A SECOND TRANSPORT, AND ITS FAILURE IS A SECOND UNKNOWN.
+ *
+ * Observed live on `epic-werk-agile-loop`, 2026-08-22, gen 12: one `inspect`
+ * rendered `RUN ARTIFACT NOT READ -- the read failed: sentinel timed out`
+ * correctly, and in the SAME payload said `no epic ... on the board (no card
+ * carries it and no card claims it as a parent)` and `## Plan (0 child card(s))`
+ * -- while 31 child cards sat on disk and the beat header said `12/31 done`.
+ *
+ * The board read had failed too. `fetchBoardCards` collapsed that failure into
+ * `[]`, `planEpic` answered the empty board honestly, and the renderer published
+ * the answer as a fact about the board.
+ *
+ * That lie is strictly worse than the run.md one beside it: `RUN ARTIFACT NOT
+ * READ` prompts a retry, whereas "this epic has no children" prompts an ABORT.
+ */
+describe('inspectEpic after a failed BOARD read', () => {
+  afterEach(() => resetEpicIo())
+
+  /** A healthy run read, so the ONLY thing wrong in the payload is the board --
+   *  which is the shape that made the live failure so believable. */
+  function stubBoard(board: { ok: boolean; cards: ProjectTaskMeta[]; error?: string }): void {
+    configureEpicIo({
+      fetchEpicRun: async (_deps, project, epicId) => ({
+        run: { epicId, project, gen: 4, status: 'running' } as EpicRunSnapshot,
+        baton: [],
+        acknowledgedCardIds: [],
+        dispatchCounts: {},
+        lease: { convId: 'conv_master', gen: 4, at: '' },
+      }),
+      fetchBoardRead: async () => board,
+    })
+  }
+
+  test('the plan is UNKNOWN, not an empty plan -- a null plan and a 0-child plan are different claims', async () => {
+    stubBoard({ ok: false, cards: [], error: 'sentinel timed out' })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.plan).toBeNull()
+  })
+
+  test('the failure is named on its OWN field, so the payload says which transport died', async () => {
+    stubBoard({ ok: false, cards: [], error: 'sentinel timed out' })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.boardError).toBe('sentinel timed out')
+  })
+
+  test('it is NOT folded into `error` -- that field belongs to the run read, which succeeded here', async () => {
+    stubBoard({ ok: false, cards: [], error: 'sentinel timed out' })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result.error).toBeUndefined()
+    expect(result.run).not.toBeNull()
+  })
+
+  test('a board that READ and is genuinely empty keeps its plan and claims no failure', async () => {
+    stubBoard({ ok: true, cards: [] })
+    const result = await inspectEpic(deps([conv(CANONICAL, 'e1')]), TYPED, 'e1')
+    expect(result).not.toHaveProperty('boardError')
+    expect(result.plan?.children).toBe(0)
+    expect(result.plan?.idleReason).toContain('on the board')
   })
 })
