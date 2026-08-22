@@ -32,19 +32,25 @@
  */
 
 import type { CommitResolver, CommitStanding } from '../shared/promise-ledger'
+import { type MainCommitSet, parseRevList } from './promise-main-set'
 
 /**
- * Ceiling on how many DISTINCT shas one scan will ask git about.
+ * Ceiling on how many distinct shas one scan will SPAWN GIT for.
  *
- * Each sha costs two `git` spawns and the answers are memoised, so a normal
- * board (a handful of promises) never comes near this. It is a guard against a
- * pathological card -- a `closes:` list someone pasted a whole `git log` into --
- * turning one board read into a thousand processes. Over the cap the answer is
- * `null`, i.e. `could not verify`: refusing to check is honest, and inventing
- * `false` for a sha we declined to look at is the accusation this file exists to
- * avoid.
+ * It used to bound every sha, at two spawns each, and that made it a cliff: past
+ * the 200th the answer became `could not verify`, this board reached 204, and
+ * four delivered cards were accused in the loud table. `promise-main-set.ts` now
+ * answers "is it on main" for the whole repo in ONE spawn, so a sha reachable
+ * from the base costs nothing and is NEVER capped.
+ *
+ * What survives is a guard on the SLOW PATH only -- the shas the base does not
+ * reach, which is what a red row is about anyway. A pathological card (someone
+ * pastes a whole `git log` into `closes:`) still cannot turn one board read into
+ * a thousand processes. Over the cap the answer stays `null`: refusing to check
+ * is honest, and inventing `false` for a sha we declined to look at is the
+ * accusation this file exists to avoid.
  */
-const MAX_RESOLVED_SHAS = 200
+const MAX_SPAWNED_SHAS = 200
 
 /** A sha shaped like a sha. Anything else never reaches git: an argument off a
  *  hand-written card must not be able to look like a flag or a revset. */
@@ -109,23 +115,48 @@ const UNKNOWN: CommitStanding = { sha: '', exists: null, onMain: null }
  */
 export function createGitResolver(cwd: string, base: string | null): CommitResolver {
   const seen = new Map<string, CommitStanding>()
+  let spawned = 0
+  // Built on the FIRST question, not at construction: a resolver nobody asks
+  // anything (a board with no promises) must not pay for a `rev-list`.
+  let reachable: MainCommitSet | null = null
 
   return (sha: string): CommitStanding => {
     const cached = seen.get(sha)
     if (cached) return cached
 
-    const standing = resolveOne(cwd, base, sha, seen.size >= MAX_RESOLVED_SHAS)
+    if (reachable === null && base !== null) reachable = parseRevList(git(cwd, ['rev-list', base]).stdout)
+
+    let standing: CommitStanding
+    if (base === null || !SHA.test(sha)) {
+      standing = { ...UNKNOWN, sha }
+    } else if (reachable !== null && reachable.has(sha)) {
+      // Reachable from the base, so it BOTH exists and is an ancestor. No spawn,
+      // and no cap -- this is the answer 95% of a healthy board wants.
+      standing = { sha, exists: true, onMain: true }
+    } else {
+      standing = resolveOffBase(cwd, base, sha, spawned >= MAX_SPAWNED_SHAS)
+      spawned += 1
+    }
+
     seen.set(sha, standing)
     return standing
   }
 }
 
-function resolveOne(cwd: string, base: string | null, sha: string, overCap: boolean): CommitStanding {
-  if (base === null || overCap || !SHA.test(sha)) return { ...UNKNOWN, sha }
-  if (!git(cwd, ['cat-file', '-e', `${sha}^{commit}`]).ok) {
-    // git looked and did not find it. THIS is the one place `exists: false` is
-    // earned -- the repo answered, and the answer was no.
-    return { sha, exists: false, onMain: false }
-  }
+/**
+ * The slow path: a sha the base does not reach. Either git has never heard of
+ * it, or it exists on a branch that never landed -- and those two render as
+ * different red rows, so the distinction is worth a spawn.
+ *
+ * `onMain: false` is safe to assert here without re-asking: this is only reached
+ * when the base's own reachability listing did not contain the sha.
+ */
+function resolveOffBase(cwd: string, base: string, sha: string, overCap: boolean): CommitStanding {
+  if (overCap) return { ...UNKNOWN, sha }
+  // git looked and did not find it. THIS is the one place `exists: false` is
+  // earned -- the repo answered, and the answer was no.
+  if (!git(cwd, ['cat-file', '-e', `${sha}^{commit}`]).ok) return { sha, exists: false, onMain: false }
+  // The listing can be empty when `rev-list` itself failed, and a miss then means
+  // "we never looked", not "not on main". Re-ask git rather than accuse.
   return { sha, exists: true, onMain: git(cwd, ['merge-base', '--is-ancestor', sha, base]).ok }
 }
