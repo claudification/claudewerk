@@ -29,13 +29,19 @@
 import { projectIdentityKey } from '@shared/project-uri'
 
 /**
- * THREE. Every one of them earns its slot.
+ * FOUR. Every one of them earns its slot. (The probe's own numbers put 4 in
+ * the safe band -- 4 and 6 terms both held the fix, the cliff is between 6
+ * and 10 -- so this stays well clear of where the list stops working.)
  *
  * The list was six, and the trim came from reading the ZERO-keyterm transcript
  * properly: "sentinel", "agent host", "control panel" and "Deepgram" all came
  * back correct unaided. They were not helping, they were spending bias on words
  * flux already knows -- which, per the header, is exactly how the list stops
  * working. "Cloudflare" is the only word the probe has ever caught it missing.
+ *
+ * "werk" earns its slot the same way "claudewerk" does: it is the app's own
+ * jargon (`werk master`, `werk agile loop`), homophone of the ordinary word
+ * "work", and no general model has ever heard it used as a noun.
  */
 const BUILT_IN_KEYTERMS: readonly string[] = [
   // Measured: "CloudFlo" unaided, "Cloudflare" with this on.
@@ -44,6 +50,8 @@ const BUILT_IN_KEYTERMS: readonly string[] = [
   'Claude',
   // No general model has heard of it.
   'claudewerk',
+  // Homophone of "work" -- the app's own vocabulary for the agile-loop concept.
+  'werk',
 ]
 
 /**
