@@ -24,9 +24,9 @@
 import { EPIC_ORDERS } from './epic-orders'
 import { NEEDS_REFINE_TAG } from './epic-ready'
 import { NIGHTSHIFT_TAG } from './nightshift-types'
-import { WERK_REFINER_ORDER_ID } from './werk-refiner-order'
 import { SCANNER_SKIPS, type ScannerSkip } from './scanner-buckets'
 import type { ScannerId } from './scanner-ids'
+import { WERK_REFINER_ORDER_ID } from './werk-refiner-order'
 
 /** The tag the work-order scanner selects on. Here rather than in the scanner
  *  because the panel names it and cannot import the scanner. */
