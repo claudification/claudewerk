@@ -28,6 +28,7 @@
  */
 
 import type { Conversation } from '../../shared/protocol'
+import { DISPATCH_FAILED_BUCKET, type DispatchFailedBucket } from '../../shared/scanner-buckets'
 import type { ScannerId } from '../../shared/scanner-ids'
 import type { IsLive } from '../werk-liveness'
 
@@ -89,8 +90,8 @@ export interface ScanOutcome<Bucket extends string = string> {
 }
 
 /**
- * THE BUCKET FOR "THE DISPATCH ITSELF DID NOT HAPPEN", owned here and spelled
- * once.
+ * THE BUCKET FOR "THE DISPATCH ITSELF DID NOT HAPPEN", spelled once and
+ * re-exported here so every broker caller keeps importing it from the contract.
  *
  * Every dispatching scanner needs it, and two of them had already written the
  * string out by hand. A third would have been free to spell it `dispatch_failed`
@@ -98,11 +99,12 @@ export interface ScanOutcome<Bucket extends string = string> {
  * the column. Scanners compose their own vocabulary from this type
  * ({@link DispatchFailedBucket}) rather than restating the literal, so the name
  * cannot drift.
+ *
+ * It now LIVES in `src/shared/scanner-buckets.ts` with the rest of the refusal
+ * vocabulary, because the per-project opt-in panel renders that vocabulary and a
+ * browser bundle cannot import this file.
  */
-export const DISPATCH_FAILED_BUCKET = 'dispatch-failed'
-
-/** The bucket name as a type, for a scanner's own `Bucket` union to include. */
-export type DispatchFailedBucket = typeof DISPATCH_FAILED_BUCKET
+export { DISPATCH_FAILED_BUCKET, type DispatchFailedBucket }
 
 /**
  * One thing to dispatch: what to call it in the accounting, and how to send it.

@@ -51,20 +51,15 @@ import { openEpicRoster, wantsEpicRoster } from '../../shared/epic-roster'
 import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import { REFINER_ORDER } from '../../shared/refiner-order'
+import { REFINE_BUCKETS, type RefineBucket } from '../../shared/scanner-buckets'
+import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
 import { applyOrderToRequest } from '../scheduled-tasks/fire'
-import {
-  DISPATCH_FAILED_BUCKET,
-  type DispatchFailedBucket,
-  type DispatchUnit,
-  dispatchUnits,
-  type Refusal,
-  type Scanner,
-  type ScannerDeps,
-  type ScanOutcome,
-} from './scanner'
+import { type DispatchUnit, dispatchUnits, type Refusal, type Scanner, type ScannerDeps, type ScanOutcome } from './scanner'
+
+const CONTRACT = SCANNER_CONTRACTS.refine
 
 /**
  * THE EPIC ID EVERY REFINER SEAT IS TAGGED WITH -- a reserved lane, not a real
@@ -115,28 +110,12 @@ export const DEFAULT_REFINE_CONCURRENCY = REFINER_ORDER.reservation ?? 1
  * A `needs-overseer` card carrying the tag is likewise still a card whose prose
  * can be improved, and the seat cannot answer the question or move the lane
  * (`REFINER@1` denies the status verb), so there is nothing for it to get wrong.
+ *
+ * DECLARED IN `src/shared/scanner-buckets.ts`, with the reason for each name
+ * beside it, because the per-project opt-in panel renders this vocabulary and
+ * cannot import a broker module. Re-exported here so callers are unchanged.
  */
-export type RefineBucket =
-  | 'live-conversation'
-  | 'already-run'
-  | 'not-actionable'
-  | 'unspawnable'
-  | 'held-back'
-  | 'order-refused'
-  // Spelled by the shared surface, never restated here -- see
-  // `DISPATCH_FAILED_BUCKET`, which is the bucket the shared dispatch tail
-  // files into.
-  | DispatchFailedBucket
-
-const REFINE_BUCKETS: readonly RefineBucket[] = [
-  'live-conversation',
-  'already-run',
-  'not-actionable',
-  'unspawnable',
-  'held-back',
-  'order-refused',
-  DISPATCH_FAILED_BUCKET,
-] as const
+export type { RefineBucket }
 
 export interface RefineDeps extends ScannerDeps {
   /** The board for the project being scanned. Async because the board lives
@@ -464,10 +443,13 @@ function idleReason(selectedCount: number, refused: readonly Refusal<RefineBucke
 }
 
 export const refineScanner: Scanner<RefineDeps, RefineBucket> = {
-  id: 'refine',
+  id: CONTRACT.id,
   tag: REFINE_TAG,
-  selects: `cards tagged \`${NEEDS_REFINE_TAG}\``,
-  does: 'dispatch',
+  // Quoted from the shared contract rather than restated -- the opt-in panel
+  // renders the same strings, and the two describing different selections is
+  // the one lie a default-deny opt-in cannot afford.
+  selects: CONTRACT.selects,
+  does: CONTRACT.does,
   buckets: REFINE_BUCKETS,
   scan: scanRefine,
 }
