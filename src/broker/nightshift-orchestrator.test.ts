@@ -45,6 +45,15 @@ let configOut: Record<string, unknown> = {}
 let snapshotTasks: Array<{ id: string; status: string }> = []
 /** conversationId -> status, the fake store's view of spawned workers. */
 const convStatus = new Map<string, string>()
+/** Is the `nightshift` scanner ticked for the project under test? ON for every
+ *  case but the gate's own -- these tests are about what a run DOES once it is
+ *  authorised, and the authorisation has its own case below. */
+let scannerOn = true
+/** Every `scannersLastRun` stamp the orchestrator wrote, in order. */
+let stamps: Array<{ project: string; at: number }> = []
+/** Make the fake board THROW rather than answer, so the scan comes back
+ *  `crashed` -- the one pass outcome that must not be stamped. */
+let boardThrows = false
 
 /** The board card behind `queueItems[i]`. Slugs sort in the same order as the
  *  ordinals, so the scanner numbers them 001..N in this order. */
@@ -75,6 +84,7 @@ const fakeCallBoard = async (
   op: { op: string; slug?: string; patch?: { tags?: string[] } },
 ): Promise<BoardRpcResult> => {
   boardCalls.push({ op: op.op, slug: op.slug, tags: op.patch?.tags })
+  if (boardThrows) throw new Error('sentinel exploded')
   if (op.op === 'list') return { ok: true, tasks: queueItems.map(cardOf) }
   if (op.op === 'get') {
     const item = queueItems.find(q => `card-${q.id}` === op.slug)
@@ -109,6 +119,13 @@ configureNightshiftIo({
   dispatchSpawn: fakeDispatchSpawn as unknown as NightshiftIo['dispatchSpawn'],
   sendNightshiftOp: fakeSendNightshiftOp as unknown as NightshiftIo['sendNightshiftOp'],
   callBoard: fakeCallBoard as unknown as NightshiftIo['callBoard'],
+  // The fabric's per-project opt-in, on the same seam and for the same reason:
+  // a run opens here without a settings store behind it.
+  scannerOptIn: {
+    projects: () => [],
+    enabled: () => scannerOn,
+    stamp: (project, at) => stamps.push({ project, at }),
+  },
 })
 afterAll(resetNightshiftIo)
 const { CapacityLedger } = await import('./capacity-ledger')
@@ -171,6 +188,72 @@ beforeEach(() => {
   configOut = { enabled: true, permissionMode: 'dontAsk', caps: { concurrency: 2, totalTasks: 8 } }
   snapshotTasks = []
   convStatus.clear()
+  scannerOn = true
+  stamps = []
+  boardThrows = false
+})
+
+/**
+ * THE FABRIC'S GATE AND STAMP, which `nightshift` sat outside of until
+ * `werk-scanner-clock`. It had a caller and no opt-in and no stamp, so its row in
+ * Project Settings read `last ran never` forever while it was in fact running --
+ * the amber column lying in the one direction nobody checks.
+ */
+describe('the nightshift scanner is gated and stamped by its caller', () => {
+  test('a project with the box off is refused BEFORE the config read or the board', async () => {
+    scannerOn = false
+    queueItems = makeQueue(2)
+    const out = await runNightshift(store, 'proj-off', { trigger: 'scheduler' })
+    expect(out.ok).toBe(false)
+    expect(out.skipped).toMatch(/"nightshift" scanner is off/)
+    // NOTHING was spent: no sentinel RPC, no board read, no worker.
+    expect(opCalls).toEqual([])
+    expect(boardCalls).toEqual([])
+    expect(dispatchCount).toBe(0)
+    expect(stamps).toEqual([])
+  })
+
+  // Run-now dispatches the identical fleet the scheduler does, so honouring it
+  // for an opted-out project would be a back door around a default-deny gate --
+  // the reasoning `beatOneEpic` already gives for refusing BEAT NOW.
+  test('a MANUAL run is refused too -- Run now is not a back door around the opt-in', async () => {
+    scannerOn = false
+    queueItems = makeQueue(2)
+    const out = await runNightshift(store, 'proj-off-manual', { trigger: 'manual' })
+    expect(out.ok).toBe(false)
+    expect(out.skipped).toMatch(/Project Settings > Scanners/)
+    expect(dispatchCount).toBe(0)
+  })
+
+  test('a completed pass stamps the project, even when it admitted nothing', async () => {
+    queueItems = []
+    const out = await runNightshift(store, 'proj-quiet', { trigger: 'scheduler' })
+    // The RUN did not open -- nothing was tagged -- but the PASS happened, and
+    // that is the distinction the stamp exists to draw. Without it the row says
+    // `never` for a loop that is alive and simply has nothing to do.
+    expect(out.ok).toBe(false)
+    expect(stamps.map(s => s.project)).toEqual(['proj-quiet'])
+  })
+
+  test('a pass that opened a run stamps exactly once', async () => {
+    queueItems = makeQueue(1)
+    const out = await runNightshift(store, 'proj-stamped', { trigger: 'manual' })
+    expect(out.ok).toBe(true)
+    expect(stamps.map(s => s.project)).toEqual(['proj-stamped'])
+    await drainToFinalize('proj-stamped')
+  })
+
+  test('a scan that CRASHED does not stamp -- a failed pass is not a pass', async () => {
+    queueItems = makeQueue(1)
+    // The board THROWS rather than answering `{ok:false}`. `runScan` catches it
+    // and reports `crashed`, which is the one outcome the stamp must not follow:
+    // stamping here would say the loop swept a project it never read.
+    boardThrows = true
+    const out = await runNightshift(store, 'proj-crash', { trigger: 'manual' })
+    expect(out.ok).toBe(false)
+    expect(out.error).toMatch(/board scan failed/)
+    expect(stamps).toEqual([])
+  })
 })
 
 describe('runNightshift', () => {
