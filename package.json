@@ -45,7 +45,7 @@
     "format": "bunx biome format --write .",
     "lint": "bun run lint:fast && bun run lint:fallow",
     "lint:fast": "bun run lint:biome && bun run lint:boundary && bun run lint:inline-import-type && bun run lint:patterns && bun run lint:board-contrast && bun run lint:protocol && bun run lint:test-runner && bun run lint:no-config-tests && bun run lint:shortcuts",
-    "lint:fallow": "fallow audit --dead-code-baseline .fallow/dead-code-baseline.json --health-baseline .fallow/health-baseline.json",
+    "lint:fallow": "fallow audit --health-baseline .fallow/health-baseline.json",
     "lint:biome": "bun run scripts/lint-biome-check.ts",
     "lint:biome:fix": "bunx biome check --fix .",
     "lint:boundary": "bun run scripts/lint-boundary.ts",
