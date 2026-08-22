@@ -131,6 +131,59 @@ describe('sweepEpics', () => {
     expect(beats).toHaveLength(2)
   })
 
+  /**
+   * THE WEDGE. `sweeping = true` was raised ABOVE the `try`, with the opt-in gate
+   * between the two -- and that gate is not a pure filter: `gateSweep` enumerates
+   * conversations, reads project settings, and DROPS ARMED EPICS, which writes the
+   * broker's `kv` (a SQLite write, on a box that has been at 99% disk). One throw
+   * from any of them left the flag latched with no `finally` to clear it, and a
+   * latched flag is not a slow beat: it is the epic engine dead for the life of
+   * the process, printing `previous tick still running` every 45 seconds while no
+   * run ever advances again. The recovery for EVERY other failure in this engine
+   * is "the next tick asks again", and this is the one shape that removes it.
+   */
+  describe('a tick that throws before the scan begins', () => {
+    /** Deps whose opt-in gate explodes -- the pre-scan region that used to sit
+     *  above the guard. */
+    function exploding(): { d: SweepDeps; stop: () => void } {
+      let boom = true
+      const base = deps()
+      const d: SweepDeps = {
+        ...base,
+        scannerOptIn: { projects: () => [], enabled: () => true, stamp: () => {} },
+        getAllConversations: () => {
+          if (boom) throw new Error('kv write failed: database or disk is full')
+          return convs
+        },
+      }
+      return { d, stop: () => (boom = false) }
+    }
+
+    test('does not latch the reentrancy guard -- the next tick still runs', async () => {
+      convs = [conv('e1', 'werk-worker', 't1')]
+      const { d, stop } = exploding()
+      await sweepEpics(d)
+      expect(beats).toHaveLength(0)
+
+      stop()
+      await sweepEpics(d)
+      expect(log.join('\n')).not.toContain('previous tick still running')
+      expect(beats).toHaveLength(1)
+    })
+
+    test('and says why, rather than dying quietly or taking the process with it', async () => {
+      convs = [conv('e1', 'werk-worker', 't1')]
+      const { d } = exploding()
+      // NEVER REJECTS: the only caller is `setInterval(() => void sweepEpics(d))`,
+      // so a rejection escaping here is an unhandled rejection on the broker's
+      // main loop -- one project's settings store taking down every conversation
+      // on the box.
+      await expect(sweepEpics(d)).resolves.toBeUndefined()
+      expect(log.join('\n')).toContain('tick FAILED')
+      expect(log.join('\n')).toContain('disk is full')
+    })
+  })
+
   test('the guard clears even when a beat threw', async () => {
     convs = [conv('e1', 'werk-worker', 't1')]
     configureEpicIo({

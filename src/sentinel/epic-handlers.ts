@@ -111,11 +111,15 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
    * repair, widening the tail, would put a 3000-line log in every werk-master
    * prompt. The file is read whole either way, so the fold is free.
    */
-  get(root, msg) {
+  get(root, msg, nowMs) {
     const entries = readEpicLog(root, msg.epicId)
     return {
       ok: true,
       run: snapshot(root, msg.epicId),
+      // THE CLOCK THAT STAMPS EVERY `_at` ON EVERY LEASE, said out loud. The
+      // broker judges a lease's AGE and this is the only way it can do that on one
+      // clock rather than two -- see `EpicResult.clockMs`.
+      clockMs: nowMs,
       baton: sliceEpicLog(entries, { limit: BATON_TAIL, ...(msg.baton ?? {}) }),
       acknowledgedCardIds: acknowledgedCardIds(entries),
       // The third whole-log fold, beside the other two and for the same reason:

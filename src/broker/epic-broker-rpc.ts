@@ -142,6 +142,17 @@ export interface EpicRunView {
   dispatchCounts: Record<string, number>
   /** Who holds the werk-master seat, off the epic card. `null` = never run. */
   lease: EpicLease | null
+  /**
+   * THE CLOCK THE LEASE ABOVE WAS STAMPED WITH, epoch ms -- see
+   * `EpicResult.clockMs`.
+   *
+   * ABSENT OR `null` MEANS NO READING, which reads as "apply no correction", i.e.
+   * the two-clock subtraction the beat did before this existed. Optional rather
+   * than required for the reason `queue`, `headroom` and `producedOutput` are: a
+   * caller that hand-builds a view -- every test in this repo that drives one beat
+   * -- keeps today's arithmetic instead of asserting an offset it never measured.
+   */
+  sentinelClockMs?: number | null
   error?: string
 }
 
@@ -168,6 +179,7 @@ const EMPTY_VIEW = (error: string): EpicRunView => ({
   acknowledgedCardIds: [],
   dispatchCounts: {},
   lease: null,
+  sentinelClockMs: null,
   error,
 })
 
@@ -197,6 +209,10 @@ export function toEpicRunView(res: EpicResult): EpicRunView {
     // card on the board the moment a deploy went out of order.
     dispatchCounts: res.dispatchCounts ?? dispatchCountsByCard(baton),
     lease: res.currentLease ?? null,
+    // Same skew rule again, and the safe direction is `null`: no reading means no
+    // correction, which is the two-clock subtraction the beat has always done,
+    // rather than an offset of zero asserted as a measurement.
+    sentinelClockMs: typeof res.clockMs === 'number' && Number.isFinite(res.clockMs) ? res.clockMs : null,
   }
 }
 

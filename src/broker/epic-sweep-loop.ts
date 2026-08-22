@@ -382,27 +382,45 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
     await deps.publishActivity?.()
     return
   }
-  sweeping = true
   // THE OPT-IN IS CHECKED HERE, BY THE CALLER. A project that never ticked the
   // "epics" box is swept by nothing, and the scanner is never told why -- it is
   // simply handed a smaller board.
   const optIn = deps.scannerOptIn
-  const scoped = optIn ? gateSweep(deps, optIn) : deps
+  // EVERY LINE BETWEEN THE FLAG AND THE `finally` IS INSIDE THE `try`, and that
+  // placement is the whole guard rather than a style preference. `gateSweep`
+  // enumerates conversations, logs, and DROPS ARMED EPICS -- which writes the
+  // broker's `kv` (epic-registry.ts), i.e. a SQLite write, i.e. a call that
+  // throws on a full disk. Raised above the `try` it left `sweeping` latched
+  // true, and a latched guard is not a stalled beat: it is the epic engine
+  // silently dead for the life of the process, with `[epic-sweep] previous tick
+  // still running` every 45 seconds as the only symptom and no run ever
+  // advancing again. The one thing this loop must never do is wedge.
+  sweeping = true
   try {
-    // `runScan` is self-catching, so the guard below is released either way --
-    // but the try/finally stays, because a guard that depends on a callee never
-    // throwing is a guard one refactor away from wedging the sweep forever.
+    const scoped = optIn ? gateSweep(deps, optIn) : deps
+    // `runScan` is self-catching, so the guard is released either way -- but the
+    // try/finally stays, because a guard that depends on a callee never throwing
+    // is a guard one refactor away from wedging the sweep forever.
     await runScan(epicScanner, scoped)
+    // The pass HAPPENED for every opted-in project, including the ones with no
+    // epic at all -- that is the whole value of the stamp. "Enabled, last ran
+    // never" then means the loop is dead rather than the board being quiet,
+    // which is the distinction nightshift (0 runs since June) could not make
+    // about itself.
+    if (optIn) {
+      const at = deps.now()
+      for (const project of optIn.projects()) optIn.stamp(project, at)
+    }
+  } catch (err) {
+    // LOGGED AND SWALLOWED, never rethrown. The only caller is `setInterval(() =>
+    // void sweepEpics(deps))`, so a rejection escaping here is an unhandled
+    // rejection on the broker's main loop -- a tick that takes the whole process
+    // with it, on behalf of one project whose settings store happened to throw.
+    // The next tick is 45 seconds away and asks the same question again; that is
+    // the recovery, and it only exists if this tick ends.
+    deps.log(`[epic-sweep] tick FAILED: ${err instanceof Error ? err.message : String(err)} -- retrying next tick`)
   } finally {
     sweeping = false
-  }
-  // The pass HAPPENED for every opted-in project, including the ones with no epic
-  // at all -- that is the whole value of the stamp. "Enabled, last ran never" then
-  // means the loop is dead rather than the board being quiet, which is the
-  // distinction nightshift (0 runs since June) could not make about itself.
-  if (optIn) {
-    const at = deps.now()
-    for (const project of optIn.projects()) optIn.stamp(project, at)
   }
   // AFTER the guard is released, and NOT skipped when there is nothing to beat.
   // An empty sweep is exactly when a run has just settled, and that is the tick

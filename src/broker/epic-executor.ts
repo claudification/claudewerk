@@ -299,6 +299,32 @@ function leaseTaken(view: EpicRunView): Pick<EpicBeatInput, 'leaseAt'> {
 }
 
 /**
+ * BEYOND THIS MUCH DISAGREEMENT BETWEEN THE TWO CLOCKS, SAY SO. One minute.
+ *
+ * Sized to be far above the only benign contributor -- the `get` reply's own
+ * flight time, which is folded into the reading and is tens of milliseconds -- and
+ * far below the ten-minute TTL the reading protects. Anything in between is a real
+ * offset between the container and the laptop, and a correction the engine applies
+ * silently is a correction nobody ever discovers is load-bearing.
+ */
+const SKEW_WORTH_SAYING_MS = 60 * 1000
+
+/**
+ * HOW FAR THE BROKER'S CLOCK RUNS AHEAD OF THE SENTINEL'S, from the same `get`
+ * the lease came from -- see `EpicBeatInput.clockSkewMs` for what an uncorrected
+ * subtraction costs.
+ *
+ * Returns the spread-ready fragment for {@link leaseTaken}'s reason: an absent
+ * reading (an older bundle) must leave the field OFF rather than assert a zero
+ * offset, and the call site is then one spread and no branch.
+ */
+function clockSkew(deps: BeatDeps, view: EpicRunView): Pick<EpicBeatInput, 'clockSkewMs'> {
+  const stamped = view.sentinelClockMs
+  if (typeof stamped !== 'number') return {}
+  return { clockSkewMs: deps.now() - stamped }
+}
+
+/**
  * Run ONE beat for one epic. Returns what it did, so the sweep can log a single
  * line per epic per tick rather than a scatter of unrelated messages.
  */
@@ -371,6 +397,20 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
 
   const mismatch = generationMismatch(seats, gen)
   if (mismatch) deps.log(`${tag(seats.epicId, gen)} ${mismatch}`)
+
+  // THE TWO CLOCKS, COMPARED ONCE AND SAID OUT LOUD WHEN THEY DISAGREE. Read here
+  // rather than at the `planBeat` call so the log line is emitted whether or not
+  // this beat goes on to consult a lease age: an offset big enough to matter is a
+  // fact about the deployment, and the beat that finally trips over it is not the
+  // one anybody will be reading.
+  const skew = clockSkew(deps, view)
+  if (skew.clockSkewMs !== undefined && Math.abs(skew.clockSkewMs) > SKEW_WORTH_SAYING_MS) {
+    deps.log(
+      `${tag(seats.epicId, gen)} CLOCK SKEW: this broker is ${Math.round(skew.clockSkewMs / 1000)}s ` +
+        `${skew.clockSkewMs > 0 ? 'AHEAD OF' : 'BEHIND'} the sentinel that stamps every lease. Lease ages are ` +
+        `corrected for it, but fix the clocks -- nothing else in the engine is.`,
+    )
+  }
 
   // THE BOARD IS READ FIRST, ahead of the acknowledgement it used to follow.
   // Nothing about the write order changes -- this is a read -- but every card id
@@ -494,6 +534,12 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // that never lifts -- a supervisor blocked in a Bash call, socket held,
     // events silent, un-reapable -- stops the run for the life of the broker.
     ...leaseTaken(view),
+    // AND THE OFFSET BETWEEN THE CLOCK THAT STAMPED IT AND THIS ONE. Without it
+    // the TTL above is a subtraction across two machines: the sentinel writes
+    // `overseer_at` on the laptop, this runs in a container, and a VM clock that
+    // jumped while the host slept would either strip a live werk-master of the beat
+    // every tick or pin its grip at age zero forever.
+    ...skew,
     // A SPENT FACT, keyed on the lease holder rather than on the lane -- see
     // `EpicBeatInput.werkMasterLost`. The wake this drives moves the lease, so the
     // next beat reads false and the replacement is billed exactly once. Stated
