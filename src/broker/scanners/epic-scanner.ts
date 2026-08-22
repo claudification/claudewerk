@@ -20,12 +20,12 @@
  * and this card is a no-behaviour-change extraction.
  */
 
+import { EPIC_REFUSAL_BUCKETS, type EpicRefusalBucket } from '../../shared/scanner-buckets'
+import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import type { EpicRunView } from '../epic-broker-rpc'
 import { type BeatContext, runEpicBeat } from '../epic-executor'
 import { epicIo } from '../epic-io'
 import { planProjectQueues, toQueueScope } from '../epic-queue'
-import { EPIC_REFUSAL_BUCKETS, type EpicRefusalBucket } from '../../shared/scanner-buckets'
-import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import { type EpicGroup, epicsToWatch } from '../epic-sweep'
 import type { SweepDeps } from '../epic-sweep-loop'
 import type { Refusal, Scanner, ScanOutcome } from './scanner'

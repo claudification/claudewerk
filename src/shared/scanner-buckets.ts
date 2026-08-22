@@ -55,7 +55,10 @@ const NIGHTSHIFT_SKIPS = [
 ] as const
 
 const WORK_ORDER_SKIPS = [
-  { bucket: 'epic-owned', why: 'it belongs to an epic -- that run dispatches it, and two seats on one branch is worse' },
+  {
+    bucket: 'epic-owned',
+    why: 'it belongs to an epic -- that run dispatches it, and two seats on one branch is worse',
+  },
   { bucket: 'live-conversation', why: 'a seat is already working it' },
   { bucket: 'already-run', why: 'a seat already ran for it -- move it or drop the tag to re-authorise' },
   { bucket: 'held-back', why: 'the work-order concurrency ceiling is full this pass' },

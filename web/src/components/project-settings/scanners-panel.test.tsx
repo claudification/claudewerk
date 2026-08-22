@@ -1,10 +1,22 @@
+import { SCANNER_CONTRACTS } from '@shared/scanner-contracts'
 import { SCANNER_IDS } from '@shared/scanner-ids'
 import type { ScannerToggles } from '@shared/scanner-opt-in'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ScannersPanel } from './scanners-panel'
 
 afterEach(cleanup)
+
+/** The `(i)` opens on a deliberate delay (see `HoverCard`), so a test that just
+ *  clicks sees nothing. Fake timers, then push past the delay. */
+function openInfo(label: string) {
+  vi.useFakeTimers()
+  fireEvent.click(screen.getByLabelText(`What the ${label} scanner does`))
+  act(() => {
+    vi.advanceTimersByTime(1000)
+  })
+  vi.useRealTimers()
+}
 
 describe('ScannersPanel', () => {
   it('offers one checkbox per declared scanner id, so a sixth cannot be invisible', () => {
@@ -69,6 +81,42 @@ describe('ScannersPanel', () => {
     render(<ScannersPanel settings={{}} toggles={legacy} onToggle={vi.fn()} />)
     const box = screen.getByLabelText('Enable the Work order scanner for this project') as HTMLInputElement
     expect(box.checked).toBe(true)
+  })
+
+  it('gives every row an (i), so no box can be armed without its contract available', () => {
+    render(<ScannersPanel settings={{}} toggles={{}} onToggle={vi.fn()} />)
+    for (const id of SCANNER_IDS) {
+      expect(screen.getByLabelText(`What the ${SCANNER_CONTRACTS[id].label} scanner does`)).toBeDefined()
+    }
+  })
+
+  it('opens the full contract from the (i) -- the tag, the buckets and the seat', () => {
+    render(<ScannersPanel settings={{}} toggles={{}} onToggle={vi.fn()} />)
+    openInfo('Work order')
+    const contract = SCANNER_CONTRACTS['work-order']
+    const body = (document.body.textContent ?? '').replace(/\s+/g, ' ')
+    expect(body).toContain(contract.selects)
+    expect(body).toContain(contract.seat)
+    for (const skip of contract.skips) expect(body, `names ${skip.bucket}`).toContain(skip.bucket)
+  })
+
+  it("carries the row's own last-run stamp into its contract card", () => {
+    const settings = { scanners: { epics: true }, scannersLastRun: { epics: Date.now() - 120_000 } }
+    render(<ScannersPanel settings={settings} toggles={{ epics: true }} onToggle={vi.fn()} />)
+    openInfo('Epics')
+    // Twice: once in the row's amber column, once inside the open card.
+    expect(screen.getAllByText('last ran 2m ago')).toHaveLength(2)
+  })
+
+  it('labels every row from the scanner contract, never from a table in this panel', () => {
+    // The panel used to keep its own `{label, description}` map. A second
+    // spelling of what a scanner does is how a checkbox comes to describe a
+    // scan that no longer happens.
+    render(<ScannersPanel settings={{}} toggles={{}} onToggle={vi.fn()} />)
+    for (const id of SCANNER_IDS) {
+      expect(screen.getByText(SCANNER_CONTRACTS[id].label)).toBeDefined()
+      expect(screen.getByText(SCANNER_CONTRACTS[id].description)).toBeDefined()
+    }
   })
 
   it('reads the stamps from the SAVED settings, not from the unsaved toggles', () => {

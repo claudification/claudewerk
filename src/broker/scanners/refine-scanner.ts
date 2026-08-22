@@ -57,7 +57,14 @@ import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
 import { applyOrderToRequest } from '../scheduled-tasks/fire'
-import { type DispatchUnit, dispatchUnits, type Refusal, type Scanner, type ScannerDeps, type ScanOutcome } from './scanner'
+import {
+  type DispatchUnit,
+  dispatchUnits,
+  type Refusal,
+  type Scanner,
+  type ScannerDeps,
+  type ScanOutcome,
+} from './scanner'
 
 const CONTRACT = SCANNER_CONTRACTS.refine
 
