@@ -184,6 +184,43 @@ describe('worktrees', () => {
 })
 
 /**
+ * A SEAT DOES NOT INTEGRATE ITSELF.
+ *
+ * Four cards in one run reached `main` as bare fast-forwards with no werk-master
+ * in the path -- the tightest of them eight seconds after that card's
+ * werk-verifier was dispatched, so the guard reviewed a diff that was already
+ * merged. The cause is the agent host's ad-hoc anti-stranding fast-forward,
+ * which fires on session exit and has never heard of a verdict. The seat now
+ * declares that it does not want it; `adhoc-mergeback.test.ts` is the other end.
+ */
+describe('worktreeMergeBack -- who merges this seat', () => {
+  test('a werk-worker declares that it does not merge itself', () => {
+    expect(planWerkWorkerSpawn(CTX, 't1').worktreeMergeBack).toBe(false)
+  })
+
+  test('a werk-verifier declares it too -- it integrates nothing either', () => {
+    expect(planWerkVerifierSpawn(CTX, 't1').worktreeMergeBack).toBe(false)
+  })
+
+  test('every seat WITH a worktree declares it, and every seat without one does not', () => {
+    // Derived from `worktree`, so the two can never drift: a seat with an
+    // isolated branch is a seat somebody else merges, and a seat without one
+    // has nothing to fast-forward FROM.
+    const werkPlanner = planWerkPlannerSpawn(CTX, {
+      projectUri: CTX.project,
+      projectRoot: CTX.projectRoot,
+      run: { ...RUN, digest: 'x' },
+      plan: PLAN,
+      cardLines: [],
+      epicBody: '# epic',
+    })
+    for (const plan of [planWerkWorkerSpawn(CTX, 't1'), planWerkVerifierSpawn(CTX, 't1'), werkMaster(), werkPlanner]) {
+      expect(plan.worktreeMergeBack === false).toBe(plan.worktree !== undefined)
+    }
+  })
+})
+
+/**
  * THE 2026-08-20 INCIDENT, pinned.
  *
  * `epic/epic-the-wall-ii/verify-epic-engine-baton-window-relitigates-settles` is
@@ -467,7 +504,12 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
       epic: { epicId: 'werk-epic', role: s.role, gen: 4, ...(s.cardId ? { cardId: s.cardId } : {}) },
       name: s.name,
       failOnNameCollision: false,
-      ...(s.worktree ? { worktree: s.worktree } : {}),
+      // The one DELIBERATE divergence from the pre-orders plan, and it is why
+      // this key is spelled out here rather than left to the `worktree` spread:
+      // a seat with a worktree no longer fast-forwards `main` on its way out
+      // (werk-worker-self-merges-before-the-verdict). Everything else on this
+      // object is still byte-for-byte what the hardcoded seats emitted.
+      ...(s.worktree ? { worktree: s.worktree, worktreeMergeBack: false } : {}),
       // From the seat's order since `werk-seat-model-policy`. Spelled out per
       // seat rather than read off `EPIC_ORDERS` here, because a test that
       // derives its expectation from the thing under test agrees with a typo.

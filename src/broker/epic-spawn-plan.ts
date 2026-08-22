@@ -82,6 +82,23 @@ export interface EpicSpawnPlan {
    *  watchdog reaps it. Same reasoning as the nightshift worker. */
   adHoc: true
   worktree?: string
+  /**
+   * A SEAT DOES NOT INTEGRATE ITSELF. Present (and `false`) for exactly the
+   * seats that have a worktree.
+   *
+   * The order says the loop is worker -> verifier -> WERK-MASTER MERGES, and
+   * the loop did not obey: four cards in one run reached `main` as bare
+   * fast-forwards with no werk-master in the path, one of them eight seconds
+   * after its werk-verifier was dispatched. Nobody was rogue -- the ad-hoc
+   * anti-stranding machinery in the agent host fires on session exit and has no
+   * idea a verdict exists. This flag is a seat telling it so. Both the prompt
+   * fragment and the exit-time fast-forward read this ONE field; see
+   * `../shared/worktree-mergeback.ts`.
+   *
+   * ABSENT for the werk-master and werk-planner, which have no worktree and no
+   * branch of their own -- they merge ON main, which is the whole point.
+   */
+  worktreeMergeBack?: false
   permissionMode: EpicPermissionMode
   settingsInline: Record<string, unknown>
   epic: EpicLaunchTag
@@ -269,7 +286,10 @@ function compileSeat(
     epic: { epicId: ctx.epicId, role, gen: ctx.gen, ...(cardId ? { cardId } : {}) },
     name: seatName(ctx.epicId, ctx.gen, cardId, order.namePrefix),
     failOnNameCollision: false,
-    ...(worktree ? { worktree } : {}),
+    // Derived from `worktree`, not declared per-order, because the two can never
+    // legitimately disagree: a seat with an isolated branch is a seat somebody
+    // else merges, and a seat without one has nothing to fast-forward FROM.
+    ...(worktree ? { worktree, worktreeMergeBack: false as const } : {}),
     ...capsFields(caps),
   }
 }

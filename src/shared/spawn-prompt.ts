@@ -13,6 +13,7 @@
  */
 
 import { type TaskMode, taskMode } from './task-modes'
+import { mergeBackInstructionsWanted } from './worktree-mergeback'
 
 export type TaskMeta = {
   slug: string
@@ -38,6 +39,15 @@ export const WORKTREE_MERGEBACK_INSTRUCTIONS =
 
 export type PromptOptions = {
   autoCommit?: boolean
+  /**
+   * Does this seat integrate itself? THE SAME FIELD the spawn plan and the
+   * `SpawnRequest` carry, so a seat cannot tell the prompt one thing and the
+   * exit-time fast-forward another -- see `worktree-mergeback.ts`, which holds
+   * both readers side by side.
+   *
+   * OPT-IN here: absent emits nothing, which is what it always did. An explicit
+   * `false` is an epic seat declaring that the werk-master merges it.
+   */
   worktreeMergeBack?: boolean
   taskWrapper?: TaskMeta
   /** What to DO with the card. Defaults to `work`. See `task-modes.ts`. */
@@ -54,7 +64,8 @@ export type PromptOptions = {
  */
 export function composeSpawnPrompt(basePrompt: string, opts: PromptOptions = {}): string {
   const suffixes =
-    (opts.autoCommit ? AUTO_COMMIT_INSTRUCTIONS : '') + (opts.worktreeMergeBack ? WORKTREE_MERGEBACK_INSTRUCTIONS : '')
+    (opts.autoCommit ? AUTO_COMMIT_INSTRUCTIONS : '') +
+    (mergeBackInstructionsWanted(opts.worktreeMergeBack) ? WORKTREE_MERGEBACK_INSTRUCTIONS : '')
   if (opts.taskWrapper) {
     return buildTaskPrompt(opts.taskWrapper, suffixes || undefined, basePrompt || undefined, opts.mode, opts.epicRoster)
   }

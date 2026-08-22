@@ -566,6 +566,9 @@ async function dispatchClaudeSpawn(reqIn: SpawnRequest, deps: SpawnDispatchDeps)
           includePartialMessages,
           leaveRunning: req.leaveRunning || undefined,
           worktree: req.worktree || undefined,
+          // Explicit `false` only: absent must stay absent so an unmodified
+          // spawn reaches the sentinel byte-identical to what it always did.
+          worktreeMergeBack: req.worktreeMergeBack === false ? false : undefined,
           env: req.env || undefined,
           appendSystemPrompt,
           // Backend-general config injection (transport-reframe Phase 2). The

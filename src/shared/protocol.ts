@@ -6743,6 +6743,11 @@ export interface SpawnConversation {
   leaveRunning?: boolean
   includePartialMessages?: boolean
   worktree?: string
+  /** Does this seat integrate itself on the way out? Absent = YES (the ad-hoc
+   *  anti-stranding fast-forward, unchanged). `false` = the werk-master merges
+   *  it: the agent host leaves `main`, the branch and the worktree alone.
+   *  See src/shared/worktree-mergeback.ts. */
+  worktreeMergeBack?: boolean
   env?: Record<string, string>
   /** Text appended to the generated system prompt. CC maps to --append-system-prompt;
    *  chat-api prepends as a system message. Ignored by backends that cannot honor

@@ -8,10 +8,10 @@ import { readFileSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { hasPendingDialogs, resetMcpChannel } from '../agent-host-common/mcp-host/mcp-channel'
 import { claudeConfigDir } from '../shared/claude-config-dir'
-import { fastForwardMain } from '../shared/git-ff-main'
 import type { AgentHostMessage } from '../shared/protocol'
 import { writeSecureFile } from '../shared/secure-temp'
 import { shouldExitAfterResultFromEnv } from './adhoc-exit'
+import { adHocMergeBack } from './adhoc-mergeback'
 import type { AgentHostContext } from './agent-host-context'
 import { debug as _debug } from './debug'
 import { emitLaunchEvent, filterRelevantEnv } from './launch-events'
@@ -668,6 +668,10 @@ export function buildHeadlessSpawnOptions(deps: HeadlessCallbackDeps): StreamBac
 /**
  * Perform ad-hoc session shutdown: worktree merge-back, close CC stdin, force-kill safety net.
  * Extracted so it can be called immediately or deferred after pending interactions resolve.
+ *
+ * The merge-back itself lives in `adhoc-mergeback.ts` -- it is the seam an
+ * epic-dispatched seat turns OFF (`worktreeMergeBack: false`), and it needed to
+ * be reachable from a git fixture before it could be pinned by a test.
  */
 function adHocShutdown(
   ctx: AgentHostContext,
@@ -682,76 +686,15 @@ function adHocShutdown(
     // ctx.cwd is the PROJECT ROOT (set at rclaude startup), not the worktree.
     // CC's --worktree flag creates the worktree at .claude/worktrees/<name>.
     const projectRoot = ctx.cwd
-    const wtPath = join(projectRoot, '.claude', 'worktrees', adHocWorktree)
-    const branch = `worktree-${adHocWorktree}`
-
-    try {
-      debug(`[ad-hoc] Worktree cleanup: path=${wtPath} branch=${branch}`)
-
-      // Check if worktree actually exists (CC may have cleaned it up itself)
-      const wtExists = Bun.spawnSync(['test', '-d', wtPath]).exitCode === 0
-      if (!wtExists) {
-        debug(`[ad-hoc] Worktree already gone: ${wtPath}`)
-        ctx.diag('ad-hoc', 'Worktree already cleaned up by CC')
-      } else {
-        const mainBranch =
-          Bun.spawnSync(['git', 'rev-parse', '--verify', 'main'], { cwd: wtPath }).exitCode === 0 ? 'main' : 'master'
-        const aheadResult = Bun.spawnSync(['git', 'rev-list', '--count', `${mainBranch}..HEAD`], { cwd: wtPath })
-        const ahead = Number.parseInt(aheadResult.stdout.toString().trim(), 10) || 0
-
-        let merged = ahead === 0
-        if (ahead > 0) {
-          // Layer 3 of the merge-back defense. This used to call
-          // `git fetch . HEAD:<main>` and report ANY failure as "unmerged
-          // commits", which became a lie the day git started refusing to move a
-          // checked-out ref: the commits merged fine, git just was not allowed
-          // to say so, and every ad-hoc worktree silently "preserved" itself.
-          // fastForwardMain() merges inside main's own worktree and hands back
-          // git's verbatim reason -- LOG EVERYTHING, never a bare failure.
-          const ff = fastForwardMain(wtPath, mainBranch)
-          if (ff.ok) {
-            debug(`[ad-hoc] Merged ${ahead} commits from ${branch} to ${mainBranch} (via ${ff.via})`)
-            ctx.diag('ad-hoc', `Merged ${ahead} commits from ${branch} to ${mainBranch}`)
-            merged = true
-          } else {
-            debug(
-              `[ad-hoc] Cannot fast-forward ${mainBranch} (${ahead} commits on ${branch}, via=${ff.via}): ${ff.message}`,
-            )
-            ctx.diag(
-              'ad-hoc',
-              `WARNING: could not fast-forward ${mainBranch} (${ahead} commits on ${branch}) - worktree preserved: ${ff.message}`,
-            )
-          }
-        } else {
-          debug(`[ad-hoc] Branch ${branch} already merged (0 commits ahead)`)
-        }
-
-        if (merged) {
-          // Remove worktree from project root (must be outside the worktree)
-          const removeResult = Bun.spawnSync(['git', 'worktree', 'remove', wtPath], { cwd: projectRoot })
-          if (removeResult.exitCode === 0) {
-            debug(`[ad-hoc] Removed worktree: ${wtPath}`)
-            ctx.diag('ad-hoc', `Worktree removed: ${adHocWorktree}`)
-            const branchDel = Bun.spawnSync(['git', 'branch', '-d', branch], { cwd: projectRoot })
-            if (branchDel.exitCode === 0) {
-              debug(`[ad-hoc] Deleted branch: ${branch}`)
-              ctx.diag('ad-hoc', `Branch deleted: ${branch}`)
-            } else {
-              debug(`[ad-hoc] Branch delete failed: ${branchDel.stderr.toString().trim()}`)
-            }
-          } else {
-            const err = removeResult.stderr.toString().trim()
-            debug(`[ad-hoc] Worktree remove failed: ${err}`)
-            ctx.diag('ad-hoc', `Worktree remove failed: ${err} - leaving in place`)
-          }
-        } else {
-          ctx.diag('ad-hoc', `Worktree NOT removed (unmerged work on ${branch}). NO CODE LOST.`)
-        }
-      }
-    } catch (e) {
-      debug(`[ad-hoc] Worktree cleanup failed: ${e}`)
-      ctx.diag('ad-hoc', `Worktree cleanup error: ${e} - worktree preserved`)
-    }
+    adHocMergeBack(
+      {
+        projectRoot,
+        worktreePath: join(projectRoot, '.claude', 'worktrees', adHocWorktree),
+        worktreeName: adHocWorktree,
+        branch: `worktree-${adHocWorktree}`,
+      },
+      { diag: (scope, message) => ctx.diag(scope, message), debug, env: process.env },
+    )
   }
 
   debug('[ad-hoc] Result received, closing CC stdin for graceful shutdown')

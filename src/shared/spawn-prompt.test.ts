@@ -32,6 +32,15 @@ describe('composeSpawnPrompt', () => {
     expect(out).toBe(`hello${WORKTREE_MERGEBACK_INSTRUCTIONS}`)
   })
 
+  it('emits nothing when the seat declares worktreeMergeBack=false', () => {
+    // The OTHER end of the same field the exit-time fast-forward reads
+    // (worktree-mergeback.ts). An epic seat is told, in its own prompt, nothing
+    // about merging to main -- because the werk-master merges it after a verdict.
+    const out = composeSpawnPrompt('hello', { worktreeMergeBack: false })
+    expect(out).toBe('hello')
+    expect(out).not.toContain('worktree-finish.sh')
+  })
+
   it('never teaches agents the dead `git fetch . HEAD:main` merge-back', () => {
     // This text shipped that command to every spawned agent. git 2.54 refuses
     // to move a ref checked out in another working tree, and main is always

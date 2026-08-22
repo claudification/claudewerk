@@ -219,6 +219,15 @@ export const spawnRequestSchema = z.object({
         'consult this model (e.g. "fable") mid-task. Passed as --advisor <model>; enables the experimental tool.',
     ),
   worktree: z.string().optional().describe('Branch name - creates isolated git worktree'),
+  worktreeMergeBack: z
+    .boolean()
+    .optional()
+    .describe(
+      'Does this seat integrate itself? Default (absent) = YES: an ad-hoc worktree session fast-forwards main to ' +
+        'its own HEAD on exit, so work is never stranded on a dead branch. Set FALSE for a seat whose work somebody ' +
+        'else merges after reviewing it (every epic-dispatched werk-worker and werk-verifier) -- main is left alone, ' +
+        'and the branch AND worktree are left standing so the unmerged-branch scan can see them.',
+    ),
   env: z.record(z.string(), z.string()).optional().describe('Env var overrides'),
   prompt: z.string().optional().describe('Initial prompt (headless only)'),
   adHoc: z.boolean().optional().describe('Mark as ad-hoc task runner session'),

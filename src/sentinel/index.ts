@@ -71,6 +71,7 @@ import { secureTmpPath, writeSecureFile } from '../shared/secure-temp'
 import { THINKING_DISPLAY_ENV, thinkingDisplayValue } from '../shared/thinking-display'
 import { transcriptSlug } from '../shared/transcript-path'
 import { BUILD_VERSION } from '../shared/version'
+import { WORKTREE_MERGEBACK_ENV, worktreeMergeBackEnv } from '../shared/worktree-mergeback'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
 import { takeAuthExpiryWarning } from './auth-expiry-warn'
@@ -605,6 +606,7 @@ const RCLAUDE_CONVERSATION_VARS = new Set([
   'RCLAUDE_CHANNELS',
   'RCLAUDE_INITIAL_PROMPT_FILE',
   'RCLAUDE_WORKTREE',
+  WORKTREE_MERGEBACK_ENV,
   'RCLAUDE_EFFORT',
   'RCLAUDE_MODEL',
   'RCLAUDE_AUTOCOMPACT_PCT',
@@ -686,6 +688,10 @@ function buildHeadlessEnv(opts: {
   leaveRunning?: boolean
   promptFile?: string
   worktree?: string
+  /** Does this seat integrate itself on the way out? `false` => the agent host
+   *  leaves `main`, the branch and the worktree alone. See
+   *  ../shared/worktree-mergeback.ts. */
+  worktreeMergeBack?: boolean
   effort?: string
   model?: string
   /** Advisor model (CC 2.1.170 server-side advisor tool). Presence enables it. */
@@ -739,6 +745,9 @@ function buildHeadlessEnv(opts: {
   if (opts.leaveRunning) env.RCLAUDE_LEAVE_RUNNING = '1'
   if (opts.promptFile) env.RCLAUDE_INITIAL_PROMPT_FILE = opts.promptFile
   if (opts.worktree) env.RCLAUDE_WORKTREE = opts.worktree
+  // Only ever emitted for an explicit `false`; an unmodified spawn's env is
+  // untouched. The agent host reads it back in `adhoc-mergeback.ts`.
+  Object.assign(env, worktreeMergeBackEnv(opts.worktreeMergeBack))
   if (opts.agent) env.RCLAUDE_AGENT = opts.agent
   if (opts.advisor) {
     // cli-args turns RCLAUDE_ADVISOR into `--advisor <model>`; the experimental
@@ -2190,6 +2199,9 @@ async function spawnConversation(
   adHoc = false,
   adHocTaskId?: string,
   worktree?: string,
+  /** `false` => this seat does not integrate itself; the agent host leaves
+   *  `main`, the branch and the worktree standing. */
+  worktreeMergeBack?: boolean,
   jobId?: string,
   leaveRunning = false,
   includePartialMessages?: boolean,
@@ -2325,6 +2337,7 @@ async function spawnConversation(
       leaveRunning,
       promptFile,
       worktree,
+      worktreeMergeBack,
       effort,
       model,
       bare,
@@ -3955,6 +3968,7 @@ function connect(
             spawnMsg.adHoc || false,
             spawnMsg.adHocTaskId,
             spawnMsg.worktree,
+            spawnMsg.worktreeMergeBack,
             spawnMsg.jobId,
             spawnMsg.leaveRunning || false,
             spawnMsg.includePartialMessages,

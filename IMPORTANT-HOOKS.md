@@ -370,10 +370,34 @@ fast-forwards. Interactive sessions get guidance via CLAUDE.md.
 > helper in both scripts and `src/shared/git-ff-main.ts` for the agent-host twin.
 
 **Layer 3 - Safety nets:**
-- Agent Host (`headless-lifecycle.ts`): On ad-hoc result, checks for unmerged
-  commits and attempts fast-forward before exit.
+- Agent Host (`adhoc-mergeback.ts`, called from `headless-lifecycle.ts`): On
+  ad-hoc result, checks for unmerged commits and attempts fast-forward before exit.
 - WorktreeRemove hook: Last chance to fast-forward before CC deletes the worktree.
   CC ignores exit codes, so this can't block removal.
+
+### A seat that does NOT integrate itself
+
+Layers 2 and 3 exist for a session on a THROWAWAY branch nobody else will merge.
+An epic-dispatched seat is the opposite case: the werk-master merges it, after a
+werk-verifier has read the diff. Four cards in one run reached `main` as bare
+fast-forwards with no werk-master in the path -- one of them eight seconds after
+its werk-verifier was dispatched, so the guard reviewed already-merged code, and
+one of them put a RED `main` in front of a whole generation.
+
+So the seat declares it: `worktreeMergeBack: false` rides the spawn plan, crosses
+the wire as a `SpawnRequest` field, and reaches the agent host as
+`RCLAUDE_WORKTREE_MERGEBACK=0`. Both layer-2 (the prompt fragment in
+`spawn-prompt.ts`) and layer-3 (the exit fast-forward) read that ONE field --
+`src/shared/worktree-mergeback.ts` holds both readers side by side so their
+opposite defaults cannot drift apart.
+
+A held seat leaves `main`, its branch AND its worktree standing, and says so in
+its diag (`branch X left unmerged: the werk-master integrates it`). The worktree
+matters as much as the branch: the epic engine's only structural check for "work
+landed without a werk-master" is `rev-list --count main..<branch>`, and the
+fourth occurrence of this bug was invisible because the seat cleaned up after
+itself. `scripts/worktree-remove.sh` keeps its `ff_main` -- by the time a
+werk-master removes a worktree it has already merged, so the ff is a no-op there.
 
 ### Hook Data Format
 Both hooks receive JSON on stdin (no positional args):
