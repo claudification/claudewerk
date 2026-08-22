@@ -1,7 +1,7 @@
 /**
  * THE SEAT LEASE, as a decision -- the belt under the dispatch guard.
  *
- * The replay in the first describe is the 2026-08-21 pair: two implementers
+ * The replay in the first describe is the 2026-08-21 pair: two werk-workers
  * dispatched onto ONE card, sharing ONE worktree (`cardBranch` derives the
  * worktree name from the card id), so the loser's edits get staged into the
  * winner's commit with no conflict and no signal. The dispatch guard now closes
@@ -15,7 +15,7 @@ import { type SeatLeaseKey, seatClaimBaton, seatLeaseKeyPrefix, seatRefusalNotic
 
 const T0 = Date.parse('2026-08-21T10:00:00.000Z')
 const CARD = 'epic-just-dispatched-seat-invisible-to-both-lanes'
-const key = (role: SeatLeaseKey['role'] = 'implementer'): SeatLeaseKey => ({
+const key = (role: SeatLeaseKey['role'] = 'werk-worker'): SeatLeaseKey => ({
   epicId: 'epic-project-runner',
   cardId: CARD,
   role,
@@ -28,7 +28,7 @@ function claim(
   convId: string,
   holderAlive: boolean,
   nowMs: number,
-  role: SeatLeaseKey['role'] = 'implementer',
+  role: SeatLeaseKey['role'] = 'werk-worker',
 ) {
   const prefix = seatLeaseKeyPrefix(role)
   const current = readLease(meta, prefix)
@@ -66,22 +66,22 @@ describe('two seats, one card, one role -- the 2026-08-21 replay', () => {
 })
 
 describe('role is part of the key', () => {
-  test('an implementer and a verifier on the SAME card both proceed', () => {
-    const impl = claim({}, 'conv_impl', false, T0, 'implementer')
-    const verify = claim(impl.meta, 'conv_verify', true, T0 + 1000, 'verifier')
+  test('a werk-worker and a werk-verifier on the SAME card both proceed', () => {
+    const impl = claim({}, 'conv_impl', false, T0, 'werk-worker')
+    const verify = claim(impl.meta, 'conv_verify', true, T0 + 1000, 'werk-verifier')
 
     expect(impl.decision.grant).toBe(true)
     expect(verify.decision.grant).toBe(true)
   })
 
   test('the two roles write DIFFERENT frontmatter keys', () => {
-    expect(seatLeaseKeyPrefix('implementer')).toBe('seat_implementer')
-    expect(seatLeaseKeyPrefix('verifier')).toBe('seat_verifier')
+    expect(seatLeaseKeyPrefix('werk-worker')).toBe('seat_werk-worker')
+    expect(seatLeaseKeyPrefix('werk-verifier')).toBe('seat_werk-verifier')
   })
 
-  test('a second VERIFIER still loses to the first verifier', () => {
-    const first = claim({}, 'conv_v1', false, T0, 'verifier')
-    const second = claim(first.meta, 'conv_v2', true, T0 + 1000, 'verifier')
+  test('a second WERK-VERIFIER still loses to the first werk-verifier', () => {
+    const first = claim({}, 'conv_v1', false, T0, 'werk-verifier')
+    const second = claim(first.meta, 'conv_v2', true, T0 + 1000, 'werk-verifier')
     expect(second.decision.grant).toBe(false)
   })
 })
@@ -89,7 +89,7 @@ describe('role is part of the key', () => {
 describe('releasing it -- the part that must never strand a card', () => {
   test('an explicit release makes the card claimable again', () => {
     const first = claim({}, 'conv_first', false, T0)
-    const released = { ...first.meta, ...releasePatch(seatLeaseKeyPrefix('implementer')) }
+    const released = { ...first.meta, ...releasePatch(seatLeaseKeyPrefix('werk-worker')) }
 
     const next = claim(released, 'conv_second', false, T0 + 60_000)
 
@@ -108,7 +108,7 @@ describe('releasing it -- the part that must never strand a card', () => {
 
   /**
    * THE WEDGE. A holder blocked in a Bash call is ALIVE and emits nothing, which
-   * is exactly what deadlocked the overseer lease on 2026-08-20 -- not because
+   * is exactly what deadlocked the werk-master lease on 2026-08-20 -- not because
    * the TTL was missing, but because `epic-beat.ts:251` returned above the CAS so
    * the question was never put. This asserts the CAS is REACHED: the claim path
    * has no early return on liveness, so `holderAlive: true` past the TTL grants.
@@ -129,7 +129,7 @@ describe('releasing it -- the part that must never strand a card', () => {
     // evaluates them one after the other, synchronously, and the second one's
     // expectation is already wrong.
     const first = claim({}, 'conv_a', false, T0)
-    const prefix = seatLeaseKeyPrefix('implementer')
+    const prefix = seatLeaseKeyPrefix('werk-worker')
     const stale = evaluateLease(
       readLease(first.meta, prefix),
       { convId: 'conv_b', expectGen: 0, holderAlive: false },
@@ -156,7 +156,7 @@ describe('the refusal is LOUD -- a belt that fires invisibly teaches nobody', ()
     expect(body).toContain('conv_second_bbb')
     expect(body).toContain('conv_first_aaaa')
     expect(body).toContain(CARD)
-    expect(body).toContain('implementer')
+    expect(body).toContain('werk-worker')
   })
 
   test('a claim that DISPLACED a holder is audited too -- it is the same collision', () => {
@@ -167,10 +167,10 @@ describe('the refusal is LOUD -- a belt that fires invisibly teaches nobody', ()
   })
 
   test('an uncontested claim says so without inventing a displaced holder', () => {
-    const body = seatClaimBaton({ key: key('verifier'), convId: 'conv_only', outcome: 'granted' })
+    const body = seatClaimBaton({ key: key('werk-verifier'), convId: 'conv_only', outcome: 'granted' })
 
     expect(body).toContain('conv_only')
-    expect(body).toContain('verifier')
+    expect(body).toContain('werk-verifier')
     expect(body).not.toContain('undefined')
   })
 
@@ -183,6 +183,6 @@ describe('the refusal is LOUD -- a belt that fires invisibly teaches nobody', ()
   })
 
   test('a seat is named by all three parts of its key', () => {
-    expect(seatSlug(key())).toBe(`epic-project-runner/${CARD}/implementer`)
+    expect(seatSlug(key())).toBe(`epic-project-runner/${CARD}/werk-worker`)
   })
 })

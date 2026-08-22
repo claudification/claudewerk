@@ -254,7 +254,7 @@ before spawning anything on the new runtime.
 `brew trust` + `brew upgrade` mutate a shared box outside git, with 54 live bun
 processes on it, and the trust half is a standing security decision about a
 third-party tap rather than a one-off. That is a fleet call, and the card says as
-much. It is raised to the overseer rather than taken here.
+much. It is raised to the werk-master rather than taken here.
 
 ## After the fleet is actually on 1.4.0
 

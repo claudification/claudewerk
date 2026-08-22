@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { EPIC_ORDERS } from '../shared/epic-orders'
-import { buildImplementerPrompt } from '../shared/epic-prompt-implementer'
-import type { OverseerPromptCtx } from '../shared/epic-prompt-overseer'
+import type { WerkMasterPromptCtx } from '../shared/epic-prompt-werk-master'
+import { buildWerkVerifierPrompt } from '../shared/epic-prompt-werk-verifier'
+import { buildWerkWorkerPrompt } from '../shared/epic-prompt-werk-worker'
 import type { EpicPlan } from '../shared/epic-ready'
 import type { EpicRole } from '../shared/epic-run-types'
 import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
-import { buildGuardPrompt } from '../shared/guard-prompt'
 import { OrderCapsError } from '../shared/order-caps'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import { resolveSpawnConfig } from '../shared/spawn-defaults'
@@ -13,10 +13,10 @@ import { worktreeBranch } from '../shared/worktree-path'
 import {
   type EpicSpawnCtx,
   type EpicSpawnPlan,
-  planImplementerSpawn,
-  planOverseerSpawn,
-  planPlannerSpawn,
-  planVerifierSpawn,
+  planWerkMasterSpawn,
+  planWerkPlannerSpawn,
+  planWerkVerifierSpawn,
+  planWerkWorkerSpawn,
 } from './epic-spawn-plan'
 
 const CTX: EpicSpawnCtx = {
@@ -60,7 +60,7 @@ const PLAN: EpicPlan = {
   complete: false,
 }
 
-const PROMPT_CTX: OverseerPromptCtx = {
+const PROMPT_CTX: WerkMasterPromptCtx = {
   projectUri: CTX.project,
   projectRoot: CTX.projectRoot,
   run: { ...RUN, digest: 'x' },
@@ -71,26 +71,26 @@ const PROMPT_CTX: OverseerPromptCtx = {
   nowMs: Date.parse('2026-08-21T00:00:00.000Z'),
 }
 
-const overseer = () => planOverseerSpawn(CTX, PROMPT_CTX)
+const werkMaster = () => planWerkMasterSpawn(CTX, PROMPT_CTX)
 
 /** The mute is a second PreToolUse hook keyed on tool name. */
 const hookCount = (s: Record<string, unknown>) => (s.hooks as { PreToolUse: unknown[] }).PreToolUse.length
 
 describe('the three seats differ in what they CAN do, not just what they are told', () => {
-  test('an implementer is muted', () => {
-    expect(hookCount(planImplementerSpawn(CTX, 't1').settingsInline)).toBe(2)
+  test('a werk-worker is muted', () => {
+    expect(hookCount(planWerkWorkerSpawn(CTX, 't1').settingsInline)).toBe(2)
   })
 
-  test('a verifier is muted -- it judges, it does not escalate', () => {
-    expect(hookCount(planVerifierSpawn(CTX, 't1').settingsInline)).toBe(2)
+  test('a werk-verifier is muted -- it judges, it does not escalate', () => {
+    expect(hookCount(planWerkVerifierSpawn(CTX, 't1').settingsInline)).toBe(2)
   })
 
-  test('the overseer keeps its voice', () => {
-    expect(hookCount(overseer().settingsInline)).toBe(1)
+  test('the werk-master keeps its voice', () => {
+    expect(hookCount(werkMaster().settingsInline)).toBe(1)
   })
 
   test('every seat runs auto and headless, ad-hoc', () => {
-    for (const plan of [overseer(), planImplementerSpawn(CTX, 't1'), planVerifierSpawn(CTX, 't1')]) {
+    for (const plan of [werkMaster(), planWerkWorkerSpawn(CTX, 't1'), planWerkVerifierSpawn(CTX, 't1')]) {
       expect(plan.permissionMode).toBe('auto')
       expect(plan.headless).toBe(true)
       expect(plan.adHoc).toBe(true)
@@ -106,7 +106,7 @@ describe('the three seats differ in what they CAN do, not just what they are tol
    * value that actually reaches the sentinel -- the two must agree.
    */
   test('the declared mode survives resolution -- no downstream rewrite', () => {
-    for (const plan of [overseer(), planImplementerSpawn(CTX, 't1'), planVerifierSpawn(CTX, 't1')]) {
+    for (const plan of [werkMaster(), planWerkWorkerSpawn(CTX, 't1'), planWerkVerifierSpawn(CTX, 't1')]) {
       const resolved = resolveSpawnConfig(plan as never)
       expect(resolved.permissionMode).toBe(plan.permissionMode)
     }
@@ -119,7 +119,7 @@ describe('the three seats differ in what they CAN do, not just what they are tol
    * floor ever became allowlist-shaped it would stop being a floor.
    */
   test('the seat mode does not disarm the deny-floor', () => {
-    const settings = planImplementerSpawn(CTX, 't1').settingsInline as {
+    const settings = planWerkWorkerSpawn(CTX, 't1').settingsInline as {
       permissions: { deny: string[] }
       hooks: { PreToolUse: unknown[] }
     }
@@ -130,13 +130,13 @@ describe('the three seats differ in what they CAN do, not just what they are tol
 })
 
 describe('worktrees', () => {
-  test('an implementer gets its own worktree, named for the card', () => {
-    expect(planImplementerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
+  test('a werk-worker gets its own worktree, named for the card', () => {
+    expect(planWerkWorkerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
   })
 
   /**
    * The WORK RULES line used to quote the WORKTREE NAME as if it were the branch,
-   * so an implementer was told `epic/<epic>/<card>` while `git branch
+   * so a werk-worker was told `epic/<epic>/<card>` while `git branch
    * --show-current` in its own tree said `worktree-epic/<epic>/<card>`. Measured
    * on the worktree that fixed this, not inferred.
    *
@@ -146,20 +146,20 @@ describe('worktrees', () => {
    * quote the bare name.
    */
   test('the prompt names the REAL branch, `worktree-` prefixed -- not the worktree name', () => {
-    const plan = planImplementerSpawn(CTX, 't1')
+    const plan = planWerkWorkerSpawn(CTX, 't1')
     expect(plan.prompt).toContain(`Work on branch \`${worktreeBranch('epic/werk-epic/t1')}\``)
     expect(plan.prompt).not.toContain('Work on branch `epic/werk-epic/t1`')
     expect(plan.worktree).toBe('epic/werk-epic/t1')
   })
 
   /**
-   * The hazard the card was raised for: from `epic-implementer-base-lacks-deps`
+   * The hazard the card was raised for: from `epic-werk-worker-base-lacks-deps`
    * onwards one prompt quotes TWO branch refs. If they disagree on the prefix, an
-   * implementer that reasons "rule 1 drops it, so the merge ref probably does
+   * werk-worker that reasons "rule 1 drops it, so the merge ref probably does
    * too" runs `git merge` against a ref that does not resolve.
    */
   test('both branch refs in one prompt use the same spelling', () => {
-    const prompt = planImplementerSpawn(CTX, 't1', 'main', ['t0']).prompt
+    const prompt = planWerkWorkerSpawn(CTX, 't1', 'main', ['t0']).prompt
     expect(prompt).toContain(`\`${worktreeBranch('epic/werk-epic/t1')}\``)
     expect(prompt).toContain(`\`${worktreeBranch('epic/werk-epic/t0')}\``)
     for (const line of prompt.split('\n')) {
@@ -168,12 +168,12 @@ describe('worktrees', () => {
     }
   })
 
-  test('a verifier gets a SEPARATE scratch worktree from the implementer', () => {
-    expect(planVerifierSpawn(CTX, 't1').worktree).not.toBe(planImplementerSpawn(CTX, 't1').worktree)
+  test('a werk-verifier gets a SEPARATE scratch worktree from the werk-worker', () => {
+    expect(planWerkVerifierSpawn(CTX, 't1').worktree).not.toBe(planWerkWorkerSpawn(CTX, 't1').worktree)
   })
 
-  test('the overseer has NO worktree -- it judges main, it cannot hide from it', () => {
-    expect(overseer().worktree).toBeUndefined()
+  test('the werk-master has NO worktree -- it judges main, it cannot hide from it', () => {
+    expect(werkMaster().worktree).toBeUndefined()
   })
 })
 
@@ -182,7 +182,7 @@ describe('worktrees', () => {
  *
  * `epic/epic-the-wall-ii/verify-epic-engine-baton-window-relitigates-settles` is
  * 73 characters. Claude Code refuses a worktree name over 64 and exits 1 in
- * ~1.2s, so the verifier never booted, produced zero output, and the sweep read
+ * ~1.2s, so the werk-verifier never booted, produced zero output, and the sweep read
  * its death as a completed leg. The conversation NAME had a budget; the worktree
  * name did not, and it is the longer of the two by construction (`verify-` on
  * top of the full card id, no truncation anywhere).
@@ -195,14 +195,14 @@ describe('worktree names fit inside CC’s 64-character limit', () => {
   const LONG = 'epic-engine-baton-window-relitigates-settles'
   const ctx: EpicSpawnCtx = { ...CTX, epicId: 'epic-the-wall-ii' }
 
-  test('the incident case: a verifier for a 43-char card id', () => {
-    const plan = planVerifierSpawn(ctx, LONG)
+  test('the incident case: a werk-verifier for a 43-char card id', () => {
+    const plan = planWerkVerifierSpawn(ctx, LONG)
     expect(plan.worktree).toBeDefined()
     expect((plan.worktree as string).length).toBeLessThanOrEqual(64)
   })
 
-  test('an implementer worktree is capped too -- and the PROMPT names the branch cut from it', () => {
-    const plan = planImplementerSpawn({ ...ctx, epicId: 'a-fairly-long-epic-identifier-here' }, `${LONG}-and-more`)
+  test('a werk-worker worktree is capped too -- and the PROMPT names the branch cut from it', () => {
+    const plan = planWerkWorkerSpawn({ ...ctx, epicId: 'a-fairly-long-epic-identifier-here' }, `${LONG}-and-more`)
     const worktree = plan.worktree as string
     expect(worktree.length).toBeLessThanOrEqual(64)
     // The SHORTENING must survive the prefixing: the prompt names the shortened
@@ -212,26 +212,26 @@ describe('worktree names fit inside CC’s 64-character limit', () => {
   })
 
   test('two long siblings that share a prefix do NOT truncate onto the same branch', () => {
-    const a = planVerifierSpawn(ctx, `${LONG}-alpha`).worktree
-    const b = planVerifierSpawn(ctx, `${LONG}-bravo`).worktree
+    const a = planWerkVerifierSpawn(ctx, `${LONG}-alpha`).worktree
+    const b = planWerkVerifierSpawn(ctx, `${LONG}-bravo`).worktree
     expect(a).not.toBe(b)
   })
 
   test('the branch is deterministic -- a retry lands on the same worktree', () => {
-    expect(planVerifierSpawn(ctx, LONG).worktree).toBe(planVerifierSpawn({ ...ctx, gen: 99 }, LONG).worktree)
+    expect(planWerkVerifierSpawn(ctx, LONG).worktree).toBe(planWerkVerifierSpawn({ ...ctx, gen: 99 }, LONG).worktree)
   })
 
   test('a short card id is left exactly as it was -- no gratuitous hashing', () => {
-    expect(planImplementerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
-    expect(planVerifierSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/verify-t1')
+    expect(planWerkWorkerSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/t1')
+    expect(planWerkVerifierSpawn(CTX, 't1').worktree).toBe('epic/werk-epic/verify-t1')
   })
 })
 
-describe("a dependency's branch, as the implementer is told to merge it", () => {
+describe("a dependency's branch, as the werk-worker is told to merge it", () => {
   const LONG_DEP = 'epic-engine-baton-window-relitigates-settles-dependency'
 
   test('it is the `worktree-` prefixed branch, not the worktree name', () => {
-    const prompt = planImplementerSpawn(CTX, 't1', 'main', ['t0']).prompt
+    const prompt = planWerkWorkerSpawn(CTX, 't1', 'main', ['t0']).prompt
     // `worktreeBranch(seatBranch(...))` -- the prefix scripts/worktree-create.sh
     // adds. Quoting the plan's own `worktree` field here would be a ref that
     // `git merge` cannot resolve.
@@ -244,25 +244,25 @@ describe("a dependency's branch, as the implementer is told to merge it", () => 
     // The dependency's own seat would get this worktree; the merge ref is that,
     // prefixed. Derived from the same function rather than hand-typed, so a
     // change to the shortening cannot silently desync the two.
-    const depWorktree = planImplementerSpawn(ctx, dep).worktree as string
+    const depWorktree = planWerkWorkerSpawn(ctx, dep).worktree as string
     expect(depWorktree.length).toBeLessThanOrEqual(64)
-    expect(planImplementerSpawn(ctx, 't1', 'main', [dep]).prompt).toContain(worktreeBranch(depWorktree))
+    expect(planWerkWorkerSpawn(ctx, 't1', 'main', [dep]).prompt).toContain(worktreeBranch(depWorktree))
   })
 
   test('no dependency, no section -- a leaf card is dispatched with the prompt it always had', () => {
-    expect(planImplementerSpawn(CTX, 't1').prompt).toBe(planImplementerSpawn(CTX, 't1', 'main', []).prompt)
-    expect(planImplementerSpawn(CTX, 't1').prompt).not.toContain('DEPENDS ON WORK')
+    expect(planWerkWorkerSpawn(CTX, 't1').prompt).toBe(planWerkWorkerSpawn(CTX, 't1', 'main', []).prompt)
+    expect(planWerkWorkerSpawn(CTX, 't1').prompt).not.toContain('DEPENDS ON WORK')
   })
 
   test('every dependency of a card reaches the prompt', () => {
-    const prompt = planImplementerSpawn(CTX, 't3', 'main', ['t1', 't2']).prompt
+    const prompt = planWerkWorkerSpawn(CTX, 't3', 'main', ['t1', 't2']).prompt
     expect(prompt).toContain(worktreeBranch('epic/werk-epic/t1'))
     expect(prompt).toContain(worktreeBranch('epic/werk-epic/t2'))
   })
 
   test('passing dependencies changes NOTHING about readiness or the base ref', () => {
-    const plain = planImplementerSpawn(CTX, 't1')
-    const withDeps = planImplementerSpawn(CTX, 't1', 'main', ['t0'])
+    const plain = planWerkWorkerSpawn(CTX, 't1')
+    const withDeps = planWerkWorkerSpawn(CTX, 't1', 'main', ['t0'])
     expect(withDeps.worktree).toBe(plain.worktree as string)
     expect(withDeps.name).toBe(plain.name)
     expect(withDeps.prompt).toContain('cut from `main`')
@@ -271,51 +271,51 @@ describe("a dependency's branch, as the implementer is told to merge it", () => 
 
 describe('the launch tag', () => {
   test('carries the seat, the card and the dispatching generation', () => {
-    expect(planImplementerSpawn(CTX, 't1').epic).toEqual({
+    expect(planWerkWorkerSpawn(CTX, 't1').epic).toEqual({
       epicId: 'werk-epic',
-      role: 'implementer',
+      role: 'werk-worker',
       gen: 4,
       cardId: 't1',
     })
   })
 
-  test('the overseer serves the epic, not a card', () => {
-    expect(overseer().epic.cardId).toBeUndefined()
-    expect(overseer().epic.role).toBe('overseer')
+  test('the werk-master serves the epic, not a card', () => {
+    expect(werkMaster().epic.cardId).toBeUndefined()
+    expect(werkMaster().epic.role).toBe('werk-master')
   })
 })
 
 describe('the prompts say the load-bearing things', () => {
-  test('an implementer is told there is no human AND what to do instead', () => {
-    const prompt = planImplementerSpawn(CTX, 't1').prompt
+  test('a werk-worker is told there is no human AND what to do instead', () => {
+    const prompt = planWerkWorkerSpawn(CTX, 't1').prompt
     expect(prompt).toContain('THERE IS NO HUMAN')
-    expect(prompt).toContain('needs-overseer')
+    expect(prompt).toContain('needs-werk-master')
     expect(prompt).toContain('depends_on')
   })
 
-  test('an implementer is told it may not approve its own work', () => {
-    const prompt = planImplementerSpawn(CTX, 't1').prompt
+  test('a werk-worker is told it may not approve its own work', () => {
+    const prompt = planWerkWorkerSpawn(CTX, 't1').prompt
     expect(prompt).toContain('in-review')
     expect(prompt).toContain('may not approve your own work')
   })
 
-  test('the verifier is told to distrust the worker', () => {
-    expect(planVerifierSpawn(CTX, 't1').prompt).toContain('do NOT trust')
+  test('the werk-verifier is told to distrust the worker', () => {
+    expect(planWerkVerifierSpawn(CTX, 't1').prompt).toContain('do NOT trust')
   })
 
-  test('the overseer is told it is the only route to a human', () => {
-    expect(overseer().prompt).toContain('ONLY CONVERSATION IN THIS RUN THAT MAY TALK TO A HUMAN')
+  test('the werk-master is told it is the only route to a human', () => {
+    expect(werkMaster().prompt).toContain('ONLY CONVERSATION IN THIS RUN THAT MAY TALK TO A HUMAN')
   })
 
-  test('the overseer prompt carries the wake reason and what settled', () => {
-    const prompt = overseer().prompt
+  test('the werk-master prompt carries the wake reason and what settled', () => {
+    const prompt = werkMaster().prompt
     expect(prompt).toContain('card-settled')
     expect(prompt).toContain('t1 landed')
   })
 
   test('names stay inside the 80-char field', () => {
     const long = { ...CTX, epicId: 'a-very-long-epic-identifier-that-goes-on-and-on-forever-and-ever' }
-    expect(planImplementerSpawn(long, 'another-really-long-card-id-here').name.length).toBeLessThanOrEqual(80)
+    expect(planWerkWorkerSpawn(long, 'another-really-long-card-id-here').name.length).toBeLessThanOrEqual(80)
   })
 })
 
@@ -330,7 +330,7 @@ describe('the prompts say the load-bearing things', () => {
 describe('seat names are unique per ATTEMPT, not just per card', () => {
   const ctx = (gen: number): EpicSpawnCtx => ({ ...CTX, gen })
   const seat = (gen: number) =>
-    planOverseerSpawn(ctx(gen), {
+    planWerkMasterSpawn(ctx(gen), {
       projectUri: CTX.project,
       projectRoot: CTX.projectRoot,
       run: { ...RUN, digest: 'x' },
@@ -342,16 +342,16 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
     }).name
 
   test('two generations of the same card get different names', () => {
-    expect(planImplementerSpawn(ctx(1), 'wall-filter-store').name).not.toBe(
-      planImplementerSpawn(ctx(5), 'wall-filter-store').name,
+    expect(planWerkWorkerSpawn(ctx(1), 'wall-filter-store').name).not.toBe(
+      planWerkWorkerSpawn(ctx(5), 'wall-filter-store').name,
     )
   })
 
-  test('a verifier never collides with the implementer of the same card and generation', () => {
-    expect(planVerifierSpawn(ctx(6), 'card-a').name).not.toBe(planImplementerSpawn(ctx(6), 'card-a').name)
+  test('a werk-verifier never collides with the werk-worker of the same card and generation', () => {
+    expect(planWerkVerifierSpawn(ctx(6), 'card-a').name).not.toBe(planWerkWorkerSpawn(ctx(6), 'card-a').name)
   })
 
-  test('two overseer generations get different names', () => {
+  test('two werk-master generations get different names', () => {
     expect(seat(6)).not.toBe(seat(7))
   })
 
@@ -361,13 +361,13 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
    * long enough to overflow the budget.
    */
   test('a very long card id is shortened, and the generation SURVIVES', () => {
-    const name = planVerifierSpawn(ctx(6), 'main-biome-residue-conversation-item-helpers-and-then-some').name
+    const name = planWerkVerifierSpawn(ctx(6), 'main-biome-residue-conversation-item-helpers-and-then-some').name
     expect(name.length).toBeLessThanOrEqual(60)
     expect(name.endsWith(' g6')).toBe(true)
   })
 
   test('the name still says which epic and which card, for a human reading the list', () => {
-    const name = planImplementerSpawn(ctx(6), 'wall-filter-store').name
+    const name = planWerkWorkerSpawn(ctx(6), 'wall-filter-store').name
     expect(name).toContain(CTX.epicId)
     expect(name).toContain('wall-filter-store')
   })
@@ -377,7 +377,7 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
  * STEP 2's ACCEPTANCE TEST, and the only one that can fail it.
  *
  * The seats moved out of this file into `order@1` artifacts (`epic-orders.ts`)
- * and the planners now COMPILE card + order. That is a refactor, so the bar is
+ * and the werk-planners now COMPILE card + order. That is a refactor, so the bar is
  * that the engine emits what it emitted before -- if seat behaviour changed too,
  * two things moved at once and nobody can say which one moved the run.
  *
@@ -387,8 +387,8 @@ describe('seat names are unique per ATTEMPT, not just per card', () => {
  * never reached CC pass its own test for the life of the feature.
  */
 describe('compiling card + order emits EXACTLY what the hardcoded seats emitted', () => {
-  const planner = () =>
-    planPlannerSpawn(CTX, {
+  const werkPlanner = () =>
+    planWerkPlannerSpawn(CTX, {
       projectUri: CTX.project,
       projectRoot: CTX.projectRoot,
       run: { ...RUN, digest: 'x' },
@@ -408,20 +408,20 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
   }
 
   const SEATS: SeatCase[] = [
-    { seat: 'overseer', plan: overseer, role: 'overseer', name: '[werk-epic] overseer g4' },
-    { seat: 'planner', plan: planner, role: 'overseer', name: '[werk-epic] planner overseer g4' },
+    { seat: 'werk-master', plan: werkMaster, role: 'werk-master', name: '[werk-epic] werk-master g4' },
+    { seat: 'werk-planner', plan: werkPlanner, role: 'werk-master', name: '[werk-epic] werk-planner werk-master g4' },
     {
-      seat: 'implementer',
-      plan: () => planImplementerSpawn(CTX, 't1'),
-      role: 'implementer',
+      seat: 'werk-worker',
+      plan: () => planWerkWorkerSpawn(CTX, 't1'),
+      role: 'werk-worker',
       name: '[werk-epic] t1 g4',
       worktree: 'epic/werk-epic/t1',
       cardId: 't1',
     },
     {
-      seat: 'verifier',
-      plan: () => planVerifierSpawn(CTX, 't1'),
-      role: 'verifier',
+      seat: 'werk-verifier',
+      plan: () => planWerkVerifierSpawn(CTX, 't1'),
+      role: 'werk-verifier',
       name: '[werk-epic] verify t1 g4',
       worktree: 'epic/werk-epic/verify-t1',
       cardId: 't1',
@@ -460,12 +460,12 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
   /**
    * The order NAMES its prompt builder rather than referencing one (four
    * builders, four context types). That declaration is only worth anything if
-   * something checks it against the call the planner actually makes.
+   * something checks it against the call the werk-planner actually makes.
    */
-  test('each order’s declared prompt builder is the one the planner calls', () => {
-    expect(EPIC_ORDERS.implementer.prompt).toBe('implementer')
-    expect(planImplementerSpawn(CTX, 't1').prompt).toBe(
-      buildImplementerPrompt({
+  test('each order’s declared prompt builder is the one the werk-planner calls', () => {
+    expect(EPIC_ORDERS['werk-worker'].prompt).toBe('werk-worker')
+    expect(planWerkWorkerSpawn(CTX, 't1').prompt).toBe(
+      buildWerkWorkerPrompt({
         projectUri: CTX.project,
         projectRoot: CTX.projectRoot,
         epicId: CTX.epicId,
@@ -475,11 +475,16 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
         dependsOn: [],
       }),
     )
-    expect(EPIC_ORDERS.verifier.prompt).toBe('guard')
-    expect(planVerifierSpawn(CTX, 't1').prompt).toBe(
+    expect(EPIC_ORDERS['werk-verifier'].prompt).toBe('werk-verifier')
+    expect(planWerkVerifierSpawn(CTX, 't1').prompt).toBe(
       // `epicId` and nothing else: it is what switches the seat-lease order on,
       // and a Guard dispatched by the epic engine is a WERK seat.
-      buildGuardPrompt({ projectUri: CTX.project, projectRoot: CTX.projectRoot, cardId: 't1', epicId: CTX.epicId }),
+      buildWerkVerifierPrompt({
+        projectUri: CTX.project,
+        projectRoot: CTX.projectRoot,
+        cardId: 't1',
+        epicId: CTX.epicId,
+      }),
     )
   })
 })
@@ -487,15 +492,15 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
 /**
  * STEP 3, at the seam the engine actually uses.
  *
- * `order-caps.test.ts` proves the composition; this proves the PLANNER is wired
+ * `order-caps.test.ts` proves the composition; this proves the WERK-PLANNER is wired
  * to it -- that a seat whose order asks for more privilege than the caller holds
  * fails at plan time instead of being quietly dispatched at whatever the caller
  * happened to hold.
  */
 describe('an order can never widen the trust of whoever runs it', () => {
   test('the shipped seats plan fine under the benevolent default', () => {
-    expect(() => planImplementerSpawn(CTX, 't1')).not.toThrow()
-    expect(() => planVerifierSpawn({ ...CTX, trustLevel: 'benevolent' }, 't1')).not.toThrow()
+    expect(() => planWerkWorkerSpawn(CTX, 't1')).not.toThrow()
+    expect(() => planWerkVerifierSpawn({ ...CTX, trustLevel: 'benevolent' }, 't1')).not.toThrow()
   })
 
   /**
@@ -507,11 +512,11 @@ describe('an order can never widen the trust of whoever runs it', () => {
    */
   test('a merely-trusted caller is REFUSED, not downgraded', () => {
     const ctx: EpicSpawnCtx = { ...CTX, trustLevel: 'trusted' }
-    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(OrderCapsError)
-    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(/requires benevolent trust \(caller is trusted\)/)
+    expect(() => planWerkWorkerSpawn(ctx, 't1')).toThrow(OrderCapsError)
+    expect(() => planWerkWorkerSpawn(ctx, 't1')).toThrow(/requires benevolent trust \(caller is trusted\)/)
   })
 
   test('the refusal names the order, so a log line says WHICH seat asked', () => {
-    expect(() => planOverseerSpawn({ ...CTX, trustLevel: 'untrusted' }, PROMPT_CTX)).toThrow(/OVERSEER@1/)
+    expect(() => planWerkMasterSpawn({ ...CTX, trustLevel: 'untrusted' }, PROMPT_CTX)).toThrow(/WERK-MASTER@1/)
   })
 })

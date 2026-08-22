@@ -9,12 +9,12 @@ import {
   generationMismatch,
   groupEpicConversations,
   isReservedScannerLane,
-  lostOverseer,
+  lostWerkMaster,
   MAX_LAUNCH_ATTEMPTS,
   unacknowledgedCards,
   unacknowledgedFailedLegs,
 } from './epic-sweep'
-import { buildOverseerReaper, NEVER_REAPED, OVERSEER_SILENCE_MS, type Reaper } from './epic-vitality'
+import { buildWerkMasterReaper, NEVER_REAPED, type Reaper, WERK_MASTER_SILENCE_MS } from './epic-vitality'
 
 let n = 0
 function conv(tag: EpicLaunchTag | undefined, live: boolean, output = true): Conversation & { __live: boolean } {
@@ -32,10 +32,10 @@ const producedOutput = (c: Conversation) => (c as unknown as { __output: boolean
 
 /** The tag only carries identity; liveness is the second arg to `conv()`. */
 const impl = (cardId: string, gen = 1): EpicLaunchTag & never =>
-  ({ epicId: 'e1', role: 'implementer', cardId, gen }) as never
-const overseer = (gen = 1): EpicLaunchTag & never => ({ epicId: 'e1', role: 'overseer', gen }) as never
-const verifier = (cardId: string, gen = 1): EpicLaunchTag & never =>
-  ({ epicId: 'e1', role: 'verifier', cardId, gen }) as never
+  ({ epicId: 'e1', role: 'werk-worker', cardId, gen }) as never
+const werkMaster = (gen = 1): EpicLaunchTag & never => ({ epicId: 'e1', role: 'werk-master', gen }) as never
+const werkVerifier = (cardId: string, gen = 1): EpicLaunchTag & never =>
+  ({ epicId: 'e1', role: 'werk-verifier', cardId, gen }) as never
 
 function entry(kind: EpicLogEntry['kind'], cardId?: string): EpicLogEntry {
   return { ts: '', kind, convId: 'c', ...(cardId ? { cardId } : {}), body: '' }
@@ -46,7 +46,7 @@ describe('groupEpicConversations', () => {
     expect(groupEpicConversations([conv(undefined, true)], isLive).size).toBe(0)
   })
 
-  test('a live implementer is in flight; a dead one has settled', () => {
+  test('a live werk-worker is in flight; a dead one has settled', () => {
     const group = groupEpicConversations([conv(impl('t1'), true), conv(impl('t2'), false)], isLive).get('e1')
     expect(group?.inFlight).toEqual(['t1'])
     expect(group?.settled).toEqual(['t2'])
@@ -64,39 +64,39 @@ describe('groupEpicConversations', () => {
     expect(group?.inFlight).toEqual(['t1'])
   })
 
-  test('a live verifier is reported in its OWN lane, not just the combined one', () => {
-    const group = groupEpicConversations([conv(verifier('t1'), true)], isLive).get('e1')
+  test('a live werk-verifier is reported in its OWN lane, not just the combined one', () => {
+    const group = groupEpicConversations([conv(werkVerifier('t1'), true)], isLive).get('e1')
     expect(group?.inVerify).toEqual(['t1'])
     expect(group?.inFlight).toEqual(['t1'])
   })
 
-  test('a DEAD verifier leaves the verify lane, so the card can be re-verified', () => {
-    const group = groupEpicConversations([conv(verifier('t1'), false)], isLive).get('e1')
+  test('a DEAD werk-verifier leaves the verify lane, so the card can be re-verified', () => {
+    const group = groupEpicConversations([conv(werkVerifier('t1'), false)], isLive).get('e1')
     expect(group?.inVerify).toEqual([])
     expect(group?.settled).toEqual(['t1'])
   })
 
   /** The lane must be role-scoped or it is just `inFlight` under another name --
-   *  and an implementer keeping a card out of the verify lane would strand the
-   *  verdict for as long as the implementer ran. */
-  test('a live IMPLEMENTER never lands in the verify lane', () => {
+   *  and a werk-worker keeping a card out of the verify lane would strand the
+   *  verdict for as long as the werk-worker ran. */
+  test('a live WERK-WORKER never lands in the verify lane', () => {
     const group = groupEpicConversations([conv(impl('t1'), true)], isLive).get('e1')
     expect(group?.inVerify).toEqual([])
     expect(group?.inFlight).toEqual(['t1'])
   })
 
-  test('a live overseer is reported; a dead one is not', () => {
-    expect(groupEpicConversations([conv(overseer(), true)], isLive).get('e1')?.overseerAlive).toBe(true)
-    expect(groupEpicConversations([conv(overseer(), false)], isLive).get('e1')?.overseerAlive).toBe(false)
+  test('a live werk-master is reported; a dead one is not', () => {
+    expect(groupEpicConversations([conv(werkMaster(), true)], isLive).get('e1')?.werkMasterAlive).toBe(true)
+    expect(groupEpicConversations([conv(werkMaster(), false)], isLive).get('e1')?.werkMasterAlive).toBe(false)
   })
 
-  test('the overseer never appears in inFlight -- it holds no card', () => {
-    const group = groupEpicConversations([conv(overseer(), true), conv(impl('t1'), true)], isLive).get('e1')
+  test('the werk-master never appears in inFlight -- it holds no card', () => {
+    const group = groupEpicConversations([conv(werkMaster(), true), conv(impl('t1'), true)], isLive).get('e1')
     expect(group?.inFlight).toEqual(['t1'])
   })
 
   test('two epics group separately', () => {
-    const other = { epicId: 'e2', role: 'implementer', cardId: 'x1', gen: 1 } as never
+    const other = { epicId: 'e2', role: 'werk-worker', cardId: 'x1', gen: 1 } as never
     const groups = groupEpicConversations([conv(impl('t1'), true), conv(other, true)], isLive)
     expect(groups.size).toBe(2)
     expect(groups.get('e2')?.inFlight).toEqual(['x1'])
@@ -125,7 +125,7 @@ describe('groupEpicConversations', () => {
 describe('a seat that dies without its end being recorded is reaped', () => {
   /** Every seat here CLAIMS to be live -- that is the whole failure. */
   const reapSeat: Reaper = c => (c.id === 'conv_dead' ? { silentForMs: 12 * 60_000 } : null)
-  const reaped = { seat: reapSeat, overseer: NEVER_REAPED }
+  const reaped = { seat: reapSeat, werkMaster: NEVER_REAPED }
   const named = (tag: EpicLaunchTag, id: string, output = true) =>
     // `status: 'idle'` is the shape the incident actually wore: the maintenance
     // pass demotes `active` -> `idle` on silence and stops there, so a seat whose
@@ -156,7 +156,7 @@ describe('a seat that dies without its end being recorded is reaped', () => {
       {
         cardId: 't1',
         convId: 'conv_dead',
-        role: 'implementer',
+        role: 'werk-worker',
         gen: 1,
         lastActivity: 0,
         silentForMs: 12 * 60_000,
@@ -171,10 +171,10 @@ describe('a seat that dies without its end being recorded is reaped', () => {
     expect(g?.settled).toEqual(['t1'])
   })
 
-  test('a reaped VERIFIER leaves the verify lane too, or the verdict is never rewritten', () => {
-    const g = group([named(verifier('t1'), 'conv_dead')])
+  test('a reaped WERK-VERIFIER leaves the verify lane too, or the verdict is never rewritten', () => {
+    const g = group([named(werkVerifier('t1'), 'conv_dead')])
     expect(g?.inVerify).toEqual([])
-    expect(g?.abandonedSeats[0]?.role).toBe('verifier')
+    expect(g?.abandonedSeats[0]?.role).toBe('werk-verifier')
   })
 
   /** The OR-fold still rules. A reaped predecessor must not settle a card whose
@@ -194,14 +194,14 @@ describe('a seat that dies without its end being recorded is reaped', () => {
   })
 
   /**
-   * BOUNDED ON PURPOSE. An overseer stuck at a non-`ended` status holds
-   * `overseerAlive`, which holds the WHOLE beat, and unfreezing it means granting
-   * the lease to a second overseer -- a full generation if it is wrong. That is
-   * `epic-overseer-seat-never-reaped`, not this card.
+   * BOUNDED ON PURPOSE. A werk-master stuck at a non-`ended` status holds
+   * `werkMasterAlive`, which holds the WHOLE beat, and unfreezing it means granting
+   * the lease to a second werk-master -- a full generation if it is wrong. That is
+   * `epic-werk-master-seat-never-reaped`, not this card.
    */
-  test('the overseer is deliberately NOT reaped', () => {
-    const g = group([named(overseer(), 'conv_dead')])
-    expect(g?.overseerAlive).toBe(true)
+  test('the werk-master is deliberately NOT reaped', () => {
+    const g = group([named(werkMaster(), 'conv_dead')])
+    expect(g?.werkMasterAlive).toBe(true)
     expect(g?.abandonedSeats).toEqual([])
   })
 })
@@ -209,10 +209,10 @@ describe('a seat that dies without its end being recorded is reaped', () => {
 /**
  * THE 2026-08-20 INCIDENT, engine half.
  *
- * A verifier spawn died at `exit=1` after 1209ms -- before CC wrote a single
+ * A werk-verifier spawn died at `exit=1` after 1209ms -- before CC wrote a single
  * transcript entry. Every backing conversation for the card was then dead, so
  * the sweep folded it into `settled`, the beat wrote a `completion` entry
- * saying the card had reached a terminal state, and woke a fresh overseer
+ * saying the card had reached a terminal state, and woke a fresh werk-master
  * generation to consider a verdict that nobody had written. Every subsequent
  * sweep did it again.
  *
@@ -224,14 +224,14 @@ describe('a launch that produced nothing is not a completed leg', () => {
   const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput).get('e1')
 
   test('a dead conversation with ZERO output does not settle its card', () => {
-    const g = group([conv(verifier('t1'), false, false)])
+    const g = group([conv(werkVerifier('t1'), false, false)])
     expect(g?.settled).toEqual([])
     expect(g?.inFlight).toEqual([])
   })
 
   test('the failed leg is reported by card, conversation and role -- enough for a baton entry', () => {
-    const c = conv(verifier('t1'), false, false)
-    expect(group([c])?.failedLegs).toEqual([{ cardId: 't1', convId: c.id, role: 'verifier', gen: 1 }])
+    const c = conv(werkVerifier('t1'), false, false)
+    expect(group([c])?.failedLegs).toEqual([{ cardId: 't1', convId: c.id, role: 'werk-verifier', gen: 1 }])
   })
 
   test('a dead conversation that DID produce output settles, exactly as before', () => {
@@ -253,8 +253,8 @@ describe('a launch that produced nothing is not a completed leg', () => {
     expect(g?.inFlight).toEqual(['t1'])
   })
 
-  test('an overseer that died silently is nobody’s card, and is not reported', () => {
-    expect(group([conv(overseer(), false, false)])?.failedLegs).toEqual([])
+  test('a werk-master that died silently is nobody’s card, and is not reported', () => {
+    expect(group([conv(werkMaster(), false, false)])?.failedLegs).toEqual([])
   })
 
   test('with no output predicate the old behaviour stands -- a dead leg settles', () => {
@@ -272,7 +272,7 @@ describe('a launch that produced nothing is not a completed leg', () => {
  * settle would have turned that into thirteen retries a beat apart, forever.
  */
 describe('a card whose seats keep dying stops being retried', () => {
-  const dead = (n: number) => Array.from({ length: n }, () => conv(verifier('t1'), false, false))
+  const dead = (n: number) => Array.from({ length: n }, () => conv(werkVerifier('t1'), false, false))
   const group = (convs: Conversation[]) => groupEpicConversations(convs, isLive, producedOutput).get('e1')
 
   test('the bound is three attempts', () => {
@@ -297,13 +297,13 @@ describe('a card whose seats keep dying stops being retried', () => {
   })
 
   test('a card that eventually PRODUCED something is never unspawnable, however many seats died', () => {
-    const g = group([...dead(5), conv(verifier('t1'), false, true)])
+    const g = group([...dead(5), conv(werkVerifier('t1'), false, true)])
     expect(g?.unspawnable).toEqual([])
     expect(g?.settled).toEqual(['t1'])
   })
 
   test('a live retry outranks the bound -- do not give up on work that is running', () => {
-    const g = group([...dead(3), conv(verifier('t1'), true, false)])
+    const g = group([...dead(3), conv(werkVerifier('t1'), true, false)])
     expect(g?.unspawnable).toEqual([])
     expect(g?.inFlight).toEqual(['t1'])
   })
@@ -315,7 +315,7 @@ describe('a card whose seats keep dying stops being retried', () => {
 })
 
 describe('unacknowledgedFailedLegs -- one baton entry per dead leg, not one per sweep', () => {
-  const leg = (convId: string, cardId = 't1') => ({ cardId, convId, role: 'verifier' as const, gen: 1 })
+  const leg = (convId: string, cardId = 't1') => ({ cardId, convId, role: 'werk-verifier' as const, gen: 1 })
   const failedEntry = (convId: string): EpicLogEntry => ({
     ts: '',
     kind: 'dispatch-failed',
@@ -402,11 +402,11 @@ describe('unacknowledgedCards -- the standing question the wake is built on', ()
 })
 
 /**
- * THE OVERSEER WHOSE END WAS NEVER RECORDED.
+ * THE WERK-MASTER WHOSE END WAS NEVER RECORDED.
  *
  * `werkLiveness` reads "live unless the row says `ended`", and nothing writes
  * `ended` on a clock -- so a supervisor whose agent host died sits at `idle`
- * forever, holds `overseerAlive`, and `guardBeat` returns `overseer alive at gen
+ * forever, holds `werkMasterAlive`, and `guardBeat` returns `werk-master alive at gen
  * N; holding the beat` every 45 seconds for the life of the broker. Nothing
  * dispatches, nothing verifies, nothing parks, and the line is indistinguishable
  * from the healthy case it exists to describe.
@@ -414,88 +414,89 @@ describe('unacknowledgedCards -- the standing question the wake is built on', ()
  * The reaper is the second opinion. These tests drive the FOLD; the rule itself
  * is `epic-vitality.test.ts`.
  */
-describe('an overseer whose end was never recorded is reaped', () => {
+describe('a werk-master whose end was never recorded is reaped', () => {
   const T0 = 1_700_000_000_000
   /** A seat the registry still calls live: `idle`, no recorded end, a
    *  `lastActivity` the test moves around. */
   const seat = (lastActivity: number, gen = 4): Conversation =>
     ({
-      id: 'conv_overseer',
+      id: 'conv_werk_master',
       project: 'claude://s/p',
       status: 'idle',
       lastActivity,
-      launchConfig: { epic: { epicId: 'e1', role: 'overseer', gen } },
+      launchConfig: { epic: { epicId: 'e1', role: 'werk-master', gen } },
     }) as unknown as Conversation
 
   /** The registry says LIVE for every one of these -- that is the lie. */
   const registryClaimsLive = () => true
-  const reaperAt = (nowMs: number, socket = false) => buildOverseerReaper({ hasSocket: () => socket, now: () => nowMs })
+  const reaperAt = (nowMs: number, socket = false) =>
+    buildWerkMasterReaper({ hasSocket: () => socket, now: () => nowMs })
 
   const fold = (conv: Conversation, nowMs: number, socket = false) =>
     groupEpicConversations([conv], registryClaimsLive, undefined, {
       seat: NEVER_REAPED,
-      overseer: reaperAt(nowMs, socket),
+      werkMaster: reaperAt(nowMs, socket),
     }).get('e1')
 
-  test('a silent, socketless overseer stops holding `overseerAlive`', () => {
-    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
-    expect(group?.overseerAlive).toBe(false)
+  test('a silent, socketless werk-master stops holding `werkMasterAlive`', () => {
+    const group = fold(seat(T0), T0 + WERK_MASTER_SILENCE_MS + 1)
+    expect(group?.werkMasterAlive).toBe(false)
   })
 
   /**
-   * THE HALF THAT IS NOT COSMETIC. `liveOverseers` is `holderAlive`'s input at
-   * the lease CAS, so reaping `overseerAlive` alone would unfreeze `guardBeat`
+   * THE HALF THAT IS NOT COSMETIC. `liveWerkMasters` is `holderAlive`'s input at
+   * the lease CAS, so reaping `werkMasterAlive` alone would unfreeze `guardBeat`
    * only for the replacement wake to be refused by a holder the same fold had
    * just declared dead -- the run frozen by a second mechanism instead of the
    * first.
    */
-  test('and leaves `liveOverseers` in the SAME pass, so the lease CAS agrees', () => {
-    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS + 1)
-    expect(group?.liveOverseers).toEqual([])
+  test('and leaves `liveWerkMasters` in the SAME pass, so the lease CAS agrees', () => {
+    const group = fold(seat(T0), T0 + WERK_MASTER_SILENCE_MS + 1)
+    expect(group?.liveWerkMasters).toEqual([])
   })
 
   test('the reap is reported with its evidence, not merely applied', () => {
-    const group = fold(seat(T0, 7), T0 + OVERSEER_SILENCE_MS + 60_000)
-    expect(group?.abandonedOverseers).toEqual([
+    const group = fold(seat(T0, 7), T0 + WERK_MASTER_SILENCE_MS + 60_000)
+    expect(group?.abandonedWerkMasters).toEqual([
       {
-        convId: 'conv_overseer',
+        convId: 'conv_werk_master',
         gen: 7,
         lastActivity: T0,
-        silentForMs: OVERSEER_SILENCE_MS + 60_000,
+        silentForMs: WERK_MASTER_SILENCE_MS + 60_000,
         status: 'idle',
       },
     ])
   })
 
-  test('a working overseer is never reaped, however long its turn takes -- recent activity', () => {
-    const group = fold(seat(T0 + OVERSEER_SILENCE_MS * 9), T0 + OVERSEER_SILENCE_MS * 9 + 1_000)
-    expect(group?.overseerAlive).toBe(true)
-    expect(group?.liveOverseers).toEqual(['conv_overseer'])
-    expect(group?.abandonedOverseers).toEqual([])
+  test('a working werk-master is never reaped, however long its turn takes -- recent activity', () => {
+    const group = fold(seat(T0 + WERK_MASTER_SILENCE_MS * 9), T0 + WERK_MASTER_SILENCE_MS * 9 + 1_000)
+    expect(group?.werkMasterAlive).toBe(true)
+    expect(group?.liveWerkMasters).toEqual(['conv_werk_master'])
+    expect(group?.abandonedWerkMasters).toEqual([])
   })
 
   test('nor one holding a socket, silent or not', () => {
-    const group = fold(seat(T0), T0 + OVERSEER_SILENCE_MS * 100, true)
-    expect(group?.overseerAlive).toBe(true)
-    expect(group?.abandonedOverseers).toEqual([])
+    const group = fold(seat(T0), T0 + WERK_MASTER_SILENCE_MS * 100, true)
+    expect(group?.werkMasterAlive).toBe(true)
+    expect(group?.abandonedWerkMasters).toEqual([])
   })
 
-  /** An overseer that ENDED properly is dead by `werkLiveness` and never reaches
+  /** A werk-master that ENDED properly is dead by `werkLiveness` and never reaches
    *  the reaper. Reporting it here would wake a replacement for a supervisor that
    *  simply went home -- once per sweep, forever. */
-  test('an overseer that ended cleanly is dead but NOT reported as abandoned', () => {
+  test('a werk-master that ended cleanly is dead but NOT reported as abandoned', () => {
     const group = groupEpicConversations([seat(T0)], () => false, undefined, {
       seat: NEVER_REAPED,
-      overseer: reaperAt(T0 + OVERSEER_SILENCE_MS + 1),
+      werkMaster: reaperAt(T0 + WERK_MASTER_SILENCE_MS + 1),
     }).get('e1')
-    expect(group?.overseerAlive).toBe(false)
-    expect(group?.abandonedOverseers).toEqual([])
+    expect(group?.werkMasterAlive).toBe(false)
+    expect(group?.abandonedWerkMasters).toEqual([])
   })
 
   test('with no reaper wired the fold behaves exactly as it always did', () => {
     const group = groupEpicConversations([seat(T0)], registryClaimsLive).get('e1')
-    expect(group?.overseerAlive).toBe(true)
-    expect(group?.abandonedOverseers).toEqual([])
+    expect(group?.werkMasterAlive).toBe(true)
+    expect(group?.abandonedWerkMasters).toEqual([])
   })
 
   const implSeat = {
@@ -503,7 +504,7 @@ describe('an overseer whose end was never recorded is reaped', () => {
     project: 'claude://s/p',
     status: 'idle',
     lastActivity: T0,
-    launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 4 } },
+    launchConfig: { epic: { epicId: 'e1', role: 'werk-worker', cardId: 't1', gen: 4 } },
   } as unknown as Conversation
 
   /**
@@ -513,57 +514,57 @@ describe('an overseer whose end was never recorded is reaped', () => {
    * named pair and why both directions are asserted here rather than one.
    *
    * Reaping the wrong lane is not a cosmetic slip in either direction: an
-   * overseer's fifteen-minute grace applied to a card seat strands a card, and a
-   * card seat's ten-minute grace applied to the overseer wakes a second
+   * werk-master's fifteen-minute grace applied to a card seat strands a card, and a
+   * card seat's ten-minute grace applied to the werk-master wakes a second
    * supervisor five minutes early.
    */
-  test('the OVERSEER reaper is never asked of a card seat', () => {
+  test('the WERK-MASTER reaper is never asked of a card seat', () => {
     const group = groupEpicConversations([implSeat], registryClaimsLive, undefined, {
       seat: NEVER_REAPED,
-      overseer: reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
+      werkMaster: reaperAt(T0 + WERK_MASTER_SILENCE_MS * 100),
     }).get('e1')
     expect(group?.inFlight).toEqual(['t1'])
     expect(group?.abandonedSeats).toEqual([])
   })
 
-  test('and the SEAT reaper is never asked of the overseer', () => {
+  test('and the SEAT reaper is never asked of the werk-master', () => {
     const group = groupEpicConversations([seat(T0)], registryClaimsLive, undefined, {
-      seat: reaperAt(T0 + OVERSEER_SILENCE_MS * 100),
-      overseer: NEVER_REAPED,
+      seat: reaperAt(T0 + WERK_MASTER_SILENCE_MS * 100),
+      werkMaster: NEVER_REAPED,
     }).get('e1')
-    expect(group?.overseerAlive).toBe(true)
-    expect(group?.abandonedOverseers).toEqual([])
+    expect(group?.werkMasterAlive).toBe(true)
+    expect(group?.abandonedWerkMasters).toEqual([])
   })
 })
 
 /**
  * WHY THE WAKE IS KEYED ON THE LEASE HOLDER.
  *
- * `abandonedOverseers` is re-derived from a registry that never forgets, so it
+ * `abandonedWerkMasters` is re-derived from a registry that never forgets, so it
  * never empties -- a wake fired from the lane itself would fire again every 45
  * seconds for the life of the broker. The lease moves; the lane does not.
  */
-describe('lostOverseer', () => {
+describe('lostWerkMaster', () => {
   const dead = { convId: 'conv_dead', gen: 3, lastActivity: 0, silentForMs: 1, status: 'idle' as const }
   const group = (over = {}) =>
-    ({ abandonedOverseers: [dead], ...over }) as unknown as Parameters<typeof lostOverseer>[0]
+    ({ abandonedWerkMasters: [dead], ...over }) as unknown as Parameters<typeof lostWerkMaster>[0]
   const lease = (convId: string) => ({ convId, gen: 3, at: '' })
 
   test('the holder is one of the corpses -- the fact the replacement wake is fired from', () => {
-    expect(lostOverseer(group(), lease('conv_dead'))).toEqual(dead)
+    expect(lostWerkMaster(group(), lease('conv_dead'))).toEqual(dead)
   })
 
-  test('a DIFFERENT holder is not: an ex-overseer that died two generations ago is not news', () => {
-    expect(lostOverseer(group(), lease('conv_current'))).toBeNull()
+  test('a DIFFERENT holder is not: an ex-werk-master that died two generations ago is not news', () => {
+    expect(lostWerkMaster(group(), lease('conv_current'))).toBeNull()
   })
 
   test('a released lease holds nothing, so nothing was lost', () => {
-    expect(lostOverseer(group(), lease(''))).toBeNull()
-    expect(lostOverseer(group(), null)).toBeNull()
+    expect(lostWerkMaster(group(), lease(''))).toBeNull()
+    expect(lostWerkMaster(group(), null)).toBeNull()
   })
 
   test('no corpses at all', () => {
-    expect(lostOverseer(group({ abandonedOverseers: [] }), lease('conv_dead'))).toBeNull()
+    expect(lostWerkMaster(group({ abandonedWerkMasters: [] }), lease('conv_dead'))).toBeNull()
   })
 })
 
@@ -573,9 +574,9 @@ describe('generationMismatch', () => {
     project: '',
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -598,10 +599,10 @@ describe('generationMismatch', () => {
 })
 
 describe('a reserved scanner lane is never an epic', () => {
-  /** A seat stamped with a scanner's own id -- what `planImplementerSpawn` emits
+  /** A seat stamped with a scanner's own id -- what `planWerkWorkerSpawn` emits
    *  for a card that belongs to no epic. `work-order` is the first such lane. */
   const lane = (cardId: string, epicId = 'work-order'): EpicLaunchTag & never =>
-    ({ epicId, role: 'implementer', cardId, gen: 1 }) as never
+    ({ epicId, role: 'werk-worker', cardId, gen: 1 }) as never
 
   const watched = (convs: Conversation[]) => epicsToWatch(convs, isLive, producedOutput).map(g => g.epicId)
 

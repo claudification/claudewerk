@@ -14,7 +14,7 @@ function conv(over: Partial<Conversation> & { id: string }): Conversation {
   return {
     project: PROJECT,
     status: 'active',
-    launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 'c1', gen: 0 } },
+    launchConfig: { epic: { epicId: 'e1', role: 'werk-worker', cardId: 'c1', gen: 0 } },
     ...over,
   } as unknown as Conversation
 }

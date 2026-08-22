@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { MAX_CARD_SEATS, NEEDS_REFINE_TAG, planEpic, planTagged } from './epic-ready'
-import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 import type { TaskStatus } from './task-statuses'
 
@@ -61,7 +61,7 @@ describe('planEpic', () => {
     expect(p.dispatch).toHaveLength(2)
   })
 
-  test('an in-review card asks for a verdict, not another implementer', () => {
+  test('an in-review card asks for a verdict, not another werk-worker', () => {
     const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })])
     expect(p.verify.map(c => c.slug)).toEqual(['t1'])
     expect(p.dispatch).toHaveLength(0)
@@ -69,22 +69,22 @@ describe('planEpic', () => {
   })
 
   /**
-   * THE VERIFIER FLOOD, 2026-08-19. `verify` was built with no liveness filter at
-   * all, so a card parked in `in-review` asked for a fresh verifier on EVERY beat.
+   * THE WERK-VERIFIER FLOOD, 2026-08-19. `verify` was built with no liveness filter at
+   * all, so a card parked in `in-review` asked for a fresh werk-verifier on EVERY beat.
    * The sweep runs ~45s, so `node-stats-http-ingest` collected EIGHT concurrent
-   * Opus verifiers on one card -- each with its own scratch worktree, each about
+   * Opus werk-verifiers on one card -- each with its own scratch worktree, each about
    * to write a verdict onto the same card body.
    *
    * It was invisible for as long as it was because the worktree-create SIGPIPE bug
    * killed every duplicate in under two seconds. Fixing the spawn path is what let
    * the flood actually run.
    */
-  test('a card already being verified does NOT ask for a second verifier', () => {
+  test('a card already being verified does NOT ask for a second werk-verifier', () => {
     const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })], 3, [], ['t1'])
     expect(p.verify).toHaveLength(0)
   })
 
-  test('verifier liveness is per-card, so a sibling still gets its first verdict', () => {
+  test('werk-verifier liveness is per-card, so a sibling still gets its first verdict', () => {
     const p = plan(
       [EPIC, card('t1', 'in-review', { epic: 'e1' }), card('t2', 'in-review', { epic: 'e1' })],
       3,
@@ -95,20 +95,20 @@ describe('planEpic', () => {
   })
 
   /**
-   * The lanes are separate seats: a live IMPLEMENTER must not suppress the verdict
+   * The lanes are separate seats: a live WERK-WORKER must not suppress the verdict
    * its own card is owed. Collapsing both roles into one liveness bit is what
    * `epic-sweep.ts` used to do, and it is why `verify` could not tell the
    * difference in the first place.
    */
-  test('a live implementer does not suppress the verdict on an in-review card', () => {
+  test('a live werk-worker does not suppress the verdict on an in-review card', () => {
     const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })], 3, ['t1'], [])
     expect(p.verify.map(c => c.slug)).toEqual(['t1'])
   })
 
-  test('a needs-overseer question is surfaced, never dispatched', () => {
+  test('a needs-werk-master question is surfaced, never dispatched', () => {
     const p = plan([
       EPIC,
-      card('q1', 'open', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] }),
+      card('q1', 'open', { epic: 'e1', tags: [NEEDS_WERK_MASTER_TAG] }),
       card('t1', 'open', { epic: 'e1', dependsOn: ['q1'] }),
     ])
     expect(p.questions.map(c => c.slug)).toEqual(['q1'])
@@ -119,7 +119,7 @@ describe('planEpic', () => {
   test('answering the question card unblocks the card that asked it', () => {
     const p = plan([
       EPIC,
-      card('q1', 'done', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] }),
+      card('q1', 'done', { epic: 'e1', tags: [NEEDS_WERK_MASTER_TAG] }),
       card('t1', 'open', { epic: 'e1', dependsOn: ['q1'] }),
     ])
     expect(p.questions).toHaveLength(0)
@@ -169,7 +169,11 @@ describe('cards the engine has given up launching', () => {
 
   test('outrank every other idle reason -- nothing else here stays broken on its own', () => {
     const p = planDead(
-      [EPIC, card('t1', 'in-review', { epic: 'e1' }), card('q1', 'open', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] })],
+      [
+        EPIC,
+        card('t1', 'in-review', { epic: 'e1' }),
+        card('q1', 'open', { epic: 'e1', tags: [NEEDS_WERK_MASTER_TAG] }),
+      ],
       ['t1'],
     )
     expect(p.idleReason).toContain('seats keep dying')
@@ -190,7 +194,7 @@ describe('cards the engine has given up launching', () => {
  * `dispatch` considered `notStarted` only and `verify` considers `in-review`
  * only, while `epicBucket` folds BOTH `in-progress` and `in-review` into
  * `inProgress`. A card at `in-progress` was therefore in neither lane -- and that
- * is the lane the overseer prompt tells every overseer a BOUNCED card sits in,
+ * is the lane the werk-master prompt tells every werk-master a BOUNCED card sits in,
  * promising it "redispatches". Generation 3 of `epic-scanner-fabric` followed
  * that instruction on `scanner-work-orders`; generation 4 woke to a free slot, a
  * dead seat, and a card nobody would ever pick up.
@@ -200,13 +204,13 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
   const planSeats = (cards: ProjectTaskMeta[], dispatches: Record<string, number>, inFlight: string[] = []) =>
     planEpic({ cards, epicId: 'e1', concurrency: 3, inFlight, inVerify: [], dispatches })
 
-  test('with NO live implementer it goes back out', () => {
+  test('with NO live werk-worker it goes back out', () => {
     const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1' })])
     expect(p.dispatch.map(c => c.slug)).toEqual(['t1'])
     expect(p.idleReason).toBeUndefined()
   })
 
-  test('with a live implementer it does NOT -- one seat per card, still', () => {
+  test('with a live werk-worker it does NOT -- one seat per card, still', () => {
     const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1' })], 3, ['t1'])
     expect(p.dispatch).toEqual([])
     expect(p.exhausted).toEqual([])
@@ -214,9 +218,9 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
   })
 
   /**
-   * `in-review` IS NOT SWEPT IN. That lane belongs to the verifier: an in-review
-   * card with no live verifier is already handled by `verify`, and dispatching an
-   * implementer onto it would put a writer on a branch a Guard is mid-review of.
+   * `in-review` IS NOT SWEPT IN. That lane belongs to the werk-verifier: an in-review
+   * card with no live werk-verifier is already handled by `verify`, and dispatching an
+   * werk-worker onto it would put a writer on a branch a Guard is mid-review of.
    */
   test('an in-review card stays verify-only and is never dispatched', () => {
     const p = plan([EPIC, card('t1', 'in-review', { epic: 'e1' })])
@@ -224,7 +228,7 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
     expect(p.verify.map(c => c.slug)).toEqual(['t1'])
   })
 
-  test('an in-review card with no live verifier is still not dispatched', () => {
+  test('an in-review card with no live werk-verifier is still not dispatched', () => {
     const p = planEpic({
       cards: [EPIC, card('t1', 'in-review', { epic: 'e1' })],
       epicId: 'e1',
@@ -264,14 +268,14 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
   })
 
   test('a bounced card carrying a question is answered, not re-implemented', () => {
-    const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1', tags: [NEEDS_OVERSEER_TAG] })])
+    const p = plan([EPIC, card('t1', 'in-progress', { epic: 'e1', tags: [NEEDS_WERK_MASTER_TAG] })])
     expect(p.dispatch).toEqual([])
     expect(p.questions.map(c => c.slug)).toEqual(['t1'])
   })
 
   /**
    * THE RETRY CEILING. "An `in-progress` card is dispatchable again" is right
-   * once per bounce and ruinous without a bound: an implementer that dies without
+   * once per bounce and ruinous without a bound: a werk-worker that dies without
    * moving its card leaves it at `in-progress` forever, which is a fresh seat
    * every 45s. Gen 2 of `epic-the-wall-ii` spent thirteen on one card the last
    * time an unbounded retry path shipped.
@@ -311,7 +315,7 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
     /**
      * BOTH LANES, since `epic-open-lane-redispatches-forever`. This test pinned
      * the opposite when the ceiling landed -- on the reasoning that a not-started
-     * card had never been dispatched, which is false of a card an implementer left
+     * card had never been dispatched, which is false of a card a werk-worker left
      * in `open`. The ceiling is a per-CARD lifetime budget, so it is one number
      * for both lanes and `status:` is not a lever that refills it.
      */
@@ -363,8 +367,8 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
 
   /**
    * THE LANE IS THE EPIC SELECTOR'S, AND ONLY ITS. A bounce is something a
-   * VERIFIER does, and the tag cohort has no verify lane: the work-order scanner
-   * dispatches implementers and nothing else, and deliberately names a `ready`
+   * WERK-VERIFIER does, and the tag cohort has no verify lane: the work-order scanner
+   * dispatches werk-workers and nothing else, and deliberately names a `ready`
    * card sitting in `in-progress` `not-actionable`. It also has no baton, so it
    * could not supply the ceiling this lane requires -- and an unbounded bounce
    * lane is the exact failure that ceiling exists to prevent.
@@ -386,7 +390,7 @@ describe('a bounced card at `in-progress` is dispatchable again', () => {
  * AN `open` CARD A SEAT ALREADY RAN FOR IS NOT DISPATCHED AGAIN.
  *
  * Dispatching a card does not move it out of `open` -- `spawnForCard` only
- * appends a baton entry -- so an implementer that ran, produced output and died
+ * appends a baton entry -- so a werk-worker that ran, produced output and died
  * without moving its own card left that card `open`, therefore `notStarted`,
  * therefore dispatchable again on the very next beat. Every 45 seconds, forever:
  * `MAX_LAUNCH_ATTEMPTS` explicitly does not apply, because a card that produced
@@ -461,7 +465,7 @@ describe('an `open` card whose seat already settled -- the `alreadyRun` guard', 
 
   /**
    * THE BOUNCE LANE SURVIVES IT. A card at `in-progress` is settled by
-   * construction -- its implementer and its verifier both ran and both died --
+   * construction -- its werk-worker and its werk-verifier both ran and both died --
    * so applying this guard there would delete the lane the bounce card just
    * built. `MAX_CARD_SEATS` bounds that one instead.
    */
@@ -601,7 +605,7 @@ describe('a ROUGH card is not ready -- the `needsRefine` precondition', () => {
   })
 
   /**
-   * THE POINT OF A PRECONDITION OVER AN ORDERING. The refiner may run before,
+   * THE POINT OF A PRECONDITION OVER AN ORDERING. The werk-refiner may run before,
    * after, concurrently or never; drop the tag and the card is ready on the very
    * next fold, with nothing having had to run in sequence.
    */
@@ -620,7 +624,7 @@ describe('a ROUGH card is not ready -- the `needsRefine` precondition', () => {
   })
 
   /**
-   * WITHHELD FROM `dispatch`, NOT FROM `verify`. `REFINER@1` is denied the status
+   * WITHHELD FROM `dispatch`, NOT FROM `verify`. `WERK-REFINER@1` is denied the status
    * verb, so a rough card blocked from the verify lane would sit in `in-review`
    * with nothing on the board able to move it.
    */
@@ -637,7 +641,7 @@ describe('a ROUGH card is not ready -- the `needsRefine` precondition', () => {
   })
 
   test('a question that is also rough is reported ONCE, as a question', () => {
-    const p = plan([EPIC, rough('q1', 'open', { tags: [NEEDS_OVERSEER_TAG] })])
+    const p = plan([EPIC, rough('q1', 'open', { tags: [NEEDS_WERK_MASTER_TAG] })])
     expect(p.questions.map(c => c.slug)).toEqual(['q1'])
     expect(p.needsRefine).toEqual([])
     expect(p.idleReason).toContain('open question')

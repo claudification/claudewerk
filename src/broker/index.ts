@@ -1524,7 +1524,7 @@ async function main() {
 
   // EPIC MODE: the 45s beat. Groups epic-tagged conversations, asks the standing
   // question ("is there a settled card the baton has not acknowledged?"), and
-  // performs whatever `planBeat` decides -- wake the overseer, dispatch, verify,
+  // performs whatever `planBeat` decides -- wake the werk-master, dispatch, verify,
   // park or complete. Inert until an epic run is armed: with no epic-tagged
   // conversations the sweep returns immediately.
   startEpicSweep(buildSweepDeps(conversationStore))

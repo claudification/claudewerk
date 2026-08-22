@@ -15,15 +15,15 @@ settings, not a different paragraph in the same prompt.
 
 | Seat | Does | May NOT |
 |---|---|---|
-| **Implementer** | One card, own worktree, own branch. Moves the card to `in-review` when done. | Block on a human. Approve its own work. Touch another card or branch. |
-| **Verifier** | Re-runs the acceptance command, reads the diff, approves or bounces. | Block on a human. See the implementer's conversation. |
-| **Overseer** | Answers questions, merges verified work, replans the board, decides when to stop. Singleton. | Implement a card itself. Spawn anything. |
+| **WerkWorker** | One card, own worktree, own branch. Moves the card to `in-review` when done. | Block on a human. Approve its own work. Touch another card or branch. |
+| **WerkVerifier** | Re-runs the acceptance command, reads the diff, approves or bounces. | Block on a human. See the werk-worker's conversation. |
+| **WerkMaster** | Answers questions, merges verified work, replans the board, decides when to stop. Singleton. | Implement a card itself. Spawn anything. |
 
-The implementer/verifier split is not ceremony. Anthropic's harness work found
+The werk-worker/werk-verifier split is not ceremony. Anthropic's harness work found
 that *"agents tend to respond by confidently praising the work"*, and Cognition
 measured a review agent catching ~2 bugs per PR (58% severe) -- but only when the
 reviewer **did not share the coder's context**. A reviewer that reads the coder's
-reasoning inherits the coder's blind spots. So `planVerifierSpawn` hands over the
+reasoning inherits the coder's blind spots. So `planWerkVerifierSpawn` hands over the
 card and the diff, never the transcript.
 
 ---
@@ -38,11 +38,11 @@ card and the diff, never the transcript.
                     question /  │                      │  steer / GO
                     checkpoint  │                      ▼
    ┌────────────────────────────┴──────────────────────────────────────┐
-   │  EPIC OVERSEER   gen N        one conversation, one turn, dies    │
+   │  EPIC WERK-MASTER   gen N        one conversation, one turn, dies    │
    │  SINGLETON -- holds the lease on the epic card                    │
    │                                                                   │
    │  READS   epic rollup (children + waitingOn) . epic baton tail .   │
-   │          git state . the needs-overseer question cards            │
+   │          git state . the needs-werk-master question cards            │
    │  DECIDES answer questions | handle verdicts | merge | replan |    │
    │          ask Jonas | epic DONE                                    │
    │  WRITES  card frontmatter + append-only baton + the run digest    │
@@ -58,7 +58,7 @@ card and the diff, never the transcript.
        │               + deny-floor + THE MUTE)        │
        ▼                                               │
    ┌──────────────────┐  ┌──────────────────┐          │
-   │  IMPLEMENTER     │  │  VERIFIER        │   ...    │
+   │  WERK-WORKER     │  │  WERK-VERIFIER        │   ...    │
    │  card t2         │  │  card t5         │          │
    │  own worktree    │  │  scratch tree    │          │
    │  NO dialog       │  │  NO dialog       │          │
@@ -70,7 +70,7 @@ card and the diff, never the transcript.
    ┌───────────────────────────────────────────────────┴───────────────┐
    │  GUARDIAN SWEEP   (broker, every 45s)                             │
    │  a settled card the baton has NOT acknowledged -> wake the        │
-   │  overseer at gen+1. The lease CAS lets exactly one waker through. │
+   │  werk-master at gen+1. The lease CAS lets exactly one waker through. │
    └───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -83,7 +83,7 @@ epic is usually written as a pile of stories with no thought given to what has t
 happen first, and `depends_on` is the field everybody leaves empty. Generation 0
 exists to fix that before it costs anything.
 
-It is **not a fourth seat.** It is the overseer, with a different prompt and
+It is **not a fourth seat.** It is the werk-master, with a different prompt and
 dispatch suppressed for one beat: same permissions, same board access, same
 baton, same right to reach a human. A separate role would have duplicated all
 four for no capability anybody needed.
@@ -106,11 +106,11 @@ From beat 1 the engine enforces it deterministically, for free, forever.
 1. **Read the intent.** The epic card body is what the epic is FOR. Then every
    child card. Look for the gap between the two.
 2. **Close what is already done.** Verified against the repo, not the board -- a
-   card describing work already in the tree costs a full implementer *plus* a
-   full verifier to rediscover. Uncertain means leave it: a wrongly-closed card
+   card describing work already in the tree costs a full werk-worker *plus* a
+   full werk-verifier to rediscover. Uncertain means leave it: a wrongly-closed card
    is silently dropped scope.
 3. **File what is missing**, with `epic: <id>`. Split any card that is secretly
-   four -- a card an implementer cannot finish in one sitting comes back bounced.
+   four -- a card a werk-worker cannot finish in one sitting comes back bounced.
 4. **Drop what stopped making sense**, archived with the reason. `archived`
    leaves the denominator, so a dropped card cannot fake progress.
 5. **Write the edges.** The part nobody does by hand and the engine cannot infer.
@@ -137,16 +137,16 @@ card body.
 
 ### The checkpoint gate
 
-When the planner exits, the engine compares the board's dispatch-relevant
+When the werk-planner exits, the engine compares the board's dispatch-relevant
 fingerprint (`epic-board-fingerprint.ts`) against the snapshot it took before
-the planner started:
+the werk-planner started:
 
 | Board | What happens |
 |---|---|
 | **changed** | `plan-checkpoint` -- the run stops and Jonas reviews the plan before any work goes out |
 | **unchanged** | `plan-accept` -- straight through to beat 1 |
 
-Decided from the board itself, never from the planner's summary -- so the prompt
+Decided from the board itself, never from the werk-planner's summary -- so the prompt
 tells it to write the baton for the human who has to read it, not to influence
 the gate.
 
@@ -155,37 +155,37 @@ the gate.
 `plan` defaults **on** (`EPIC_RUN_DEFAULTS`); no caller currently exposes a way
 to turn it off. `planBaseline` is what distinguishes owed / in flight / settled,
 and it is the fingerprint rather than a flag on purpose: the field that says a
-planner ran *is* the evidence used to judge whether it changed anything, so the
+werk-planner ran *is* the evidence used to judge whether it changed anything, so the
 two can never disagree.
 
-A **resume never re-plans** -- gen 0 already happened, the overseer's own replan
+A **resume never re-plans** -- gen 0 already happened, the werk-master's own replan
 step covers drift from there, and re-planning would churn cards that live workers
 are holding open. A run armed before this stage existed reads as *already
 planned* rather than as owing a plan, for the same reason.
 
 Generation 0 outranks every other beat decision except the caps and a live
-overseer -- including unacknowledged settles -- because dispatching while a plan is
+werk-master -- including unacknowledged settles -- because dispatching while a plan is
 owed races the pass that exists to say what may run in parallel.
 
 ---
 
 ## 4. Why the wake is state-based
 
-The obvious design fires the overseer from a "worker ended" event. That loses a
-settle whenever the overseer is mid-turn, and double-fires whenever two workers
+The obvious design fires the werk-master from a "worker ended" event. That loses a
+settle whenever the werk-master is mid-turn, and double-fires whenever two workers
 end together -- which is the normal case at concurrency 3, not an edge case.
 
 So the beat asks a **standing question**: *is there a settled card the baton has
 not acknowledged?* A missed sweep is repaired by the next one, and a duplicate is
 refused by the lease compare-and-swap. Self-healing beats bookkeeping.
 
-The guardian, not the implementer, fires the wake -- an implementer that crashes,
+The guardian, not the werk-worker, fires the wake -- a werk-worker that crashes,
 hangs, or gets watchdog-killed never gets to call a check-in tool, and those are
 three of the four ways a card settles.
 
 ---
 
-## 5. The blocked channel -- an implementer asks the BOARD
+## 5. The blocked channel -- a werk-worker asks the BOARD
 
 The rule is **no worker BLOCKS on a human** -- not "no worker speaks". That
 distinction decides the list, and it is enforced by a `PreToolUse` hook keyed on
@@ -195,17 +195,17 @@ tool name (`epic-worker-permissions.ts`), not by prompt text.
 |---|---|---|
 | `dialog`, `AskUserQuestion` | **blocked** | They park the worker until a human replies. Nobody is watching an unattended run, so the turn is simply lost. |
 | `notify` | allowed | One-way. A worker that finds something alarming should be able to say so without stopping. |
-| `send_message` | allowed | Routing between conversations. A worker telling the overseer something directly is the system working. |
+| `send_message` | allowed | Routing between conversations. A worker telling the werk-master something directly is the system working. |
 
 > **`dontAsk` is not this.** `dontAsk` suppresses CC's own *permission* prompts.
 > It does nothing about an agent deciding to call `dialog` and ask Jonas a
 > question. Left prompt-only, "no worker blocks on a human" holds right up until
 > the moment it matters.
 
-When blocked, the implementer:
+When blocked, the werk-worker:
 
-1. Writes a card tagged `needs-overseer` carrying the question **and its own
-   recommendation** (a question with no recommendation makes the overseer redo
+1. Writes a card tagged `needs-werk-master` carrying the question **and its own
+   recommendation** (a question with no recommendation makes the werk-master redo
    the analysis).
 2. Adds that id to its own card's `depends_on`.
 3. Appends a `## Blocked` section to its own card.
@@ -221,25 +221,27 @@ moving the question card to `done` -- unblocks the original with no special case
 
 ```
 <project>/.rclaude/project/
-  cards/<epicId>.md          the epic card. Carries the OVERSEER LEASE:
+  cards/<epicId>.md          the epic card. Carries the WERK-MASTER LEASE:
                                overseer: conv_...   overseer_gen: 7
                                overseer_at: <iso>
+                             (the lease keys keep the old word on purpose --
+                              `werk-rename-lease-keys` owns them, not the seat rename)
   cards/<cardId>.md          a work card. Carries the SEAT LEASES, one per role:
-                               seat_implementer: conv_...  seat_implementer_gen: 1
-                               seat_implementer_at: <iso>
-                               seat_verifier: conv_...     seat_verifier_gen: 1
-                               seat_verifier_at: <iso>
+                               seat_werk-worker: conv_...   seat_werk-worker_gen: 1
+                               seat_werk-worker_at: <iso>
+                               seat_werk-verifier: conv_... seat_werk-verifier_gen: 1
+                               seat_werk-verifier_at: <iso>
   epics/<epicId>/
-    run.md                   EpicRunMeta frontmatter + the overseer's digest
+    run.md                   EpicRunMeta frontmatter + the werk-master's digest
     log.md                   THE BATON -- append-only, never rewritten
 ```
 
-The lease lives on the **card**, not in `run.md`, so a stuck overseer is visible
+The lease lives on the **card**, not in `run.md`, so a stuck werk-master is visible
 and breakable by a human reading the board without knowing the engine's layout.
 `overseer_gen` survives a release: it is the run's generation counter, and reusing
 a number would put two different beats in the baton under one id.
 
-The baton is the overseer's entire memory. Every generation is a fresh
+The baton is the werk-master's entire memory. Every generation is a fresh
 conversation with no transcript from the last one -- which is what lets an epic
 run past any context horizon.
 
@@ -249,23 +251,23 @@ The engine's dispatch guards (`inFlight`, `inVerify`, the just-dispatched pendin
 set) are all guesses made by the party that is **not** holding the worktree: the
 broker reasons from a registry it knows is behind, plus a log. Every guard of
 that shape is wrong at exactly the moment its inputs are stale, which is the same
-moment a duplicate happens. On 2026-08-21 two implementers were dispatched onto
+moment a duplicate happens. On 2026-08-21 two werk-workers were dispatched onto
 one card and, because `cardBranch` derives the worktree name from the card id,
 they shared **one worktree** -- the loser's edits were staged into the winner's
 commit with no conflict and no signal.
 
 So a seat claims its own lease when it connects, `epic_seat(action="claim")`,
-before it reads the card or touches git. It is the same CAS as the overseer lease
+before it reads the card or touches git. It is the same CAS as the werk-master lease
 (`evaluateLease`), at a different scope:
 
-| | Overseer lease | Seat lease |
+| | WerkMaster lease | Seat lease |
 |---|---|---|
 | Key | the epic | `(epicId, cardId, role)` |
 | Lives on | the epic card | the **work** card |
 | Claimed by | the beat, before it spawns | the **seat itself**, on connect |
-| Refusal means | this beat does not wake an overseer | this conversation **exits non-zero** |
+| Refusal means | this beat does not wake a werk-master | this conversation **exits non-zero** |
 
-**Role is part of the key**, so an implementer and a verifier on one card both
+**Role is part of the key**, so a werk-worker and a werk-verifier on one card both
 proceed -- that is the whole reason `inVerify` is a separate lane from
 `inFlight`. Only a same-role collision is a collision.
 
@@ -275,7 +277,7 @@ to the registry-liveness check; and a holder that is **alive but wedged** (the
 classic case is blocking in a Bash call, which emits nothing and reads as idle)
 loses it after `LEASE_STALE_MS`. That last one only works because the claim path
 has **no early return above the CAS** -- the defect in `epic-beat.ts:251` that
-deadlocks the overseer lease is exactly a return placed above the question.
+deadlocks the werk-master lease is exactly a return placed above the question.
 
 **It is a mutex between seats, never an authorisation gate.** If the claim cannot
 reach the broker at all, the seat is told to PROCEED and note it; the dispatch
@@ -366,7 +368,7 @@ quiet.
 so an earlier appointment is unconditionally satisfied by the time a later one
 is; carrying both would be two countdowns to keep in step.
 
-**A gate only holds DISPATCH.** Generation 0 (the planning pass) and overseer
+**A gate only holds DISPATCH.** Generation 0 (the planning pass) and werk-master
 wakes go through it, exactly as they do through `window` -- planning is analysis,
 and an epic that could not even be read until 02:00 would have nothing to
 dispatch when 02:00 arrived.
@@ -377,10 +379,10 @@ dispatch when 02:00 arrived.
 
 | Condition | What happens |
 |---|---|
-| Every child terminal | `complete` -- the overseer reports what landed and what was dropped |
+| Every child terminal | `complete` -- the werk-master reports what landed and what was dropped |
 | An irreversible step, or a decision that is Jonas's | `checkpoint` -- one crisp question, recommendation first. The only path to a human. |
 | Generation 0 rewrote the board | `plan-checkpoint` -- the plan is reviewed before any work goes out (§3) |
-| Two consecutive generations with nothing dispatchable | `park` -- the overseer gets exactly one chance to replan first |
+| Two consecutive generations with nothing dispatchable | `park` -- the werk-master gets exactly one chance to replan first |
 | `spentUsd >= maxUsd` (default **$100**) | `park` -- see below |
 | `maxWallClockMinutes` since first dispatch (default **480**) | `park` -- see below |
 | `gen >= maxGens` (default 40) | `park` -- the run is thrashing, not working |
@@ -391,7 +393,7 @@ cost something. `0` disarms any of them, and it has to be typed: none of the
 defaults is infinity.
 
 `maxGens` was the only brake for the life of the feature, and it is a unit of
-**planning** rather than of spend: it bounds how many times the overseer thinks
+**planning** rather than of spend: it bounds how many times the werk-master thinks
 and bounds nothing about what the seats underneath it burn. On 2026-08-19 this
 project billed **$2,481 in one calendar day** with an epic running unattended,
 and no cap of any kind was involved in stopping it. `$100` is about 4% of that
@@ -418,7 +420,7 @@ Epic mode is the delivery vehicle for two cards on
 - **[werk-done-gate](../.rclaude/project/cards/werk-done-gate.md)** -- Tier 1 and
   Tier 2 already shipped (`board-gate.ts`, wired into `project_set_status`).
   Tier 3, the judge leg with no shared context, was written as
-  `buildGuardPrompt` and had **zero callers** until `planVerifierSpawn`.
+  `buildWerkVerifierPrompt` and had **zero callers** until `planWerkVerifierSpawn`.
 - **[werk-andon](../.rclaude/project/cards/werk-andon.md)** -- the concurrency
   default is **3**, and cards over the ceiling are reported as `heldBack` rather
   than silently truncated. The ceiling is a *review* ceiling.
@@ -437,7 +439,7 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 | Baton, run store, lease CAS, paths | **done**, sentinel-side, tested |
 | `planEpic` (DAG + ceiling + lanes) | **done**, tested |
 | `planBeat` (the decision) | **done**, tested |
-| Generation 0 -- planner prompt, checkpoint gate, fingerprint | **done**, tested, default on |
+| Generation 0 -- werk-planner prompt, checkpoint gate, fingerprint | **done**, tested, default on |
 | Spend + wall-clock ceilings | **done**, tested -- needs `build:packages` to be live (see below) |
 | Prompts for all three seats | **done**, tested |
 | The mute | **done**, tested |
@@ -452,7 +454,7 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 | `inspect` / `list` / `beat` / `break_lease` + the beat ring | **built**, tested, **NOT DEPLOYED** |
 
 The loop is closed. On 2026-08-18 an epic went arm -> dispatch -> in-review ->
-independent verifier -> done -> next card -> complete with nobody watching -- the
+independent werk-verifier -> done -> next card -> complete with nobody watching -- the
 first completed unattended run in this codebase.
 
 That run also found what §11's verbs exist to fix: the plan was computed every
@@ -461,7 +463,7 @@ to see a run's state was to wait 45s and read the sentinel's files by hand. Four
 findings from that smoke are still open on
 [epic-smoke-findings](../.rclaude/project/cards/epic-smoke-findings.md) -- most
 importantly that the deterministic DONE-gate never runs for an epic card, so the
-implementer/verifier separation currently holds by CONVENTION rather than by the
+werk-worker/werk-verifier separation currently holds by CONVENTION rather than by the
 mechanism built to enforce it.
 
 **A STALE SENTINEL BUNDLE SILENTLY DISARMS THE CEILINGS.** The sentinel owns
@@ -514,7 +516,7 @@ that it is itself.)
 | `list` | every run in the project: status, gen, in flight, armed | broker |
 | `get` | the cheap read -- run, digest, baton tail | sentinel |
 | `inspect` | **everything at once** (below) | broker |
-| `break_lease` | release a stuck overseer so the next beat wakes a fresh one | broker |
+| `break_lease` | release a stuck werk-master so the next beat wakes a fresh one | broker |
 
 `lease`, `patch`, `log_append`, `release` and the three `seat_*` ops stay
 ENGINE-INTERNAL and are refused over `/api/epic`: exposing them would let a caller
@@ -540,7 +542,7 @@ enough to avoid.
 `get` is the digest's home and is one call away. There is no flag: making
 callers opt in to the cheap behaviour would tax the common case to serve the
 rare one, and a fresh arm has no digest yet anyway -- only the placeholder the
-first overseer generation replaces.
+first werk-master generation replaces.
 
 ### `inspect` -- reach for this first when an epic looks stuck
 
@@ -551,11 +553,11 @@ One call, no mutation, and it answers the question in this order:
    thrown away.
 2. **The plan** -- dispatch / verify / questions / held back by the ceiling /
    waiting on dependencies, each with the cards named and the deps that hold them.
-3. **Live** -- what is actually running: cards in flight, whether the overseer is
+3. **Live** -- what is actually running: cards in flight, whether the werk-master is
    alive, which settled cards the baton has **not acknowledged** (that is what a
    wake is FOR), and every epic-tagged conversation with its role and generation.
 4. **Beats the sweep performed** -- the mechanical layer under the baton. The
-   baton is the overseer's memory; this is what the machine did.
+   baton is the werk-master's memory; this is what the machine did.
 5. **The baton.**
 
 Two fields are worth knowing by name because each marks a specific failure:
@@ -570,7 +572,7 @@ Two fields are worth knowing by name because each marks a specific failure:
 
 `baton_limit`, `baton_kinds` and `baton_card` shape the slice on `get` and
 `inspect` -- "the last 200", "every verdict", "everything that ever happened to
-t5". The default tail is 20, sized for an overseer's PROMPT rather than for a
+t5". The default tail is 20, sized for a werk-master's PROMPT rather than for a
 human debugging a forty-generation run; filtering happens before the tail, so
 "the last 2 verdicts" means two verdicts, not however many fall in the last two
 entries.

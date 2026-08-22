@@ -67,7 +67,7 @@ describe('openEpicRoster', () => {
     expect(openEpicRoster([card('lonely'), epic('shipped', 'done')])).toBe('')
   })
 
-  it('names each epic by the id a refiner would copy into `epic:`', () => {
+  it('names each epic by the id a werk-refiner would copy into `epic:`', () => {
     const out = openEpicRoster([epic('epic-scanner-fabric', 'open', { title: 'The scanner fabric' })])
     expect(out).toContain('OPEN EPICS')
     expect(out).toContain('- epic-scanner-fabric -- The scanner fabric (0/0)')
@@ -120,7 +120,7 @@ describe('wantsEpicRoster', () => {
     expect(wantsEpicRoster(true, [card('orphan')])).toBe(true)
   })
 
-  it('sends none to a card that already has a parent -- a refiner does not re-home', () => {
+  it('sends none to a card that already has a parent -- a werk-refiner does not re-home', () => {
     expect(wantsEpicRoster(true, [card('c', 'open', { epic: 'e' })])).toBe(false)
   })
 

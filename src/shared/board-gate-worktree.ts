@@ -2,14 +2,14 @@
  * WHICH CHECKOUT THE DONE-GATE MEASURES.
  *
  * The gate's git + test runners used to point at `ctx.getDialogCwd()`, and that
- * is the PROJECT ROOT for every conversation on this board -- an epic implementer
+ * is the PROJECT ROOT for every conversation on this board -- an epic werk-worker
  * is spawned with cwd = the main checkout and only `cd`s into its worktree in the
  * shell (verified live: `whoami` reports cwd = the project root from inside a
  * worktree session). So the gate measured `main` while the work sat in
  * `.claude/worktrees/<...>/<card-id>`, and would have written
  * `evidence_branch: main`, `evidence_commits: 0`, an empty diffstat, and run the
  * card's `test_cmd` against code the worker never wrote. Under any mode but
- * `off` that refuses every honest worktree implementer with "no commits since
+ * `off` that refuses every honest worktree werk-worker with "no commits since
  * main" -- which is why turning the gate on before fixing this would have been
  * worse than leaving it off.
  *
@@ -19,7 +19,7 @@
  * `scripts/worktree-create.sh` gives it (`.claude/worktrees/<name>`, and for an
  * epic leg `.claude/worktrees/epic/<epic-id>/<card-id>`) -- both end in the card
  * id. Matching by card rather than by acting conversation is deliberate: the
- * verifier's `in-review -> done` move must re-measure the WORKER's tree, not its
+ * werk-verifier's `in-review -> done` move must re-measure the WORKER's tree, not its
  * own scratch checkout.
  *
  * Fails safe in both directions. No match -> the project root, i.e. exactly the

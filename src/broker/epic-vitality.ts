@@ -15,7 +15,7 @@
  *
  * THE PHYSICAL FACT IS ONE FACT -- "the host behind this conversation is gone" --
  * and this file is the one place it is stated. It used to be stated twice, in
- * `epic-seat-vitality.ts` and `epic-overseer-vitality.ts`, because the two cards
+ * `epic-seat-vitality.ts` and `epic-werk-master-vitality.ts`, because the two cards
  * that needed it were built on branches neither of which could see the other's
  * file. That was deliberate at the time and carded rather than smuggled; this is
  * the card.
@@ -24,7 +24,7 @@
  * different numbers because the two mistakes cost different amounts, and that
  * asymmetry is the entire argument for keeping two of them. Each is documented
  * against the mistake it is sized for -- {@link SEAT_SILENCE_MS} and
- * {@link OVERSEER_SILENCE_MS}. A single shared grace would be the tidy answer and
+ * {@link WERK_MASTER_SILENCE_MS}. A single shared grace would be the tidy answer and
  * the wrong one.
  *
  * THE RULE, AND WHY EVERY CLAUSE IS REQUIRED.
@@ -64,7 +64,7 @@ import { resolveBackend } from './backends'
  * WHICH DIRECTION A MISTAKE FALLS IN, because that is what sizes it. A false
  * positive settles a card that was actually being worked -- and a settled card is
  * `alreadyRun`, therefore NOT re-dispatched (epic-ready.ts), so the cost is one
- * stranded card with a loud baton entry naming it, never two implementers in one
+ * stranded card with a loud baton entry naming it, never two werk-workers in one
  * worktree. A false negative is the leak this rule exists to end: the slot is not
  * held by a lease with a TTL, it is held by the engine's BELIEF that a card is in
  * flight, and that belief had no expiry at all. The run does not stall -- it
@@ -91,13 +91,13 @@ import { resolveBackend } from './backends'
 export const SEAT_SILENCE_MS = 10 * 60 * 1000
 
 /**
- * How long the OVERSEER may hold the whole beat with no connection and no sign of
+ * How long the WERK-MASTER may hold the whole beat with no connection and no sign of
  * life. FIFTEEN MINUTES.
  *
  * WHICH DIRECTION A MISTAKE FALLS IN, and it is the opposite lane's answer, which
  * is why this is a second number. A false negative is a stalled run:
  *
- *     // epic-beat.ts, overseerGate()
+ *     // epic-beat.ts, werkMasterGate()
  *     if (heldMs === null || heldMs <= LEASE_STALE_MS) return { hold: beat(`... WORKING ...`), aged: null }
  *
  * Nothing dispatches, nothing verifies, nothing settles, nothing parks, and that
@@ -105,20 +105,20 @@ export const SEAT_SILENCE_MS = 10 * 60 * 1000
  * expensive, recoverable, and loud once anybody looks. It is now BOUNDED by
  * {@link LEASE_STALE_MS} rather than unbounded: the hold lifts once the grip ages
  * out, which is the whole of `epic-lease-has-no-timeout`. A false POSITIVE wakes a
- * SECOND overseer alongside a first that is still typing, and the overseer is the
+ * SECOND werk-master alongside a first that is still typing, and the werk-master is the
  * one role that rewrites cards, merges branches and answers questions, so two of
  * them racing costs a generation of tokens and can undo board edits mid-write.
  * That is the single most expensive thing this engine can get wrong.
  *
  * LONGER THAN {@link SEAT_SILENCE_MS} for exactly that asymmetry: reaping a card
  * seat wrongly strands one card, reaping the supervisor wrongly puts two
- * overseers on one board.
+ * werk-masters on one board.
  *
  * LONGER THAN {@link LEASE_STALE_MS} (ten minutes) for a second, INDEPENDENT
  * reason: that is the age at which `evaluateLease` already presumes a holder dead
  * and grants over it. Sizing this above it means the lease's own presumption has
  * ALREADY elapsed by the time the fold reaps, so the two mechanisms can never
- * disagree in the dangerous direction -- a fold that declared the overseer dead
+ * disagree in the dangerous direction -- a fold that declared the werk-master dead
  * while the CAS still refused to replace it would freeze the run by a second
  * mechanism instead of the first. {@link graceClearsLeaseStaleness} states that
  * as a predicate rather than as a sentence in a comment.
@@ -126,10 +126,10 @@ export const SEAT_SILENCE_MS = 10 * 60 * 1000
  * Comfortably outside `RESTART_QUARANTINE_MS` (2 minutes), for
  * {@link SEAT_SILENCE_MS}'s reason.
  */
-export const OVERSEER_SILENCE_MS = 15 * 60 * 1000
+export const WERK_MASTER_SILENCE_MS = 15 * 60 * 1000
 
 /**
- * The invariant {@link OVERSEER_SILENCE_MS} is sized against, as a predicate
+ * The invariant {@link WERK_MASTER_SILENCE_MS} is sized against, as a predicate
  * rather than as a sentence in a comment.
  *
  * The next person to lower the grace will be reading the constant, not the prose
@@ -137,7 +137,7 @@ export const OVERSEER_SILENCE_MS = 15 * 60 * 1000
  * lease's staleness window fails a test that names the consequence instead of
  * producing a run frozen by a second mechanism months later.
  */
-export function graceClearsLeaseStaleness(graceMs: number = OVERSEER_SILENCE_MS): boolean {
+export function graceClearsLeaseStaleness(graceMs: number = WERK_MASTER_SILENCE_MS): boolean {
   return graceMs > LEASE_STALE_MS
 }
 
@@ -161,7 +161,7 @@ export interface Reaping {
  * owner.
  *
  * ONE TYPE FOR BOTH LANES, and that is a hazard worth naming: a card seat's
- * reaper and an overseer's are structurally identical, so TypeScript cannot tell
+ * reaper and a werk-master's are structurally identical, so TypeScript cannot tell
  * one from the other at a call site. That is precisely why the fold takes
  * {@link EpicReapers} -- a named pair -- rather than two adjacent positionals.
  * The two-positional shape shipped for exactly one merge and silently swapped the
@@ -223,7 +223,7 @@ export function answersToASocket(conv: Conversation): boolean {
  * lane's caller silently ask the wrong question -- the precise failure mode the
  * two-file split existed to avoid and this collapse must not reintroduce. Every
  * caller names its own number: {@link SEAT_SILENCE_MS} or
- * {@link OVERSEER_SILENCE_MS}.
+ * {@link WERK_MASTER_SILENCE_MS}.
  *
  * Strictly greater-than, so a `silenceMs` of zero in a test means "silent at all"
  * rather than "everything is dead".
@@ -240,7 +240,7 @@ export function seatAbandoned(conv: Conversation, hasSocket: HasSocket, nowMs: n
  * A factory rather than a bare function so the clock and the socket lookup are
  * bound ONCE, at the composition root, and every surface that folds an
  * `EpicGroup` -- the sweep, the inspect view, the activity feed -- asks the same
- * question of the same instant. A panel that said OVERSEER ALIVE while the engine
+ * question of the same instant. A panel that said WERK-MASTER ALIVE while the engine
  * had already replaced it would be a badge that lies about the engine by
  * construction, which is the failure `epicsToWatch` is shared to prevent.
  *
@@ -261,9 +261,9 @@ export function buildSeatReaper(input: ReaperInput): Reaper {
   return buildReaper(input, SEAT_SILENCE_MS)
 }
 
-/** Reaps the OVERSEER at {@link OVERSEER_SILENCE_MS}. */
-export function buildOverseerReaper(input: ReaperInput): Reaper {
-  return buildReaper(input, OVERSEER_SILENCE_MS)
+/** Reaps the WERK-MASTER at {@link WERK_MASTER_SILENCE_MS}. */
+export function buildWerkMasterReaper(input: ReaperInput): Reaper {
+  return buildReaper(input, WERK_MASTER_SILENCE_MS)
 }
 
 /**
@@ -282,15 +282,15 @@ export const NEVER_REAPED: Reaper = () => null
  *
  * A named pair rather than two adjacent positional optionals, and the reason is
  * not tidiness. {@link Reaper} is one structural type, so `f(convs, isLive, out,
- * seat, overseer)` accepts the two swapped without a murmur from the compiler --
+ * seat, werk-master)` accepts the two swapped without a murmur from the compiler --
  * which is exactly what happened when the two lanes' branches were first merged
  * (four tests in `epic-sweep.test.ts` went red with the reaper in the wrong
  * slot). A field name is the only thing that can tell these two apart.
  */
 export interface EpicReapers {
   seat: Reaper
-  overseer: Reaper
+  werkMaster: Reaper
 }
 
 /** Neither lane reaps. The fold's default -- see {@link NEVER_REAPED}. */
-export const NO_REAPING: EpicReapers = { seat: NEVER_REAPED, overseer: NEVER_REAPED }
+export const NO_REAPING: EpicReapers = { seat: NEVER_REAPED, werkMaster: NEVER_REAPED }

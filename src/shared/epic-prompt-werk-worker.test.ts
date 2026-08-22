@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { buildImplementerPrompt, type ImplementerPromptCtx } from './epic-prompt-implementer'
+import { buildWerkWorkerPrompt, type WerkWorkerPromptCtx } from './epic-prompt-werk-worker'
 
-const CTX: ImplementerPromptCtx = {
+const CTX: WerkWorkerPromptCtx = {
   projectUri: 'claude://sentinel/Users/jonas/projects/remote-claude',
   projectRoot: '/Users/jonas/projects/remote-claude',
   epicId: 'epic-the-wall-ii',
@@ -11,21 +11,21 @@ const CTX: ImplementerPromptCtx = {
 }
 
 const withDeps = (...ids: string[]) =>
-  buildImplementerPrompt({
+  buildWerkWorkerPrompt({
     ...CTX,
     dependsOn: ids.map(id => ({ id, branch: `worktree-epic/epic-the-wall-ii/${id}` })),
   })
 
 describe('the base check appears exactly when there is a base to check', () => {
   test('a leaf card gets no dependency section at all', () => {
-    const prompt = buildImplementerPrompt(CTX)
+    const prompt = buildWerkWorkerPrompt(CTX)
     expect(prompt).not.toContain('DEPENDS ON WORK')
     expect(prompt).not.toContain('merge-base')
     expect(prompt).not.toContain('## Base')
   })
 
   test('an empty dependsOn is the same as none -- no noise from an empty array', () => {
-    expect(buildImplementerPrompt({ ...CTX, dependsOn: [] })).toBe(buildImplementerPrompt(CTX))
+    expect(buildWerkWorkerPrompt({ ...CTX, dependsOn: [] })).toBe(buildWerkWorkerPrompt(CTX))
   })
 
   test('a card with dependencies is told, by id AND by branch', () => {
@@ -59,9 +59,9 @@ describe('what the section actually orders', () => {
     expect(prompt).toContain('git rev-parse --short <dep-branch>')
   })
 
-  test('a conflict stops the implementer instead of letting it resolve blind', () => {
+  test('a conflict stops the werk-worker instead of letting it resolve blind', () => {
     expect(prompt).toContain('CONFLICTS, STOP')
-    expect(prompt).toContain('needs-overseer')
+    expect(prompt).toContain('needs-werk-master')
   })
 
   test('the check lands BEFORE the done/push protocol -- it is a before-you-code order', () => {
@@ -80,7 +80,7 @@ describe('what the section actually orders', () => {
  * test, not merely its presence.
  */
 describe('the seat claim comes first', () => {
-  const prompt = buildImplementerPrompt(CTX)
+  const prompt = buildWerkWorkerPrompt(CTX)
 
   test('the claim is ordered before the card is read and before any git work', () => {
     expect(prompt).toContain('epic_seat(action="claim")')
@@ -106,14 +106,14 @@ describe('the seat claim comes first', () => {
   })
 })
 
-describe('overseer constraints and the base check coexist', () => {
+describe('werk-master constraints and the base check coexist', () => {
   test('both are emitted, constraints first', () => {
-    const prompt = buildImplementerPrompt({
+    const prompt = buildWerkWorkerPrompt({
       ...CTX,
       constraints: ['do not touch the wire protocol'],
       dependsOn: [{ id: 'dep-alpha', branch: 'worktree-epic/epic-the-wall-ii/dep-alpha' }],
     })
     expect(prompt).toContain('do not touch the wire protocol')
-    expect(prompt.indexOf('CONSTRAINTS FROM THE OVERSEER')).toBeLessThan(prompt.indexOf('DEPENDS ON WORK'))
+    expect(prompt.indexOf('CONSTRAINTS FROM THE WERK-MASTER')).toBeLessThan(prompt.indexOf('DEPENDS ON WORK'))
   })
 })

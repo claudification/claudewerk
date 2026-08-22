@@ -64,7 +64,7 @@ describe('handleEpicOp', () => {
   })
 
   /** A start reply is read as the run's STATUS BLOCK, and a status block that
-   *  says "no lease" while an overseer holds one is a lie the caller acts on. */
+   *  says "no lease" while a werk-master holds one is a lie the caller acts on. */
   test('start carries the current lease back, so a resume reports the holder it actually has', () => {
     op('start')
     op('lease', { lease: { convId: 'conv_over', expectGen: 0, holderAlive: false } })
@@ -126,7 +126,7 @@ describe('handleEpicOp', () => {
 })
 
 /**
- * TWO ANSWERS FROM ONE READ. The baton is sized for an overseer prompt; the
+ * TWO ANSWERS FROM ONE READ. The baton is sized for a werk-master prompt; the
  * acknowledgement set is not a tail question at all. Answering the second with
  * the first froze epic-the-wall for five generations (2026-08-19), and widening
  * the tail to repair it would have put the whole log in every prompt.
@@ -177,7 +177,7 @@ describe('get -- the acknowledgement set, folded over the WHOLE log', () => {
   test('but an agent-authored entry about the same card is still appended -- the log stays append-only', () => {
     op('start')
     settle('t1')
-    op('log_append', { logAppend: { kind: 'completion', convId: 'conv_overseer', cardId: 't1', body: 'my take' } })
+    op('log_append', { logAppend: { kind: 'completion', convId: 'conv_werk_master', cardId: 't1', body: 'my take' } })
     op('log_append', { logAppend: { kind: 'verdict', convId: 'conv_verifier', cardId: 't1', body: 'approved' } })
     expect(op('get').baton).toHaveLength(3)
   })
@@ -229,7 +229,7 @@ describe('the lease op -- the singleton, under contention', () => {
    * THE 2026-08-20 DEADLOCK, AT ITS SOURCE.
    *
    * `run.md` used to carry a MIRROR of `overseer_gen` and nothing reconciled the
-   * two, so a rewrite of the artifact -- by a hand, by an overseer carrying the
+   * two, so a rewrite of the artifact -- by a hand, by a werk-master carrying the
    * frontmatter along with the digest it was told to rewrite -- moved a number
    * the CAS was still comparing against the card. `epic-the-wall-ii` then beat
    * every 45 seconds for hours on `stale wake: expected gen 12, epic is at gen

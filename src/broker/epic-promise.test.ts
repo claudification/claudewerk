@@ -55,9 +55,9 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: PROJECT,
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: ['t1'],
     failedLegs: [],
     abandonedSeats: [],
@@ -186,13 +186,13 @@ describe('recordSettledPromises -- who writes `closes:`, and when', () => {
 
   /**
    * THE GATE IS `settled`, AND NOTHING ELSE. This test used to assert the exact
-   * opposite -- that an `in-review` card was skipped -- because the verifier's
+   * opposite -- that an `in-review` card was skipped -- because the werk-verifier's
    * `project_set_status` went on to flatten a nested promise block and empty
    * `closes:`. That writer bug is fixed on main (`2ba978d0`), so the lane gate
    * lost its reason, and it is inverted here rather than deleted: the pairing is
    * the record of why the answer changed.
    *
-   * Acknowledgement IS the moment. A card settles when its implementer ends, at
+   * Acknowledgement IS the moment. A card settles when its werk-worker ends, at
    * which point the sha exists and no verdict is needed to know it.
    */
   test('a settled card in `in-review` IS written -- acknowledgement is the moment', async () => {
@@ -246,7 +246,7 @@ describe('recordSettledPromises -- who writes `closes:`, and when', () => {
   })
 
   /**
-   * THE BOUNCE. A verifier can send a card back to `open`, a second implementer
+   * THE BOUNCE. A werk-verifier can send a card back to `open`, a second werk-worker
    * picks it up and commits more, and the card settles a second time. Retiring
    * it on the first settle would freeze `closes:` at round one's shas -- which
    * is the regression that dropping the lane gate would otherwise have
@@ -257,7 +257,7 @@ describe('recordSettledPromises -- who writes `closes:`, and when', () => {
     await recordSettledPromises(deps(), group(), [card('t1', 'in-review')])
     expect(closesOf(cardFile())).toEqual(['a'.repeat(40)])
 
-    // Bounced to `open`, a second implementer commits, it settles again.
+    // Bounced to `open`, a second werk-worker commits, it settles again.
     commit({ hash: 'b'.repeat(40), subject: 'fix(t1): the bounce, paid', committedAt: NOW - 1_000 })
     const out = await recordSettledPromises(deps(), group(), [card('t1', 'open')])
 
@@ -410,7 +410,7 @@ describe('recordSettledPromises -- it never blocks and never guesses', () => {
   /**
    * `completion` is what `acknowledgedCardIds` folds. A promise entry wearing
    * that kind would acknowledge a settle nobody had acknowledged and rob the
-   * overseer of the one wake it exists for.
+   * werk-master of the one wake it exists for.
    */
   test('every entry it writes is a `record` -- it acknowledges NOTHING', async () => {
     commit()
@@ -442,7 +442,7 @@ describe('recordSettledPromises -- it never blocks and never guesses', () => {
 
 /**
  * LAST CALL -- the pass that exists because the per-beat one can run out of
- * beats. A run completes off card LANES alone, so the last child's verifier can
+ * beats. A run completes off card LANES alone, so the last child's werk-verifier can
  * still be alive on the beat that ends the run: the card is not settled, the
  * pass above skips it, and every later beat returns at `isInertRun` before a
  * card is read. Reported as F1 against the first cut of this feature.

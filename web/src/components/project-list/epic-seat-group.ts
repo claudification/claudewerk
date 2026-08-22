@@ -1,5 +1,5 @@
 /**
- * SEATS NEST UNDER THE OVERSEER THAT DISPATCHED THEM.
+ * SEATS NEST UNDER THE WERK-MASTER THAT DISPATCHED THEM.
  *
  * The visual is the one `lineage.ts` already ships -- head first, members
  * indented ONE level, groups ordered newest-first. This file only changes the
@@ -7,14 +7,14 @@
  *
  *   1. The seats have no lineage edge at all. `epic-sweep-loop.ts` dispatches
  *      every seat with `rendezvousCallerConversationId: null`, so each one is
- *      self-rooted. (Setting that field to the overseer was rejected: it also
- *      hangs `pendingSpawnApproval` on the caller, so an unattended overseer
+ *      self-rooted. (Setting that field to the werk-master was rejected: it also
+ *      hangs `pendingSpawnApproval` on the caller, so an unattended werk-master
  *      would collect an approval prompt per dispatch.)
- *   2. Even with the edge, lineage roots at a CONVERSATION and overseer
+ *   2. Even with the edge, lineage roots at a CONVERSATION and werk-master
  *      generations ROTATE. Seats rooted at generation 32 would hang under a dead
  *      row the moment generation 33 took the lease.
  *
- * So the key is `overseerScopeKey()` -- the epic today, the project the day the
+ * So the key is `werkMasterScopeKey()` -- the epic today, the project the day the
  * lease becomes a project singleton. Nothing here changes when that happens.
  *
  * TWO LIVE OVERSEERS IN ONE PROJECT IS POSSIBLE, and is not a case to guard
@@ -23,23 +23,23 @@
  * VISIBLE rather than silently merging two runs into one misleading tree.
  */
 
-import { CONVERSATION_ROLE_RANK, classifyConversationRole, overseerScopeKey } from '@shared/conversation-role'
+import { CONVERSATION_ROLE_RANK, classifyConversationRole, werkMasterScopeKey } from '@shared/conversation-role'
 import type { Conversation } from '@/lib/types'
 
 export interface EpicSeatGroup {
-  /** `overseerScopeKey` shared by every member. */
+  /** `werkMasterScopeKey` shared by every member. */
   key: string
-  /** The head. ABSENT when no overseer for this scope is in the visible set --
+  /** The head. ABSENT when no werk-master for this scope is in the visible set --
    *  its generation ended, or it is in another project. Members then render
    *  FLAT rather than indented under nothing, matching how `lineage.ts` handles
    *  a vanished root. */
-  overseer?: Conversation
-  /** Implementers and verifiers, overseer excluded. */
+  werkMaster?: Conversation
+  /** WerkWorkers and werk-verifiers, werk-master excluded. */
   seats: Conversation[]
 }
 
 /**
- * Split conversations into overseer-headed subtrees plus everything else.
+ * Split conversations into werk-master-headed subtrees plus everything else.
  *
  * MEMBERSHIP IGNORES THE OTHER TWO AXES ON PURPOSE. A seat joins its subtree
  * whether or not it is ad-hoc and whether or not it runs in a worktree -- that
@@ -54,7 +54,7 @@ export function groupEpicSeats(conversations: Conversation[]): {
   const rest: Conversation[] = []
 
   for (const c of conversations) {
-    const key = overseerScopeKey(c)
+    const key = werkMasterScopeKey(c)
     if (!key || classifyConversationRole(c) === 'normal') {
       rest.push(c)
       continue
@@ -75,14 +75,14 @@ export function groupEpicSeats(conversations: Conversation[]): {
 /** Assemble one subtree: pull out the head, order the seats, and compute the
  *  group's recency so groups sort newest-first like every other list here. */
 function assembleGroup(key: string, members: Conversation[]): { group: EpicSeatGroup; newest: number } {
-  const overseer = members.find(c => classifyConversationRole(c) === 'overseer')
+  const werkMaster = members.find(c => classifyConversationRole(c) === 'werk-master')
   const seats = members
-    .filter(c => c !== overseer)
+    .filter(c => c !== werkMaster)
     .sort(
       (a, b) =>
         CONVERSATION_ROLE_RANK[classifyConversationRole(a)] - CONVERSATION_ROLE_RANK[classifyConversationRole(b)] ||
         a.startedAt - b.startedAt,
     )
   const newest = Math.max(...members.map(c => c.startedAt))
-  return { group: { key, ...(overseer && { overseer }), seats }, newest }
+  return { group: { key, ...(werkMaster && { werkMaster }), seats }, newest }
 }

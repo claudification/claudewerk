@@ -237,7 +237,7 @@ place: inside the bulk transfer class. Global backpressure = socket + queue caps
      challenge with a fresh one (section 12.15). The HMAC key is
      `SHA-256(rawKey)` (== the issuer's stored `record.hash`); it is used for
      NOTHING else. **Security caveat (section 12.14):** because the proof is
-     symmetric HMAC and the verifier stores that same hash, the key store is
+     symmetric HMAC and the werk-verifier stores that same hash, the key store is
      proof-forgery-sensitive -- mitigated by short `expiresAt` + fast revocation;
      asymmetric signatures are the reserved dump-safe upgrade. `keyProof: null`
      = one-way channel (frames the other way -> `err code=direction_not_granted`).

@@ -31,7 +31,7 @@ type EpicOpHandler = (root: string, msg: EpicOp, nowMs: number) => OpOutcome
 const fail = (error: string): OpOutcome => ({ ok: false, error })
 
 /** How many baton entries a `get` returns when the caller does not say. Enough
- *  for an overseer to pick up cold, small enough that a forty-generation run
+ *  for a werk-master to pick up cold, small enough that a forty-generation run
  *  still fits in a prompt. A DEBUGGING caller overrides it via `baton.limit`;
  *  the default is sized for the prompt, not for the human. */
 const BATON_TAIL = 20
@@ -65,7 +65,7 @@ function withLeaseGen(run: EpicRun, lease: EpicLease | null): EpicRunSnapshot {
   return { ...run, gen: lease?.gen ?? 0 }
 }
 
-/** The overseer lease as the epic CARD has it -- the generation's only home, and
+/** The werk-master lease as the epic CARD has it -- the generation's only home, and
  *  the one fact about a run that is not in the run's own directory. */
 function currentLease(root: string, epicId: string): EpicLease | null {
   return readLease(readCardMeta(root, epicId) ?? {})
@@ -88,7 +88,7 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
   /**
    * Arm / resume / reconfigure. Carries the LEASE back for the same reason `get`
    * does: a start reply is now read as the run's status block, and a status
-   * block that reports "lease: free (never run)" on a resume whose overseer is
+   * block that reports "lease: free (never run)" on a resume whose werk-master is
    * mid-generation is worse than no lease line at all.
    */
   start(root, msg, nowMs) {
@@ -104,11 +104,11 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
    * defeats the point of putting it somewhere visible.
    *
    * And it returns `acknowledgedCardIds` FOLDED OVER THE WHOLE LOG, beside the
-   * prompt-sized tail. Two answers because there are two questions: an overseer
+   * prompt-sized tail. Two answers because there are two questions: a werk-master
    * generation needs the last 20 entries to pick up cold, and the beat needs to
    * know which cards have ever been acknowledged. Answering the second with the
    * first is what froze epic-the-wall for five generations -- and the obvious
-   * repair, widening the tail, would put a 3000-line log in every overseer
+   * repair, widening the tail, would put a 3000-line log in every werk-master
    * prompt. The file is read whole either way, so the fold is free.
    */
   get(root, msg) {
@@ -145,7 +145,7 @@ const HANDLERS: Record<EpicOpKind, EpicOpHandler> = {
     // The CAS itself is `casLeaseOnCard` -- shared with the per-card seat lease,
     // because the read-evaluate-write is identical and only the keys differ.
     const lease = casLeaseOnCard(root, msg.epicId, OVERSEER_KEY_PREFIX, meta, req, nowMs)
-    // The one thing that is NOT shared: a granted overseer lease means the run
+    // The one thing that is NOT shared: a granted werk-master lease means the run
     // is RUNNING, and a seat lease has no run to move.
     //
     // IT DOES NOT WRITE THE GENERATION. `casLeaseOnCard` has just advanced

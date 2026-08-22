@@ -15,7 +15,7 @@
  * DELIBERATELY IN MEMORY, same caveat as `epic-registry.ts`: a broker restart
  * forgets the beat history. The BATON is the durable record and always was --
  * this is the layer below it, the mechanical "what did the sweep actually do",
- * which has no business in a file the overseer reads as its own memory.
+ * which has no business in a file the werk-master reads as its own memory.
  */
 
 import type { BeatOutcome } from './epic-executor'

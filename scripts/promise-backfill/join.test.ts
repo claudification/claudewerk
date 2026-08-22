@@ -176,7 +176,7 @@ describe('applyPlan -- line surgery, refusals never silent', () => {
 describe('deliveryHeadingShas -- the heading line only, because prose wanders', () => {
   it('takes the shas the card states on its delivery heading', () => {
     expect(deliveryHeadingShas(card(['## BUILT -- O2, as decided. `2ba978d0`']))).toEqual(['2ba978d0'])
-    expect(deliveryHeadingShas(card(['## WHAT SHIPPED (implementer, 4869d5ac + 5ec7e6d4)']))).toEqual([
+    expect(deliveryHeadingShas(card(['## WHAT SHIPPED (werk-worker, 4869d5ac + 5ec7e6d4)']))).toEqual([
       '4869d5ac',
       '5ec7e6d4',
     ])
@@ -187,7 +187,7 @@ describe('deliveryHeadingShas -- the heading line only, because prose wanders', 
     // in its BUILT section and a whole-section sweep filed SEVEN shas against
     // it, three of which belong to other cards that had earned their own rows.
     const text = card([
-      '## WHAT SHIPPED (implementer, 4869d5ac)',
+      '## WHAT SHIPPED (werk-worker, 4869d5ac)',
       '',
       'What arrived: `wall-pane-order-and-sotu-scope` (0cb0232f),',
       '`gate-cmdrunner-blocks-the-mcp-host` (7854b49a).',

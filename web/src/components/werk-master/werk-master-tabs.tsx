@@ -2,13 +2,13 @@
  * BATON / BEATS / DIGEST -- three views of "what happened", kept apart on
  * purpose.
  *
- * The BATON is the durable record on disk and the overseer's own memory; it
+ * The BATON is the durable record on disk and the werk-master's own memory; it
  * survives a broker restart. The BEATS are the in-memory 160-entry sweep ring,
  * mechanical, lost on restart. Merging them into one stream would be prettier
  * and would quietly lie about which of the two you can still trust tomorrow.
  *
- * The DIGEST is the overseer's markdown. Its empty state names the reason it is
- * empty rather than rendering blank, because "no digest yet" and "the overseer
+ * The DIGEST is the werk-master's markdown. Its empty state names the reason it is
+ * empty rather than rendering blank, because "no digest yet" and "the werk-master
  * has never woken" look identical otherwise -- and on the first live run of this
  * engine, they were the same thing and nobody noticed for an hour.
  */
@@ -17,9 +17,9 @@ import type { EpicLogEntry } from '@shared/epic-run-types'
 import type { EpicBeatRecord, EpicRunSnapshot } from '@shared/protocol'
 import { Markdown } from '@/components/markdown'
 import { cn, haptic } from '@/lib/utils'
-import { ago, Empty } from './overseer-bits'
+import { ago, Empty } from './werk-master-bits'
 
-export type OverseerTab = 'baton' | 'beats' | 'digest'
+export type WerkMasterTab = 'baton' | 'beats' | 'digest'
 
 const KIND_TONE: Record<string, string> = {
   dispatch: 'text-primary',
@@ -56,7 +56,7 @@ function Entry({
       <span className={cn('text-chrome uppercase shrink-0 w-20 truncate', tone)} title={kind}>
         {kind}
       </span>
-      {/* Baton bodies are MARKDOWN -- the overseer writes them with bold, lists
+      {/* Baton bodies are MARKDOWN -- the werk-master writes them with bold, lists
           and verification tables. Rendered as a raw string they showed literal
           `**...**` and a table collapsed onto one line as `| check | result |`. */}
       <div className="flex-1 min-w-0 text-[11px] text-foreground/88 [overflow-wrap:break-word]">
@@ -66,18 +66,18 @@ function Entry({
   )
 }
 
-export function OverseerTabStrip({
+export function WerkMasterTabStrip({
   tab,
   onTab,
   batonCount,
   beatCount,
 }: {
-  tab: OverseerTab
-  onTab: (t: OverseerTab) => void
+  tab: WerkMasterTab
+  onTab: (t: WerkMasterTab) => void
   batonCount: number
   beatCount: number
 }) {
-  const tabs: { key: OverseerTab; label: string; n?: number }[] = [
+  const tabs: { key: WerkMasterTab; label: string; n?: number }[] = [
     { key: 'baton', label: 'Baton', n: batonCount },
     { key: 'beats', label: 'Beats', n: beatCount },
     { key: 'digest', label: 'Digest' },
@@ -108,7 +108,7 @@ export function OverseerTabStrip({
   )
 }
 
-export function OverseerBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: number }) {
+export function WerkMasterBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: number }) {
   if (baton.length === 0) return <Empty>The baton is empty. Nothing has been dispatched or decided yet.</Empty>
   // Newest first: the interesting end of a running log is the recent end, and
   // scrolling to the bottom to find out what just happened is a tax.
@@ -117,7 +117,7 @@ export function OverseerBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: 
       {/* Key on CONTENT, never position. The list is reversed, so a new entry
           arrives at index 0 and shifts every other index -- an index-bearing key
           therefore changes on every row of a live log, remounting the lot (and
-          now re-rendering a Markdown body per row) each time the overseer writes
+          now re-rendering a Markdown body per row) each time the werk-master writes
           one line. */}
       {[...baton].reverse().map(e => (
         <Entry
@@ -133,7 +133,7 @@ export function OverseerBaton({ baton, nowMs }: { baton: EpicLogEntry[]; nowMs: 
   )
 }
 
-export function OverseerBeats({ beats, nowMs }: { beats: EpicBeatRecord[]; nowMs: number }) {
+export function WerkMasterBeats({ beats, nowMs }: { beats: EpicBeatRecord[]; nowMs: number }) {
   if (beats.length === 0) {
     return <Empty>No beat recorded. The ring is in memory, so a broker restart empties it.</Empty>
   }
@@ -153,7 +153,7 @@ export function OverseerBeats({ beats, nowMs }: { beats: EpicBeatRecord[]; nowMs
   )
 }
 
-export function OverseerDigest({ run }: { run: EpicRunSnapshot | null }) {
+export function WerkMasterDigest({ run }: { run: EpicRunSnapshot | null }) {
   const digest = run?.digest?.trim()
   // The placeholder the sentinel writes at arm time is not a digest. Treating it
   // as one renders italic underscores and hides the actual state.
@@ -162,8 +162,8 @@ export function OverseerDigest({ run }: { run: EpicRunSnapshot | null }) {
   if (!written) {
     return (
       <Empty>
-        No digest yet -- the first overseer generation writes it. If the run has been going a while, no overseer has
-        woken: check the Overseer block on the left and use BEAT NOW.
+        No digest yet -- the first werk-master generation writes it. If the run has been going a while, no werk-master
+        has woken: check the WerkMaster block on the left and use BEAT NOW.
       </Empty>
     )
   }

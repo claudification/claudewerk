@@ -1,7 +1,7 @@
 /**
  * The checkpoint gate's evidence. If this reports a change that did not happen,
  * every planned run stops for nothing and the checkpoint gets clicked through;
- * if it misses one, the planner rewrites the board silently, which is the exact
+ * if it misses one, the werk-planner rewrites the board silently, which is the exact
  * outcome the checkpoint exists to prevent.
  */
 
@@ -50,7 +50,7 @@ describe('boardFingerprint', () => {
     expect(print([card('a'), card('b')])).not.toBe(print([card('a'), card('b', { dependsOn: ['a'] })]))
   })
 
-  test('does NOT move when only prose changed -- rewording is expected of a planner', () => {
+  test('does NOT move when only prose changed -- rewording is expected of a werk-planner', () => {
     // Stopping the run to report a reworded title trains you to click through
     // the checkpoint, which is worse than not having one.
     expect(print([card('a', { title: 'old' })])).toBe(print([card('a', { title: 'much better title' })]))

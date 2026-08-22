@@ -125,7 +125,7 @@ const SHA_TOKEN = /\b[0-9a-f]{7,40}\b/g
  *
  * This started as a sweep of the whole BUILT section and had to be cut back,
  * on evidence. `wall-copy-affordance`'s section recounts an integration -- "what
- * arrived: wall-pane-order-and-sotu-scope (0cb0232f), epic-implementer-base-
+ * arrived: wall-pane-order-and-sotu-scope (0cb0232f), epic-werk-worker-base-
  * lacks-deps (10168ae1), gate-cmdrunner-blocks-the-mcp-host (7854b49a)" -- and
  * the sweep filed all SEVEN of those against that one card. Three of them belong
  * to other cards that had already earned their own row.
@@ -134,7 +134,7 @@ const SHA_TOKEN = /\b[0-9a-f]{7,40}\b/g
  * tersely, and this repo writes it exactly that way:
  *
  *     ## BUILT -- O2, as decided. `2ba978d0`
- *     ## WHAT SHIPPED (implementer, 4869d5ac + 5ec7e6d4 + 4f1cba28)
+ *     ## WHAT SHIPPED (werk-worker, 4869d5ac + 5ec7e6d4 + 4f1cba28)
  *     ## BUILT (branch `worktree-epic/...`, commit `aada6613`)
  *
  * A token that merely LOOKS like a sha (a date, a hex-ish word) survives this

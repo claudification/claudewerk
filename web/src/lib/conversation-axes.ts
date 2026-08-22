@@ -5,7 +5,7 @@
  *   ad-hoc    HOW IT ENDS    -> here
  *   worktree  WHERE IT RUNS  -> here
  *
- * They are independent. An epic implementer is an `implementer`, IS ad-hoc, and
+ * They are independent. An epic werk-worker is an `werk-worker`, IS ad-hoc, and
  * IS in a worktree, all at once -- which is why they were never collapsed into
  * one enum.
  *

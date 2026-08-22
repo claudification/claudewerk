@@ -30,9 +30,9 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
         {plan.dropped > 0 && <Count value={plan.dropped} label="DROPPED" tone="text-fg-dim" />}
       </div>
       <p className="font-mono text-chrome text-fg-muted leading-relaxed">
-        Each beat dispatches one implementer per ready card in <code className="text-foreground">depends_on</code>{' '}
-        order, sends an independent verifier over everything finished, then wakes one overseer. It runs unattended until
-        the epic is done or it needs you.
+        Each beat dispatches one werk-worker per ready card in <code className="text-foreground">depends_on</code>{' '}
+        order, sends an independent werk-verifier over everything finished, then wakes one werk-master. It runs
+        unattended until the epic is done or it needs you.
       </p>
       <OrderingCaveat waiting={plan.waiting} />
     </div>
@@ -43,9 +43,9 @@ export function RunBriefing({ plan }: { plan: RunPlan }) {
  * The limit of the ordering, said out loud.
  *
  * Readiness is arithmetic over `depends_on` (`epic-ready.ts`) and nothing else
- * looks at it -- the overseer is explicitly NOT the dispatcher. So two cards that
+ * looks at it -- the werk-master is explicitly NOT the dispatcher. So two cards that
  * touch the same thing without a declared edge go out together and collide, and
- * the overseer can only add that edge on the NEXT beat, after the damage. A
+ * the werk-master can only add that edge on the NEXT beat, after the damage. A
  * dialog that shows a confident ready-count owes you the caveat behind it.
  */
 function OrderingCaveat({ waiting }: { waiting: number }) {
@@ -53,7 +53,7 @@ function OrderingCaveat({ waiting }: { waiting: number }) {
     <p className="font-mono text-chrome text-fg-dim leading-relaxed">
       Ordering is only as good as the declared edges: cards with no <code className="text-fg-muted">depends_on</code>{' '}
       between them dispatch together even if they collide.
-      {waiting > 0 ? ' The overseer can add a missing edge, but only between beats.' : ' Nothing here declares one.'}
+      {waiting > 0 ? ' The werk-master can add a missing edge, but only between beats.' : ' Nothing here declares one.'}
     </p>
   )
 }

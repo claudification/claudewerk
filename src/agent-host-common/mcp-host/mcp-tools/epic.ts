@@ -3,7 +3,7 @@
  *
  * Deliberately has NO spawn verb. The engine owns dispatch: a tool that could
  * spawn an epic worker directly would bypass the DAG gate, the concurrency
- * ceiling and the overseer lease -- every safety property of the run, in one
+ * ceiling and the werk-master lease -- every safety property of the run, in one
  * call. If you want work to start, arm the run and let the beat decide.
  *
  * `beat` is not a hole in that rule. It runs ONE beat of the engine, taking the
@@ -30,8 +30,8 @@ import type { McpToolContext, ToolDef, ToolResult } from './types'
  */
 export const DESCRIPTION = [
   'Drive / inspect / debug an EPIC RUN: the engine plans AND executes a whole epic unattended.',
-  'It dispatches one implementer per ready card (ordered by depends_on), sends an independent VERIFIER',
-  'over every finished card, and wakes a single OVERSEER between beats -- the only seat that may ask a human.',
+  'It dispatches one werk-worker per ready card (ordered by depends_on), sends an independent WERK-VERIFIER',
+  'over every finished card, and wakes a single WERK-MASTER between beats -- the only seat that may ask a human.',
   '',
   'DRIVE',
   'action=start        arm (or resume) the run. `when` is the DISPATCH GATE, re-evaluated every beat: "now"',
@@ -43,21 +43,21 @@ export const DESCRIPTION = [
   '                    must pass. Waiting on an appointment costs NO wall clock. `concurrency` defaults to 3 -- that',
   '                    is a REVIEW ceiling, not a machine one; raising it means choosing to stop reviewing',
   '                    per-change.',
-  '                    THREE HANDBRAKES, none of them infinity: `max_gens` (40) bounds how often the overseer',
+  '                    THREE HANDBRAKES, none of them infinity: `max_gens` (40) bounds how often the werk-master',
   '                    THINKS, `max_usd` (100) bounds what the whole run SPENDS, `max_wall_clock_minutes` (480)',
   '                    bounds how long it runs unattended. Whichever trips first PARKS the run and says so in',
   '                    the baton. A parked run resumes by starting it again with the ceiling raised.',
   '                    START IS ALSO THE EXTEND VERB -- there is no other one, and it works on a LIVE run:',
   '                    `action=start epic_id=<id> max_gens=60` against a run that is mid-flight RAISES the',
   '                    ceiling in place and does NOT reset the generation counter. It cannot: the counter is the',
-  '                    overseer lease on the epic CARD (`overseer_gen`), and start never opens the card. Same for',
+  '                    werk-master lease on the epic CARD (`overseer_gen`), and start never opens the card. Same for',
   '                    `max_usd` and `max_wall_clock_minutes`. The one side effect worth knowing is that start',
   '                    also clears the dry-generation brake and re-arms -- which is what recovers a run that',
   '                    parked ON the ceiling, and the reason you do not need a separate verb to do it.',
   '                    CHEAP BY DESIGN: it merges rather than clobbers, so sending one knob changes one knob, and',
   '                    it answers with the STATUS BLOCK ONLY (state, when, target, concurrency, caps, lease).',
   '                    Raising a ceiling therefore costs about what `list` costs. Use get for the digest.',
-  'action=pause        stop dispatching, release the overseer lease. A later start RESUMES; it never resets the',
+  'action=pause        stop dispatching, release the werk-master lease. A later start RESUMES; it never resets the',
   '                    generation counter.',
   'action=abort        terminal, with `reason` recorded in the append-only baton.',
   'action=clear        acknowledge a run that has ALREADY ENDED, so it stops occupying THE WALL. It is not a',
@@ -81,14 +81,14 @@ export const DESCRIPTION = [
   'action=list         every run this project has: status, generation, cards in flight, whether armed.',
   'action=get          the cheap read -- run state, digest and baton tail. This is where the digest lives: start',
   '                    does not print it, so reach for get when you want the plan of record.',
-  'action=inspect      THE DEBUG READ. Everything at once: the run, who holds the overseer lease, the DAG plan',
+  'action=inspect      THE DEBUG READ. Everything at once: the run, who holds the werk-master lease, the DAG plan',
   '                    (what is dispatchable / awaiting a verdict / held back by the ceiling / waiting on deps /',
   '                    parked as a question), WHY nothing is moving, which conversations are alive, which settled',
   '                    cards the baton has not acknowledged, and the beats the sweep actually performed.',
   '                    Reach for this first whenever an epic looks stuck. It never mutates anything.',
   '',
   'DEBUG',
-  'action=break_lease  release a stuck overseer lease so the next beat can wake a fresh one. Refuses while the',
+  'action=break_lease  release a stuck werk-master lease so the next beat can wake a fresh one. Refuses while the',
   '                    holder conversation is still alive unless `force` is set. Records who broke it in the baton.',
   '',
   '`baton_limit` / `baton_kinds` / `baton_card` deepen or filter the baton on get and inspect -- e.g. every',
@@ -207,11 +207,11 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
             description: 'start: the old name for `when`. Accepted; prefer `when`, which is the same field.',
           },
           target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'start: delivery rung.' },
-          concurrency: { type: 'number', description: 'start: max implementers in flight (default 3).' },
+          concurrency: { type: 'number', description: 'start: max werk-workers in flight (default 3).' },
           max_gens: {
             type: 'number',
             description:
-              'start: overseer generation ceiling (default 40). THIS IS THE EXTEND KNOB -- send it at a run that ' +
+              'start: werk-master generation ceiling (default 40). THIS IS THE EXTEND KNOB -- send it at a run that ' +
               'is already RUNNING or parked on the ceiling and it raises the ceiling in place, leaving the ' +
               'generation counter alone (that lives on the epic card as `overseer_gen`; start never touches the ' +
               'card). Raising it also clears the dry-generation brake and re-arms the run.',

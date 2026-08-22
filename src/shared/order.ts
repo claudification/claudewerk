@@ -2,7 +2,7 @@
  * `order@1` -- A WORK ORDER: the SEAT, as an artifact.
  *
  * Until now a seat lived in two places that were both wrong: prose inside a
- * board card ("READ THIS FIRST, VERIFIER"), and a prompt builder hardcoded in
+ * board card ("READ THIS FIRST, WERK-VERIFIER"), and a prompt builder hardcoded in
  * the broker. There were exactly four seats in the system and not one of them
  * was a thing you could read, diff, version or cap.
  *
@@ -61,7 +61,7 @@ export const ORDER_KIND = 'order@1' as const
  *
  * Nothing here enumerates the legal seats, because the seat an order fills is
  * decided by whoever DISPATCHES it, not by the schema: the epic engine spends
- * `overseer` / `planner` / `implementer` / `verifier` (`EPIC_ORDERS`), the
+ * `werk-master` / `werk-planner` / `werk-worker` / `werk-verifier` (`EPIC_ORDERS`), the
  * scheduler spends its own, and neither one gets to shrink the other's
  * vocabulary. The alias exists so the intent has a name and a future narrowing
  * has exactly one place to happen.
@@ -163,7 +163,7 @@ export interface OrderCaps {
    *
    * THE SECOND HALF OF "WHAT A ROLE MAY SPEND", and it catches what a budget
    * cannot: a seat that is cheap per turn and wrong about when to stop. A
-   * refiner still going at 30 turns has stopped refining and started
+   * werk-refiner still going at 30 turns has stopped refining and started
    * implementing, and it can do that for a long time inside $0.50.
    *
    * A POSITIVE INTEGER. A count of turns has no fractional value, so `2.5` is a
@@ -194,7 +194,7 @@ export interface OrderPermissions {
 
 /**
  * The worktree an order's seat gets. Absent means NO worktree at all -- the
- * overseer and the planner judge and edit main, and an isolated checkout would
+ * werk-master and the werk-planner judge and edit main, and an isolated checkout would
  * hide the very state they exist to read.
  */
 export interface OrderWorktree {
@@ -205,7 +205,7 @@ export interface OrderWorktree {
 /** `order@1`, the artifact. */
 export interface Order {
   kind: typeof ORDER_KIND
-  /** Stable id, `NAME@VERSION` -- e.g. `IMPLEMENTER@1`. */
+  /** Stable id, `NAME@VERSION` -- e.g. `WERK-WORKER@1`. */
   id: string
   /** One line a human reads in a picker. */
   title: string
@@ -214,26 +214,26 @@ export interface Order {
   /**
    * The broker prompt builder that compiles a card into this seat's prompt,
    * NAMED rather than referenced. The four builders take four different context
-   * types, so a union-typed dispatch would buy nothing but a cast; the planners
+   * types, so a union-typed dispatch would buy nothing but a cast; the werk-planners
    * still call their builder directly and a test asserts the declaration and
    * the call agree. The name is here so an order is READABLE -- "which prompt
-   * does GUARD@1 use" should not require reading the broker.
+   * does WERK-VERIFIER@1 use" should not require reading the broker.
    *
    * EXACTLY ONE OF `prompt` AND `instructions` IS SET. A seat whose prompt no
    * builder covers carries {@link Order.instructions} instead; requiring one of
    * the two means an order always says where its prompt comes from, which is
    * the readable property this whole file exists for.
    */
-  prompt?: 'implementer' | 'guard' | 'overseer' | 'planner'
+  prompt?: 'werk-worker' | 'werk-verifier' | 'werk-master' | 'werk-planner'
   /**
    * This seat's instruction block, carried BY THE ORDER, for a seat no broker
    * builder covers.
    *
    * THIS IS THE HALF THAT MAKES A NEW SEAT CHEAP. Before it, an order could only
-   * point at one of four builders compiled into the broker, so a REFINER or a
+   * point at one of four builders compiled into the broker, so a WERK-REFINER or a
    * DOC-WRITER had no way to carry what it was supposed to do -- {@link
-   * Order.notes} is prose for a human and reaches no agent. `REFINER@1` shipped
-   * as `seat: 'implementer', prompt: 'implementer'` with its real instructions
+   * Order.notes} is prose for a human and reaches no agent. `WERK-REFINER@1` shipped
+   * as `seat: 'werk-worker', prompt: 'werk-worker'` with its real instructions
    * in a wrapper type beside the order, for exactly this reason.
    *
    * IT IS PROMPT PAYLOAD, NOT ARGV, and the argv character allowlist is
@@ -256,7 +256,7 @@ export interface Order {
    * THE POOL IS THE DISPATCHER'S, THE SHARE IS THE ORDER'S. The scheduler caps
    * itself at `MAX_CONCURRENT_SCHEDULED_SPAWNS` (3) globally -- enough to stop
    * the scheduler eating the machine, and not enough to stop ONE role eating the
-   * scheduler. A backlog of 40 `#needs-refine` cards and a `REFINER@1` schedule
+   * scheduler. A backlog of 40 `#needs-refine` cards and a `WERK-REFINER@1` schedule
    * holds all three for as long as the backlog lasts, and the nightly board
    * sweep -- one fire, one minute, no retry -- is simply skipped, in a way that
    * looks exactly like every other overlap skip in the history.
@@ -311,7 +311,7 @@ export interface Order {
  * The prompt a seat actually launches with: WHAT to do, then WHO is doing it.
  *
  * THIS IS THE FUNCTION THAT MAKES {@link Order.instructions} REAL. A field that
- * validates and reaches no spawn is the same inertness `REFINER@1`'s wrapper
+ * validates and reaches no spawn is the same inertness `WERK-REFINER@1`'s wrapper
  * type already shipped once, with a nicer type on it -- so the schema half of
  * "a new seat is cheap" is only true once something turns the block into prompt
  * text. An order that NAMES a builder returns `context` untouched: the builder
@@ -349,7 +349,7 @@ const EFFORTS: readonly OrderEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'
 const MODES: readonly OrderPermissionMode[] = ['plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions']
 
 const TRUST_LEVELS: readonly OrderTrustLevel[] = ['untrusted', 'trusted', 'benevolent']
-const PROMPTS: readonly NonNullable<Order['prompt']>[] = ['implementer', 'guard', 'overseer', 'planner']
+const PROMPTS: readonly NonNullable<Order['prompt']>[] = ['werk-worker', 'werk-verifier', 'werk-master', 'werk-planner']
 
 /** `NAME@VERSION`, upper-kebab name and an integer version. */
 const ORDER_ID = /^[A-Z][A-Z0-9-]*@\d+$/
@@ -359,8 +359,8 @@ const ORDER_ID = /^[A-Z][A-Z0-9-]*@\d+$/
  *
  * The seat union is open (see {@link OrderSeat}), so this is what stands in for
  * it. Strictly narrower than {@link COMMAND_LINE_SAFE}, so a seat name is
- * argv-safe by construction rather than by a second check -- `Refiner`,
- * `refiner_2` and `refiner; id` are all refused, and one canonical spelling per
+ * argv-safe by construction rather than by a second check -- `WerkRefiner`,
+ * `refiner_2` and `werk-refiner; id` are all refused, and one canonical spelling per
  * seat is what keeps `EPIC_ORDERS`-style lookups from missing on case.
  */
 const ORDER_SEAT = /^[a-z][a-z0-9-]*$/
@@ -371,7 +371,7 @@ const SEAT_MAX = 32
 /**
  * Longest an instruction block may be.
  *
- * A bound rather than a right number: nothing today comes close (`REFINER@1`'s
+ * A bound rather than a right number: nothing today comes close (`WERK-REFINER@1`'s
  * block is well under a kilobyte), and the reason to have one at all is that the
  * day an order arrives over a wire, an unbounded string field is the cheapest
  * way to make a spawn carry a megabyte of someone else's text.
@@ -425,7 +425,7 @@ function requireCommandLineSafe(value: string, field: string): string {
 function validateSeat(raw: Record<string, unknown>): OrderSeat {
   const seat = requireString(raw, 'seat')
   if (seat.length > SEAT_MAX) fail(`seat must be at most ${SEAT_MAX} characters`, 'seat')
-  if (!ORDER_SEAT.test(seat)) fail('seat must be a lowercase-kebab name, e.g. implementer or doc-writer', 'seat')
+  if (!ORDER_SEAT.test(seat)) fail('seat must be a lowercase-kebab name, e.g. werk-worker or doc-writer', 'seat')
   return seat
 }
 
@@ -434,7 +434,7 @@ function validateSeat(raw: Record<string, unknown>): OrderSeat {
  *
  * NEITHER is refused rather than defaulted: an order that names no builder and
  * carries no text is an order nobody can dispatch, and silently picking
- * `implementer` for it is how `REFINER@1` came to declare a seat it does not
+ * `werk-worker` for it is how `WERK-REFINER@1` came to declare a seat it does not
  * fill. BOTH is refused because the two would then disagree and nothing says
  * which wins.
  */
@@ -579,7 +579,7 @@ function validateWorktree(input: unknown): OrderWorktree | undefined {
   const raw = asRecord(input, 'worktree')
   const prefix = raw.prefix
   if (typeof prefix !== 'string') fail('worktree.prefix must be a string', 'worktree.prefix')
-  // Empty is the ordinary case (an implementer's worktree is just the card id),
+  // Empty is the ordinary case (a werk-worker's worktree is just the card id),
   // so only a non-empty prefix is checked against the argv allowlist.
   if (prefix.length > 0) requireCommandLineSafe(prefix, 'worktree.prefix')
   return { prefix }
@@ -597,7 +597,7 @@ export function validateOrder(input: unknown): Order {
   if (raw.kind !== ORDER_KIND) fail(`kind must be "${ORDER_KIND}"`, 'kind')
 
   const id = requireString(raw, 'id')
-  if (!ORDER_ID.test(id)) fail('id must look like NAME@VERSION, e.g. IMPLEMENTER@1', 'id')
+  if (!ORDER_ID.test(id)) fail('id must look like NAME@VERSION, e.g. WERK-WORKER@1', 'id')
 
   const seat = validateSeat(raw)
   const source = validatePromptSource(raw)

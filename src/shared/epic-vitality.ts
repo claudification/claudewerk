@@ -3,15 +3,15 @@
  *
  * `EpicRunSnapshot.status` is an INTENT, not a liveness: the sentinel writes
  * `running` when a lease is granted and nothing ever writes it back down. So a
- * run whose overseer died, whose registry entry a broker restart forgot, and
+ * run whose werk-master died, whose registry entry a broker restart forgot, and
  * whose seats have all ended still reads `running` forever -- which is exactly
  * what three separate surfaces printed on 2026-08-20 while `epic-the-wall-ii`
  * spawned nothing for hours. The complaint that opened this file, verbatim:
- * "double check the overseer; that the status is TRUE and not a lie. I don't
+ * "double check the werk-master; that the status is TRUE and not a lie. I don't
  * see a running conversation for example."
  *
  * The fix is not a better badge in one place. It is ONE derivation, here, that
- * the header badge, the wall's A7 pane and the overseer window all read -- so a
+ * the header badge, the wall's A7 pane and the werk-master window all read -- so a
  * fourth surface cannot invent a fourth opinion.
  *
  * ZERO RUNTIME IMPORTS ON PURPOSE. This is bundled into the control panel, and
@@ -66,9 +66,9 @@ export interface RunVitalityView {
  *  feed row. */
 export interface RunVitalityInput {
   status: EpicActivityEntry['status']
-  /** Seats (implementers + verifiers) alive right now. */
+  /** Seats (werk-workers + werk-verifiers) alive right now. */
   inFlight: number
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   /** In the sweep's armed set. FALSE after a broker restart forgets a run. */
   armed: boolean
   lastBeatAt: string | null
@@ -152,13 +152,13 @@ function liveVitality(input: RunVitalityInput): RunVitalityView {
     return view('stalled', 'STALLED', 'Not in the sweep armed set and it has never beaten. RESUME re-arms it.')
   }
   if (input.stale) {
-    return view('stalled', 'STALLED', quietWhy(input.inFlight + (input.overseerAlive ? 1 : 0)))
+    return view('stalled', 'STALLED', quietWhy(input.inFlight + (input.werkMasterAlive ? 1 : 0)))
   }
   if (input.inFlight > 0) {
     return view('working', 'RUNNING', `${input.inFlight} seat(s) working.`, { breathing: true })
   }
-  if (input.overseerAlive) {
-    return view('working', 'RUNNING', 'The overseer is awake; no implementer or verifier is out yet.', {
+  if (input.werkMasterAlive) {
+    return view('working', 'RUNNING', 'The werk-master is awake; no werk-worker or werk-verifier is out yet.', {
       breathing: true,
     })
   }

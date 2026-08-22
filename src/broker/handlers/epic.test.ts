@@ -71,7 +71,7 @@ describe('beatFor', () => {
     expect(beat).toBeNull()
   })
 
-  test('patch fans nothing -- the overseer rewrites its digest several times a beat', () => {
+  test('patch fans nothing -- the werk-master rewrites its digest several times a beat', () => {
     expect(beatFor(req({ op: 'patch' }), res({ op: 'patch', run: RUN }))).toBeNull()
   })
 

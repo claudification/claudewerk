@@ -54,7 +54,7 @@ afterEach(() => {
 
 describe('a granted claim', () => {
   test('reports the grant and changes nothing else', async () => {
-    const h = harness({ ok: true, outcome: 'granted', note: 'You hold the implementer seat on `t1` (generation 1).' })
+    const h = harness({ ok: true, outcome: 'granted', note: 'You hold the werk-worker seat on `t1` (generation 1).' })
 
     const res = await run(h)
 
@@ -87,7 +87,7 @@ describe('a refusal -- the loser exits, non-zero and loudly', () => {
     ok: false,
     outcome: 'refused',
     exit: true as const,
-    note: 'SEAT LEASE REFUSED for `t1` (implementer).\nConversation `conv_first` already holds this seat. STOP NOW.',
+    note: 'SEAT LEASE REFUSED for `t1` (werk-worker).\nConversation `conv_first` already holds this seat. STOP NOW.',
   }
 
   test('the conversation is exited with an ERROR status, not asked to stop', async () => {

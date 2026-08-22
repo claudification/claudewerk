@@ -22,7 +22,7 @@ import type { EpicBeatRecord } from '@shared/protocol'
  * another agent -- routinely 1-2k characters -- so three of them buried the
  * numbers this pane exists to print under a screenful of log. A7 is a SUMMARY
  * surface: seats, slots, progress, timing. The last beat's headline earns one
- * clamped line; the full log belongs in the overseer window, which shows all of
+ * clamped line; the full log belongs in the werk-master window, which shows all of
  * them and is where you go when you actually want to read.
  */
 const BATON_TAIL = 1

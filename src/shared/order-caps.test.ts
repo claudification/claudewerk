@@ -22,8 +22,8 @@ const order = (over: Record<string, unknown> = {}): Order =>
     kind: ORDER_KIND,
     id: 'SEAT@1',
     title: 'A seat',
-    seat: 'implementer',
-    prompt: 'implementer',
+    seat: 'werk-worker',
+    prompt: 'werk-worker',
     caps: {},
     ...over,
   })

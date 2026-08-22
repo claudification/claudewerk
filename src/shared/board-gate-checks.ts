@@ -153,7 +153,7 @@ export async function runTier2(input: GateInput): Promise<{ ok: boolean; checks:
  * approved is cheap, unspoofable and useful in every mode. Making it Tier-1's
  * side effect is why a board running with the gate off -- or at `tier2` -- had
  * `grep '^verdict:' cards/*.md` return zero out of 30, so a `done` card and a
- * card whose verifier spawn died looked identical from the board. A reader tells
+ * card whose werk-verifier spawn died looked identical from the board. A reader tells
  * the two apart by comparing `verdict` against `evidence_worker`: same id means
  * the mode did not prove independence, it only recorded the mover.
  */

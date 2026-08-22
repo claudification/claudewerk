@@ -43,14 +43,14 @@ describe('parseWorktreeList', () => {
 describe('resolveGateCwd', () => {
   const list = parseWorktreeList(PORCELAIN)
 
-  it("picks the worktree whose last path segment IS the card id -- not the verifier's", () => {
+  it("picks the worktree whose last path segment IS the card id -- not the werk-verifier's", () => {
     expect(resolveGateCwd(ROOT, 'my-card', list)).toEqual({
       cwd: wt('epic/epic-x/my-card'),
       note: 'worktree',
     })
   })
 
-  it('resolves a verifier worktree by its own id when that is the card', () => {
+  it('resolves a werk-verifier worktree by its own id when that is the card', () => {
     expect(resolveGateCwd(ROOT, 'verify-my-card', list).cwd).toBe(wt('verify-my-card'))
   })
 

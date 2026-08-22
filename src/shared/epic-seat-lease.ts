@@ -16,7 +16,7 @@
  * lane that never moved, a manual dispatch, a sweep race, a broker restart
  * replaying something, or a cause nobody has diagnosed yet. Any second writer
  * loses. That is the difference between closing a bug and closing a class, and
- * this class is the one whose failure is SILENT: two implementers on one card
+ * this class is the one whose failure is SILENT: two werk-workers on one card
  * share ONE worktree (`cardBranch` derives the name from the card), so the
  * loser's work is staged into the winner's commit with no conflict.
  *
@@ -37,8 +37,8 @@
 import type { EpicLease } from './epic-lease'
 import type { EpicRole } from './epic-run-types'
 
-/** The claim key. ROLE IS PART OF IT and that is not optional: an implementer
- *  and a verifier on the same card are two legitimate concurrent seats -- the
+/** The claim key. ROLE IS PART OF IT and that is not optional: a werk-worker
+ *  and a werk-verifier on the same card are two legitimate concurrent seats -- the
  *  whole reason `inVerify` is a separate lane from `inFlight`. Only a same-role
  *  collision is a collision. */
 export interface SeatLeaseKey {
@@ -49,13 +49,13 @@ export interface SeatLeaseKey {
 
 /**
  * The frontmatter key prefix a role's grip is written under, on the CARD's own
- * file: `seat_implementer`, `seat_implementer_gen`, `seat_implementer_at`.
+ * file: `seat_werk-worker`, `seat_werk-worker_gen`, `seat_werk-worker_at`.
  *
- * On the CARD rather than in the run artifact, for the reason the overseer lease
+ * On the CARD rather than in the run artifact, for the reason the werk-master lease
  * lives on the epic card: a wedged seat should be visible and breakable by a
  * human reading the board, without knowing that `.rclaude/project/epics/`
  * exists. And per ROLE rather than one `seat:` key, because two keys is what
- * makes "an implementer and a verifier may both hold this card" a fact about
+ * makes "a werk-worker and a werk-verifier may both hold this card" a fact about
  * storage instead of a rule some later reader can talk themselves out of.
  */
 export function seatLeaseKeyPrefix(role: EpicRole): string {
@@ -150,7 +150,7 @@ export function seatClaimOrder(role: EpicRole, cardId: string): string {
     '  UNREACHABLE  the broker or sentinel could not answer. PROCEED WITH YOUR WORK and note it in your card',
     '               body. The lease is a mutex between seats, never permission to work.',
     '',
-    'An implementer and a verifier on the same card are two DIFFERENT seats and both are granted. Only a',
+    'A werk-worker and a werk-verifier on the same card are two DIFFERENT seats and both are granted. Only a',
     'same-role collision is a collision.',
   ].join('\n')
 }

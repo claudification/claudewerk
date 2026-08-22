@@ -8,7 +8,7 @@
 
 import type { EpicInspectCard, EpicInspectPlan } from '@shared/protocol'
 import { cn } from '@/lib/utils'
-import { Block } from './overseer-bits'
+import { Block } from './werk-master-bits'
 
 /** Lane -> glyph + tone. A map rather than a chain: five lanes on one key. */
 const LANES: { key: keyof EpicInspectPlan; glyph: string; tone: string; label: string }[] = [
@@ -33,7 +33,7 @@ function CardLine({ card, glyph, tone, label }: { card: EpicInspectCard; glyph: 
   )
 }
 
-export function OverseerDag({ plan }: { plan: EpicInspectPlan | null }) {
+export function WerkMasterDag({ plan }: { plan: EpicInspectPlan | null }) {
   if (!plan) {
     return (
       <Block title="DAG">

@@ -1,7 +1,7 @@
 /**
  * ONE NIGHT RUN: the queue, the workers, and what the watchdog last decided.
  *
- * DELIBERATELY THINNER THAN AN EPIC ROW. A night run has no DAG, no overseer and
+ * DELIBERATELY THINNER THAN AN EPIC ROW. A night run has no DAG, no werk-master and
  * no baton -- it has a queue and a watchdog -- so the row shows those four
  * numbers and stops. Padding it out to look like its neighbour would invent
  * structure the engine does not have.
@@ -69,7 +69,7 @@ export function NightshiftRunRow({ row, nowMs }: { row: NightshiftRunRowData; no
 
       {/* The watchdog is the only thing supervising a night run. Silence from it
           is a fact worth printing, not an empty slot to skip. */}
-      <div className="wall-run-overseer" style={last ? { color: VERDICT_TONE[last.verdict] } : undefined}>
+      <div className="wall-run-werk-master" style={last ? { color: VERDICT_TONE[last.verdict] } : undefined}>
         {last
           ? `watchdog ${last.verdict} · ${formatDurationShort(Math.max(0, nowMs - last.at))} ago · ${last.reason}`
           : 'watchdog has not decided anything yet'}

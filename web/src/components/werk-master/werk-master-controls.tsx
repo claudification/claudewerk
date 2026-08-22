@@ -23,7 +23,7 @@ import { Gauge, Pause, Play, Square, Trash2, Unlock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { cn, haptic } from '@/lib/utils'
-import { VERBS, type Verb } from './overseer-verbs'
+import { VERBS, type Verb } from './werk-master-verbs'
 
 interface Action {
   verb: Verb
@@ -65,7 +65,7 @@ const ACTIONS: Action[] = [
     verb: 'break',
     label: 'BREAK LEASE',
     icon: <Unlock className="size-2.5" />,
-    title: 'Release a stuck overseer lease so the next beat wakes a fresh one. Refuses a holder still alive.',
+    title: 'Release a stuck werk-master lease so the next beat wakes a fresh one. Refuses a holder still alive.',
     enabled: (_run, leaseHeld) => leaseHeld,
   },
   {
@@ -103,7 +103,7 @@ function buttonClass(disabled: boolean, danger?: boolean): string {
     : 'border-border text-foreground hover:border-[color:var(--epic-badge-edge)] hover:bg-[color:var(--epic-badge-tint)]'
 }
 
-export function OverseerControls({
+export function WerkMasterControls({
   project,
   epicId,
   run,

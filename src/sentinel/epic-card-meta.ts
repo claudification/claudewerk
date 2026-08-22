@@ -3,7 +3,7 @@
  * does NOT live in the run artifact.
  *
  * The lease lives on the CARD rather than in `run.md` so a human reading the
- * board can see, and break, a stuck overseer without knowing the engine's
+ * board can see, and break, a stuck werk-master without knowing the engine's
  * storage layout. That makes the card a second write target, and these two
  * functions are all of it.
  *
@@ -11,7 +11,7 @@
  * is the interesting part of that file, and two file-I/O helpers sitting above
  * it were the first thing a reader had to scroll past.
  *
- * `casLeaseOnCard` joined them because BOTH lease scopes -- the epic's overseer
+ * `casLeaseOnCard` joined them because BOTH lease scopes -- the epic's werk-master
  * singleton and a work card's per-role seat -- perform the identical
  * read-evaluate-write, and the invariant that makes it a CAS is a property of
  * THESE LINES rather than of either caller.
@@ -37,7 +37,7 @@ export function patchCardMeta(root: string, epicId: string, patch: Record<string
   const { meta, body, raw: blocks } = parseCardFrontmatter(raw)
   // `blocks` is not optional here even though the argument is. This writes a
   // BOARD CARD, and an epic card is exactly the kind that carries a `promise:`
-  // block -- dropping it would empty `closes:` every time the overseer took or
+  // block -- dropping it would empty `closes:` every time the werk-master took or
   // released the lease.
   writeFileSync(file, serializeFrontmatter({ ...meta, ...patch }, body, blocks), 'utf8')
   return true
@@ -52,7 +52,7 @@ export function readCardMeta(root: string, epicId: string): Record<string, unkno
 }
 
 /**
- * ONE COMPARE-AND-SWAP, both scopes: the overseer singleton on the epic card and
+ * ONE COMPARE-AND-SWAP, both scopes: the werk-master singleton on the epic card and
  * a seat on a work card differ only in `keyPrefix` and which card they land on.
  *
  * NO AWAIT BETWEEN THE READ AND THE WRITE. That is the entire CAS, and it is a

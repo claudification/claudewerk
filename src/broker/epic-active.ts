@@ -1,6 +1,6 @@
 /**
  * WHAT IS RUNNING RIGHT NOW, ACROSS EVERY PROJECT -- the feed behind the header
- * badge and the overseer window's run rail.
+ * badge and the werk-master window's run rail.
  *
  * `listEpicRuns` already answers this for ONE project, and that is the wrong
  * shape for the question a human actually asks. Nobody looks at a control panel
@@ -92,7 +92,7 @@ function toEntry(group: EpicGroup, read: RunRead, queue: QueueVerdict, nowMs: nu
     gen: run?.gen ?? group.maxGenSeen,
     maxGens: run?.maxGens ?? 0,
     inFlight: group.inFlight.length,
-    overseerAlive: group.overseerAlive,
+    werkMasterAlive: group.werkMasterAlive,
     // BY PROJECT IDENTITY, never by raw string. The registry holds whatever the
     // MCP caller armed with (`claude:///path`); the group's project comes off
     // the conversation store (`claude://default/path`). Raw equality showed a
@@ -121,7 +121,7 @@ function degradedEntry(group: EpicGroup): EpicActivityEntry {
     gen: group.maxGenSeen,
     maxGens: 0,
     inFlight: group.inFlight.length,
-    overseerAlive: group.overseerAlive,
+    werkMasterAlive: group.werkMasterAlive,
     armed: false,
     lastBeatAt: null,
     stale: true,
@@ -158,8 +158,8 @@ export function runStamps(run: { acknowledgedAt?: string; updated?: string } | n
 export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.now()): Promise<EpicActivityEntry[]> {
   // THE SAME FOLD THE SWEEP ACTS ON, both reapers included: a feed that still
   // counted a reaped seat as in flight would show a full ceiling for a slot the
-  // engine has already given back, and one without the overseer's would print
-  // OVERSEER ALIVE about a conversation the engine has already replaced.
+  // engine has already given back, and one without the werk-master's would print
+  // WERK-MASTER ALIVE about a conversation the engine has already replaced.
   const groups = epicsToWatch(deps.getAllConversations(), deps.isLive, deps.producedOutput, deps.reapers)
   const reads = await Promise.all(groups.map(group => readRun(deps, group)))
   // THE SAME FOLD THE SWEEP ACTS ON. A feed that decided the queue differently
@@ -179,7 +179,7 @@ export async function listActiveEpicRuns(deps: SweepDeps, nowMs: number = Date.n
  * Is this run one the badge should count?
  *
  * DERIVED, not read off `status`: the field is an intent nothing writes back
- * down, so it counted runs whose overseer was dead and whose seats had all
+ * down, so it counted runs whose werk-master was dead and whose seats had all
  * ended. A paused or finished run stays visible in the window's rail and is
  * simply not counted here.
  */

@@ -4,7 +4,7 @@
  * `dontAsk` was already the unattended permission mode, and it is often mistaken
  * for this. It is not: `dontAsk` suppresses CC's own PERMISSION prompts. It does
  * nothing at all about an agent deciding to call `dialog` and ask Jonas a
- * question, which is exactly what a stuck implementer does. Left prompt-only, the
+ * question, which is exactly what a stuck werk-worker does. Left prompt-only, the
  * rule holds right up until the moment it matters.
  *
  * WHAT IS ACTUALLY BEING PREVENTED is an agent PARKING ITSELF on an answer that
@@ -15,7 +15,7 @@
  *   - `notify` is one-way and fire-and-forget. A worker that finds something
  *     alarming should be able to say so; it does not stop working to say it.
  *   - `send_message` is routing between conversations, not an interruption.
- *     A worker telling the overseer something directly is the system working.
+ *     A worker telling the werk-master something directly is the system working.
  *
  * The mute is a PreToolUse hook keyed on tool NAME, layered on the existing
  * deny-floor (which is keyed on bash command text). Same shape, same jq+grep
@@ -36,13 +36,13 @@ import { buildUnattendedSettings, type UnattendedPermissionConfig } from './unat
  */
 const MUTED_TOOL_REGEX = '^(AskUserQuestion|mcp__rclaude__(dialog|update_dialog|reopen_dialog|close_dialog))$'
 
-/** The refusal an implementer sees, and the only place it learns what to do. */
+/** The refusal a werk-worker sees, and the only place it learns what to do. */
 export const MUTE_REASON =
   'BLOCKED: you may not park yourself waiting on a human -- nobody is watching this run, so the answer would ' +
   'never come. This is by design, not a bug. ' +
-  'If you are blocked on a DECISION: file a card tagged `needs-overseer` carrying the question (with your ' +
+  'If you are blocked on a DECISION: file a card tagged `needs-werk-master` carrying the question (with your ' +
   "recommendation), add its id to your own card's `depends_on`, append a `## Blocked` section to your card, " +
-  'set your card back to `open`, push what you have, and STOP. The overseer answers it. ' +
+  'set your card back to `open`, push what you have, and STOP. The werk-master answers it. ' +
   'If you only need to TELL someone something, notify and send_message still work -- they do not block. ' +
   'Do NOT retry this call and do NOT guess an answer.'
 
@@ -68,9 +68,9 @@ export function isMutedTool(toolName: string): boolean {
 
 /**
  * The settings an epic-run worker spawns with: the unattended allowlist +
- * deny-floor, plus the mute for every role that is not the overseer.
+ * deny-floor, plus the mute for every role that is not the werk-master.
  *
- * The overseer gets the deny-floor too. It may talk to Jonas; it may still not
+ * The werk-master gets the deny-floor too. It may talk to Jonas; it may still not
  * force-push or `sudo`.
  */
 export function buildEpicWorkerSettings(

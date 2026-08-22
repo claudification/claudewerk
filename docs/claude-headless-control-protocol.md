@@ -292,7 +292,7 @@ server. Claude runs a standard PKCE authorization-code flow and owns the
   host                              claude                         human + browser
    |  control_request                 |                                   |
    |  claude_authenticate ----------->|                                   |
-   |  {loginWithClaudeAi:true}        |  (generates PKCE verifier+state)   |
+   |  {loginWithClaudeAi:true}        |  (generates PKCE werk-verifier+state)   |
    |                                  |                                   |
    |<-- control_response -------------|                                   |
    |   {manualUrl, automaticUrl}      |                                   |
@@ -302,7 +302,7 @@ server. Claude runs a standard PKCE authorization-code flow and owns the
    |  human pastes back the code (+state) <-----------------------------  | copies code
    |                                  |                                   |
    |  control_request                 |                                   |
-   |  claude_oauth_callback --------->|  (exchanges code+verifier          |
+   |  claude_oauth_callback --------->|  (exchanges code+werk-verifier          |
    |  {authorizationCode, state}      |   for tokens, writes creds)        |
    |                                  |                                   |
    |<-- control_response -------------|                                   |

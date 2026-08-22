@@ -36,7 +36,7 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   // (`dispatch-failed`); this is the engine noticing a dead supervisor and
   // replacing it, so the run is moving again -- but a host died with nobody
   // watching and somebody should look at what it left in its worktree.
-  'overseer-lost': 'var(--warning)',
+  'werk-master-lost': 'var(--warning)',
   // Bookkeeping, not an event: the engine writing a sha into a card's `closes:`
   // must never out-shout a dispatch or a bounce at four feet.
   record: 'var(--comment)',

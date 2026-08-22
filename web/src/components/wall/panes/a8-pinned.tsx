@@ -5,7 +5,7 @@
  * of cards that are NOT closed. It answers "how far along, and what is left"
  * without opening the board.
  *
- * NOT A7. `a7-unattended-runs` shows MACHINE state -- DAG buckets, overseer
+ * NOT A7. `a7-unattended-runs` shows MACHINE state -- DAG buckets, werk-master
  * lease, baton -- for epics that are RUNNING. This is YOUR WATCHLIST, running or
  * not: a pinned epic with nothing running shows a bar and no beats, and that is
  * the correct render. Two questions, two panes, and no beat rendering here.

@@ -25,7 +25,7 @@ function Title({ text, query }: { text: string; query: PulseQuery }) {
 /**
  * Machine-run marker. One fixed hue for every unattended row -- it must mean the
  * same thing at every glance, so this uses `--epic-badge` (the shared
- * unattended-run amber owned by the overseer surface) and NOT the per-epic
+ * unattended-run amber owned by the werk-master surface) and NOT the per-epic
  * derived colour, which is right on a board and wrong on a status affordance.
  * The literal is a fallback for panels built before that token landed.
  */

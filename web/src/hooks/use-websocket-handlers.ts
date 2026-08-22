@@ -73,7 +73,6 @@ import {
   useConversationsStore,
 } from './use-conversations'
 import { useLiveDialogsStore } from './use-live-dialogs'
-import { useOverseerActivityStore } from './use-overseer-activity'
 import {
   applyProjectCommitStats,
   type ProjectCommitStats,
@@ -87,6 +86,7 @@ import {
 import { useRecapJobsStore } from './use-recap-jobs'
 import { useShellsStore } from './use-shells'
 import { handleSpawnRequestAck } from './use-spawn'
+import { useWerkMasterActivityStore } from './use-werk-master-activity'
 import { applyWallFrame } from './wall-frame-store'
 
 // Loose WS message type (mirror of use-websocket.ts -- intentionally duplicated
@@ -1487,7 +1487,7 @@ function handleEpicActivity(msg: DashboardMessage): void {
   const project = msg.project as string | undefined
   if (!project) return
   const rows = (msg.epicActivity as EpicActivityEntry[] | undefined) ?? []
-  useOverseerActivityStore.getState().applyProject(project, rows)
+  useWerkMasterActivityStore.getState().applyProject(project, rows)
 }
 
 // Live thinking-progress ping -> per-conversation ring outside React/Zustand.

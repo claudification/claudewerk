@@ -4,7 +4,7 @@
  * The association was already on the wire and nothing rendered it: an epic seat
  * carries `epic.cardId` and a board-spawned ad-hoc carries `adHocTaskId`. Both
  * reached the browser; neither reached a pixel. So "which card is this
- * implementer on" could only be answered by opening the conversation.
+ * werk-worker on" could only be answered by opening the conversation.
  *
  * Reuses `CardChip`, which already owns the glyph, the lane colour, the hover
  * panel, the click-through and the right-click menu. A second chip here would be
@@ -19,10 +19,10 @@ import { parseWorktreeUri } from '@/lib/utils'
 /**
  * The card this row is working on, or null.
  *
- * An OVERSEER deliberately has none -- `EpicLaunchTag.cardId` is optional
- * precisely because the overseer "serves the whole epic rather than any one
+ * An WERK-MASTER deliberately has none -- `EpicLaunchTag.cardId` is optional
+ * precisely because the werk-master "serves the whole epic rather than any one
  * card". Showing it the epic card here would imply it is implementing that
- * card, which is the one thing an overseer never does.
+ * card, which is the one thing a werk-master never does.
  */
 function cardIdOf(conversation: Conversation): string | null {
   return conversation.epic?.cardId ?? conversation.adHocTaskId ?? null

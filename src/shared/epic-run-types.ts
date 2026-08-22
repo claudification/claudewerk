@@ -2,16 +2,16 @@
  * EPIC MODE -- the shared vocabulary for running an epic to completion.
  *
  * An epic run is NOT a fourth engine. It is nightshift with a scope (`epicId`),
- * an ordering (`depends_on` from the board), and a supervisor leg (the OVERSEER)
+ * an ordering (`depends_on` from the board), and a supervisor leg (the WERK-MASTER)
  * between the workers and Jonas. Everything else -- dispatch, caps, watchdog,
  * guardians, the deterministic DONE-gate -- is the machinery that already exists.
  *
  * THE THREE ROLES, and why the split is the whole point (werk-done-gate):
- *   - IMPLEMENTER  does the work. May NOT talk to a human, may not judge itself.
- *   - VERIFIER     judges the work. A separate conversation with NO shared
+ *   - WERK-WORKER  does the work. May NOT talk to a human, may not judge itself.
+ *   - WERK-VERIFIER     judges the work. A separate conversation with NO shared
  *                  context -- Cognition measured that a reviewer who reads the
  *                  coder's reasoning inherits the coder's blind spots.
- *   - OVERSEER     decides what happens next, and is the ONLY role that may ask
+ *   - WERK-MASTER     decides what happens next, and is the ONLY role that may ask
  *                  Jonas anything. Singleton per epic, one generation per beat.
  *
  * CADENCE IS A MODE, NOT AN ENGINE. `now` runs the epic immediately and reports
@@ -61,19 +61,19 @@ export type EpicRunStatus = 'armed' | 'running' | 'paused' | 'complete' | 'abort
  * the same three names PLUS `normal` for every conversation that holds no seat.
  * Two hand-maintained lists of the same three strings would drift; this cannot.
  */
-export type EpicRole = Extract<ConversationRole, 'overseer' | 'implementer' | 'verifier'>
+export type EpicRole = Extract<ConversationRole, 'werk-master' | 'werk-worker' | 'werk-verifier'>
 
-/** Why the overseer was woken. Recorded on the generation so a stalled epic can
+/** Why the werk-master was woken. Recorded on the generation so a stalled epic can
  *  be explained from the baton alone, without reading any transcript. */
 export type EpicWakeReason =
   | 'started' // the run was armed
-  | 'card-settled' // an implementer reached a terminal state
-  | 'verdict' // a verifier approved or bounced
+  | 'card-settled' // a werk-worker reached a terminal state
+  | 'verdict' // a werk-verifier approved or bounced
   | 'steering' // Jonas answered a question or redirected
   | 'resumed' // pause lifted / window opened
   /**
    * THE PREVIOUS SUPERVISOR DIED WITHOUT SAYING SO and this generation replaced
-   * it -- no recorded end, no socket, silent past `OVERSEER_SILENCE_MS`
+   * it -- no recorded end, no socket, silent past `WERK_MASTER_SILENCE_MS`
    * (`epic-vitality.ts`).
    *
    * Its own reason rather than folding into `started` or `card-settled`, because
@@ -83,36 +83,36 @@ export type EpicWakeReason =
    * the other is an agent host that died with nobody watching, and only the
    * second one means somebody should go and look at what it left behind.
    */
-  | 'overseer-lost'
+  | 'werk-master-lost'
 
 /** Baton entry kinds. Append-only; never patched (see epic-log.ts). */
 export type EpicLogKind =
   | 'intent' // what a generation was about to do
   | 'dispatch' // cards handed to the orchestrator
   | 'dispatch-failed' // a dispatched seat died without producing anything
-  | 'completion' // an implementer's outcome, machine facts + narrative
-  | 'verdict' // a verifier's APPROVED / BOUNCED
-  | 'blocked' // an implementer parked a question instead of asking a human
-  | 'merge' // the overseer integrated a branch
+  | 'completion' // a werk-worker's outcome, machine facts + narrative
+  | 'verdict' // a werk-verifier's APPROVED / BOUNCED
+  | 'blocked' // a werk-worker parked a question instead of asking a human
+  | 'merge' // the werk-master integrated a branch
   | 'steering' // a Quest-Giver course correction
   | 'checkpoint' // the run stopped and handed the decision to Jonas
   /**
-   * THE ENGINE REAPED THE OVERSEER SEAT. The conversation holding this epic held
+   * THE ENGINE REAPED THE WERK-MASTER SEAT. The conversation holding this epic held
    * no connection and said nothing past the grace, so the run stopped believing
    * it and replaced it.
    *
    * ITS OWN KIND rather than a `record` or a `checkpoint`, for the reason the
    * whole card exists: before this, a run whose supervisor died silently wrote
-   * `overseer alive at gen N; holding the beat` to the broker log every 45
+   * `werk-master alive at gen N; holding the beat` to the broker log every 45
    * seconds forever, and NOTHING reached the baton at all -- so the one file a
-   * fresh overseer reads about the past could not tell "the last generation
+   * fresh werk-master reads about the past could not tell "the last generation
    * finished" from "the last generation died". A reader of `log.md` alone must be
    * able to tell those apart, and no existing kind says it.
    *
    * Acknowledges NOTHING (`ACKNOWLEDGING_KINDS`, epic-log.ts): it is a fact about
    * a SEAT, not a verdict about a card.
    */
-  | 'overseer-lost'
+  | 'werk-master-lost'
   /**
    * The engine wrote a fact down about a card -- today, the sha in its `closes:`,
    * or the reason there is no honest one to write (epic-promise.ts).
@@ -120,7 +120,7 @@ export type EpicLogKind =
    * ITS OWN KIND rather than a second `completion`, and that is the point:
    * `completion` is what `acknowledgedCardIds` folds, so a promise entry wearing
    * that kind would acknowledge a settle nobody had acknowledged and rob the
-   * overseer of the one wake it exists for. A record acknowledges NOTHING.
+   * werk-master of the one wake it exists for. A record acknowledges NOTHING.
    */
   | 'record'
 
@@ -176,7 +176,7 @@ export interface EpicRunMeta {
   /**
    * THERE IS NO `gen` HERE, AND THAT IS THE POINT.
    *
-   * The overseer generation lives on the EPIC CARD, as `overseer_gen`, because
+   * The werk-master generation lives on the EPIC CARD, as `overseer_gen`, because
    * that is the field `evaluateLease` compares against (epic-lease.ts). It used
    * to be MIRRORED into this frontmatter on every lease grant, and nothing
    * anywhere compared the two -- so when the mirror drifted, the wake quoted one
@@ -200,8 +200,8 @@ export interface EpicRunMeta {
    * spawned. `0` disarms it -- deliberately, and it has to be typed.
    *
    * A GENERATION IS A UNIT OF PLANNING, NOT OF SPEND. `maxGens` bounds how many
-   * times the overseer thinks and bounds nothing about what the seats underneath
-   * it burn: one generation with three implementers chewing an XL card for two
+   * times the werk-master thinks and bounds nothing about what the seats underneath
+   * it burn: one generation with three werk-workers chewing an XL card for two
    * hours costs more than thirty dry ones.
    */
   maxUsd: number
@@ -238,7 +238,7 @@ export interface EpicRunMeta {
    * Readiness is arithmetic over `depends_on` (epic-ready.ts) and nothing else
    * looks at it, so the DAG is only as good as the edges a human happened to
    * declare. Two cards that touch the same code with no edge between them
-   * dispatch together and collide. The overseer can add the edge -- but only on
+   * dispatch together and collide. The werk-master can add the edge -- but only on
    * the NEXT beat, after the collision.
    *
    * The planning generation closes that by completing the DAG BEFORE beat 1:
@@ -248,15 +248,15 @@ export interface EpicRunMeta {
    */
   plan: boolean
   /** The planning generation has already run. Set by the ENGINE when it settles,
-   *  so a RESUME never re-plans -- gen 0 happened, and the overseer's own replan
+   *  so a RESUME never re-plans -- gen 0 happened, and the werk-master's own replan
    *  step covers drift from there. */
   planned: boolean
-  /** Board fingerprint captured when the planner was dispatched, compared against
+  /** Board fingerprint captured when the werk-planner was dispatched, compared against
    *  the board when it settles. Present ONLY while a planning generation is in
    *  flight; its absence is what distinguishes "not dispatched yet" from
    *  "dispatched and now settled". See epic-board-fingerprint.ts. */
   planBaseline?: string
-  /** Max implementers in flight. Defaults to 3 -- the supervision ceiling is a
+  /** Max werk-workers in flight. Defaults to 3 -- the supervision ceiling is a
    *  property of review, not of the human (werk-andon). Raising it is a choice
    *  to stop reviewing per-change, and the board should say so. */
   concurrency: number
@@ -290,7 +290,7 @@ export interface EpicRunMeta {
  * exactly the drift that makes a field silently stop crossing the seam.
  */
 export interface EpicRunFull extends EpicRunMeta {
-  /** The overseer's running account of where the epic stands. Its own file --
+  /** The werk-master's running account of where the epic stands. Its own file --
    *  `digest.md`, never `run.md`'s body: an agent ordered to rewrite prose must
    *  not have the engine's scalars in the same file. See `epic-run-store.ts`. */
   digest: string
@@ -313,7 +313,7 @@ export interface EpicRunFull extends EpicRunMeta {
  * the first place.
  */
 export interface EpicRunReading extends EpicRunFull {
-  /** Monotonic overseer generation, from the CARD's lease. Every grant advances
+  /** Monotonic werk-master generation, from the CARD's lease. Every grant advances
    *  it by exactly one; 0 means the epic has never been woken. */
   gen: number
 }
@@ -352,25 +352,25 @@ export const EPIC_RUN_DEFAULTS = {
 export interface EpicLaunchTag {
   epicId: string
   role: EpicRole
-  /** The card being implemented or verified. Absent for the overseer, which
+  /** The card being implemented or verified. Absent for the werk-master, which
    *  serves the whole epic rather than any one card. */
   cardId?: string
-  /** Overseer generation that dispatched this conversation (or, for an overseer,
+  /** WerkMaster generation that dispatched this conversation (or, for a werk-master,
    *  its own generation). Makes every wake idempotent. */
   gen: number
 }
 
 /**
- * THE BLOCKED CHANNEL. An implementer may not ask a human, so it asks the BOARD:
- * it files a card tagged `needs-overseer` carrying the question, points its own
+ * THE BLOCKED CHANNEL. A werk-worker may not ask a human, so it asks the BOARD:
+ * it files a card tagged `needs-werk-master` carrying the question, points its own
  * card at it with `depends_on`, and exits. Three things fall out for free --
  * the DAG stops re-dispatching the blocked card, the question is a first-class
  * board object rather than a line in a log nobody opens, and answering it (move
  * the question card to `done`) unblocks the original with no special case.
  */
-export const NEEDS_OVERSEER_TAG = 'needs-overseer'
+export const NEEDS_WERK_MASTER_TAG = 'needs-werk-master'
 
 /** Roles that may reach a human. Exactly one -- this is the covenant, in code. */
 export function mayAskHuman(role: EpicRole): boolean {
-  return role === 'overseer'
+  return role === 'werk-master'
 }

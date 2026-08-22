@@ -188,16 +188,16 @@ export function pinnedReport(rows: readonly WallPinRow[], view: WallReportView):
 /**
  * WHAT THIS REPORT DELIBERATELY DOES NOT SAY.
  *
- * The mockup's runs report carries DAG buckets, the overseer lease and the idle
+ * The mockup's runs report carries DAG buckets, the werk-master lease and the idle
  * reason. None of those are on this pane: `epic_activity` carries no plan and no
  * lease, so each ROW pays for its own `inspect` (see `epic-run-row.tsx`) and the
  * pane never holds the result. A builder that printed `0 in flight` from the
  * absence of a fetch would be inventing the single number this pane exists to
- * make true -- 2026-08-18 was an overseer that never woke while every surface
+ * make true -- 2026-08-18 was a werk-master that never woke while every surface
  * said "running".
  *
  * So the report carries what the PANE knows: the shared vitality verdict (the
- * same `runVitality` the tag, the header badge and the overseer window all read,
+ * same `runVitality` the tag, the header badge and the werk-master window all read,
  * so no two of them can disagree), the generation, and the live worker count for
  * nightshift. Anything deeper is a click away and says so.
  *

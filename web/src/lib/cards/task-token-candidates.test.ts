@@ -119,7 +119,7 @@ describe('tag candidates', () => {
       'nightshift',
       'ready',
       'epic',
-      'needs-overseer',
+      'needs-werk-master',
     ])
   })
 
@@ -143,7 +143,7 @@ describe('tag candidates', () => {
   })
 
   test('a query narrows system tags too, and keeps their order', () => {
-    expect(candidatesFor('tag', src(), 'needs').map(r => r.value)).toEqual(['needs-refine', 'needs-overseer'])
+    expect(candidatesFor('tag', src(), 'needs').map(r => r.value)).toEqual(['needs-refine', 'needs-werk-master'])
   })
 
   test('tags come from archived cards too -- a label is not scoped to a lane', () => {

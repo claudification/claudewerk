@@ -11,12 +11,12 @@
  *      record its `closes:` in the same pass,
  *   3. if this beat is going to park or complete, take the promise ledger's LAST
  *      CALL -- there is no beat after an inert run,
- *   4. take the lease (CAS) and spawn the overseer, or
+ *   4. take the lease (CAS) and spawn the werk-master, or
  *   5. dispatch/verify, or park/complete.
  *
  * Step 2 comes first because a settle that is not written down is a settle the
  * next sweep re-discovers forever: `unacknowledgedCards` would keep returning
- * it, the beat would keep waking an overseer, and the generation counter would
+ * it, the beat would keep waking a werk-master, and the generation counter would
  * climb with nothing moving. Acknowledge, THEN act.
  *
  * The four things a beat can DO live in `epic-beat-actions.ts`, and every side
@@ -36,7 +36,7 @@ import {
   acknowledge,
   noteFailedLaunches,
   performActions,
-  reapOverseers,
+  reapWerkMasters,
   rendersRunState,
 } from './epic-beat-actions'
 import { recordBeat } from './epic-beat-log'
@@ -146,7 +146,7 @@ async function applyBeatPatch(
  * decides, writes the ledger, and only then spawns; handing the seats the object
  * it read at the top of that sequence renders every per-beat fact one beat
  * stale, always LOW, in the direction that cannot be recovered from. Live on
- * `epic-project-runner`, generations 3 through 11: the overseer's budget
+ * `epic-project-runner`, generations 3 through 11: the werk-master's budget
  * sentence under-reported spend every single time, by one beat's dispatches
  * ($22.87 at gen 4, $14.11 at gen 11), while the file beside it was right.
  *
@@ -233,7 +233,7 @@ function leaseGen(view: EpicRunView): number {
 
 /**
  * WHEN THE GRIP WAS TAKEN, as a spread-ready fragment -- the TTL half of the
- * overseer gate (`overseerGate`, epic-beat.ts).
+ * werk-master gate (`werkMasterGate`, epic-beat.ts).
  *
  * Its own function for the identical reason {@link leaseGen} is, and the shape is
  * dictated by the same ceiling: `runEpicBeat` is at its complexity threshold, and
@@ -328,7 +328,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // below now has to be the id the BOARD uses, and only the board knows which
   // ids have been renamed. A seat's `cardId` is frozen at spawn (epic-spawn-plan)
   // and a rename leaves it answering to a name nobody asks about: on 2026-08-20
-  // that put a second implementer onto a card whose first was still typing.
+  // that put a second werk-worker onto a card whose first was still typing.
   const cards = await io.fetchBoardCards(deps, seats.project)
   const renames = cardRenames(cards)
   const group = applyCardRenames(seats, renames)
@@ -359,7 +359,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
 
   // BEFORE the plan is computed, for `acknowledge`'s reason: a fact the baton
   // never records is a fact the next sweep rediscovers forever. A failed launch
-  // does NOT wake the overseer, though -- the card simply stays dispatchable,
+  // does NOT wake the werk-master, though -- the card simply stays dispatchable,
   // and the beat below will re-dispatch or re-verify it from board state. That
   // is the whole saving: one retry instead of a generation.
   const failed = unacknowledgedFailedLegs(group.failedLegs, view.baton)
@@ -371,13 +371,13 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     await noteFailedLaunches(deps, group, failed)
   }
 
-  // THE SUPERVISOR THE REGISTRY STILL CALLS ALIVE. Before this, an overseer whose
+  // THE SUPERVISOR THE REGISTRY STILL CALLS ALIVE. Before this, a werk-master whose
   // agent host died without recording an end held `guardBeat` -- and therefore
-  // the entire run -- for the life of the broker, logging `overseer alive at gen
+  // the entire run -- for the life of the broker, logging `werk-master alive at gen
   // N; holding the beat` every 45 seconds. The fold has already stopped believing
   // it (`epic-sweep.ts`); this says so, in the log for every corpse and in the
   // baton for the one holding the lease.
-  const lost = await reapOverseers(deps, group, gen, view.lease, view.baton)
+  const lost = await reapWerkMasters(deps, group, gen, view.lease, view.baton)
 
   // THE SEATS THE REGISTRY HAS NOT CAUGHT UP WITH YET. A card dispatched on the
   // last beat is in NO lane until its agent host connects, which read as "nobody
@@ -432,25 +432,25 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // THE SAME UNION the plan was computed from, and it must be: a beat that
     // withheld a card because a seat is arriving has work in flight, and telling
     // `planBeat` otherwise is how a held card reads as a DRY generation, wakes
-    // the overseer and parks a run that is simply mid-launch.
+    // the werk-master and parks a run that is simply mid-launch.
     inFlight: withPendingSeats(group.inFlight, pendingSeats),
-    overseerAlive: group.overseerAlive,
+    werkMasterAlive: group.werkMasterAlive,
     // THE TTL ON THAT LIVENESS, from the SAME `get` the generation above came
-    // from. Without it `overseerAlive` is an unbounded hold, and the one shape
+    // from. Without it `werkMasterAlive` is an unbounded hold, and the one shape
     // that never lifts -- a supervisor blocked in a Bash call, socket held,
     // events silent, un-reapable -- stops the run for the life of the broker.
     ...leaseTaken(view),
     // A SPENT FACT, keyed on the lease holder rather than on the lane -- see
-    // `EpicBeatInput.overseerLost`. The wake this drives moves the lease, so the
+    // `EpicBeatInput.werkMasterLost`. The wake this drives moves the lease, so the
     // next beat reads false and the replacement is billed exactly once. Stated
     // unconditionally rather than spread, unlike the two below: those are genuinely
     // ABSENT for a caller that did not compute them, while this one always has an
     // answer once a reaper has run.
-    overseerLost: lost !== null,
+    werkMasterLost: lost !== null,
     ...(ctx.queue ? { queue: ctx.queue } : {}),
     ...(ctx.forced ? { forced: true } : {}),
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is
-    // exactly what the overseer needs to be woken FOR. The baton write above is
+    // exactly what the werk-master needs to be woken FOR. The baton write above is
     // what stops the NEXT sweep re-discovering the same settle forever.
     unacknowledged: pending,
     windowOpen,
@@ -458,7 +458,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // and the plan can never describe two different boards.
     boardFingerprint: boardFingerprint(cards, group.epicId),
     // THE RUN'S SPEND, FOLDED FRESH. Every conversation this epic has ever had
-    // in the registry, summed over `turns.cost_usd` -- the overseer's
+    // in the registry, summed over `turns.cost_usd` -- the werk-master's
     // generations included, and the seats that died included, because both were
     // billed. `planBeat` reconciles this against the figure already banked on
     // the run; it is a FLOOR on the truth, since turns are pruned and the
@@ -472,7 +472,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // reads a single card -- so a beat carrying either is the last time any card
   // under this epic is looked at, ever. The race that makes this necessary:
   // `planEpic` completes a run off card LANES alone, without waiting for the
-  // conversations behind them, so the last child's verifier can still be alive
+  // conversations behind them, so the last child's werk-verifier can still be alive
   // (card not settled, pass above skips it) on the very beat that ends the run.
   // Still BEFORE the actions -- `b766b75e`'s rule -- so the write happens while
   // there is still a beat to do it in.
@@ -500,7 +500,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     cardLines: plan.rollup?.children.map(c => `${c.card.slug} -- ${c.card.title} (${c.card.status})`) ?? [],
     epicBody: plan.rollup?.card?.bodyPreview ?? '',
     // From the SAME read as the run, so the CAS can ask whether THIS holder is
-    // alive rather than whether any overseer is.
+    // alive rather than whether any werk-master is.
     holder: view.lease,
   })
 

@@ -24,7 +24,7 @@
  *
  * 1. AGE COMES FROM `created`, NEVER `mtime`. `setProjectTaskStatus` calls
  *    `utimesSync(now)` on every lane change and any write at all bumps mtime, so
- *    a refiner -- or this sweep's own executed proposals -- would rejuvenate
+ *    a werk-refiner -- or this sweep's own executed proposals -- would rejuvenate
  *    exactly the cards it exists to find. `created` is immutable.
  * 2. A MISSING `created` IS UNKNOWN, NEVER OLD. It reaches us as `''` (see
  *    `toProjectTask`), and coercing that to epoch 0 would propose archiving the

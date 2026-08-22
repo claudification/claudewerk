@@ -1,11 +1,11 @@
 /**
- * THE OVERSEER LEASE, AS A SENTENCE -- shared by the wall's A7 row and the
- * overseer window.
+ * THE WERK-MASTER LEASE, AS A SENTENCE -- shared by the wall's A7 row and the
+ * werk-master window.
  *
  * It lived in `components/wall/runs/run-model.ts`, which made it the wall's
- * private property. The overseer window therefore had no lease reading at all:
+ * private property. The werk-master window therefore had no lease reading at all:
  * it collapsed the whole thing to `leaseHeld={Boolean(data.lease?.convId)}` and
- * showed live overseer CONVERSATIONS beside it -- a different fact, which the
+ * showed live werk-master CONVERSATIONS beside it -- a different fact, which the
  * engine is careful to keep apart (`holderIsAlive` in epic-beat-actions.ts) and
  * the panel was not.
  *
@@ -26,7 +26,7 @@ import { formatDurationShort } from '@/lib/status-style'
 export const LEASE_STALE_MS = 10 * 60 * 1000
 
 export type LeaseKind =
-  /** The epic has never had an overseer. */
+  /** The epic has never had a werk-master. */
   | 'never'
   /** One woke and released the grip cleanly. */
   | 'released'
@@ -44,7 +44,7 @@ export interface LeaseState {
   gen: number
 }
 
-export function leaseState(lease: EpicLease | null, overseerAlive: boolean, nowMs: number): LeaseState {
+export function leaseState(lease: EpicLease | null, werkMasterAlive: boolean, nowMs: number): LeaseState {
   if (!lease) return { kind: 'never', sinceMs: null, holder: '', gen: 0 }
 
   const taken = lease.at ? Date.parse(lease.at) : Number.NaN
@@ -57,7 +57,7 @@ export function leaseState(lease: EpicLease | null, overseerAlive: boolean, nowM
 
   // A holder whose conversation is gone is the 2026-08-18 failure verbatim: the
   // run keeps its grip, the next wake's CAS keeps losing, and nothing says so.
-  const dead = !overseerAlive
+  const dead = !werkMasterAlive
   const ancient = sinceMs === null || sinceMs > LEASE_STALE_MS
   return { ...base, kind: dead || ancient ? 'stale' : 'held' }
 }
@@ -67,8 +67,8 @@ export function leaseState(lease: EpicLease | null, overseerAlive: boolean, nowM
  *  compare-and-swap actually argues with. */
 export function leaseSentence(lease: LeaseState): string {
   const age = lease.sinceMs === null ? 'unknown age' : `${formatDurationShort(lease.sinceMs)} ago`
-  if (lease.kind === 'never') return 'overseer has never woken'
-  if (lease.kind === 'released') return `overseer released the lease at gen ${lease.gen}`
+  if (lease.kind === 'never') return 'werk-master has never woken'
+  if (lease.kind === 'released') return `werk-master released the lease at gen ${lease.gen}`
   if (lease.kind === 'stale') return `STALE LEASE -- ${lease.holder} has held gen ${lease.gen} since ${age}`
-  return `overseer ${lease.holder} woke ${age} and holds gen ${lease.gen}`
+  return `werk-master ${lease.holder} woke ${age} and holds gen ${lease.gen}`
 }

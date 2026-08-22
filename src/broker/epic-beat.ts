@@ -9,8 +9,8 @@
  * of them needs a broker, a sentinel or a spawn to exercise.
  *
  * WHY A WAKE IS STATE-BASED, NOT EVENT-BASED. The obvious design fires the
- * overseer from a "worker ended" event. That loses a settle whenever the
- * overseer is mid-turn, and double-fires whenever two workers end together.
+ * werk-master from a "worker ended" event. That loses a settle whenever the
+ * werk-master is mid-turn, and double-fires whenever two workers end together.
  * Instead the beat asks a standing question -- "is there a settled card the
  * baton has not acknowledged?" -- so a missed sweep is repaired by the next one
  * and a duplicate is refused by the lease CAS. Self-healing beats bookkeeping.
@@ -28,10 +28,10 @@ import type { QueueVerdict } from './epic-queue'
 /** What the caller should do. Order in the array is the order to do it in. */
 export type EpicAction =
   /** `reason` is the WAKE REASON the generation is recorded under, not free text:
-   *  it reaches the overseer prompt verbatim ("Woken by: ..."), so an untyped
+   *  it reaches the werk-master prompt verbatim ("Woken by: ..."), so an untyped
    *  string here is a typo that renders to a live agent. */
-  | { kind: 'wake-overseer'; expectGen: number; reason: EpicWakeReason }
-  /** `dependsOn` rides along purely so the implementer prompt can order a base
+  | { kind: 'wake-werk-master'; expectGen: number; reason: EpicWakeReason }
+  /** `dependsOn` rides along purely so the werk-worker prompt can order a base
    *  check -- the dispatch DECISION already happened, in `epic-cards.ts`, from
    *  card lanes. Nothing downstream re-reads it to gate anything. */
   | { kind: 'dispatch'; cardId: string; dependsOn?: readonly string[] }
@@ -49,7 +49,7 @@ export type EpicAction =
 export interface EpicBeatInput {
   run: EpicRunSnapshot
   /**
-   * THE OVERSEER GENERATION, FROM THE LEASE ON THE EPIC CARD -- never from the
+   * THE WERK-MASTER GENERATION, FROM THE LEASE ON THE EPIC CARD -- never from the
    * run artifact.
    *
    * Its own input rather than a field read off `run` because this number is the
@@ -70,13 +70,13 @@ export interface EpicBeatInput {
    */
   gen: number
   plan: EpicPlan
-  /** Card ids with a live implementer or verifier right now. */
+  /** Card ids with a live werk-worker or werk-verifier right now. */
   inFlight: readonly string[]
   /** Is the lease holder's conversation still alive? */
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   /**
    * WHEN THE CURRENT LEASE WAS TAKEN -- `view.lease.at`, verbatim. The TTL half
-   * of the overseer gate, and the reason a wedged supervisor no longer stops a
+   * of the werk-master gate, and the reason a wedged supervisor no longer stops a
    * run forever.
    *
    * THE TIMESTAMP AND NOT THE `EpicLease`, even though the caller holds the whole
@@ -92,10 +92,10 @@ export interface EpicBeatInput {
   leaseAt?: string
   /**
    * THE CONVERSATION HOLDING THIS EPIC IS A CORPSE, and the fold has just said so
-   * for the first time (`lostOverseer`, epic-sweep.ts).
+   * for the first time (`lostWerkMaster`, epic-sweep.ts).
    *
    * A SPENT FACT, not a standing one, and the difference is what stops it looping.
-   * `abandonedOverseers` never empties -- a dead conversation stays dead and stays
+   * `abandonedWerkMasters` never empties -- a dead conversation stays dead and stays
    * in the registry -- so a beat that woke from the LANE would wake every 45
    * seconds for the life of the broker. The caller keys it on the LEASE HOLDER
    * instead, and a granted replacement moves the lease, so this reads false again
@@ -103,7 +103,7 @@ export interface EpicBeatInput {
    *
    * Absent means no reap, which is every caller that has not wired a reaper up.
    */
-  overseerLost?: boolean
+  werkMasterLost?: boolean
   /** Cards that reached a terminal state with no `completion` entry in the baton.
    *  The standing question that drives the wake. */
   unacknowledged: readonly string[]
@@ -158,7 +158,7 @@ export interface EpicBeatInput {
  * SCALARS THIS BEAT WANTS MERGED INTO `run.md`, BEFORE ITS ACTIONS RUN.
  *
  * THE SEAM, and it exists because of `b766b75e`: `dryGens` was read every beat
- * as the "second dry generation parks the run" valve, reported in the overseer's
+ * as the "second dry generation parks the run" valve, reported in the werk-master's
  * briefing and promised by the lease module's comment -- and nothing in the
  * engine ever incremented it. The park was unreachable for the life of the
  * feature.
@@ -262,7 +262,7 @@ export function isInertRun(status: EpicRunSnapshot['status']): boolean {
  * The planning generation, in three states -- owed, in flight, settled.
  *
  * `planBaseline` is what tells them apart, and it is the fingerprint rather than
- * a flag on purpose: the same field that says "a planner ran" is the evidence
+ * a flag on purpose: the same field that says "a werk-planner ran" is the evidence
  * used to decide whether it changed anything, so the two can never disagree.
  *
  * Returns null when no planning is owed, which is the common case (planning off,
@@ -311,7 +311,7 @@ function spentSoFar(input: EpicBeatInput): number {
  * THE HANDBRAKES, checked before anything else a beat could do.
  *
  * `maxGens` was the only one for the life of the feature, and it is a unit of
- * PLANNING rather than of spend: it bounds how many times the overseer thinks
+ * PLANNING rather than of spend: it bounds how many times the werk-master thinks
  * and bounds nothing about what the seats underneath it burn. On 2026-08-19 this
  * project billed $2,481 in one calendar day with THE WALL II running unattended,
  * and no cap of any kind was involved in stopping it.
@@ -378,9 +378,9 @@ function leaseHeldMs(input: EpicBeatInput): number | null {
   return Number.isFinite(taken) ? Math.max(0, input.nowMs - taken) : null
 }
 
-/** The overseer gate's two outcomes, and never both: HOLD this beat, or say out
+/** The werk-master gate's two outcomes, and never both: HOLD this beat, or say out
  *  loud that the grip has aged out and go on without it. */
-interface OverseerVerdict {
+interface WerkMasterVerdict {
   /** The beat to return, when a live supervisor still owns the epic. */
   hold: EpicBeat | null
   /** The grip is past its TTL. Rides on whatever note this beat ends up writing,
@@ -390,18 +390,18 @@ interface OverseerVerdict {
 }
 
 /**
- * IS A LIVE OVERSEER STILL ENTITLED TO THE WHOLE RUN? Bare liveness used to be
+ * IS A LIVE WERK-MASTER STILL ENTITLED TO THE WHOLE RUN? Bare liveness used to be
  * the entire answer, and that single unconditional early return was the deadlock
  * of 2026-08-20.
  *
- * An overseer mid-turn owns the epic and nothing may dispatch underneath it: it
- * may be rewriting the very cards the plan was computed from. The PLANNER sits in
+ * A werk-master mid-turn owns the epic and nothing may dispatch underneath it: it
+ * may be rewriting the very cards the plan was computed from. The WERK-PLANNER sits in
  * the same seat, so this covers it too -- which is most of why it is not a
- * separate role. But `overseerAlive` has no upper bound, and the one shape that
+ * separate role. But `werkMasterAlive` has no upper bound, and the one shape that
  * breaks the engine is invisible from outside: a blocking Bash call (`until ...
  * sleep`) emits no events AND keeps its agent-host socket, so the conversation
  * scores `idle`, `seatAbandoned` cannot reap it (it requires NO socket), and the
- * hold below never lifts. Gen 14 of `epic-the-wall-ii` logged `overseer alive at
+ * hold below never lifts. Gen 14 of `epic-the-wall-ii` logged `werk-master alive at
  * gen 14; holding the beat` 13+ consecutive times with three cards ready and zero
  * in flight, and only a human with a `kill` got the run moving again.
  *
@@ -414,15 +414,15 @@ interface OverseerVerdict {
  * with a busier log.
  *
  * WHAT HAPPENS AFTER IT LIFTS is the existing engine and nothing new. Ready cards
- * dispatch; a run with nothing ready reaches `wake-overseer`, whose CAS grants
+ * dispatch; a run with nothing ready reaches `wake-werk-master`, whose CAS grants
  * over the aged holder (`holderAlive && !isStale` is false) and records it in
  * `replaced`, so the displacement is audited rather than lost. The replacement's
  * lease is stamped fresh, so a supervisor that stays wedged costs ONE extra
  * generation per TTL window -- bounded by `maxGens`, loud in the baton, and not a
  * stopped run.
  */
-function overseerGate(input: EpicBeatInput): OverseerVerdict {
-  if (!input.overseerAlive) return { hold: null, aged: null }
+function werkMasterGate(input: EpicBeatInput): WerkMasterVerdict {
+  if (!input.werkMasterAlive) return { hold: null, aged: null }
 
   const heldMs = leaseHeldMs(input)
   const age = heldMs === null ? 'lease age unknown' : `lease taken ${formatDuration(heldMs)} ago`
@@ -430,7 +430,7 @@ function overseerGate(input: EpicBeatInput): OverseerVerdict {
   // Strictly greater, matching `isStale`. Equality holding is what keeps the two
   // from disagreeing for one tick at the boundary.
   if (heldMs === null || heldMs <= LEASE_STALE_MS) {
-    return { hold: beat(`overseer alive at gen ${input.gen} and WORKING (${age}); holding the beat`), aged: null }
+    return { hold: beat(`werk-master alive at gen ${input.gen} and WORKING (${age}); holding the beat`), aged: null }
   }
 
   return {
@@ -439,7 +439,7 @@ function overseerGate(input: EpicBeatInput): OverseerVerdict {
     // whether the lease itself moves depends on whether what follows is a wake.
     // A dispatch under an aged grip touches no lease at all.
     aged:
-      `overseer alive at gen ${input.gen} but its lease is STALE (${age}, TTL ` +
+      `werk-master alive at gen ${input.gen} but its lease is STALE (${age}, TTL ` +
       `${formatDuration(LEASE_STALE_MS)}) -- NOT holding the beat`,
   }
 }
@@ -449,9 +449,9 @@ function overseerGate(input: EpicBeatInput): OverseerVerdict {
  *
  * Ordering, and it is the design rather than an accident of layout: the CEILINGS
  * come first, so a run that is over budget parks whatever the lease says and its
- * park note does not claim a grip was let go. The OVERSEER GATE comes second,
+ * park note does not claim a grip was let go. The WERK-MASTER GATE comes second,
  * because everything below it either dispatches work or wakes a supervisor, and
- * both are things a live overseer is entitled to stop.
+ * both are things a live werk-master is entitled to stop.
  *
  * Split from `guardBeat` so the aged-lease line can ride onto the note of
  * whatever the beat went on to do -- including `workBeat`'s, which `guardBeat`
@@ -461,11 +461,11 @@ function decide(input: EpicBeatInput): EpicBeat {
   const capped = capBeat(input)
   if (capped) return capped
 
-  const overseer = overseerGate(input)
-  if (overseer.hold) return overseer.hold
+  const werkMaster = werkMasterGate(input)
+  if (werkMaster.hold) return werkMaster.hold
 
   const decided = guardBeat(input) ?? workBeat(input)
-  return overseer.aged ? { ...decided, note: `${overseer.aged}; ${decided.note}` } : decided
+  return werkMaster.aged ? { ...decided, note: `${werkMaster.aged}; ${decided.note}` } : decided
 }
 
 /**
@@ -483,43 +483,43 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
   // once planning is owed, nothing may dispatch until it has happened, or the
   // engine would race the pass that exists to tell it what may run in parallel.
   //
-  // AHEAD OF THE REAP BELOW, TOO, and deliberately: the planner sits in the
-  // overseer seat, so a planner that died silently is reaped here like any other
+  // AHEAD OF THE REAP BELOW, TOO, and deliberately: the werk-planner sits in the
+  // werk-master seat, so a werk-planner that died silently is reaped here like any other
   // supervisor -- but what that run owes is a resolved planning generation, not a
-  // second planner. `planningBeat` accepts or checkpoints from the FINGERPRINT,
+  // second werk-planner. `planningBeat` accepts or checkpoints from the FINGERPRINT,
   // which is a fact about the board rather than about the conversation, and is
-  // therefore the right answer whether the planner exited or died. Waking a
-  // replacement first would spawn a plain overseer into a run that still has
+  // therefore the right answer whether the werk-planner exited or died. Waking a
+  // replacement first would spawn a plain werk-master into a run that still has
   // `planned: false`, and the next beat would come straight back here.
   const planning = planningBeat(input.run, input.boardFingerprint)
   if (planning) return planning
 
   // THE SUPERVISOR DIED WITHOUT SAYING SO. Ahead of the settle branch below, and
-  // the ordering is the only thing at stake: both wake exactly one overseer and
+  // the ordering is the only thing at stake: both wake exactly one werk-master and
   // both hand it the same settled list (the executor passes `pending` whichever
   // branch fired), so what the order decides is WHICH FACT THE GENERATION IS
   // NAMED AFTER. A generation that replaced a corpse is not the same event as one
   // that followed a finished turn, and until this branch existed the two were
   // indistinguishable on every surface that renders either.
-  if (input.overseerLost) {
+  if (input.werkMasterLost) {
     const also = input.unacknowledged.length > 0 ? `; ${input.unacknowledged.length} unacknowledged settle(s)` : ''
-    return beat(`overseer seat REAPED at gen ${input.gen}; waking a replacement${also}`, [
-      { kind: 'wake-overseer', expectGen: input.gen, reason: 'overseer-lost' },
+    return beat(`werk-master seat REAPED at gen ${input.gen}; waking a replacement${also}`, [
+      { kind: 'wake-werk-master', expectGen: input.gen, reason: 'werk-master-lost' },
     ])
   }
 
   // A settled card the baton has not seen is the ONE fact that must reach a
-  // fresh overseer, and it outranks dispatching more work.
+  // fresh werk-master, and it outranks dispatching more work.
   if (input.unacknowledged.length > 0) {
     return beat(`${input.unacknowledged.length} unacknowledged settle(s): ${input.unacknowledged.join(', ')}`, [
-      { kind: 'wake-overseer', expectGen: input.gen, reason: 'card-settled' },
+      { kind: 'wake-werk-master', expectGen: input.gen, reason: 'card-settled' },
     ])
   }
 
-  // A question only the overseer can answer, and no overseer running.
+  // A question only the werk-master can answer, and no werk-master running.
   if (plan.questions.length > 0) {
-    return beat(`${plan.questions.length} open question(s) for the overseer`, [
-      { kind: 'wake-overseer', expectGen: input.gen, reason: 'started' },
+    return beat(`${plan.questions.length} open question(s) for the werk-master`, [
+      { kind: 'wake-werk-master', expectGen: input.gen, reason: 'started' },
     ])
   }
 
@@ -658,7 +658,7 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
     return beat(`${input.inFlight.length} still in flight; waiting: ${input.inFlight.join(', ')}`)
   }
 
-  // Nothing to do and nothing running. The overseer gets ONE chance to replan
+  // Nothing to do and nothing running. The werk-master gets ONE chance to replan
   // before the run parks -- most "stuck" epics are a board problem it can fix.
   if (run.dryGens >= 1) {
     return beat(`second consecutive dry generation: ${plan.idleReason ?? 'nothing dispatchable'}`, [
@@ -666,14 +666,14 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
     ])
   }
 
-  // A DRY generation: nothing to dispatch, nothing running, so the overseer gets
+  // A DRY generation: nothing to dispatch, nothing running, so the werk-master gets
   // one chance to replan. Counting it is what makes the park above reachable --
   // without the increment this branch is an infinite loop that bills a fresh
-  // overseer every 45s and calls it healthy.
+  // werk-master every 45s and calls it healthy.
   return beat(
-    `nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the overseer to replan ` +
+    `nothing dispatchable (${plan.idleReason ?? 'unknown'}); waking the werk-master to replan ` +
       `(dry generation ${run.dryGens + 1})`,
-    [{ kind: 'wake-overseer', expectGen: input.gen, reason: 'started' }],
+    [{ kind: 'wake-werk-master', expectGen: input.gen, reason: 'started' }],
     { dryGens: run.dryGens + 1 },
   )
 }

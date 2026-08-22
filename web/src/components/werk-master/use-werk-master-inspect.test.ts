@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { shouldRefetchOnReconnect } from './use-overseer-inspect'
+import { shouldRefetchOnReconnect } from './use-werk-master-inspect'
 
 const state = (over: Partial<Parameters<typeof shouldRefetchOnReconnect>[0]> = {}) => ({
   connected: true,

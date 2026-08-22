@@ -1,7 +1,7 @@
 /**
  * The three broker actions that WRITE. `inspect` and `list` are covered by
  * `epic-inspect-view.test.ts` (the shaping); what matters here is the policy:
- * a live overseer is not a stuck one, a successful break is audited, and a
+ * a live werk-master is not a stuck one, a successful break is audited, and a
  * delete refuses the one thing only the broker can see -- a live seat.
  *
  * Effects come through `configureActionIo`, never `mock.module` -- that one is
@@ -39,7 +39,7 @@ function conv(id: string, status = 'active'): Conversation {
 /** A conversation carrying an epic launch tag -- the only kind `actionDelete`
  *  looks at, and the reason the refusal cannot be made sentinel-side. */
 function seat(id: string, epicId: string, status = 'active'): Conversation {
-  return { id, project: P, status, launchConfig: { epic: { epicId, role: 'implementer', gen: 1 } } } as Conversation
+  return { id, project: P, status, launchConfig: { epic: { epicId, role: 'werk-worker', gen: 1 } } } as Conversation
 }
 
 function endedRun(status: EpicRunSnapshot['status'] = 'aborted'): EpicRunSnapshot {
@@ -137,7 +137,7 @@ describe('break_lease', () => {
     expect(released).toBe(1)
   })
 
-  test('a LIVE holder is refused -- this is an unstick tool, not a way to shoot a working overseer', async () => {
+  test('a LIVE holder is refused -- this is an unstick tool, not a way to shoot a working werk-master', async () => {
     convs = [conv('conv_dead')]
     expect(await actionBreakLease(deps(), { project: P, epicId: 'e1' })).toMatchObject({ ok: false, status: 409 })
     expect(released).toBe(0)
@@ -150,11 +150,11 @@ describe('break_lease', () => {
   })
 
   test('a break is AUDITED into the baton with the holder, its generation and the reason', async () => {
-    await actionBreakLease(deps(), { project: P, epicId: 'e1', reason: 'overseer hung' })
+    await actionBreakLease(deps(), { project: P, epicId: 'e1', reason: 'werk-master hung' })
     expect(batonBodies).toHaveLength(1)
     expect(batonBodies[0]).toContain('conv_dead')
     expect(batonBodies[0]).toContain('gen 4')
-    expect(batonBodies[0]).toContain('overseer hung')
+    expect(batonBodies[0]).toContain('werk-master hung')
   })
 
   test('a break with no reason still writes an entry -- an unexplained break is worse unlogged', async () => {

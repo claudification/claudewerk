@@ -1,7 +1,7 @@
 /**
  * THE SEAM WHERE A CAP BECOMES A FLAG.
  *
- * The point of `order-caps-turns-and-reservation` is that `REFINER@1` shipped a
+ * The point of `order-caps-turns-and-reservation` is that `WERK-REFINER@1` shipped a
  * `maxTurns: 30` that nothing downstream read -- a cap declared on a wrapper
  * type, validated by nobody, spent by nobody. So the assertion that matters is
  * not "the order has the field" (that is `order.test.ts`) but "the number
@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { REFINER_ORDER } from '../shared/refiner-order'
+import { WERK_REFINER_ORDER } from '../shared/werk-refiner-order'
 import { buildHeadlessArgs } from './headless-args'
 
 /** The value that follows `flag`, or undefined if the flag is absent. */
@@ -43,11 +43,11 @@ describe('the two ceilings reach the command line', () => {
 
   /**
    * The end of the chain the card exists to close: the ORDER's number, not a
-   * number this test picked. If `REFINER@1`'s cap moves, this moves with it; if
+   * number this test picked. If `WERK-REFINER@1`'s cap moves, this moves with it; if
    * the cap stops reaching the argv, this fails.
    */
-  test("REFINER@1's declared cap is the one that lands on the line", () => {
-    const turns = REFINER_ORDER.caps.maxTurns
+  test("WERK-REFINER@1's declared cap is the one that lands on the line", () => {
+    const turns = WERK_REFINER_ORDER.caps.maxTurns
     expect(turns).toBeDefined()
     expect(flagValue(buildHeadlessArgs({ maxTurns: turns }), '--max-turns')).toBe(String(turns))
   })

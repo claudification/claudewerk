@@ -5,9 +5,9 @@ import { EPIC_ROSTER_HEADER } from '../../shared/epic-roster'
 import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
-import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import type { TaskStatus } from '../../shared/task-statuses'
+import { WERK_REFINER_ORDER, WERK_REFINER_ORDER_ID } from '../../shared/werk-refiner-order'
 import { MAX_LAUNCH_ATTEMPTS } from '../epic-sweep'
 import { DEFAULT_REFINE_CONCURRENCY, REFINE_EPIC_ID, type RefineDeps, refineScanner } from './refine-scanner'
 import { runScan } from './scanner'
@@ -34,14 +34,14 @@ function card(slug: string, status: TaskStatus = 'open', extra: Partial<ProjectT
   }
 }
 
-/** A refiner seat in the registry, as `groupEpicConversations` sees it. */
+/** A werk-refiner seat in the registry, as `groupEpicConversations` sees it. */
 function seat(cardId: string, over: Partial<Conversation> = {}, epicId = REFINE_EPIC_ID): Conversation {
   seq += 1
   return {
     id: `conv_${epicId}_${cardId}_${seq}`,
     project: 'claude://s/p',
     status: 'ended',
-    launchConfig: { epic: { epicId, role: 'implementer', gen: 0, cardId } },
+    launchConfig: { epic: { epicId, role: 'werk-worker', gen: 0, cardId } },
     ...over,
   } as unknown as Conversation
 }
@@ -105,19 +105,19 @@ describe('the tag it drains', () => {
   })
 })
 
-describe('the seat it dispatches is REFINER@1, not a second definition of one', () => {
-  test('a rough card gets a refiner carrying the order caps', async () => {
+describe('the seat it dispatches is WERK-REFINER@1, not a second definition of one', () => {
+  test('a rough card gets a werk-refiner carrying the order caps', async () => {
     const report = await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
 
     expect(report.acted).toEqual(['a'])
     expect(report.unaccounted).toEqual([])
     const request = dispatched[0]?.request as SpawnRequest
-    expect(request.model).toBe(REFINER_ORDER.caps.model)
-    expect(request.effort).toBe(REFINER_ORDER.caps.effort)
-    expect(request.maxBudgetUsd).toBe(REFINER_ORDER.caps.maxBudgetUsd)
+    expect(request.model).toBe(WERK_REFINER_ORDER.caps.model)
+    expect(request.effort).toBe(WERK_REFINER_ORDER.caps.effort)
+    expect(request.maxBudgetUsd).toBe(WERK_REFINER_ORDER.caps.maxBudgetUsd)
     // The turn ceiling rides the same seam as the budget now that it is a cap
     // rather than a number on a wrapper nothing read.
-    expect(request.maxTurns).toBe(REFINER_ORDER.caps.maxTurns)
+    expect(request.maxTurns).toBe(WERK_REFINER_ORDER.caps.maxTurns)
     expect(request.adHoc).toBe(true)
     expect(request.headless).toBe(true)
   })
@@ -125,7 +125,7 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
   /**
    * THE ONE GUARANTEE THAT MATTERS. `flipsStatus: false` in `TASK_MODES` is a
    * flag a prompt builder may or may not honour; the order's deny rule is the
-   * same rule enforced by the harness. A refiner that moved a card to in-review
+   * same rule enforced by the harness. A werk-refiner that moved a card to in-review
    * would be lying on the board about work that never happened.
    */
   test("the order's deny on the status verb reaches the seat", async () => {
@@ -147,7 +147,7 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
     expect(deny).toContain('mcp__rclaude__project_set_status')
   })
 
-  /** The tag removal is step 7 of `REFINER_INSTRUCTIONS`, imported rather than
+  /** The tag removal is step 7 of `WERK_REFINER_INSTRUCTIONS`, imported rather than
    *  restated -- the drain is the whole point and a second copy of the prose is
    *  the drift this epic exists to end. */
   test('the prompt orders the tag removed, and names the card file', async () => {
@@ -166,7 +166,7 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
    *
    * The assertion is on the WHOLE prompt, deliberately, because that is the only
    * shape that catches the failure this pins. Re-deriving the block from the
-   * `REFINER_INSTRUCTIONS` constant reads the same bytes TODAY -- so a
+   * `WERK_REFINER_INSTRUCTIONS` constant reads the same bytes TODAY -- so a
    * `toContain` would pass either way -- but an order edited to carry a
    * different block would then move the scheduler's seat and not this one, and
    * this test fails the moment the two sources disagree.
@@ -178,8 +178,8 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
       '',
       'Card file: /p/.rclaude/project/cards/rough-card.md',
     ].join('\n')
-    expect(REFINER_ORDER.instructions).toBeTruthy()
-    expect(dispatched[0]?.request.prompt).toBe(composeSeatPrompt(REFINER_ORDER, context))
+    expect(WERK_REFINER_ORDER.instructions).toBeTruthy()
+    expect(dispatched[0]?.request.prompt).toBe(composeSeatPrompt(WERK_REFINER_ORDER, context))
   })
 
   test("a seat is tagged with the RESERVED lane, never with the card's own epic", async () => {
@@ -189,11 +189,11 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
   })
 
   test("the ceiling is the order's reservation, not a number picked here", () => {
-    // `Order.reservation` is optional, so this also pins that `REFINER@1` still
+    // `Order.reservation` is optional, so this also pins that `WERK-REFINER@1` still
     // DECLARES one -- a dropped declaration would silently fall back to 1 here
     // and the assertion would pass against a number nobody wrote down.
-    expect(REFINER_ORDER.reservation).toBeDefined()
-    expect(DEFAULT_REFINE_CONCURRENCY).toBe(REFINER_ORDER.reservation as number)
+    expect(WERK_REFINER_ORDER.reservation).toBeDefined()
+    expect(DEFAULT_REFINE_CONCURRENCY).toBe(WERK_REFINER_ORDER.reservation as number)
   })
 
   /**
@@ -204,32 +204,32 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
    * be a hole here: a card would buy itself a tier its seat's order refused. The
    * clamp runs before the composition ever sees the value.
    */
-  test('a `model: opus` card dispatched by REFINER@1 still runs on Haiku', async () => {
+  test('a `model: opus` card dispatched by WERK-REFINER@1 still runs on Haiku', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
 
-    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
+    expect(dispatched[0]?.request.model).toBe(WERK_REFINER_ORDER.caps.model)
   })
 
   test('a clamp is LOGGED -- a silent downgrade is the failure this exists to avoid', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
 
-    expect(log.some(line => line.includes('opus') && line.includes(String(REFINER_ORDER.caps.model)))).toBe(true)
+    expect(log.some(line => line.includes('opus') && line.includes(String(WERK_REFINER_ORDER.caps.model)))).toBe(true)
   })
 
   test('a hint AT the cap survives, and says nothing about it', async () => {
     await runScan(
       refineScanner,
-      deps({ getCards: async () => [card('a', 'open', { model: REFINER_ORDER.caps.model })] }),
+      deps({ getCards: async () => [card('a', 'open', { model: WERK_REFINER_ORDER.caps.model })] }),
     )
 
-    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
+    expect(dispatched[0]?.request.model).toBe(WERK_REFINER_ORDER.caps.model)
     expect(log.some(line => line.includes('running on'))).toBe(false)
   })
 
   test('a card with no hint dispatches exactly as it always did', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('a')] }))
 
-    expect(dispatched[0]?.request.model).toBe(REFINER_ORDER.caps.model)
+    expect(dispatched[0]?.request.model).toBe(WERK_REFINER_ORDER.caps.model)
     expect(log.some(line => line.includes('running on'))).toBe(false)
   })
 
@@ -247,7 +247,7 @@ describe('the seat it dispatches is REFINER@1, not a second definition of one', 
 })
 
 describe('what it refuses, and by what name', () => {
-  test('a card with a live refiner is skipped', async () => {
+  test('a card with a live werk-refiner is skipped', async () => {
     const report = await runScan(
       refineScanner,
       deps({ getCards: async () => [card('a')], getAllConversations: () => [seat('a')], isLive: () => true }),
@@ -257,11 +257,11 @@ describe('what it refuses, and by what name', () => {
   })
 
   /**
-   * THE DRAIN'S OWN BOUND. The tag IS the queue, so a refiner that finished
+   * THE DRAIN'S OWN BOUND. The tag IS the queue, so a werk-refiner that finished
    * without removing it would otherwise be re-dispatched on every tick forever
    * -- the exact "spawn per card without a ceiling" the card forbids.
    */
-  test('a card whose refiner already ran is NOT dispatched again', async () => {
+  test('a card whose werk-refiner already ran is NOT dispatched again', async () => {
     const report = await runScan(
       refineScanner,
       deps({ getCards: async () => [card('a')], getAllConversations: () => [seat('a')] }),
@@ -290,7 +290,7 @@ describe('what it refuses, and by what name', () => {
     expect(report.unaccounted).toEqual([])
   })
 
-  test('a card whose refiners keep dying is not retried forever', async () => {
+  test('a card whose werk-refiners keep dying is not retried forever', async () => {
     const dead = Array.from({ length: MAX_LAUNCH_ATTEMPTS }, () => seat('a'))
     const report = await runScan(
       refineScanner,
@@ -313,7 +313,7 @@ describe('what it refuses, and by what name', () => {
     expect(report.unaccounted).toEqual([])
   })
 
-  test('a live refiner eats a slot, so the ceiling counts what is running too', async () => {
+  test('a live werk-refiner eats a slot, so the ceiling counts what is running too', async () => {
     const report = await runScan(
       refineScanner,
       deps({
@@ -363,7 +363,7 @@ describe('what it refuses, and by what name', () => {
 
   /**
    * A settings fragment the order's deny rules CANNOT be unioned into must not
-   * produce a refiner that quietly regained the status verb -- the one outcome
+   * produce a werk-refiner that quietly regained the status verb -- the one outcome
    * worse than not dispatching at all.
    *
    * Reachable because per-project permissions are JSON off disk: a hand-edited
@@ -383,7 +383,7 @@ describe('what it refuses, and by what name', () => {
     expect(report.acted).toEqual([])
     expect(dispatched).toEqual([])
     expect(buckets(report.refused)['order-refused']).toEqual(['a'])
-    expect(report.refused[0]?.detail).toContain(REFINER_ORDER_ID)
+    expect(report.refused[0]?.detail).toContain(WERK_REFINER_ORDER_ID)
   })
 })
 
@@ -441,9 +441,9 @@ describe('the accounting -- no rough card is ever dropped', () => {
 })
 
 /**
- * THE OPEN-EPIC ROSTER, the only board context a refiner seat ever gets.
+ * THE OPEN-EPIC ROSTER, the only board context a werk-refiner seat ever gets.
  *
- * A refiner is handed ONE card. Without the roster it cannot set `epic:` on an
+ * A werk-refiner is handed ONE card. Without the roster it cannot set `epic:` on an
  * orphan without going and reading the whole board itself -- which a Haiku seat
  * on a $0.50 budget will not reliably do, and which nothing in its instructions
  * told it to do.
@@ -501,7 +501,7 @@ describe('the roster of epics the seat may soft-link the card to', () => {
     const cards = [card('rough-card'), card('epic-a', 'open', { tags: ['epic'] })]
     await runScan(refineScanner, deps({ getCards: async () => cards }))
     const prompt = dispatched[0]?.request.prompt ?? ''
-    const instructions = REFINER_ORDER.instructions ?? ''
+    const instructions = WERK_REFINER_ORDER.instructions ?? ''
     expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeGreaterThan(-1)
     expect(prompt.indexOf(EPIC_ROSTER_HEADER)).toBeLessThan(prompt.indexOf(instructions))
   })

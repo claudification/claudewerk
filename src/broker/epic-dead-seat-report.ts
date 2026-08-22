@@ -12,8 +12,8 @@
  * for a death would drop the card out of all three and settle it forever.
  *
  * So the KIND stays and the BODY carries the difference, because the body is what
- * an overseer actually reads. The two outcomes want opposite next moves: a clean
- * completion invites a verifier, a death invites somebody to go and look at what
+ * a werk-master actually reads. The two outcomes want opposite next moves: a clean
+ * completion invites a werk-verifier, a death invites somebody to go and look at what
  * the corpse left behind.
  *
  * THE DIRT IS THE POINT OF THE SECOND HALF. On 2026-08-21 the seat that vanished
@@ -25,7 +25,7 @@
  *
  * WHAT THIS DELIBERATELY DOES NOT DO: commit anything. Whether a dead seat's
  * uncommitted work is finished is a judgement, and a judgement belongs to the
- * overseer, never to a sweep. The engine's whole job here is to make the dirt
+ * werk-master, never to a sweep. The engine's whole job here is to make the dirt
  * VISIBLE and to stop paying a concurrency slot for a corpse.
  *
  * PURE. Every sentence below is built from data and returned as a string; the
@@ -91,7 +91,7 @@ export function dirtSentence(branch: string, dirt: GitDirt | null): string {
     return (
       `\`${branch}\` HAS UNCOMMITTED CHANGES. The dead seat left work on disk that no commit carries, and ` +
       'nothing has been committed on its behalf -- deciding whether that work is finished is the ' +
-      "OVERSEER'S call, not a sweep's. Read the worktree before dispatching anything else at this card."
+      "WERK-MASTER'S call, not a sweep's. Read the worktree before dispatching anything else at this card."
     )
   }
   if (!dirt.known.has(branch)) {
@@ -121,7 +121,7 @@ function laneSentence(cardId: string, lane: TaskStatus | undefined): string {
  * The `completion` body for a card whose seat was REAPED.
  *
  * Leads with the distinguishing fact in capitals rather than burying it, because
- * the overseer prompt carries a 20-entry baton tail and the first clause is the
+ * the werk-master prompt carries a 20-entry baton tail and the first clause is the
  * part that survives being skimmed.
  */
 export function deathBody(input: DeathReportInput): string {

@@ -73,7 +73,7 @@ export interface QueueScope {
   status: EpicRunStatus | null
   /** `run.startedAt` -- has this run ever been permitted to dispatch? */
   started: boolean
-  /** Does it hold seats RIGHT NOW: any implementer, verifier or live overseer. */
+  /** Does it hold seats RIGHT NOW: any werk-worker, werk-verifier or live werk-master. */
   busy: boolean
   /** `run.created`, the FIFO key. Ties break on `epicId` so the order is total. */
   created: string
@@ -85,8 +85,8 @@ export interface QueueScope {
 /**
  * The two reads the sweep already makes, folded into one scope.
  *
- * `busy` counts a live OVERSEER as well as implementers and verifiers, and that
- * is deliberate: an overseer merges branches and rewrites cards, so an epic
+ * `busy` counts a live WERK-MASTER as well as werk-workers and werk-verifiers, and that
+ * is deliberate: a werk-master merges branches and rewrites cards, so an epic
  * armed to avoid colliding with the rest of the project has not got a quiet
  * runner while one is mid-generation. It is the conservative direction -- it can
  * only ever make a queued epic wait one more beat.
@@ -95,7 +95,7 @@ export interface QueueScope {
  * what an epic with conversations but nothing on disk actually is.
  */
 export function toQueueScope(
-  group: { epicId: string; project: string; inFlight: readonly string[]; overseerAlive: boolean },
+  group: { epicId: string; project: string; inFlight: readonly string[]; werkMasterAlive: boolean },
   run: EpicRunSnapshot | null,
 ): ScopedQueueScope {
   return {
@@ -104,7 +104,7 @@ export function toQueueScope(
     when: run?.cadence ?? ['now'],
     status: run?.status ?? null,
     started: Boolean(run?.startedAt),
-    busy: group.inFlight.length > 0 || group.overseerAlive,
+    busy: group.inFlight.length > 0 || group.werkMasterAlive,
     created: run?.created ?? '',
     updated: run?.updated ?? '',
   }

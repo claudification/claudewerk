@@ -127,7 +127,7 @@ const STORE_SPECS: Record<string, CardKeySpec> = {
     type: 'string',
     doc: 'model hint for a seat dispatched against this card, e.g. `opus` -- an order may clamp it, never raise it',
     consequence: 'the seat runs on the project default and the judgement behind the hint is lost',
-    // HUMAN: typed at capture time or suggested by a refiner. The store passes
+    // HUMAN: typed at capture time or suggested by a werk-refiner. The store passes
     // it through and nothing machine-authors it.
     owner: 'human',
   },

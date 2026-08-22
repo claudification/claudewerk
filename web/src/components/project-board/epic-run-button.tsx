@@ -3,8 +3,8 @@
  *
  * Beside LAUNCH, and deliberately NOT the same verb. LAUNCH spawns one
  * conversation that a human drives. RUN arms the engine: it dispatches one
- * implementer per ready card in `depends_on` order, sends an independent
- * verifier over every finished card, and wakes a single overseer between beats.
+ * werk-worker per ready card in `depends_on` order, sends an independent
+ * werk-verifier over every finished card, and wakes a single werk-master between beats.
  *
  * Named RUN and not "Execute" because the vocabulary already agrees with itself
  * -- `run.md`, `EpicRunMeta`, `startEpicRun`, nightshift "runs". A button whose

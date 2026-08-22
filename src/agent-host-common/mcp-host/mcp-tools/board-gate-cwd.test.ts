@@ -156,11 +156,11 @@ describe("the gate measures the card's worktree, not the project root", () => {
 /**
  * The per-card `gate:` override is the zero-blast-radius way to exercise the real
  * Tier-1 + Tier-2 path (`resolveGateMode` checks it AHEAD of the project config),
- * so this is where the full worker -> verifier handshake is proven end to end
+ * so this is where the full worker -> werk-verifier handshake is proven end to end
  * against a real repo, with no `.rclaude/project/gate.conf` anywhere.
  */
-describe('the full worker -> verifier handshake, on a per-card `gate: full`', () => {
-  test('worker captures, an independent verifier approves, and the verdict lands on disk', async () => {
+describe('the full worker -> werk-verifier handshake, on a per-card `gate: full`', () => {
+  test('worker captures, an independent werk-verifier approves, and the verdict lands on disk', async () => {
     writeCard(['gate: full'])
 
     const captured = await transition('in-review', { actingConversationId: 'conv_worker' })

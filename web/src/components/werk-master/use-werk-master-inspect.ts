@@ -74,7 +74,7 @@ export interface InspectState {
   refresh: () => Promise<void>
 }
 
-export function useOverseerInspect(project: string | null, epicId: string | null): InspectState {
+export function useWerkMasterInspect(project: string | null, epicId: string | null): InspectState {
   const [data, setData] = useState<EpicInspectResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

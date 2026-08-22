@@ -3,15 +3,15 @@ import { LEASE_STALE_MS } from '../shared/epic-lease'
 import type { Conversation } from '../shared/protocol'
 import {
   answersToASocket,
-  buildOverseerReaper,
   buildSeatReaper,
+  buildWerkMasterReaper,
   graceClearsLeaseStaleness,
   NEVER_REAPED,
   NO_REAPING,
-  OVERSEER_SILENCE_MS,
   SEAT_SILENCE_MS,
   seatAbandoned,
   silentForMs,
+  WERK_MASTER_SILENCE_MS,
 } from './epic-vitality'
 
 const NOW = Date.parse('2026-08-21T17:00:00.000Z')
@@ -86,7 +86,7 @@ describe('seatAbandoned -- one rule, asked with a caller-supplied grace', () => 
  * `plan-daemon-launch-ux.md` Phase I changes that.
  */
 describe('a conversation whose backend has no agent socket is never reaped', () => {
-  const ANCIENT = { lastActivity: NOW - 100 * OVERSEER_SILENCE_MS }
+  const ANCIENT = { lastActivity: NOW - 100 * WERK_MASTER_SILENCE_MS }
 
   test.each(['chat-api', 'hermes'] as const)('%s is proxy-backed and holds no agent socket by design', type => {
     const c = conv({ ...ANCIENT, agentHostType: type })
@@ -120,7 +120,7 @@ describe('a conversation whose backend has no agent socket is never reaped', () 
 /**
  * THE CARD SEAT'S OWN BOUNDARY, at its OWN constant.
  *
- * Deliberately not folded into the overseer's block below: the two graces are
+ * Deliberately not folded into the werk-master's block below: the two graces are
  * different numbers on purpose, and a test that asserted both against one shared
  * value would go green on the day somebody collapsed them -- which is the one
  * change this module exists to prevent.
@@ -163,46 +163,46 @@ describe('buildSeatReaper -- ten minutes, sized against a stranded card', () => 
   })
 })
 
-/** THE OVERSEER'S OWN BOUNDARY, at its OWN constant -- see the seat block above
+/** THE WERK-MASTER'S OWN BOUNDARY, at its OWN constant -- see the seat block above
  *  for why these are not one parameterised suite. */
-describe('buildOverseerReaper -- fifteen minutes, sized against two supervisors', () => {
+describe('buildWerkMasterReaper -- fifteen minutes, sized against two supervisors', () => {
   test('binds ONE instant, and returns the evidence rather than a bare verdict', () => {
-    const reap = buildOverseerReaper({ hasSocket: noSocket, now: () => NOW + OVERSEER_SILENCE_MS + 90_000 })
-    expect(reap(conv({ lastActivity: NOW }))).toEqual({ silentForMs: OVERSEER_SILENCE_MS + 90_000 })
+    const reap = buildWerkMasterReaper({ hasSocket: noSocket, now: () => NOW + WERK_MASTER_SILENCE_MS + 90_000 })
+    expect(reap(conv({ lastActivity: NOW }))).toEqual({ silentForMs: WERK_MASTER_SILENCE_MS + 90_000 })
   })
 
   test('a seat holding a socket reaps to null, however long it has been silent', () => {
-    const reap = buildOverseerReaper({ hasSocket, now: () => NOW + OVERSEER_SILENCE_MS * 100 })
+    const reap = buildWerkMasterReaper({ hasSocket, now: () => NOW + WERK_MASTER_SILENCE_MS * 100 })
     expect(reap(conv({ lastActivity: NOW }))).toBeNull()
   })
 
-  test('silent for exactly OVERSEER_SILENCE_MS is NOT reaped; one ms past it is', () => {
-    const at = (offset: number) => buildOverseerReaper({ hasSocket: noSocket, now: () => NOW + offset })
-    expect(at(OVERSEER_SILENCE_MS)(conv({ lastActivity: NOW }))).toBeNull()
-    expect(at(OVERSEER_SILENCE_MS + 1)(conv({ lastActivity: NOW }))).not.toBeNull()
+  test('silent for exactly WERK_MASTER_SILENCE_MS is NOT reaped; one ms past it is', () => {
+    const at = (offset: number) => buildWerkMasterReaper({ hasSocket: noSocket, now: () => NOW + offset })
+    expect(at(WERK_MASTER_SILENCE_MS)(conv({ lastActivity: NOW }))).toBeNull()
+    expect(at(WERK_MASTER_SILENCE_MS + 1)(conv({ lastActivity: NOW }))).not.toBeNull()
   })
 
   /**
-   * THE FALSE POSITIVE THIS GRACE EXISTS TO AVOID. An overseer bumps
+   * THE FALSE POSITIVE THIS GRACE EXISTS TO AVOID. A werk-master bumps
    * `lastActivity` on every transcript entry, so a generation that is genuinely
    * thinking is never silent -- and reaping one would put a second supervisor on
    * a board the first is still editing.
    */
   test('recent activity keeps a socketless seat alive', () => {
-    const reap = buildOverseerReaper({ hasSocket: noSocket, now: () => NOW + 61_000 })
+    const reap = buildWerkMasterReaper({ hasSocket: noSocket, now: () => NOW + 61_000 })
     expect(reap(conv({ lastActivity: NOW + 60_000 }))).toBeNull()
   })
 
   test('the clock is read per call, so a deps-level `now` override reaches it', () => {
     let now = NOW
-    const reap = buildOverseerReaper({ hasSocket: noSocket, now: () => now })
+    const reap = buildWerkMasterReaper({ hasSocket: noSocket, now: () => now })
     expect(reap(conv())).toBeNull()
-    now = NOW + OVERSEER_SILENCE_MS + 1
+    now = NOW + WERK_MASTER_SILENCE_MS + 1
     expect(reap(conv())).not.toBeNull()
   })
 
   test('silenceMs is overridable for tests and defaults to the shipped grace', () => {
-    const reap = buildOverseerReaper({ hasSocket: noSocket, now: () => NOW + 2, silenceMs: 1 })
+    const reap = buildWerkMasterReaper({ hasSocket: noSocket, now: () => NOW + 2, silenceMs: 1 })
     expect(reap(conv())).toEqual({ silentForMs: 2 })
   })
 })
@@ -214,19 +214,19 @@ describe('buildOverseerReaper -- fifteen minutes, sized against two supervisors'
  * makes these one value, this test names the reason it must not.
  */
 describe('the two graces are deliberately different', () => {
-  test('the overseer waits LONGER than a card seat -- the mistake costs more', () => {
-    expect(OVERSEER_SILENCE_MS).toBeGreaterThan(SEAT_SILENCE_MS)
+  test('the werk-master waits LONGER than a card seat -- the mistake costs more', () => {
+    expect(WERK_MASTER_SILENCE_MS).toBeGreaterThan(SEAT_SILENCE_MS)
   })
 
   /**
-   * The second, INDEPENDENT constraint on the overseer's grace. A fold that
-   * declared the overseer dead while `evaluateLease` still refused to replace it
+   * The second, INDEPENDENT constraint on the werk-master's grace. A fold that
+   * declared the werk-master dead while `evaluateLease` still refused to replace it
    * would freeze the run by a second mechanism instead of the first -- the exact
-   * trap `epic-overseer-seat-never-reaped` names.
+   * trap `epic-werk-master-seat-never-reaped` names.
    */
-  test('OVERSEER_SILENCE_MS clears LEASE_STALE_MS', () => {
+  test('WERK_MASTER_SILENCE_MS clears LEASE_STALE_MS', () => {
     expect(graceClearsLeaseStaleness()).toBe(true)
-    expect(OVERSEER_SILENCE_MS).toBeGreaterThan(LEASE_STALE_MS)
+    expect(WERK_MASTER_SILENCE_MS).toBeGreaterThan(LEASE_STALE_MS)
   })
 
   test('and the predicate says so for any candidate value, not just the shipped one', () => {
@@ -246,6 +246,6 @@ describe('the zero value', () => {
 
   test('NO_REAPING is that zero value in both lanes', () => {
     expect(NO_REAPING.seat(conv({ lastActivity: 0 }))).toBeNull()
-    expect(NO_REAPING.overseer(conv({ lastActivity: 0 }))).toBeNull()
+    expect(NO_REAPING.werkMaster(conv({ lastActivity: 0 }))).toBeNull()
   })
 })

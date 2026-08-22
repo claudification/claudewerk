@@ -10,14 +10,14 @@
  *   selects  cards tagged `ready`
  *   skips    anything with a live conversation
  *   refuses  into named buckets -- `WORK_ORDER_BUCKETS`, and nothing else
- *   does     dispatch an IMPLEMENTER@1 seat against the card
+ *   does     dispatch an WERK-WORKER@1 seat against the card
  *   is       self-catching (via `runScan`), effects injected, no broker needed
  *
  * NOTHING NEW IS DECIDED HERE. Readiness is `planTagged` (the shared fold in
  * `epic-ready.ts`, selecting by tag instead of by epic); liveness and the
  * failed-launch ceiling are `groupEpicConversations` (the shared fold in
- * `epic-sweep.ts`); the seat is `IMPLEMENTER@1` compiled by
- * `planImplementerSpawn`. This file is selection, refusal and dispatch, and it
+ * `epic-sweep.ts`); the seat is `WERK-WORKER@1` compiled by
+ * `planWerkWorkerSpawn`. This file is selection, refusal and dispatch, and it
  * is deliberately the smallest of the five scanners because all three of those
  * folds already existed.
  *
@@ -30,7 +30,7 @@ import { clampCardModel } from '../../shared/card-model'
 import { EPIC_ORDERS } from '../../shared/epic-orders'
 import { type EpicPlan, planTagged } from '../../shared/epic-ready'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
-import { type EpicSpawnCtx, type EpicSpawnPlan, planImplementerSpawn } from '../epic-spawn-plan'
+import { type EpicSpawnCtx, type EpicSpawnPlan, planWerkWorkerSpawn } from '../epic-spawn-plan'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
 import {
   DISPATCH_FAILED_BUCKET,
@@ -61,7 +61,7 @@ const WORK_ORDER_TAG = '[work-order]'
  * THE EPIC ID EVERY WORK-ORDER SEAT IS TAGGED WITH -- a reserved lane, not a
  * real epic.
  *
- * `planImplementerSpawn` compiles a seat that always carries an `EpicLaunchTag`,
+ * `planWerkWorkerSpawn` compiles a seat that always carries an `EpicLaunchTag`,
  * and that tag is what `groupEpicConversations` folds liveness out of -- so a
  * work-order seat needs an epic id whether or not its card belongs to an epic.
  * It is the scanner's own id, and it is DELIBERATELY NOT any real epic's: a seat
@@ -88,7 +88,7 @@ export type WorkOrderBucket =
   | 'epic-owned'
   | 'already-run'
   | 'awaiting-verdict'
-  | 'needs-overseer'
+  | 'needs-werk-master'
   | 'waiting-on-deps'
   | 'held-back'
   | 'unspawnable'
@@ -103,7 +103,7 @@ const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
   'epic-owned',
   'already-run',
   'awaiting-verdict',
-  'needs-overseer',
+  'needs-werk-master',
   'waiting-on-deps',
   'held-back',
   'unspawnable',
@@ -125,7 +125,7 @@ export interface WorkOrderDeps extends ScannerDeps {
    * `epic-ready.ts` already states for the epic lane.
    */
   concurrency: number
-  /** Everything `planImplementerSpawn` needs except the two fields this scanner
+  /** Everything `planWerkWorkerSpawn` needs except the two fields this scanner
    *  supplies itself: the reserved epic id and the per-card attempt number. */
   spawnCtx: Omit<EpicSpawnCtx, 'epicId' | 'gen'>
   /** Hand a compiled seat to whatever spawns. `false` means the spawn was
@@ -147,12 +147,12 @@ function refuseLane(
  * Cards that are `ready` but belong to an epic.
  *
  * REFUSED, NOT DISPATCHED, and this is the one judgement call in the file. An
- * epic's cards are its run's to sequence -- the overseer decides the order, the
+ * epic's cards are its run's to sequence -- the werk-master decides the order, the
  * DAG decides readiness, and a card the epic engine is about to dispatch must
  * not also be dispatched from here. Refusing is the recoverable direction: the
  * card is visible with a count and a reason, and dropping the `ready` tag (or
  * arming the epic) resolves it. Dispatching would have been the unrecoverable
- * one -- two implementers, one branch.
+ * one -- two werk-workers, one branch.
  */
 function epicOwned(cards: readonly ProjectTaskMeta[]): ProjectTaskMeta[] {
   return cards.filter(c => c.epic !== undefined)
@@ -171,16 +171,16 @@ function attemptsFor(deps: WorkOrderDeps, cardId: string): number {
  * as select -> refuse -> dispatch and nothing else.
  *
  * THE CARD'S `model:` HINT IS SPENT HERE, and it is clamped against
- * `IMPLEMENTER@1`'s own cap on the way past. That order sets no model today, so
+ * `WERK-WORKER@1`'s own cap on the way past. That order sets no model today, so
  * the hint passes through untouched and a card with no hint changes nothing --
  * but the clamp is in the path from the first day rather than added the day an
  * order first caps a seat, because "the order still wins" is not a property you
  * can retrofit onto dispatches that already happened.
  */
 async function dispatchCard(deps: WorkOrderDeps, card: ProjectTaskMeta): Promise<boolean> {
-  const model = clampCardModel(card.model, EPIC_ORDERS.implementer.caps.model)
+  const model = clampCardModel(card.model, EPIC_ORDERS['werk-worker'].caps.model)
   if (model.note) deps.log(`${WORK_ORDER_TAG} ${card.slug}: ${model.note}`)
-  const plan = planImplementerSpawn(
+  const plan = planWerkWorkerSpawn(
     { ...deps.spawnCtx, epicId: WORK_ORDER_EPIC_ID, gen: attemptsFor(deps, card.slug) },
     card.slug,
     'main',
@@ -201,9 +201,9 @@ function planRefusals(plan: EpicPlan): Refusal<WorkOrderBucket>[] {
       'waiting-on-deps',
       card => `waiting on ${(card.dependsOn ?? []).join(', ')}`,
     ),
-    ...refuseLane(plan.questions, 'needs-overseer', () => 'a question for the overseer, not a unit of work'),
+    ...refuseLane(plan.questions, 'needs-werk-master', () => 'a question for the werk-master, not a unit of work'),
     ...refuseLane(plan.unspawnable, 'unspawnable', () => 'seats keep dying before producing anything; not retried'),
-    ...refuseLane(plan.verify, 'awaiting-verdict', () => 'in review -- this scanner dispatches implementers only'),
+    ...refuseLane(plan.verify, 'awaiting-verdict', () => 'in review -- this scanner dispatches werk-workers only'),
   ]
 }
 
@@ -242,7 +242,7 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
     ),
     // THE BOUND ON THE RETRY PATH, and the reason this scanner cannot bill
     // forever. A seat that ran and finished leaves the card wherever the
-    // implementer put it. If nobody moved it out of `open`, the fold would call
+    // werk-worker put it. If nobody moved it out of `open`, the fold would call
     // it not-started and dispatch it again, and again, every tick. A settled
     // card is re-authorised by MOVING it or by dropping the tag -- by a decision
     // somebody made, never by the clock.

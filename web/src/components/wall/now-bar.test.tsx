@@ -141,7 +141,7 @@ describe('the A5 now bar', () => {
     // `managed` is not one of A5's axes, so the grammar's hide-by-default is
     // cleared and an epic seat shows up in the bar like anything else.
     fake.state.conversations = [
-      conv({ epic: { epicId: 'epic-the-wall', role: 'implementer' } } as Partial<Conversation>),
+      conv({ epic: { epicId: 'epic-the-wall', role: 'werk-worker' } } as Partial<Conversation>),
       conv(),
     ]
     render(<NowBar />)

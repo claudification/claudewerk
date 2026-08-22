@@ -10,7 +10,7 @@ function entry(over: Partial<EpicLogEntry> & { kind?: EpicLogKind } = {}): EpicL
     kind: 'dispatch',
     convId: 'conv_new',
     cardId: 'c1',
-    body: 'Implementer dispatched for `c1` at generation 1.',
+    body: 'WerkWorker dispatched for `c1` at generation 1.',
     ...over,
   }
 }
@@ -69,9 +69,9 @@ describe('what is NOT a pending seat', () => {
 })
 
 describe('the live 2026-08-21 shape', () => {
-  /* Both halves of the incident: an implementer pair on one card and a verifier
+  /* Both halves of the incident: a werk-worker pair on one card and a werk-verifier
    * pair on another, in the same minute, neither visible to its lane. */
-  test('holds both the implementer card and the verifier card', () => {
+  test('holds both the werk-worker card and the werk-verifier card', () => {
     const baton = [
       entry({ cardId: 'runner-queue-verb', convId: 'conv_impl_1', ts: new Date(NOW - 6 * 60_000).toISOString() }),
       entry({ cardId: 'runner-queue-verb', convId: 'conv_impl_2', ts: new Date(NOW - 60_000).toISOString() }),

@@ -1119,7 +1119,7 @@
 /* THE ALARM. A stalled run and a dead lease are the two things this pane exists
    to make impossible to miss, so both get the destructive tone and weight. */
 .wall-run-stalled,
-.wall-run-overseer-bad {
+.wall-run-werk-master-bad {
 	color: var(--destructive);
 	font-weight: 700;
 }
@@ -1128,7 +1128,7 @@
 	font-size: 10px;
 	letter-spacing: 0.04em;
 }
-.wall-run-overseer {
+.wall-run-werk-master {
 	margin-top: 3px;
 	font-size: 10px;
 	color: var(--success);

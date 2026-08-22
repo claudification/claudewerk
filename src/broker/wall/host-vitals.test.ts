@@ -10,7 +10,7 @@ import { nodeStatsStore } from '../node-stats-store'
 import { recordWallHostVitals, resetWallHostVitals, seedWallHostVitals, wallHostVitalsFrom } from './host-vitals'
 import { wallHub } from './index'
 
-// PERMANENT (overseer ruling, gen 17): a fixture builder inside a test file.
+// PERMANENT (werk-master ruling, gen 17): a fixture builder inside a test file.
 // Cyclomatic and cognitive are both under threshold; CRAP trips only because
 // fallow measures the test file's own coverage, and "write a test for the test"
 // is not a real action. Never renew-with-a-card; this one does not expire.

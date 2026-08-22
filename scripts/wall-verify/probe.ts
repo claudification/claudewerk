@@ -5,7 +5,7 @@ import { type Aspect, type AspectResult, type Probe, SETTLED_LANES, type Verdict
 
 /**
  * The two roots are NOT the same and conflating them is a false alarm factory.
- * CODE is whatever tree you are standing in (a worktree, when an implementer
+ * CODE is whatever tree you are standing in (a worktree, when a werk-worker
  * runs this). The BOARD is gitignored, so it exists only in the main working
  * tree and every worktree must reach back to it.
  */

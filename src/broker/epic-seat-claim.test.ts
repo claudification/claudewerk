@@ -17,13 +17,13 @@ const EPIC = 'epic-project-runner'
 const CARD = 'runner-list-project-uri-unnormalized'
 const PROJECT = 'claude://default/Users/jonas/projects/demo'
 
-type EpicTag = { epicId: string; role: 'implementer' | 'verifier' | 'overseer'; cardId?: string; gen: number }
+type EpicTag = { epicId: string; role: 'werk-worker' | 'werk-verifier' | 'werk-master'; cardId?: string; gen: number }
 
 function conv(id: string, epic?: EpicTag, project = PROJECT): Conversation {
   return { id, project, launchConfig: epic ? { epic } : undefined } as unknown as Conversation
 }
 
-const seat = (id: string, role: EpicTag['role'] = 'implementer', cardId: string | null = CARD) =>
+const seat = (id: string, role: EpicTag['role'] = 'werk-worker', cardId: string | null = CARD) =>
   conv(id, { epicId: EPIC, role, gen: 3, ...(cardId ? { cardId } : {}) })
 
 interface Harness {
@@ -86,8 +86,8 @@ describe('the gates -- who may ask at all', () => {
     expect(h.ops).toHaveLength(0)
   })
 
-  test('the OVERSEER holds no card seat and is told so', async () => {
-    const h = harness([seat('conv_over', 'overseer', null)], {})
+  test('the WERK-MASTER holds no card seat and is told so', async () => {
+    const h = harness([seat('conv_over', 'werk-master', null)], {})
 
     const res = await claimSeat(h.deps, { convId: 'conv_over', action: 'claim' }, h.io)
 
@@ -135,7 +135,7 @@ describe('the claim itself', () => {
     const claim = h.ops.find(o => o.op === 'seat_claim') as { seat: Record<string, unknown> }
     expect(claim.seat.expectGen).toBe(1)
     expect(claim.seat.holderAlive).toBe(true)
-    expect(claim.seat.role).toBe('implementer')
+    expect(claim.seat.role).toBe('werk-worker')
     expect(claim.seat.cardId).toBe(CARD)
   })
 
@@ -164,9 +164,9 @@ describe('the claim itself', () => {
   })
 
   /**
-   * THE CAS IS REACHED. `epic-beat.ts:251` returns "overseer alive; holding the
-   * beat" ABOVE the overseer lease's CAS, so its TTL -- which exists, and works
-   * -- is never asked and a wedged overseer deadlocks the run forever
+   * THE CAS IS REACHED. `epic-beat.ts:251` returns "werk-master alive; holding the
+   * beat" ABOVE the werk-master lease's CAS, so its TTL -- which exists, and works
+   * -- is never asked and a wedged werk-master deadlocks the run forever
    * (epic-lease-has-no-timeout). This asserts the seat path did not inherit that
    * shape: a LIVE holder does not short-circuit anything here, the claim goes to
    * the CAS carrying `holderAlive: true`, and the stale window decides.
@@ -203,7 +203,7 @@ describe('the claim itself', () => {
 describe('the refusal -- loud, audited, terminal', () => {
   const refused = {
     seat_get: { currentLease: HELD },
-    seat_claim: { lease: { granted: false, ...HELD, reason: 'implementer conv_fir is alive at gen 1' } },
+    seat_claim: { lease: { granted: false, ...HELD, reason: 'werk-worker conv_fir is alive at gen 1' } },
   }
 
   test('the loser is told to exit', async () => {
@@ -303,14 +303,14 @@ describe('release', () => {
     const op = h.ops[0] as { op: string; seat: Record<string, unknown> }
     expect(op.op).toBe('seat_release')
     expect(op.seat.convId).toBe('conv_impl')
-    expect(op.seat.role).toBe('implementer')
+    expect(op.seat.role).toBe('werk-worker')
   })
 
-  test("a verifier releases its OWN role, not the implementer's", async () => {
-    const h = harness([seat('conv_v', 'verifier')], {})
+  test("a werk-verifier releases its OWN role, not the werk-worker's", async () => {
+    const h = harness([seat('conv_v', 'werk-verifier')], {})
 
     await claimSeat(h.deps, { convId: 'conv_v', action: 'release' }, h.io)
 
-    expect((h.ops[0] as { seat: Record<string, unknown> }).seat.role).toBe('verifier')
+    expect((h.ops[0] as { seat: Record<string, unknown> }).seat.role).toBe('werk-verifier')
   })
 })

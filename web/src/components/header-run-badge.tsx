@@ -16,15 +16,15 @@
  */
 
 import { useEffect } from 'react'
-import { openOverseer } from '@/components/overseer/overseer-state'
+import { openWerkMaster } from '@/components/werk-master/werk-master-state'
 import {
   selectLiveCount,
   selectMinGen,
   selectSeatCount,
   selectWorkingCount,
   selectWorstLabel,
-  useOverseerActivityStore,
-} from '@/hooks/use-overseer-activity'
+  useWerkMasterActivityStore,
+} from '@/hooks/use-werk-master-activity'
 import { cn, haptic } from '@/lib/utils'
 
 function Pip({ live, working }: { live: boolean; working: boolean }) {
@@ -49,10 +49,10 @@ function plural(n: number): string {
 }
 
 function tooltip(runs: number, seats: number, word: string): string {
-  if (runs === 0) return 'Nothing is running. Click to open the overseer and see recent runs.'
+  if (runs === 0) return 'Nothing is running. Click to open the werk-master and see recent runs.'
   return (
     `${runs} unattended run${plural(runs)} (${word.toLowerCase()}), ${seats} seat${plural(seats)} working. ` +
-    'Click to open the overseer.'
+    'Click to open the werk-master.'
   )
 }
 
@@ -85,12 +85,12 @@ export function HeaderRunBadge() {
   // Four SCALAR subscriptions, not one object selector: returning a fresh object
   // literal from a Zustand selector is the React #185 footgun this codebase has
   // already been bitten by.
-  const runs = useOverseerActivityStore(selectLiveCount)
-  const seats = useOverseerActivityStore(selectSeatCount)
-  const gen = useOverseerActivityStore(selectMinGen)
-  const working = useOverseerActivityStore(selectWorkingCount)
-  const word = useOverseerActivityStore(selectWorstLabel)
-  const prime = useOverseerActivityStore(s => s.prime)
+  const runs = useWerkMasterActivityStore(selectLiveCount)
+  const seats = useWerkMasterActivityStore(selectSeatCount)
+  const gen = useWerkMasterActivityStore(selectMinGen)
+  const working = useWerkMasterActivityStore(selectWorkingCount)
+  const word = useWerkMasterActivityStore(selectWorstLabel)
+  const prime = useWerkMasterActivityStore(s => s.prime)
 
   // ONE http read, on mount. A tab opened mid-run must not sit blank until the
   // next 45s tick; after this the push channel owns the state.
@@ -105,10 +105,10 @@ export function HeaderRunBadge() {
       type="button"
       onClick={() => {
         haptic('tap')
-        openOverseer()
+        openWerkMaster()
       }}
       title={tooltip(runs, seats, word)}
-      aria-label={live ? `${runs} runs live, open the overseer` : 'Open the overseer'}
+      aria-label={live ? `${runs} runs live, open the werk-master` : 'Open the werk-master'}
       className={cn(
         'shrink-0 flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-mono border transition-colors',
         live
