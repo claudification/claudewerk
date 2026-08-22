@@ -123,8 +123,12 @@ export function cardToNightshiftTask(
 /** Card ids a live conversation is already working -- today, the epic seats,
  *  which are the only conversations that name their card on the wire
  *  (`launchConfig.epic.cardId`). A night worker carries a run/task ordinal
- *  instead, and cannot collide anyway: the card is untagged the moment it is
- *  dispatched, and a project runs one night at a time. */
+ *  instead, and still cannot collide with itself: this scan runs ONCE, when a run
+ *  opens, and `activeRuns` allows one run per project -- so by the time any scan
+ *  reads the tag again, the previous run has finalized and every task of it is
+ *  terminal. (It used to be the DISPATCH-time untag that made this true. That
+ *  moved to the task's verdict -- see `drainSettledTask` -- because a crashed
+ *  worker was clearing the tag on work nobody did.) */
 function liveCardIds(deps: NightshiftScanDeps): Set<string> {
   const out = new Set<string>()
   for (const conv of deps.getAllConversations()) {

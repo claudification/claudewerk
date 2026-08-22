@@ -82,7 +82,7 @@ describe('buildNightshiftScanDeps', () => {
     deps.now()
     deps.log('noise')
 
-    // `untagBoardCard` -- THE DEQUEUE -- is not reachable from these deps, which
+    // `clearCardTag` -- THE DRAIN -- is not reachable from these deps, which
     // is what lets the Outlook pane share the run's exact wiring and still be a
     // preview. A future field that writes would show up right here.
     expect(ops.every(o => o.startsWith('list') || o.startsWith('get:'))).toBe(true)

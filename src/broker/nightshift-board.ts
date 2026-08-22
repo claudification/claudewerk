@@ -1,53 +1,28 @@
 /**
- * THE NIGHT RUN'S BOARD DOOR -- the write only nightshift makes, plus the one
- * builder that wires the board into the scanner's deps.
+ * THE NIGHT RUN'S BOARD DOOR -- the one builder that wires the board into the
+ * scanner's deps.
  *
  * The two READS moved to `board-cards.ts` when `refine` and `work-order` got a
  * caller of their own and needed the identical list; they were module-private
- * here only because nightshift was once the only scanner anything invoked. The
- * dequeue below stayed: it WRITES, and no other scanner has business reaching it.
+ * here only because nightshift was once the only scanner anything invoked.
+ *
+ * THE DEQUEUE MOVED TOO, and later, to `tag-clear.ts` as `clearCardTag`. It lived
+ * here as `untagBoardCard` because nightshift was the only scanner that cleared
+ * anything, and it was hard-coded to `#nightshift` for the same reason. Once the
+ * refine clock needed the identical write the choice was a second copy or a
+ * neutral door, and the answer was the same one the reads got.
  *
  * This file exists so the scanner's deps can be built from a `callBoard`-shaped
  * function alone, which is what lets the orchestrator swap the board out in a
  * test the same way it already swaps the spawn and the sentinel (`NightshiftIo`).
- * Nothing here holds state.
+ * Nothing here holds state and nothing here writes.
  */
 
-import { NIGHTSHIFT_TAG } from '../shared/nightshift-types'
 import type { Conversation } from '../shared/protocol'
 import { type CallBoard, listBoardCards, readBoardCard } from './board-cards'
 import type { ConversationStore } from './conversation-store'
 import type { NightshiftScanDeps } from './scanners/nightshift-scanner'
 import { werkLiveness } from './werk-liveness'
-
-/**
- * Drop `#nightshift` from a card. THIS IS THE DEQUEUE.
- *
- * Under the copy-queue, dispatching a task removed its file from
- * `.nightshift/queue/`; under the tag, dispatching it removes the tag. Same
- * meaning ("this is no longer waiting for a night run"), except it is written
- * on the card, where a human can see it, instead of in a store nobody opens.
- *
- * Re-reads the card first rather than patching a remembered tag list: minutes
- * can pass between the scan and the dispatch, and clobbering a tag somebody
- * added in between would be a silent edit to their card.
- */
-export async function untagBoardCard(
-  call: CallBoard,
-  store: ConversationStore,
-  project: string,
-  slug: string,
-): Promise<boolean> {
-  const card = await readBoardCard(call, store, project, slug)
-  if (!card) return false
-  if (!card.tags.includes(NIGHTSHIFT_TAG)) return true
-  const res = await call(store, project, {
-    op: 'update',
-    slug,
-    patch: { tags: card.tags.filter(t => t !== NIGHTSHIFT_TAG) },
-  })
-  return !!res.ok
-}
 
 /** The registry reads the scan needs. Structural, so a test hands over a plain
  *  object rather than a whole ConversationStore. */
@@ -71,8 +46,8 @@ interface NightshiftScanStore {
  * outlook into a throwaway it serializes and drops. Leaving it caller-owned is
  * what keeps this a wiring helper rather than a second selector.
  *
- * NOTHING HERE WRITES. `listCards`/`readCard` are the two read ops; `untagBoardCard`
- * -- the dequeue -- is not wired in, which is what lets the outlook path use the
+ * NOTHING HERE WRITES. `listCards`/`readCard` are the two read ops; the drain
+ * (`clearCardTag`) is not wired in, which is what lets the outlook path use the
  * identical deps as the run and still be a dry run by construction.
  */
 export function buildNightshiftScanDeps(
