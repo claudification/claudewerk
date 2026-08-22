@@ -10,12 +10,13 @@
  */
 
 import { isSameProject } from '../shared/project-uri'
-import type { Conversation } from '../shared/protocol'
+import type { Conversation, ProfileUsageSnapshot } from '../shared/protocol'
 import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
 import { type BeatDeps, type BeatOutcome, runEpicBeat } from './epic-executor'
+import { mergeReadings, type ProfileHeadroom, readingsFrom } from './epic-headroom'
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, type IsLive, type ProducedOutput } from './epic-sweep'
 import type { GitDirt } from './epic-types'
@@ -110,6 +111,20 @@ export interface SweepDeps extends BeatDeps {
    * pair, and `epic-sweep-loop.test.ts` asserts that it does.
    */
   reapers?: EpicReapers
+  /**
+   * PLAN HEADROOM, one flat reading per profile across every connected sentinel.
+   *
+   * A THUNK rather than a value because a sweep runs every 45 seconds and the
+   * telemetry moves underneath it: a captured snapshot would hold a run open on a
+   * window that filled ten minutes ago, or hold it shut on one that has since
+   * rolled over.
+   *
+   * ABSENT MEANS NO GATE -- the same convention as `scannerOptIn`, `producedOutput`
+   * and `reapers` above. A test that builds deps by hand keeps today's
+   * dispatch-regardless behaviour rather than withholding work on evidence it
+   * never supplied. `buildSweepDeps` installs the real reader.
+   */
+  profileHeadroom?: () => readonly ProfileHeadroom[]
 }
 
 /**
@@ -159,6 +174,8 @@ interface SweepStore {
   sumConversationCostUsd: (ids: readonly string[]) => number
   getSentinel: SweepDeps['getSentinel']
   getSentinelByAlias: SweepDeps['getSentinelByAlias']
+  getSentinels: () => readonly { sentinelId: string }[]
+  getSentinelProfileUsage: (sentinelId: string) => { profiles: ProfileUsageSnapshot[]; polledAt: number } | undefined
   addProjectListener: SweepDeps['addProjectListener']
   removeProjectListener: SweepDeps['removeProjectListener']
   /** The git-fabric RPC rides the GENERIC requestId-keyed FILE listener, which is
@@ -215,6 +232,18 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
     scannerOptIn: EPIC_OPT_IN,
     getSentinel: s.getSentinel,
     getSentinelByAlias: s.getSentinelByAlias,
+    // PLAN HEADROOM, read fresh every sweep and merged to one row per profile
+    // name. The same profile on two sentinels is one account with one 5h window;
+    // `mergeReadings` states which copy wins and why.
+    profileHeadroom: () => {
+      const now = Date.now()
+      const rows: ProfileHeadroom[] = []
+      for (const sentinel of s.getSentinels()) {
+        const usage = s.getSentinelProfileUsage(sentinel.sentinelId)
+        if (usage) rows.push(...readingsFrom(usage.profiles, now))
+      }
+      return mergeReadings(rows)
+    },
     addProjectListener: s.addProjectListener,
     removeProjectListener: s.removeProjectListener,
     spawnContext: {

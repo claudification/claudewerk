@@ -49,6 +49,7 @@ import {
   renameAwareAcks,
   renameAwareCounts,
 } from './epic-card-rename'
+import type { HeadroomVerdict } from './epic-headroom'
 import { epicIo, tag } from './epic-io'
 import { recordFinalPromises, recordSettledPromises } from './epic-promise'
 import type { QueueVerdict } from './epic-queue'
@@ -74,6 +75,14 @@ export type { BeatDeps, BeatOutcome } from './epic-types'
 export interface BeatContext {
   view?: EpicRunView
   queue?: QueueVerdict
+  /**
+   * PLAN HEADROOM ACROSS THE FLEET, computed once per sweep rather than per epic.
+   *
+   * The reading is a property of the SENTINELS, not of any one epic, so every
+   * group in a pass shares it -- the same argument that put the queue verdict in
+   * the pre-pass. Absent means no gate.
+   */
+  headroom?: HeadroomVerdict
   /**
    * A HUMAN ASKED FOR THIS BEAT BY HAND (`epic_run action=beat`).
    *
@@ -448,6 +457,7 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // answer once a reaper has run.
     overseerLost: lost !== null,
     ...(ctx.queue ? { queue: ctx.queue } : {}),
+    ...(ctx.headroom ? { headroom: ctx.headroom } : {}),
     ...(ctx.forced ? { forced: true } : {}),
     // Passed ON PURPOSE even though `acknowledge` just wrote them: a settle is
     // exactly what the overseer needs to be woken FOR. The baton write above is

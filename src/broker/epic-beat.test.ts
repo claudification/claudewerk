@@ -564,6 +564,75 @@ describe('startedAt -- the wall clock starts when the run can work', () => {
 })
 
 /**
+ * THE HEADROOM GATE, AT THE BEAT.
+ *
+ * The arithmetic over per-profile 5h windows lives in `epic-headroom.ts` and is
+ * tested there. What these pin is the half a beat owns: that a blocked verdict
+ * withholds DISPATCH and nothing else, that it HOLDS rather than parks, that it
+ * never counts as a dry generation, and that a forced beat may walk through it
+ * while `window` and `queue` stay shut.
+ */
+describe('headroom', () => {
+  const OUT = { blocked: true, reason: 'no plan headroom: all 2 profile(s) are at or over the 75% 5h gate' }
+
+  test('with no headroom the beat dispatches nothing, and says why', () => {
+    const b = beat({ headroom: OUT }, { dispatch: [card('t1'), card('t2')] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('no plan headroom')
+    expect(b.note).toContain('2 card(s) waiting')
+  })
+
+  test('VERIFICATION STILL GOES OUT -- the gate holds dispatch only', () => {
+    // A verdict closes out work that already happened. Freezing it would strand
+    // the card and, under `when=queue`, deadlock the runner.
+    const b = beat({ headroom: OUT }, { dispatch: [card('t1')], verify: [card('t2')] })
+    expect(kinds(b)).toEqual(['verify'])
+  })
+
+  test('it HOLDS, never parks -- headroom un-blocks itself in twenty minutes', () => {
+    // Every cap branch parks and needs a human to raise a ceiling. A 5h window
+    // fixes itself, so parking would need somebody to un-park a run for a
+    // condition that cleared while they slept.
+    const b = beat({ headroom: OUT }, { dispatch: [card('t1')] })
+    expect(kinds(b)).not.toContain('park')
+  })
+
+  test('a held beat is NOT a dry generation -- waiting is not thrashing', () => {
+    const b = beat({ headroom: OUT }, { dispatch: [card('t1')] }, { dryGens: 1 })
+    expect(b.patch?.dryGens).toBeUndefined()
+  })
+
+  test('a forced beat OVERRIDES it, and the override is recorded', () => {
+    const b = beat({ headroom: OUT, forced: true }, { dispatch: [card('t1')] })
+    expect(kinds(b)).toEqual(['dispatch'])
+    expect(b.note).toContain('OVERRIDDEN by an explicit beat')
+  })
+
+  test('a clear verdict changes nothing', () => {
+    expect(kinds(beat({ headroom: { blocked: false, reason: '' } }, { dispatch: [card('t1')] }))).toEqual(['dispatch'])
+  })
+
+  test('ABSENT means no gate -- an unwired caller dispatches as it does today', () => {
+    expect(kinds(beat({}, { dispatch: [card('t1')] }))).toEqual(['dispatch'])
+  })
+
+  test('it composes with the queue rather than replacing it -- both reasons reach the note', () => {
+    const b = beat({ headroom: OUT, queue: BLOCKED }, { dispatch: [card('t1')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('no plan headroom')
+    expect(b.note).toContain('position 2 of 3')
+  })
+
+  test('a forced beat does NOT unlock the queue just because it unlocked headroom', () => {
+    // `queue` is a promise made to every OTHER epic. Overriding headroom must not
+    // smuggle a dispatch past it.
+    const b = beat({ headroom: OUT, queue: BLOCKED, forced: true }, { dispatch: [card('t1')] }, { cadence: ['queue'] })
+    expect(kinds(b)).toEqual([])
+    expect(b.note).toContain('position 2 of 3')
+  })
+})
+
+/**
  * THE QUEUE GATE, AT THE BEAT.
  *
  * The cross-epic arithmetic lives in `epic-queue.ts` and is tested there; what

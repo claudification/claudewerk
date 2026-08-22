@@ -23,6 +23,7 @@ import type { EpicWakeReason } from '../shared/epic-run-types'
 import { gatedBy, whenWaitingLine } from '../shared/epic-when'
 import { formatDuration } from '../shared/format-duration'
 import type { EpicRunSnapshot } from '../shared/protocol'
+import type { HeadroomVerdict } from './epic-headroom'
 import type { QueueVerdict } from './epic-queue'
 
 /** What the caller should do. Order in the array is the order to do it in. */
@@ -121,12 +122,30 @@ export interface EpicBeatInput {
    */
   queue?: QueueVerdict
   /**
+   * WHETHER ANY PROFILE THIS RUN COULD USE HAS PLAN HEADROOM LEFT
+   * (`epic-headroom.ts`, computed across every connected sentinel).
+   *
+   * THE VERDICT AND NOT THE READINGS, exactly like `queue` above: the beat is a
+   * pure decision and the arithmetic over per-profile 5h windows -- which
+   * readings are stale, which profile binds, when it frees -- belongs to the
+   * module that owns the rule, not to a decision that would then have to be
+   * tested through it.
+   *
+   * ABSENT MEANS NO GATE, the same convention as `queue` and `producedOutput`.
+   * A caller that has not wired telemetry up dispatches as it does today rather
+   * than withholding work on evidence nobody supplied.
+   */
+  headroom?: HeadroomVerdict
+  /**
    * THIS BEAT WAS ASKED FOR BY HAND -- `epic_run action=beat`, not the 45s sweep.
    *
-   * It overrides the APPOINTMENT gate (`when=at:<iso>`) and nothing else. The
-   * appointment is a note-to-self a human made about when to start; pressing BEAT
-   * NOW is that same human saying "actually, now", and refusing them would leave
-   * no way to start an armed run early short of re-arming it.
+   * It overrides the two gates that are the RUN'S OWN -- the APPOINTMENT
+   * (`when=at:<iso>`) and HEADROOM -- and nothing else. The appointment is a
+   * note-to-self a human made about when to start; pressing BEAT NOW is that same
+   * human saying "actually, now", and refusing them would leave no way to start an
+   * armed run early short of re-arming it. Headroom is the same shape: it is this
+   * run's money being spent into a throttled account, and the human pressing the
+   * button owns that call. Both overrides are RECORDED.
    *
    * `window` and `queue` are deliberately NOT overridable and never have been.
    * They are not one person's preference: `window` is a project policy about when
@@ -218,16 +237,64 @@ const beat = (note: string, actions: EpicAction[] = [], patch?: EpicBeatPatch): 
  * from there to the wall.
  */
 function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string; overrode: string | null } {
-  const reasons: string[] = []
-  if (gatedBy(input.run.cadence, 'window') && !input.windowOpen) {
-    reasons.push('when=window and the window is closed')
+  const gates = [windowGate(input), queueGate(input), appointmentGate(input), headroomGate(input)]
+  const reasons = gates.flatMap(g => (g.reason ? [g.reason] : []))
+  const overrides = gates.flatMap(g => (g.overrode ? [g.overrode] : []))
+  return {
+    allowed: reasons.length === 0,
+    reason: reasons.join('; '),
+    overrode: overrides.length > 0 ? overrides.join('; ') : null,
   }
-  if (input.queue?.blocked) reasons.push(input.queue.reason ?? 'when=queue and another epic holds the runner')
+}
 
-  const appointment = appointmentGate(input)
-  if (appointment.reason) reasons.push(appointment.reason)
+/**
+ * ONE SHAPE PER GATE: a reason that HOLDS this beat, an override that let it
+ * through, or neither.
+ *
+ * Every gate answers in the same type even though only two of the four can ever
+ * be overridden, and that uniformity is the point -- `whenGate` above became a
+ * fold rather than a chain that grows an `if` per gate, and the fifth gate is a
+ * function plus an array entry rather than another branch in a function that was
+ * already at its complexity ceiling.
+ */
+type GateAnswer = { reason: string | null; overrode: string | null }
 
-  return { allowed: reasons.length === 0, reason: reasons.join('; '), overrode: appointment.overrode }
+/** Project POLICY about when this box may be busy. Never overridable. */
+function windowGate(input: EpicBeatInput): GateAnswer {
+  const shut = gatedBy(input.run.cadence, 'window') && !input.windowOpen
+  return { reason: shut ? 'when=window and the window is closed' : null, overrode: null }
+}
+
+/** A promise made to every OTHER epic: nothing else dispatches while one holds
+ *  the runner. Never overridable, for that reason. */
+function queueGate(input: EpicBeatInput): GateAnswer {
+  if (!input.queue?.blocked) return { reason: null, overrode: null }
+  return { reason: input.queue.reason ?? 'when=queue and another epic holds the runner', overrode: null }
+}
+
+/**
+ * THE HEADROOM HALF -- the run may not dispatch into a fleet with no plan left.
+ *
+ * ON THE `when` AXIS rather than beside the caps, even though `inspect` renders
+ * it as a cap, and the difference is what a beat DOES about it. Every branch of
+ * `capBeat` PARKS: a spend or generation ceiling is terminal until a human raises
+ * it. Headroom raises itself in twenty minutes. Parking a run because a 5h window
+ * is full would need a human to un-park it for a condition that fixed itself
+ * while they slept -- so it HOLDS, exactly like a closed night window, and
+ * clears itself on the beat the window rolls over.
+ *
+ * OVERRIDABLE BY A FORCED BEAT, like the appointment and unlike `window` and
+ * `queue`. A human pressing BEAT NOW against a throttled fleet is choosing to
+ * spend the slot, and the run belongs to them; what they may not override are the
+ * two gates that are promises made to somebody else (project policy, and every
+ * other epic waiting for a quiet runner). The override is RECORDED, because a
+ * dispatch that went out at 91% with no line saying why is a mystery in the
+ * baton three days later.
+ */
+function headroomGate(input: EpicBeatInput): GateAnswer {
+  if (!input.headroom?.blocked) return { reason: null, overrode: null }
+  if (input.forced) return { reason: null, overrode: `${input.headroom.reason} -- OVERRIDDEN by an explicit beat` }
+  return { reason: input.headroom.reason, overrode: null }
 }
 
 /**
@@ -240,7 +307,7 @@ function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string; ove
  * reader of the baton with no line here is looking at a gate that appears to have
  * simply failed.
  */
-function appointmentGate(input: EpicBeatInput): { reason: string | null; overrode: string | null } {
+function appointmentGate(input: EpicBeatInput): GateAnswer {
   const waiting = whenWaitingLine(input.run.cadence, input.nowMs)
   if (!waiting) return { reason: null, overrode: null }
   if (input.forced) return { reason: null, overrode: `${waiting} -- OVERRIDDEN by an explicit beat` }

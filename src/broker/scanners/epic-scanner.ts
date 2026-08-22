@@ -22,6 +22,7 @@
 
 import type { EpicRunView } from '../epic-broker-rpc'
 import { type BeatContext, runEpicBeat } from '../epic-executor'
+import { headroomVerdict } from '../epic-headroom'
 import { epicIo } from '../epic-io'
 import { planProjectQueues, toQueueScope } from '../epic-queue'
 import { type EpicGroup, epicsToWatch } from '../epic-sweep'
@@ -106,10 +107,19 @@ export async function planBeatContexts(deps: SweepDeps, groups: readonly EpicGro
     groups.map(group => toQueueScope(group, views.get(runKey(group))?.run ?? null)),
     deps.now(),
   )
+  // ONCE PER PASS, not once per epic: plan headroom is a fact about the
+  // sentinels, so every group in this sweep gets the identical verdict -- and a
+  // forced beat gets it too, for the same reason it gets the queue. The
+  // difference is that BEAT NOW may override this one (`headroomGate`).
+  const headroom = headroomVerdict(deps.profileHeadroom?.())
   return {
     context: group => {
       const view = views.get(runKey(group))
-      return { ...(view ? { view } : {}), queue: queues.verdict(group.project, group.epicId) }
+      return {
+        ...(view ? { view } : {}),
+        queue: queues.verdict(group.project, group.epicId),
+        ...(headroom.blocked ? { headroom } : {}),
+      }
     },
     failure: group => failures.get(runKey(group)),
   }
