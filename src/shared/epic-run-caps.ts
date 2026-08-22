@@ -2,7 +2,7 @@
  * HOW MUCH OF ITS BUDGET A RUN HAS LEFT -- read the same way everywhere.
  *
  * Three surfaces ask this question: the `epic_run` tool an agent reads, the
- * overseer's own briefing, and the wall's unattended-runs pane. A cap that is
+ * werk-master's own briefing, and the wall's unattended-runs pane. A cap that is
  * arithmetic in the engine and prose in three separate renderers is a cap that
  * eventually says three different things about one run, which is the class of
  * bug the epic panel has already had twice (see epic-run-row.tsx).
@@ -106,7 +106,7 @@ export function epicRunCaps(run: EpicRunReading, nowMs: number): EpicCapReading[
  *
  * It is also the reason `formatEpicRunCaps` takes the whole run rather than the
  * three ceilings: the appointment lives on the `when` axis (`cadence`), and every
- * surface that prints this line -- the `epic_run` tool, the overseer's briefing --
+ * surface that prints this line -- the `epic_run` tool, the werk-master's briefing --
  * must reach the same countdown the BEAT is holding the run on.
  */
 export function formatEpicRunCaps(run: EpicRunReading, nowMs: number): string {

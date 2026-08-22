@@ -81,9 +81,9 @@ const alwaysLive = () => true
 const alwaysProduced = () => true
 
 /** The SEAT lane only -- this file is about a card's concurrency slot, and the
- *  overseer's own grace is a different number for a different mistake. */
+ *  werk-master's own grace is a different number for a different mistake. */
 function fold(convs: Conversation[], reaper?: Reaper): EpicGroup {
-  const reapers = { seat: reaper ?? NEVER_REAPED, overseer: NEVER_REAPED }
+  const reapers = { seat: reaper ?? NEVER_REAPED, werkMaster: NEVER_REAPED }
   return (
     epicsToWatch(convs, alwaysLive, alwaysProduced, reapers).find(g => g.epicId === EPIC) ??
     ({} as unknown as EpicGroup)
@@ -154,7 +154,7 @@ beforeEach(() => {
           requestId: 'r',
           op: 'lease',
           ok: true,
-          lease: { granted: true, convId: 'conv_overseer', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
+          lease: { granted: true, convId: 'conv_werk_master', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
         } as EpicResult
       }
       return { type: 'epic_result', requestId: 'r', op: op.op, ok: true } as EpicResult
@@ -194,7 +194,7 @@ describe.each([
    * it degrades, and the degradation is indistinguishable from being busy.
    */
   test('WITHOUT the reaper the slot is held forever and nothing settles', async () => {
-    const group = fold([seat(DEAD, 'implementer', 'conv_dead')])
+    const group = fold([seat(DEAD, 'werk-worker', 'conv_dead')])
     const out = await runEpicBeat(deps(), group)
     expect(group.inFlight).toEqual([DEAD])
     expect(completionFor(DEAD)).toBeUndefined()
@@ -204,7 +204,7 @@ describe.each([
   })
 
   test('WITH the reaper the card settles even though its own lane never moved', async () => {
-    const group = fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER)
+    const group = fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER)
     await runEpicBeat(deps(), group)
     expect(completionFor(DEAD)).toBeDefined()
   })
@@ -216,9 +216,9 @@ describe.each([
    */
   test('and the slot returns to the ceiling -- the held-back card is dispatched', async () => {
     // The settle is already acknowledged, so this beat spends itself on work
-    // rather than on waking the overseer for the settle it just found.
+    // rather than on waking the werk-master for the settle it just found.
     baton = [{ ts: '', kind: 'completion', convId: 'broker', cardId: DEAD, body: 'seen' }]
-    const group = fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER)
+    const group = fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER)
     await runEpicBeat(deps(), group)
     expect(dispatched()).toContain(OTHER)
   })
@@ -230,7 +230,7 @@ describe.each([
    * test in one `list_conversations` call.
    */
   test('the in-flight line names the card holding the slot', async () => {
-    const out = await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')]))
+    const out = await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')]))
     expect(out.note).toContain(DEAD)
   })
 })
@@ -251,7 +251,7 @@ describe('the held-back line names who is holding the slots', () => {
     // Two slots, one of them held by the dead seat: one card goes out, one is
     // held -- which is the only shape that reaches this wording.
     runOver = { concurrency: 2 }
-    const out = await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')]))
+    const out = await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')]))
     expect(out.note).toContain('held back by the concurrency ceiling')
     expect(out.note).toContain(DEAD)
   })
@@ -263,12 +263,12 @@ describe('the baton tells a death apart from a completion', () => {
   })
 
   test('a REAPED seat produces a completion entry that says the seat died', async () => {
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('SEAT DIED')
   })
 
   test('a cleanly ended seat produces the ordinary wording, unchanged', async () => {
-    const ended = { ...seat(DEAD, 'implementer', 'conv_done'), status: 'ended' } as Conversation
+    const ended = { ...seat(DEAD, 'werk-worker', 'conv_done'), status: 'ended' } as Conversation
     const group = fold([ended], () => null)
     // Ended and holding no socket: dead by the ordinary rule, nothing reaped.
     group.settled = [DEAD]
@@ -279,7 +279,7 @@ describe('the baton tells a death apart from a completion', () => {
   })
 
   test('the death is said in the broker log too, with the conversation id', async () => {
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(log.some(l => l.includes('REAPED a dead seat') && l.includes('conv_dea'))).toBe(true)
   })
 })
@@ -300,7 +300,7 @@ describe("the dead seat's worktree", () => {
       dirty: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
       known: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
     }
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('HAS UNCOMMITTED CHANGES')
     expect(completionFor(DEAD)?.body).toContain(`worktree-epic/${EPIC}/${DEAD}`)
   })
@@ -311,25 +311,25 @@ describe("the dead seat's worktree", () => {
       dirty: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
       known: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
     }
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('nothing has been committed on its behalf')
   })
 
   test('a git scan that throws is reported as UNKNOWN and never blocks the settle', async () => {
     dirt = undefined
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('UNKNOWN')
   })
 
   test('a broker with no git seam at all still settles, and says it could not look', async () => {
-    await runEpicBeat(deps({ gitDirt: undefined }), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps({ gitDirt: undefined }), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('UNKNOWN')
   })
 
   /** A sentinel round trip with a 15s ceiling, on every beat, for a fact almost
    *  no beat needs. A healthy run must not pay it. */
   test('an ordinary settle never pays for the git scan', async () => {
-    const group = fold([seat(DEAD, 'implementer', 'conv_dead')], () => null)
+    const group = fold([seat(DEAD, 'werk-worker', 'conv_dead')], () => null)
     group.settled = [DEAD]
     group.inFlight = []
     await runEpicBeat(deps(), group)
@@ -338,7 +338,7 @@ describe("the dead seat's worktree", () => {
   })
 
   test('a beat that reaps a seat pays for it exactly once', async () => {
-    await runEpicBeat(deps(), fold([seat(DEAD, 'implementer', 'conv_dead')], REAPER))
+    await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(dirtAsks).toBe(1)
   })
 })

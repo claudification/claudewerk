@@ -1,5 +1,5 @@
 /**
- * THE OVERSEER prompt -- one generation, one beat, then die.
+ * THE WERK-MASTER prompt -- one generation, one beat, then die.
  *
  * WHAT THIS ROLE IS NOT: it is not the dispatcher. Deciding which cards are
  * ready is arithmetic over `depends_on` and the orchestrator does it (epic-ready.ts)
@@ -7,7 +7,7 @@
  * dispatches a card whose dependency is still open.
  *
  * WHAT IT IS: the only conversation in the run that exercises judgement --
- * answering the questions implementers parked, merging verified work, deciding
+ * answering the questions werk-workers parked, merging verified work, deciding
  * the plan is wrong and rewriting it, and deciding when to stop. It is also the
  * ONLY conversation permitted to reach Jonas, which is what keeps a fleet of
  * unattended workers from turning into a fleet of interruptions.
@@ -20,10 +20,10 @@
 import type { EpicPlan } from './epic-ready'
 import { formatEpicRunCaps } from './epic-run-caps'
 import type { EpicRunReading, EpicWakeReason } from './epic-run-types'
-import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 import { formatWhen } from './epic-when'
 
-export interface OverseerPromptCtx {
+export interface WerkMasterPromptCtx {
   projectUri: string
   projectRoot: string
   /** The run, WITH the generation projected onto it from the epic card's lease
@@ -52,7 +52,7 @@ export interface OverseerPromptCtx {
 }
 
 const AUTHORITY = [
-  'YOU ARE THE ONLY CONVERSATION IN THIS RUN THAT MAY TALK TO A HUMAN. Implementers and verifiers have no',
+  'YOU ARE THE ONLY CONVERSATION IN THIS RUN THAT MAY TALK TO A HUMAN. WerkWorkers and werk-verifiers have no',
   'dialog and no notify -- by hook, not by convention. Every question they had is a card in the QUESTIONS',
   'list below. If you punt those back without answering, the epic stops, because nobody else can answer them.',
 ].join('\n')
@@ -61,7 +61,7 @@ const AUTHORITY = [
  * THE ONE SHAPE THAT BREAKS THE ENGINE, said in the prompt rather than left for
  * the TTL to clean up after.
  *
- * `overseerGate` (epic-beat.ts) will not dispatch under a live overseer, and a
+ * `werkMasterGate` (epic-beat.ts) will not dispatch under a live werk-master, and a
  * blocking Bash call is indistinguishable from an idle conversation from outside:
  * it emits no events AND keeps its agent-host socket, so `seatAbandoned` cannot
  * reap it either. On 2026-08-20 gen 14 of `epic-the-wall-ii` ran `until grep -q
@@ -73,13 +73,13 @@ const AUTHORITY = [
  * rather than the only defence -- but ten minutes of a stopped run plus a
  * displaced generation is still the expensive path, and this is the cheap one.
  * CONCRETE ABOUT THE ALTERNATIVE, because "do not block" on its own leaves an
- * overseer that genuinely needs a long job with nothing to do instead, which is
+ * werk-master that genuinely needs a long job with nothing to do instead, which is
  * how the rule gets rationalised away at 3am.
  */
 const NEVER_BLOCK = [
   'NEVER BLOCK IN BASH. No `until ... sleep`, no `while ! ...; do sleep`, no `wait`, no polling loop, no',
   '`sleep` of any length. A blocking call emits no events but keeps your host socket, so from outside you are',
-  'indistinguishable from an idle conversation that is merely alive -- and a live overseer HOLDS THE ENTIRE',
+  'indistinguishable from an idle conversation that is merely alive -- and a live werk-master HOLDS THE ENTIRE',
   'RUN. Nothing dispatches, nothing verifies, nothing settles. On 2026-08-20 one `until grep -q ...; do sleep',
   '30; done`, waiting on a suite that had already died, stopped a run dead until a human killed it by hand.',
   '',
@@ -89,7 +89,7 @@ const NEVER_BLOCK = [
   "the engine's job; a generation with nothing left to DECIDE is a generation that should be over.",
 ].join('\n')
 
-function rollupLine(ctx: OverseerPromptCtx): string {
+function rollupLine(ctx: WerkMasterPromptCtx): string {
   const r = ctx.plan.rollup
   if (!r) return 'BOARD: this epic has no children yet.'
   const pct = r.pct === null ? 'n/a' : `${r.pct}%`
@@ -101,12 +101,12 @@ function lane(title: string, cards: Array<{ slug: string; title: string }>, empt
   return [`${title}:`, ...cards.map(c => `  - ${c.slug} -- ${c.title}`)].join('\n')
 }
 
-function boardState(ctx: OverseerPromptCtx): string {
+function boardState(ctx: WerkMasterPromptCtx): string {
   const p = ctx.plan
   return [
     rollupLine(ctx),
     '',
-    lane(`QUESTIONS FOR YOU (\`${NEEDS_OVERSEER_TAG}\`) -- answer these FIRST`, p.questions, 'none'),
+    lane(`QUESTIONS FOR YOU (\`${NEEDS_WERK_MASTER_TAG}\`) -- answer these FIRST`, p.questions, 'none'),
     lane('AWAITING AN INDEPENDENT VERDICT (in-review)', p.verify, 'none'),
     lane('DISPATCHING THIS BEAT (the engine already picked these)', p.dispatch, 'nothing ready'),
     lane(`HELD BACK by the concurrency ceiling (${ctx.run.concurrency})`, p.heldBack, 'none'),
@@ -123,17 +123,17 @@ function boardState(ctx: OverseerPromptCtx): string {
 }
 
 /** The job, in the order it must happen. Questions before work, always. */
-function theJob(ctx: OverseerPromptCtx): string {
+function theJob(ctx: WerkMasterPromptCtx): string {
   const id = ctx.run.epicId
   return [
     'YOUR JOB THIS GENERATION, IN THIS ORDER:',
     '',
-    `1. ANSWER THE QUESTIONS. For each \`${NEEDS_OVERSEER_TAG}\` card: decide, write the decision INTO that`,
-    "   card's body (the decision and the reason -- the next implementer reads it and nothing else), then",
+    `1. ANSWER THE QUESTIONS. For each \`${NEEDS_WERK_MASTER_TAG}\` card: decide, write the decision INTO that`,
+    "   card's body (the decision and the reason -- the next werk-worker reads it and nothing else), then",
     '   project_set_status(id="<question card>", status="done"). That unblocks whatever asked it.',
     "   If a question is genuinely Jonas's to answer, see STOPPING below -- do not guess on his behalf.",
     '',
-    '2. HANDLE VERDICTS. A card the verifier bounced is back in `in-progress` with a "## Guard Findings"',
+    '2. HANDLE VERDICTS. A card the werk-verifier bounced is back in `in-progress` with a "## Guard Findings"',
     '   section. Decide: is this a fix the same card should carry (leave it, it redispatches), or a genuine',
     `   separate defect? A separate defect is a NEW card with \`epic: ${id}\` and \`depends_on\` set so the`,
     '   ordering is honest. Never delete findings, never move a bounced card forward yourself.',
@@ -150,7 +150,7 @@ function theJob(ctx: OverseerPromptCtx): string {
     '',
     '   IF YOU RENAME A CARD, ADD `renamed_from: <the old id>` TO IT. A seat is tagged with the card id it was',
     '   launched under and that tag is never revisited, so without this line the live worker answers to a name',
-    '   nothing asks about, the card reads as unworked, and the next beat dispatches a SECOND implementer onto',
+    '   nothing asks about, the card reads as unworked, and the next beat dispatches a SECOND werk-worker onto',
     '   it. That is not hypothetical: it happened on 2026-08-20, 29 minutes after a rename.',
     '',
     '5. WRITE THE BATON. Append ONE `intent` entry saying what you decided and why, and rewrite the run',
@@ -166,7 +166,7 @@ function theJob(ctx: OverseerPromptCtx): string {
   ].join('\n')
 }
 
-function stopping(ctx: OverseerPromptCtx): string {
+function stopping(ctx: WerkMasterPromptCtx): string {
   return [
     'STOPPING -- three legitimate ends, and only these:',
     '',
@@ -180,7 +180,7 @@ function stopping(ctx: OverseerPromptCtx): string {
     '  Two in a row parks the run -- say what would unblock it.',
     '',
     // The engine parks on whichever of these trips first, without asking. An
-    // overseer that cannot see its own remaining budget plans a five-generation
+    // werk-master that cannot see its own remaining budget plans a five-generation
     // integration it has the money for exactly none of.
     //
     // EVERY FIGURE IN THIS SENTENCE COMES FROM `ctx.run` AND `ctx.nowMs`, and
@@ -201,9 +201,9 @@ function stopping(ctx: OverseerPromptCtx): string {
   ].join('\n')
 }
 
-export function buildOverseerPrompt(ctx: OverseerPromptCtx): string {
+export function buildWerkMasterPrompt(ctx: WerkMasterPromptCtx): string {
   return [
-    `You are THE OVERSEER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
+    `You are THE WERK-MASTER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
     // `formatWhen` rather than the raw field: it is a LIST, so interpolating it
     // prints `window,at:2026-08-22T02:00:00+07:00` -- a spelling no reader of this
     // prompt has ever been shown and the only place the axis would appear

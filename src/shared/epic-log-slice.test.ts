@@ -34,7 +34,7 @@ describe('readEpicLogSlice', () => {
     expect(readEpicLogSlice(root, 'never-run')).toEqual([])
   })
 
-  test('the default is the prompt-sized tail an overseer generation is handed', () => {
+  test('the default is the prompt-sized tail a werk-master generation is handed', () => {
     seed()
     expect(readEpicLogSlice(root, 'e1')).toHaveLength(12)
   })

@@ -21,10 +21,10 @@ import type { SpawnRequest } from '../shared/spawn-schema'
 import { spawnRequestSchema } from '../shared/spawn-schema'
 import {
   type EpicSpawnCtx,
-  planImplementerSpawn,
-  planOverseerSpawn,
-  planPlannerSpawn,
-  planVerifierSpawn,
+  planWerkMasterSpawn,
+  planWerkPlannerSpawn,
+  planWerkVerifierSpawn,
+  planWerkWorkerSpawn,
 } from './epic-spawn-plan'
 import { buildLaunchConfig, WERK_TAGS } from './spawn-launch-config'
 
@@ -51,8 +51,8 @@ const PLAN = planEpic({ cards: [], epicId: 'epic-the-wall', concurrency: 3, inFl
 /** The four seats a run can dispatch, each from its REAL plan builder. */
 const SEATS = [
   {
-    role: 'overseer',
-    plan: planOverseerSpawn(CTX, {
+    role: 'werk-master',
+    plan: planWerkMasterSpawn(CTX, {
       projectUri: PROJECT,
       projectRoot: PROJECT,
       run: RUN,
@@ -64,8 +64,8 @@ const SEATS = [
     }),
   },
   {
-    role: 'planner',
-    plan: planPlannerSpawn(CTX, {
+    role: 'werk-planner',
+    plan: planWerkPlannerSpawn(CTX, {
       projectUri: PROJECT,
       projectRoot: PROJECT,
       run: RUN,
@@ -74,33 +74,35 @@ const SEATS = [
       epicBody: '# THE WALL',
     }),
   },
-  { role: 'implementer', plan: planImplementerSpawn(CTX, 'wall-filter-store') },
-  { role: 'verifier', plan: planVerifierSpawn(CTX, 'wall-filter-store') },
+  { role: 'werk-worker', plan: planWerkWorkerSpawn(CTX, 'wall-filter-store') },
+  { role: 'werk-verifier', plan: planWerkVerifierSpawn(CTX, 'wall-filter-store') },
 ]
 
 describe('the epic seat tag survives the spawn schema', () => {
   it('keeps a hand-built tag through a parse', () => {
     const parsed = spawnRequestSchema.parse({
       cwd: PROJECT,
-      epic: { epicId: 'epic-the-wall', role: 'implementer', gen: 6, cardId: 'wall-filter-store' },
+      epic: { epicId: 'epic-the-wall', role: 'werk-worker', gen: 6, cardId: 'wall-filter-store' },
     })
-    expect(parsed.epic).toEqual({ epicId: 'epic-the-wall', role: 'implementer', gen: 6, cardId: 'wall-filter-store' })
+    expect(parsed.epic).toEqual({ epicId: 'epic-the-wall', role: 'werk-worker', gen: 6, cardId: 'wall-filter-store' })
   })
 
   it.each(SEATS)('keeps the $role seat tag through a parse', ({ plan }) => {
     expect(spawnRequestSchema.parse(plan).epic).toEqual(plan.epic)
   })
 
-  it('accepts a seat with no card -- the overseer and planner carry none', () => {
-    expect(spawnRequestSchema.parse({ cwd: PROJECT, epic: { epicId: 'e1', role: 'overseer', gen: 0 } }).epic).toEqual({
+  it('accepts a seat with no card -- the werk-master and werk-planner carry none', () => {
+    expect(
+      spawnRequestSchema.parse({ cwd: PROJECT, epic: { epicId: 'e1', role: 'werk-master', gen: 0 } }).epic,
+    ).toEqual({
       epicId: 'e1',
-      role: 'overseer',
+      role: 'werk-master',
       gen: 0,
     })
   })
 
   it('rejects a tag with no epic id, rather than stripping it', () => {
-    expect(() => spawnRequestSchema.parse({ cwd: PROJECT, epic: { role: 'overseer', gen: 0 } })).toThrow()
+    expect(() => spawnRequestSchema.parse({ cwd: PROJECT, epic: { role: 'werk-master', gen: 0 } })).toThrow()
   })
 })
 
@@ -119,7 +121,7 @@ describe('buildLaunchConfig persists the werk tags', () => {
   const resolved = { headless: true }
 
   it('carries the epic seat tag onto the conversation', () => {
-    const epic = { epicId: 'epic-the-wall', role: 'verifier' as const, gen: 6, cardId: 'wall-filter-store' }
+    const epic = { epicId: 'epic-the-wall', role: 'werk-verifier' as const, gen: 6, cardId: 'wall-filter-store' }
     expect(buildLaunchConfig({ ...base, epic }, resolved, undefined).epic).toEqual(epic)
   })
 
@@ -136,7 +138,7 @@ describe('buildLaunchConfig persists the werk tags', () => {
 
   it('carries EVERY declared werk tag -- a new one must be wired, never hand-copied', () => {
     const cfg = buildLaunchConfig(
-      { ...base, epic: { epicId: 'e', role: 'overseer', gen: 1 }, nightshift: { runId: 'r', taskId: 't' } },
+      { ...base, epic: { epicId: 'e', role: 'werk-master', gen: 1 }, nightshift: { runId: 'r', taskId: 't' } },
       resolved,
       undefined,
     ) as unknown as Record<string, unknown>

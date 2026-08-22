@@ -58,7 +58,7 @@ function beat(over: Partial<EpicBeatInput> = {}, plan: Partial<EpicPlan> = {}, r
     gen: run.gen ?? RUN.gen,
     plan: { ...EMPTY_PLAN, ...plan },
     inFlight: [],
-    overseerAlive: false,
+    werkMasterAlive: false,
     unacknowledged: [],
     windowOpen: true,
     boardFingerprint: '',
@@ -92,64 +92,64 @@ describe('planBeat', () => {
     expect(b.actions).toEqual([])
   })
 
-  test('a live overseer holds the beat -- nothing dispatches underneath it', () => {
-    const b = beat({ overseerAlive: true }, { dispatch: [card('t1')] })
+  test('a live werk-master holds the beat -- nothing dispatches underneath it', () => {
+    const b = beat({ werkMasterAlive: true }, { dispatch: [card('t1')] })
     expect(b.actions).toEqual([])
-    expect(b.note).toContain('overseer alive')
+    expect(b.note).toContain('werk-master alive')
   })
 
   /**
-   * THE REPLACEMENT GENERATION. `overseerLost` is what the fold hands the beat
+   * THE REPLACEMENT GENERATION. `werkMasterLost` is what the fold hands the beat
    * once it has stopped believing a supervisor whose end was never recorded --
-   * see `epic-sweep.ts` `lostOverseer`.
+   * see `epic-sweep.ts` `lostWerkMaster`.
    */
-  describe('a reaped overseer wakes a replacement, and the generation says so', () => {
+  describe('a reaped werk-master wakes a replacement, and the generation says so', () => {
     test('the beat after the reap wakes, rather than dispatching under a corpse', () => {
-      const b = beat({ overseerLost: true }, { dispatch: [card('t1')] })
-      expect(kinds(b)).toEqual(['wake-overseer'])
-      expect(b.actions[0]).toMatchObject({ expectGen: 3, reason: 'overseer-lost' })
+      const b = beat({ werkMasterLost: true }, { dispatch: [card('t1')] })
+      expect(kinds(b)).toEqual(['wake-werk-master'])
+      expect(b.actions[0]).toMatchObject({ expectGen: 3, reason: 'werk-master-lost' })
     })
 
     /**
      * THE WHOLE POINT OF A SEPARATE REASON. Both branches wake exactly one
-     * overseer with the same settled list in its prompt, so the only thing the
+     * werk-master with the same settled list in its prompt, so the only thing the
      * ordering decides is which fact the generation is NAMED after -- and a
      * generation that replaced a corpse is not the same event as one that
      * followed a finished turn.
      */
     test('and outranks a settle, which would otherwise name the generation `card-settled`', () => {
-      const b = beat({ overseerLost: true, unacknowledged: ['t1'] })
-      expect(b.actions[0]).toMatchObject({ reason: 'overseer-lost' })
+      const b = beat({ werkMasterLost: true, unacknowledged: ['t1'] })
+      expect(b.actions[0]).toMatchObject({ reason: 'werk-master-lost' })
       expect(b.note).toContain('unacknowledged settle')
     })
 
-    test('the note says REAPED, so the broker log is not another `overseer alive` line', () => {
-      expect(beat({ overseerLost: true }).note).toContain('REAPED')
+    test('the note says REAPED, so the broker log is not another `werk-master alive` line', () => {
+      expect(beat({ werkMasterLost: true }).note).toContain('REAPED')
     })
 
-    /** A live overseer is still a live overseer: the reap concerns a DIFFERENT
+    /** A live werk-master is still a live werk-master: the reap concerns a DIFFERENT
      *  conversation (an ex-holder), and dispatching under the live one is the
      *  bug `guardBeat`'s hold exists to prevent. */
-    test('a live overseer still holds the beat even when some other seat was reaped', () => {
-      const b = beat({ overseerLost: true, overseerAlive: true }, { dispatch: [card('t1')] })
+    test('a live werk-master still holds the beat even when some other seat was reaped', () => {
+      const b = beat({ werkMasterLost: true, werkMasterAlive: true }, { dispatch: [card('t1')] })
       expect(b.actions).toEqual([])
-      expect(b.note).toContain('overseer alive')
+      expect(b.note).toContain('werk-master alive')
     })
 
-    /** A planner sits in the overseer seat, so it is reaped like any other -- but
+    /** A werk-planner sits in the werk-master seat, so it is reaped like any other -- but
      *  what the run owes is a RESOLVED planning generation, decided from the
-     *  board fingerprint, not a second planner. */
+     *  board fingerprint, not a second werk-planner. */
     test('a run still owed a planning generation resolves that first', () => {
       const b = beat(
-        { overseerLost: true, boardFingerprint: 'fp' },
+        { werkMasterLost: true, boardFingerprint: 'fp' },
         {},
         { plan: true, planned: false, planBaseline: 'fp' },
       )
       expect(kinds(b)).toEqual(['plan-accept'])
     })
 
-    test('the ceilings still park ahead of it -- a dead overseer is not a reason to keep spending', () => {
-      const b = beat({ overseerLost: true }, {}, { gen: 40, maxGens: 40 })
+    test('the ceilings still park ahead of it -- a dead werk-master is not a reason to keep spending', () => {
+      const b = beat({ werkMasterLost: true }, {}, { gen: 40, maxGens: 40 })
       expect(kinds(b)).toEqual(['park'])
     })
 
@@ -160,18 +160,18 @@ describe('planBeat', () => {
 
   test('an unacknowledged settle outranks dispatching more work', () => {
     const b = beat({ unacknowledged: ['t1'] }, { dispatch: [card('t2')] })
-    expect(kinds(b)).toEqual(['wake-overseer'])
+    expect(kinds(b)).toEqual(['wake-werk-master'])
     expect(b.actions[0]).toMatchObject({ expectGen: 3, reason: 'card-settled' })
   })
 
   test('the wake carries the CURRENT generation, which is what makes it idempotent', () => {
     const b = beat({ unacknowledged: ['t1'] }, {}, { gen: 9 })
-    expect(b.actions[0]).toMatchObject({ kind: 'wake-overseer', expectGen: 9 })
+    expect(b.actions[0]).toMatchObject({ kind: 'wake-werk-master', expectGen: 9 })
   })
 
-  test('an open question wakes the overseer rather than dispatching around it', () => {
+  test('an open question wakes the werk-master rather than dispatching around it', () => {
     const b = beat({}, { questions: [card('q1')], dispatch: [card('t1')] })
-    expect(kinds(b)).toEqual(['wake-overseer'])
+    expect(kinds(b)).toEqual(['wake-werk-master'])
   })
 
   test('ready cards dispatch, in-review cards verify, both in one beat', () => {
@@ -195,9 +195,9 @@ describe('planBeat', () => {
     expect(b.note).toContain('in flight')
   })
 
-  test('the FIRST dry generation wakes the overseer to replan', () => {
+  test('the FIRST dry generation wakes the werk-master to replan', () => {
     const b = beat({}, { idleReason: 'nothing ready' }, { dryGens: 0 })
-    expect(kinds(b)).toEqual(['wake-overseer'])
+    expect(kinds(b)).toEqual(['wake-werk-master'])
   })
 
   test('the SECOND dry generation parks, carrying the reason forward', () => {
@@ -213,10 +213,10 @@ describe('planBeat', () => {
  * `evaluateLease` has presumed a holder dead at `LEASE_STALE_MS` since the day it
  * was written, and nothing ever put the question to it: `guardBeat` returned on
  * bare liveness, so every wake -- the only thing that reaches the CAS -- sat below
- * the line that never ran. On 2026-08-20 an overseer blocked in an `until ...
+ * the line that never ran. On 2026-08-20 a werk-master blocked in an `until ...
  * sleep` Bash loop kept its agent-host socket, emitted no events, was therefore
  * un-reapable (`seatAbandoned` requires NO socket), and held the run for the life
- * of the broker: 13+ consecutive beats of `overseer alive at gen 14; holding the
+ * of the broker: 13+ consecutive beats of `werk-master alive at gen 14; holding the
  * beat` with three cards ready and zero in flight.
  *
  * The TTL here and the CAS's are THE SAME CONSTANT on purpose. A shorter one here
@@ -225,9 +225,9 @@ describe('planBeat', () => {
  */
 describe('a stale lease stops holding the beat', () => {
   const heldFor = (ms: number) => new Date(T0 - ms).toISOString()
-  const WEDGED = { overseerAlive: true, leaseAt: heldFor(LEASE_STALE_MS + 60_000) }
+  const WEDGED = { werkMasterAlive: true, leaseAt: heldFor(LEASE_STALE_MS + 60_000) }
 
-  test('a live overseer past the TTL no longer withholds dispatch', () => {
+  test('a live werk-master past the TTL no longer withholds dispatch', () => {
     const b = beat(WEDGED, { dispatch: [card('t1')] })
     expect(kinds(b)).toEqual(['dispatch'])
   })
@@ -244,13 +244,13 @@ describe('a stale lease stops holding the beat', () => {
    *  `evaluateLease` grants over it because `holderAlive && !isStale` is false. */
   test('with nothing to dispatch, the wake goes out so the CAS can replace the holder', () => {
     const b = beat(WEDGED, { idleReason: 'nothing ready' })
-    expect(kinds(b)).toEqual(['wake-overseer'])
+    expect(kinds(b)).toEqual(['wake-werk-master'])
     expect(b.actions[0]).toMatchObject({ expectGen: 3 })
     expect(b.note).toContain('STALE')
   })
 
-  test('an overseer INSIDE the TTL still holds, and the hold says how long it has held', () => {
-    const b = beat({ overseerAlive: true, leaseAt: heldFor(4 * 60_000) }, { dispatch: [card('t1')] })
+  test('a werk-master INSIDE the TTL still holds, and the hold says how long it has held', () => {
+    const b = beat({ werkMasterAlive: true, leaseAt: heldFor(4 * 60_000) }, { dispatch: [card('t1')] })
     expect(b.actions).toEqual([])
     expect(b.note).toContain('WORKING')
     expect(b.note).toContain('4m')
@@ -259,9 +259,9 @@ describe('a stale lease stops holding the beat', () => {
   /** Strictly greater, matching `isStale`. A beat that broke a grip one tick
    *  earlier than the CAS would send a wake the CAS refuses. */
   test('exactly at the TTL is not yet stale', () => {
-    expect(beat({ overseerAlive: true, leaseAt: heldFor(LEASE_STALE_MS) }, { dispatch: [card('t1')] }).actions).toEqual(
-      [],
-    )
+    expect(
+      beat({ werkMasterAlive: true, leaseAt: heldFor(LEASE_STALE_MS) }, { dispatch: [card('t1')] }).actions,
+    ).toEqual([])
   })
 
   /** The OPPOSITE reading from `isStale`, deliberately: no evidence about the
@@ -271,7 +271,7 @@ describe('a stale lease stops holding the beat', () => {
     ['absent', undefined],
     ['unparseable', 'not-a-date'],
   ])('a %s lease timestamp holds, rather than breaking a grip on no evidence', (_label, leaseAt) => {
-    const b = beat({ overseerAlive: true, ...(leaseAt ? { leaseAt } : {}) }, { dispatch: [card('t1')] })
+    const b = beat({ werkMasterAlive: true, ...(leaseAt ? { leaseAt } : {}) }, { dispatch: [card('t1')] })
     expect(b.actions).toEqual([])
     expect(b.note).toContain('lease age unknown')
   })
@@ -312,7 +312,7 @@ describe('cadence is a mode on one engine', () => {
  * GENERATION 0. The pass exists because readiness is arithmetic over `depends_on`
  * and nothing else looks at it, so the DAG is only as good as the edges somebody
  * remembered to declare. Racing it would defeat the point entirely: the engine
- * would dispatch against the graph the planner is still in the middle of fixing.
+ * would dispatch against the graph the werk-planner is still in the middle of fixing.
  */
 describe('the planning generation', () => {
   const OWED = { plan: true, planned: false } as Partial<EpicRunSnapshot>
@@ -345,7 +345,7 @@ describe('the planning generation', () => {
     expect(b.note).toContain('unchanged')
   })
 
-  test('CHECKPOINTS when the planner rewrote the board -- nothing dispatches first', () => {
+  test('CHECKPOINTS when the werk-planner rewrote the board -- nothing dispatches first', () => {
     const b = beat({ boardFingerprint: 'after' }, { dispatch: [card('t1')] }, { ...OWED, planBaseline: 'before' })
     expect(kinds(b)).toEqual(['plan-checkpoint'])
     expect(b.actions[0]).toEqual({ kind: 'plan-checkpoint', before: 'before', after: 'after' })
@@ -361,8 +361,8 @@ describe('the planning generation', () => {
     expect(kinds(b)).toEqual(['dispatch'])
   })
 
-  test('never pre-empts a live overseer -- the planner sits in that same seat', () => {
-    const b = beat({ boardFingerprint: 'a', overseerAlive: true }, {}, OWED)
+  test('never pre-empts a live werk-master -- the werk-planner sits in that same seat', () => {
+    const b = beat({ boardFingerprint: 'a', werkMasterAlive: true }, {}, OWED)
     expect(kinds(b)).toEqual([])
   })
 
@@ -374,16 +374,16 @@ describe('the planning generation', () => {
 
 /**
  * THE BRAKE THAT WAS NEVER WIRED. `dryGens` is read as the "second consecutive
- * dry generation parks the run" valve and reported in the overseer's briefing,
+ * dry generation parks the run" valve and reported in the werk-master's briefing,
  * but nothing ever incremented it -- so it sat at 0 forever, the park was
  * unreachable, and the only ceiling on a thrashing run was maxGens: 40. That is
- * 40 billed overseer generations before anything stops.
+ * 40 billed werk-master generations before anything stops.
  */
 describe('dryGens -- counting the generations that found nothing', () => {
   test('a dry generation asks for the counter to go up', () => {
     const out = beat({}, {}, { dryGens: 0 })
     expect(out.patch?.dryGens).toBe(1)
-    expect(kinds(out)).toEqual(['wake-overseer'])
+    expect(kinds(out)).toEqual(['wake-werk-master'])
   })
 
   test('and says which dry generation it is, so a log reader sees the streak', () => {
@@ -414,9 +414,9 @@ describe('dryGens -- counting the generations that found nothing', () => {
 })
 
 /**
- * THE RUN CAPS. `maxGens` bounds how many times the OVERSEER THINKS and bounds
+ * THE RUN CAPS. `maxGens` bounds how many times the WERK-MASTER THINKS and bounds
  * nothing about what the seats underneath it burn: one generation with three
- * implementers chewing an XL card for two hours costs more than thirty dry ones.
+ * werk-workers chewing an XL card for two hours costs more than thirty dry ones.
  * On 2026-08-19, the day THE WALL II ran, this project billed $2,481 in one
  * calendar day and no cap of any kind was involved in stopping it.
  *

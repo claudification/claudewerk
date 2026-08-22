@@ -38,9 +38,9 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: 'claude://studio/proj',
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -96,7 +96,7 @@ describe('applyCardRenames', () => {
   })
 
   test('translates a failed leg, which is keyed on the card as well as the conversation', () => {
-    const leg = { cardId: 'old', convId: 'conv_a', role: 'implementer' as const, gen: 3 }
+    const leg = { cardId: 'old', convId: 'conv_a', role: 'werk-worker' as const, gen: 3 }
     expect(applyCardRenames(group({ failedLegs: [leg] }), renames).failedLegs[0]).toMatchObject({ cardId: 'new' })
   })
 
@@ -104,8 +104,8 @@ describe('applyCardRenames', () => {
    *  dedup here would hand a permanently unspawnable card an extra life. */
   test('does NOT deduplicate failed legs -- they are per conversation, not per card', () => {
     const legs = [
-      { cardId: 'old', convId: 'conv_a', role: 'verifier' as const, gen: 3 },
-      { cardId: 'new', convId: 'conv_b', role: 'verifier' as const, gen: 4 },
+      { cardId: 'old', convId: 'conv_a', role: 'werk-verifier' as const, gen: 3 },
+      { cardId: 'new', convId: 'conv_b', role: 'werk-verifier' as const, gen: 4 },
     ]
     expect(applyCardRenames(group({ failedLegs: legs }), renames).failedLegs).toHaveLength(2)
   })

@@ -48,7 +48,7 @@ export interface BeatDeps extends SentinelRpcDeps {
    * ever saw them is that a human ran `git status` in a worktree for a card the
    * board called unworked. The engine's job is to make that dirt VISIBLE -- never
    * to commit it, which is a judgement about whether work is finished and belongs
-   * to the overseer.
+   * to the werk-master.
    *
    * OPTIONAL, and absent is reported as UNKNOWN rather than as clean. "We could
    * not look" and "there is nothing there" are the two answers it would be worst

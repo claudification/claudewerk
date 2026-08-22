@@ -107,7 +107,7 @@ export function toInspectLive(input: LiveInput): EpicInspectLive {
     inFlight: [...input.group.inFlight],
     settled: [...input.group.settled],
     unacknowledged: [...input.unacknowledged],
-    overseerAlive: input.group.overseerAlive,
+    werkMasterAlive: input.group.werkMasterAlive,
     maxGenSeen: input.group.maxGenSeen,
     ...(mismatch ? { generationMismatch: mismatch } : {}),
     conversations: input.conversations,

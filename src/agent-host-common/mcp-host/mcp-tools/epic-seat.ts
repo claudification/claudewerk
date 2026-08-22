@@ -44,7 +44,7 @@ const DESCRIPTION = [
   '                may release. Not required for correctness -- a dead holder loses the lease anyway -- but it',
   '                is what lets a re-dispatch start immediately instead of after the stale window.',
   '',
-  'An implementer and a verifier on the same card are two DIFFERENT seats and both are granted. Only a',
+  'A werk-worker and a werk-verifier on the same card are two DIFFERENT seats and both are granted. Only a',
   'same-role collision is a collision.',
 ].join('\n')
 
@@ -60,7 +60,7 @@ function unreachable(why: string): ToolResult {
   return text(
     `SEAT LEASE UNREACHABLE: ${why}\n\n` +
       'PROCEED WITH YOUR WORK. The lease is a mutex between seats, not permission to work, and it could not be ' +
-      'asked. Note it in your card body so the overseer knows this dispatch ran unprotected.',
+      'asked. Note it in your card body so the werk-master knows this dispatch ran unprotected.',
   )
 }
 

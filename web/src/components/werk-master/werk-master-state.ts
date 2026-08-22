@@ -1,5 +1,5 @@
 /**
- * Opener + selection for the OVERSEER surface.
+ * Opener + selection for the WERK-MASTER surface.
  *
  * PARKABLE, not blocking, and the taxonomy's test settles it immediately: an
  * epic run lasts hours, you are meant to glance at it and go back to work, and
@@ -14,18 +14,18 @@
 import { create } from 'zustand'
 import { useModalManagerStore } from '@/hooks/use-modal-manager'
 
-export const OVERSEER_MODAL = { id: 'overseer', kind: 'overseer', title: 'Overseer' }
+export const WERK_MASTER_MODAL = { id: 'werk-master', kind: 'werk-master', title: 'WerkMaster' }
 
 /** Which run the detail pane is showing. `${project}\0${epicId}`, or null
  *  for "pick the first live one" -- kept OUT of the modal manager because the
  *  selection must survive a close/reopen the same way the surface does. */
-interface OverseerSelection {
+interface WerkMasterSelection {
   selected: string | null
   select: (project: string, epicId: string) => void
   clear: () => void
 }
 
-export const useOverseerSelection = create<OverseerSelection>(set => ({
+export const useWerkMasterSelection = create<WerkMasterSelection>(set => ({
   selected: null,
   select: (project, epicId) => set({ selected: `${project}\0${epicId}` }),
   clear: () => set({ selected: null }),
@@ -35,12 +35,12 @@ export function runKey(project: string, epicId: string): string {
   return `${project}\0${epicId}`
 }
 
-export function openOverseer(project?: string, epicId?: string): void {
-  if (project && epicId) useOverseerSelection.getState().select(project, epicId)
-  useModalManagerStore.getState().open(OVERSEER_MODAL, { type: 'global' })
+export function openWerkMaster(project?: string, epicId?: string): void {
+  if (project && epicId) useWerkMasterSelection.getState().select(project, epicId)
+  useModalManagerStore.getState().open(WERK_MASTER_MODAL, { type: 'global' })
 }
 
 /** True while the surface is live in any presentation -- the lazy-mount gate. */
-export function useOverseerOpen(): boolean {
-  return useModalManagerStore(s => !!s.records[OVERSEER_MODAL.id])
+export function useWerkMasterOpen(): boolean {
+  return useModalManagerStore(s => !!s.records[WERK_MASTER_MODAL.id])
 }

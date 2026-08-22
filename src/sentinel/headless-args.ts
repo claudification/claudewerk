@@ -3,7 +3,7 @@
  *
  * Lifted out of `index.ts` for one reason: it is the place a CAP becomes a flag,
  * and until `order-caps-turns-and-reservation` there was no way to assert that
- * without booting a sentinel. `REFINER@1` declared `maxTurns: 30` for a whole
+ * without booting a sentinel. `WERK-REFINER@1` declared `maxTurns: 30` for a whole
  * card's lifetime with nothing downstream reading it, so a cap that reaches no
  * argv is the exact failure this seam now has a test for.
  *

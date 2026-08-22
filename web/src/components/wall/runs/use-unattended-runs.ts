@@ -3,7 +3,7 @@
  *
  * TWO FEEDS, BOTH ALREADY EXISTING, NEITHER A NEW ROUTE:
  *
- *  - EPIC RUNS come off `use-overseer-activity`, which the header badge already
+ *  - EPIC RUNS come off `use-werk-master-activity`, which the header badge already
  *    primes once over `POST /api/epic {op:'active'}` and then keeps current from
  *    the `epic_activity` push. That summary is deliberately cheap (no plan, no
  *    baton) because it feeds a permanently visible badge, so each ROW pays for
@@ -28,7 +28,7 @@
 import type { EpicActivityEntry } from '@shared/protocol'
 import { useCallback, useMemo } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { selectAllRuns, useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 import { useWallRevive } from '@/lib/wall/use-wall-revive'
 import { useProjectLook } from '../use-project-look'
 import { useWallClock } from '../use-wall-clock'
@@ -127,8 +127,8 @@ export interface UnattendedFeed {
 }
 
 export function useUnattendedRuns(): UnattendedFeed {
-  const epics = useOverseerActivityStore(selectAllRuns)
-  const prime = useOverseerActivityStore(s => s.prime)
+  const epics = useWerkMasterActivityStore(selectAllRuns)
+  const prime = useWerkMasterActivityStore(s => s.prime)
   const nights = useNightRuns()
   const look = useProjectLook()
 

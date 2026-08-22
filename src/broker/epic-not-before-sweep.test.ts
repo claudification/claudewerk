@@ -104,7 +104,7 @@ beforeEach(() => {
       return { type: 'epic_result', requestId: 'r', op: 'patch', ok: true } as EpicResult
     },
     dispatchSpawn: mock(async (req: { epic: { cardId?: string; epicId: string } }) => {
-      spawns.push(`${req.epic.epicId}/${req.epic.cardId ?? 'overseer'}`)
+      spawns.push(`${req.epic.epicId}/${req.epic.cardId ?? 'werk-master'}`)
       return { ok: true, conversationId: `conv_${spawns.length}`, jobId: 'j' }
     }) as never,
   })

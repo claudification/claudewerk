@@ -1,7 +1,7 @@
 import type { EpicInspectResult } from '@shared/protocol'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { OverseerDetail } from './overseer-detail'
+import { WerkMasterDetail } from './werk-master-detail'
 
 const PROJECT = 'claude://default/Users/jonas/projects/remote-help'
 const NOW = Date.parse('2026-08-18T06:00:00.000Z')
@@ -22,7 +22,7 @@ function inspect(over: Partial<EpicInspectResult> = {}): EpicInspectResult {
       plan: true,
       planned: true,
       concurrency: 3,
-      digest: '_No digest yet -- the first overseer generation writes it._',
+      digest: '_No digest yet -- the first werk-master generation writes it._',
     } as unknown as EpicInspectResult['run'],
     lease: null,
     plan: {
@@ -39,11 +39,11 @@ function inspect(over: Partial<EpicInspectResult> = {}): EpicInspectResult {
       inFlight: ['dhc-handoff', 'dhc-mcp-server'],
       settled: [],
       unacknowledged: [],
-      overseerAlive: false,
+      werkMasterAlive: false,
       maxGenSeen: 0,
       conversations: [
-        { id: '1fae5efb', role: 'implementer', cardId: 'dhc-handoff', gen: 0, status: 'active', live: true },
-        { id: 'f9985732', role: 'implementer', cardId: 'dhc-mcp-server', gen: 0, status: 'active', live: true },
+        { id: '1fae5efb', role: 'werk-worker', cardId: 'dhc-handoff', gen: 0, status: 'active', live: true },
+        { id: 'f9985732', role: 'werk-worker', cardId: 'dhc-mcp-server', gen: 0, status: 'active', live: true },
       ],
     },
     beats: [],
@@ -53,15 +53,15 @@ function inspect(over: Partial<EpicInspectResult> = {}): EpicInspectResult {
         kind: 'dispatch',
         convId: '1fae5efb',
         cardId: 'dhc-handoff',
-        body: 'Implementer dispatched at generation 0.',
+        body: 'WerkWorker dispatched at generation 0.',
       },
     ],
     ...over,
   }
 }
 
-function show(data: EpicInspectResult | null, extra: Partial<Parameters<typeof OverseerDetail>[0]> = {}) {
-  render(<OverseerDetail data={data} error={null} loading={false} nowMs={NOW} onRefresh={() => {}} {...extra} />)
+function show(data: EpicInspectResult | null, extra: Partial<Parameters<typeof WerkMasterDetail>[0]> = {}) {
+  render(<WerkMasterDetail data={data} error={null} loading={false} nowMs={NOW} onRefresh={() => {}} {...extra} />)
 }
 
 afterEach(cleanup)
@@ -69,7 +69,7 @@ afterEach(cleanup)
 describe('the run heading', () => {
   /**
    * The pill prints the DERIVED vitality, never `run.status`. This fixture is
-   * `status: 'armed'` with two live implementers, which is a run that is
+   * `status: 'armed'` with two live werk-workers, which is a run that is
    * genuinely working -- and the point of the change is that the reverse case
    * (`status: 'running'` with nothing alive) can no longer print RUNNING.
    */
@@ -128,17 +128,17 @@ describe('the run heading', () => {
   })
 })
 
-describe('the overseer block -- the thing the first live run hid', () => {
-  it('says LOUDLY when no overseer has ever been woken', () => {
+describe('the werk-master block -- the thing the first live run hid', () => {
+  it('says LOUDLY when no werk-master has ever been woken', () => {
     show(inspect())
 
     expect(screen.getByText(/never woken . lease null/)).toBeTruthy()
     expect(screen.getByText(/nothing planning above them/)).toBeTruthy()
   })
 
-  it('shows the overseer as a seat once one exists', () => {
+  it('shows the werk-master as a seat once one exists', () => {
     const data = inspect()
-    data.live.conversations.push({ id: 'aaa', role: 'overseer', gen: 1, status: 'active', live: true })
+    data.live.conversations.push({ id: 'aaa', role: 'werk-master', gen: 1, status: 'active', live: true })
     show(data)
 
     expect(screen.queryByText(/never woken/)).toBeNull()
@@ -155,7 +155,7 @@ describe('the overseer block -- the thing the first live run hid', () => {
 })
 
 describe('seats', () => {
-  it('lists the live implementers by card', () => {
+  it('lists the live werk-workers by card', () => {
     show(inspect())
 
     expect(screen.getByText('dhc-handoff')).toBeTruthy()
@@ -203,7 +203,7 @@ describe('the baton', () => {
   it('renders entries with their card', () => {
     show(inspect())
 
-    expect(screen.getByText(/Implementer dispatched at generation 0/)).toBeTruthy()
+    expect(screen.getByText(/WerkWorker dispatched at generation 0/)).toBeTruthy()
   })
 
   it('reports an empty baton rather than rendering nothing', () => {

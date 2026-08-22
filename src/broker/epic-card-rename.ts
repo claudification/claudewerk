@@ -10,9 +10,9 @@
  * from wrong input that the card is unworked.
  *
  * That is what happened on 2026-08-20: a card renamed at 02:46 collected a
- * second implementer at 03:15 while the first was still typing into the same
- * file. The same frozen key loses a card's verifier and its settle-ack, so a
- * renamed card can also collect duplicate verifiers and re-wake a generation
+ * second werk-worker at 03:15 while the first was still typing into the same
+ * file. The same frozen key loses a card's werk-verifier and its settle-ack, so a
+ * renamed card can also collect duplicate werk-verifiers and re-wake a generation
  * per sweep for work that finished.
  *
  * THE SHAPE, and why it is `renamed_from:` rather than a stable non-filename

@@ -215,7 +215,7 @@ const ProjectConversationGroup = memo(
                 ))}
               </>
             )}
-            {/* Overseer subtrees head the project -- seats nest under the row
+            {/* WerkMaster subtrees head the project -- seats nest under the row
                 that dispatched them, ad-hoc or not. */}
             <EpicSeatSection
               groups={epicGroups}

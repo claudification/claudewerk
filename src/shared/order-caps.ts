@@ -216,7 +216,7 @@ export class OrderCapsError extends Error {
 
 /**
  * {@link composeOrderCaps}, for a call site whose signature has no room for a
- * result type -- the epic spawn planners, whose exported shape is fixed.
+ * result type -- the epic spawn werk-planners, whose exported shape is fixed.
  *
  * THROWING IS THE RIGHT FAILURE HERE. A refusal means the order asked for more
  * privilege than the caller holds, and there is no degraded seat to dispatch

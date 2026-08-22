@@ -18,7 +18,7 @@ import { buildRelayHandler, relayResultHandler } from './project-op-relay'
 const WRITE_OPS = new Set<EpicOpKind>(['start', 'patch', 'log_append', 'lease', 'release', 'pause', 'abort'])
 
 /** Which write ops fan a beat, and under what name (STRATEGY MAP). `patch` is
- *  absent deliberately: the overseer patches its digest several times a beat,
+ *  absent deliberately: the werk-master patches its digest several times a beat,
  *  and a broadcast per digest edit is noise, not information. */
 const EVENT_BY_OP: Partial<Record<EpicOpKind, EpicEvent['event']>> = {
   start: 'started',
@@ -36,7 +36,9 @@ type DetailFn = (d: EpicRequest, result: EpicResult) => string
 
 const DETAIL_BY_OP: Partial<Record<EpicOpKind, DetailFn>> = {
   lease: (_d, r) =>
-    r.lease?.granted ? `overseer gen ${r.lease.gen} took the epic` : `wake refused: ${r.lease?.reason ?? 'lease held'}`,
+    r.lease?.granted
+      ? `werk-master gen ${r.lease.gen} took the epic`
+      : `wake refused: ${r.lease?.reason ?? 'lease held'}`,
   abort: d => `run aborted: ${d.reason || 'no reason given'}`,
   log_append: d => {
     const card = d.logAppend?.cardId

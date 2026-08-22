@@ -7,7 +7,7 @@
  * `conv.status !== 'ended'` about the CONVERSATION, which is a different
  * question, and it asked it in the feed hook where the answer could only ever be
  * "drop the row". The pane then rendered the UNION, so a paused epic whose
- * overseer conversation was still alive sat among the live ones looking
+ * werk-master conversation was still alive sat among the live ones looking
  * identical to them. `epic-the-wall` sat `paused` that way for nine generations
  * and nobody noticed, because nothing on the pane said which of the two it was.
  *

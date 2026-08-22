@@ -69,6 +69,7 @@
     "harness:smoke": "bun run scripts/harness-smoke.ts",
     "board:doctor": "bun run scripts/board-doctor.ts",
     "board:upgrade": "bun run scripts/board-upgrade.ts",
+    "migrate:werk-tags": "bun run scripts/migrate-werk-tags.ts",
     "board:schema": "bun run scripts/board-schema.ts",
     "canvas:smoke": "bun run scripts/canvas-agent-write-smoke.ts",
     "canvas:chat:smoke": "bun run scripts/canvas-chat-smoke.ts",

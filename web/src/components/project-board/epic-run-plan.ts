@@ -41,7 +41,7 @@ export function runPlan(rollup: EpicRollup): RunPlan {
   return { ready, waiting, done: rollup.done, dropped: rollup.dropped, live: ready + waiting }
 }
 
-/** How many implementers actually go out on beat 1. The number the concurrency
+/** How many werk-workers actually go out on beat 1. The number the concurrency
  *  stepper is really setting, which is not the same as the number you typed. */
 export function firstBeat(plan: RunPlan, concurrency: number): number {
   return Math.min(plan.ready, Math.max(0, concurrency))

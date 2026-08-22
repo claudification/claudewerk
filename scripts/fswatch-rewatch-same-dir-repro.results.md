@@ -86,7 +86,7 @@ The fix is one line: `await sleep(50)` after `watch(a, ...)` and before the firs
 
 Deliberately **not** applied on the branch that produced this document. That card's scope
 was the time budgeting and the characterisation; changing the test's setup was a separate
-change a verifier should be able to review on its own, following the precedent set by the
+change a werk-verifier should be able to review on its own, following the precedent set by the
 sibling card, which characterised case B and did not touch the test either. It was filed
 as `werk-fs-watch-contract-a-arming-race` and has since **landed** -- case A now settles
 50 ms before its first append. See the re-measurement below.

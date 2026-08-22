@@ -348,13 +348,19 @@ export const spawnRequestSchema = z.object({
   epic: z
     .object({
       epicId: z.string().min(1).describe('The epic CARD id this seat serves.'),
-      role: z.enum(['overseer', 'implementer', 'verifier']).describe('Which seat: overseer | implementer | verifier.'),
+      role: z
+        .enum(['werk-master', 'werk-worker', 'werk-verifier'])
+        .describe('Which seat: werk-master | werk-worker | werk-verifier.'),
       cardId: z
         .string()
         .min(1)
         .optional()
-        .describe('The card being implemented or verified. Absent for the overseer, which serves the whole epic.'),
-      gen: z.number().int().min(0).describe('Overseer generation that dispatched this seat. Makes a wake idempotent.'),
+        .describe('The card being implemented or verified. Absent for the werk-master, which serves the whole epic.'),
+      gen: z
+        .number()
+        .int()
+        .min(0)
+        .describe('WerkMaster generation that dispatched this seat. Makes a wake idempotent.'),
     })
     .optional()
     .describe(

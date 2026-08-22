@@ -9,7 +9,7 @@ import type { Conversation } from '@/lib/types'
  * They are hidden BY DEFAULT here and revealed with `+over`.
  *
  * That default is specific to THIS surface. A managed run must never be
- * invisible everywhere at once -- the overseer header badge stays loud about
+ * invisible everywhere at once -- the werk-master header badge stays loud about
  * the aggregate; Pulse only declines to list the individual seats.
  *
  * THE TRUST RULE, and the reason this reads `epic`/`nightshift` rather than any

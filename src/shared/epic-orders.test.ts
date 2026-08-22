@@ -11,18 +11,18 @@
 import { describe, expect, test } from 'bun:test'
 import {
   EPIC_ORDERS,
-  GUARD_ORDER,
-  IMPLEMENTER_ORDER,
   isEpicOrderSeat,
-  OVERSEER_ORDER,
   orderRole,
   orderSeatRole,
-  PLANNER_ORDER,
+  WERK_MASTER_ORDER,
+  WERK_PLANNER_ORDER,
+  WERK_VERIFIER_ORDER,
+  WERK_WORKER_ORDER,
 } from './epic-orders'
 import { mayAskHuman } from './epic-run-types'
 import { ORDER_KIND, validateOrder } from './order'
 
-const ALL = [OVERSEER_ORDER, PLANNER_ORDER, IMPLEMENTER_ORDER, GUARD_ORDER]
+const ALL = [WERK_MASTER_ORDER, WERK_PLANNER_ORDER, WERK_WORKER_ORDER, WERK_VERIFIER_ORDER]
 
 describe('the repo’s own orders are ordinary order@1 artifacts', () => {
   test.each(ALL)('$id revalidates unchanged', order => {
@@ -31,7 +31,7 @@ describe('the repo’s own orders are ordinary order@1 artifacts', () => {
   })
 
   test('every seat the engine can dispatch has exactly one order', () => {
-    expect(Object.keys(EPIC_ORDERS).sort()).toEqual(['implementer', 'overseer', 'planner', 'verifier'])
+    expect(Object.keys(EPIC_ORDERS).sort()).toEqual(['werk-master', 'werk-planner', 'werk-verifier', 'werk-worker'])
     expect(new Set(ALL.map(o => o.id)).size).toBe(4)
   })
 
@@ -41,18 +41,18 @@ describe('the repo’s own orders are ordinary order@1 artifacts', () => {
 })
 
 describe('the seat -> role map, which decides the mute', () => {
-  test('the planner rides the OVERSEER role tag, deliberately', () => {
-    expect(orderRole(PLANNER_ORDER)).toBe('overseer')
-    expect(PLANNER_ORDER.seat).toBe('planner')
+  test('the werk-planner rides the WERK-MASTER role tag, deliberately', () => {
+    expect(orderRole(WERK_PLANNER_ORDER)).toBe('werk-master')
+    expect(WERK_PLANNER_ORDER.seat).toBe('werk-planner')
   })
 
-  test('exactly the two overseer-role seats may reach a human', () => {
-    expect(ALL.filter(o => mayAskHuman(orderRole(o))).map(o => o.id)).toEqual(['OVERSEER@1', 'PLANNER@1'])
+  test('exactly the two werk-master-role seats may reach a human', () => {
+    expect(ALL.filter(o => mayAskHuman(orderRole(o))).map(o => o.id)).toEqual(['WERK-MASTER@1', 'WERK-PLANNER@1'])
   })
 
-  test('an implementer and a guard report their own roles', () => {
-    expect(orderRole(IMPLEMENTER_ORDER)).toBe('implementer')
-    expect(orderRole(GUARD_ORDER)).toBe('verifier')
+  test('a werk-worker and a werk-verifier report their own roles', () => {
+    expect(orderRole(WERK_WORKER_ORDER)).toBe('werk-worker')
+    expect(orderRole(WERK_VERIFIER_ORDER)).toBe('werk-verifier')
   })
 })
 
@@ -67,33 +67,33 @@ describe('the seat -> role map, which decides the mute', () => {
  * that is cheap to catch is here, with the caller still on the stack.
  */
 describe('a seat the epic engine does not dispatch', () => {
-  const REFINER = validateOrder({
+  const WERK_REFINER = validateOrder({
     kind: ORDER_KIND,
-    id: 'REFINER@1',
-    title: 'Refiner -- drains #needs-refine',
-    seat: 'refiner',
+    id: 'WERK-REFINER@1',
+    title: 'WerkRefiner -- drains #needs-refine',
+    seat: 'werk-refiner',
     instructions: 'REFINE this card -- do not implement it.',
     caps: {},
   })
 
   test('is a perfectly legal order@1 -- the SCHEMA is what opened', () => {
-    expect(REFINER.seat).toBe('refiner')
-    expect(REFINER.instructions).toBeTruthy()
+    expect(WERK_REFINER.seat).toBe('werk-refiner')
+    expect(WERK_REFINER.instructions).toBeTruthy()
   })
 
   test('orderRole REFUSES it rather than mapping it to undefined', () => {
-    expect(() => orderRole(REFINER)).toThrow(/refiner/)
-    expect(() => orderRole(REFINER)).toThrow(/does not dispatch/)
+    expect(() => orderRole(WERK_REFINER)).toThrow(/werk-refiner/)
+    expect(() => orderRole(WERK_REFINER)).toThrow(/does not dispatch/)
   })
 
   test('orderSeatRole is the non-throwing half, for a caller that wants to ASK', () => {
-    expect(orderSeatRole('refiner')).toBeUndefined()
-    expect(orderSeatRole('planner')).toBe('overseer')
+    expect(orderSeatRole('werk-refiner')).toBeUndefined()
+    expect(orderSeatRole('werk-planner')).toBe('werk-master')
   })
 
   test('isEpicOrderSeat answers for the four and nothing else', () => {
     for (const seat of Object.keys(EPIC_ORDERS)) expect(isEpicOrderSeat(seat)).toBe(true)
-    for (const seat of ['refiner', 'doc-writer', 'triage', 'toString', 'constructor']) {
+    for (const seat of ['werk-refiner', 'doc-writer', 'triage', 'toString', 'constructor']) {
       expect(isEpicOrderSeat(seat)).toBe(false)
     }
   })
@@ -101,34 +101,34 @@ describe('a seat the epic engine does not dispatch', () => {
 
 describe('worktrees', () => {
   /**
-   * ABSENT AND EMPTY ARE DIFFERENT HERE, and conflating them is how the overseer
+   * ABSENT AND EMPTY ARE DIFFERENT HERE, and conflating them is how the werk-master
    * would end up in an isolated checkout that hides the board it exists to judge.
    */
-  test('the overseer and the planner get NO worktree at all', () => {
-    expect(OVERSEER_ORDER.worktree).toBeUndefined()
-    expect(PLANNER_ORDER.worktree).toBeUndefined()
+  test('the werk-master and the werk-planner get NO worktree at all', () => {
+    expect(WERK_MASTER_ORDER.worktree).toBeUndefined()
+    expect(WERK_PLANNER_ORDER.worktree).toBeUndefined()
   })
 
-  test('an implementer gets a worktree named for the card, with no prefix', () => {
-    expect(IMPLEMENTER_ORDER.worktree).toEqual({ prefix: '' })
+  test('a werk-worker gets a worktree named for the card, with no prefix', () => {
+    expect(WERK_WORKER_ORDER.worktree).toEqual({ prefix: '' })
   })
 
-  test('a guard gets its OWN scratch worktree, prefixed so it never collides', () => {
-    expect(GUARD_ORDER.worktree).toEqual({ prefix: 'verify-' })
-    expect(GUARD_ORDER.worktree?.prefix).not.toBe(IMPLEMENTER_ORDER.worktree?.prefix)
+  test('a werk-verifier gets its OWN scratch worktree, prefixed so it never collides', () => {
+    expect(WERK_VERIFIER_ORDER.worktree).toEqual({ prefix: 'verify-' })
+    expect(WERK_VERIFIER_ORDER.worktree?.prefix).not.toBe(WERK_WORKER_ORDER.worktree?.prefix)
   })
 })
 
 describe('names and prompts', () => {
   test('the prefixes are the ones the conversation list has always shown', () => {
-    expect(OVERSEER_ORDER.namePrefix).toBeUndefined()
-    expect(IMPLEMENTER_ORDER.namePrefix).toBeUndefined()
-    expect(PLANNER_ORDER.namePrefix).toBe('planner ')
-    expect(GUARD_ORDER.namePrefix).toBe('verify ')
+    expect(WERK_MASTER_ORDER.namePrefix).toBeUndefined()
+    expect(WERK_WORKER_ORDER.namePrefix).toBeUndefined()
+    expect(WERK_PLANNER_ORDER.namePrefix).toBe('werk-planner ')
+    expect(WERK_VERIFIER_ORDER.namePrefix).toBe('verify ')
   })
 
   test('each order names a distinct prompt builder', () => {
-    expect(ALL.map(o => o.prompt)).toEqual(['overseer', 'planner', 'implementer', 'guard'])
+    expect(ALL.map(o => o.prompt)).toEqual(['werk-master', 'werk-planner', 'werk-worker', 'werk-verifier'])
   })
 })
 

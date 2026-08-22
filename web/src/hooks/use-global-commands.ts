@@ -12,7 +12,6 @@ import { openForkDialog } from '@/components/fork-dialog-trigger'
 import { openLaunchProfileManager } from '@/components/launch-profiles/manager-state'
 import { openManageWorkspaces } from '@/components/manage-workspaces/manage-workspaces-state'
 import { openOrganizeProjects } from '@/components/organize-projects/organize-state'
-import { openOverseer } from '@/components/overseer/overseer-state'
 import { useWorkspaceShortcuts } from '@/components/project-list/workspace-hooks'
 import { openRecapConfigDialog } from '@/components/recap-jobs/recap-config-trigger'
 import { openRecapHistory } from '@/components/recap-jobs/recap-history-trigger'
@@ -27,6 +26,7 @@ import { openVacuum } from '@/components/vacuum/vacuum-state'
 import { summonVoiceOrb } from '@/components/voice-orb/voice-orb-bus'
 import { cycleVoiceOrbTone } from '@/components/voice-orb/voice-orb-tone'
 import { openWall } from '@/components/wall/wall-state'
+import { openWerkMaster } from '@/components/werk-master/werk-master-state'
 import { openCommitBrowser } from '@/hooks/use-commit-modals'
 import { fetchTranscript, sendInput, useConversationsStore, wsSend } from '@/hooks/use-conversations'
 import { openKanbanModal } from '@/hooks/use-kanban-modal'
@@ -697,8 +697,8 @@ export function useGlobalCommands(toggleSidebar: () => void) {
     group: 'System',
   })
 
-  useCommand('overseer', () => openOverseer(), {
-    label: 'Overseer -- what is running unattended',
+  useCommand('werk-master', () => openWerkMaster(), {
+    label: 'WerkMaster -- what is running unattended',
     group: 'System',
   })
 

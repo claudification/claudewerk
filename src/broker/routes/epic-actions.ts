@@ -107,7 +107,7 @@ export async function actionBeat(deps: SweepDeps, input: ActionInput): Promise<A
 }
 
 /**
- * Break a stuck overseer lease.
+ * Break a stuck werk-master lease.
  *
  * `docs/epic-mode.md` promises the lease is visible and breakable by a human
  * because it lives on the card -- but the only way to break it was to hand-edit
@@ -115,9 +115,9 @@ export async function actionBeat(deps: SweepDeps, input: ActionInput): Promise<A
  * that promise, as a verb.
  *
  * It RELEASES rather than force-granting. A caller breaking a lease wants the
- * epic unstuck, not to become its overseer, and `evaluateLease`'s `force` path
+ * epic unstuck, not to become its werk-master, and `evaluateLease`'s `force` path
  * would hand them the seat. Releasing leaves the generation counter intact and
- * lets the next beat wake a real overseer through the normal CAS.
+ * lets the next beat wake a real werk-master through the normal CAS.
  */
 export async function actionBreakLease(deps: SweepDeps, input: ActionInput): Promise<ActionResult> {
   const view = await io.fetchEpicRun(deps, input.project, input.epicId, { limit: 1 })
@@ -126,14 +126,14 @@ export async function actionBreakLease(deps: SweepDeps, input: ActionInput): Pro
   const holder = view.lease
   if (!holder?.convId) return { ok: true, note: 'no lease is held; nothing to break' }
 
-  // A LIVE holder is a working overseer, not a stuck one. Refusing by default
+  // A LIVE holder is a working werk-master, not a stuck one. Refusing by default
   // is the difference between an unstick tool and a way to shoot a run in the
   // head mid-generation.
   const conv = deps.getAllConversations().find(c => c.id === holder.convId)
   if (conv && deps.isLive(conv) && !input.force) {
     return {
       ok: false,
-      error: `overseer ${holder.convId} is still live at gen ${holder.gen} (since ${holder.at}). Pass force to break it anyway.`,
+      error: `werk-master ${holder.convId} is still live at gen ${holder.gen} (since ${holder.at}). Pass force to break it anyway.`,
       status: 409,
     }
   }
@@ -145,11 +145,11 @@ export async function actionBreakLease(deps: SweepDeps, input: ActionInput): Pro
   const logged = await io.appendBaton(deps, input.project, input.epicId, {
     kind: 'steering',
     convId: 'broker',
-    body: `Overseer lease BROKEN by hand at gen ${holder.gen} (holder \`${holder.convId}\`, taken ${holder.at}): ${why}`,
+    body: `WerkMaster lease BROKEN by hand at gen ${holder.gen} (holder \`${holder.convId}\`, taken ${holder.at}): ${why}`,
   })
   return {
     ok: true,
-    note: `released the lease held by ${holder.convId} at gen ${holder.gen}. The next beat will wake a fresh overseer.`,
+    note: `released the lease held by ${holder.convId} at gen ${holder.gen}. The next beat will wake a fresh werk-master.`,
     ...(logged.logEntry ? { baton: logged.logEntry } : {}),
   }
 }
@@ -249,6 +249,6 @@ export const BROKER_ACTIONS: Record<string, (deps: SweepDeps, input: ActionInput
  *
  * `break_lease` deliberately does NOT un-arm the run: breaking a lease is an
  * unstick, not a stop, and the whole point is that the next beat wakes a fresh
- * overseer. Only `pause`, `abort` and `delete` drop a run out of the sweep.
+ * werk-master. Only `pause`, `abort` and `delete` drop a run out of the sweep.
  */
 export const BROKER_WRITE_ACTIONS = new Set(['beat', 'break_lease', 'delete'])

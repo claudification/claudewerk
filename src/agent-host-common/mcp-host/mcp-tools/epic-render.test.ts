@@ -50,7 +50,7 @@ function inspect(over: Partial<EpicInspectResult> = {}): EpicRunPayload {
         inFlight: [],
         settled: [],
         unacknowledged: [],
-        overseerAlive: false,
+        werkMasterAlive: false,
         maxGenSeen: 7,
         conversations: [],
       },
@@ -171,14 +171,14 @@ describe('inspect', () => {
         live: {
           ...l,
           conversations: [
-            { id: 'conv_a', role: 'implementer', cardId: 't1', gen: 7, status: 'active', live: true },
-            { id: 'conv_b', role: 'implementer', cardId: 't1', gen: 6, status: 'ended', live: false },
+            { id: 'conv_a', role: 'werk-worker', cardId: 't1', gen: 7, status: 'active', live: true },
+            { id: 'conv_b', role: 'werk-worker', cardId: 't1', gen: 6, status: 'ended', live: false },
           ],
         },
       }),
     )
-    expect(out).toContain('conv_a implementer t1 gen 7 [active] LIVE')
-    expect(out).toContain('conv_b implementer t1 gen 6 [ended]')
+    expect(out).toContain('conv_a werk-worker t1 gen 7 [active] LIVE')
+    expect(out).toContain('conv_b werk-worker t1 gen 6 [ended]')
     expect(out).not.toContain('[ended] LIVE')
   })
 
@@ -201,7 +201,7 @@ describe('inspect', () => {
 })
 
 /**
- * 2026-08-21, overseer gen 6 of `epic-project-runner`: a single sentinel timeout
+ * 2026-08-21, werk-master gen 6 of `epic-project-runner`: a single sentinel timeout
  * rendered a healthy, running, gen-6 epic as `NO RUN ARTIFACT -- never armed`,
  * `lease: free (never run)` and a gen-0 mismatch WARNING. Every one of those
  * three lines is derived from a file the code never managed to read.
@@ -263,13 +263,13 @@ describe('the other shapes', () => {
           gen: 4,
           armed: true,
           inFlight: 2,
-          overseerAlive: true,
+          werkMasterAlive: true,
           cleared: null,
           clearedAt: null,
         },
       ],
     })
-    expect(out).toContain('e1: running gen 4 . armed yes . 2 in flight . overseer alive')
+    expect(out).toContain('e1: running gen 4 . armed yes . 2 in flight . werk-master alive')
   })
 
   test('a run with no artifact still lists, saying so', () => {
@@ -283,7 +283,7 @@ describe('the other shapes', () => {
           gen: 0,
           armed: false,
           inFlight: 0,
-          overseerAlive: false,
+          werkMasterAlive: false,
           cleared: null,
           clearedAt: null,
         },
@@ -303,7 +303,7 @@ describe('the other shapes', () => {
           gen: 4,
           armed: false,
           inFlight: 0,
-          overseerAlive: false,
+          werkMasterAlive: false,
           cleared: 'acknowledged',
           clearedAt: '2026-08-19T10:00:00.000Z',
         },
@@ -327,7 +327,7 @@ describe('the other shapes', () => {
           gen: 1,
           armed: false,
           inFlight: 0,
-          overseerAlive: false,
+          werkMasterAlive: false,
           cleared: 'aged-out',
           clearedAt: '2026-07-01T10:00:00.000Z',
         },
@@ -347,7 +347,7 @@ describe('the other shapes', () => {
           gen: 1,
           armed: true,
           inFlight: 1,
-          overseerAlive: true,
+          werkMasterAlive: true,
           cleared: null,
           clearedAt: null,
         },

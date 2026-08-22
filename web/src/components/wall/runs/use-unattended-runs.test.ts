@@ -20,7 +20,7 @@
 import { renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Conversation, useConversationsStore } from '@/hooks/use-conversations'
-import { useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 import { rowLiveness } from './run-liveness'
 import { type NightshiftRunRowData, useUnattendedRuns } from './use-unattended-runs'
 
@@ -53,7 +53,7 @@ function nightRows(...convs: Conversation[]): NightshiftRunRowData[] {
 beforeEach(() => {
   useConversationsStore.setState({ conversationsById: {}, projectSettings: {}, connectSeq: 1 })
   // The epic half is not under test here, and a real `prime` would fetch.
-  useOverseerActivityStore.setState({ byProject: {}, primed: true, prime: async () => true })
+  useWerkMasterActivityStore.setState({ byProject: {}, primed: true, prime: async () => true })
 })
 
 describe('useUnattendedRuns: the night feed reports workers, it does not judge liveness', () => {

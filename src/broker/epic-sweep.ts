@@ -6,7 +6,7 @@
  * task with ANY live conversation is being worked and is left alone.
  *
  * The grouping half below is PURE, and that is where the interesting logic
- * lives: which cards are in flight, whether the overseer is alive, and -- the
+ * lives: which cards are in flight, whether the werk-master is alive, and -- the
  * one that matters -- which settled cards the baton has never acknowledged.
  * That last question is what makes the wake self-healing: it is answered from
  * standing state, so a sweep the broker missed (restart, deploy, GC pause) is
@@ -28,68 +28,68 @@ export interface EpicGroup {
   epicId: string
   /** Project URI, taken from the conversations themselves. */
   project: string
-  /** Cards with a live implementer or verifier right now. */
+  /** Cards with a live werk-worker or werk-verifier right now. */
   inFlight: string[]
   /**
-   * Cards with a live VERIFIER specifically. A strict subset of nothing --
+   * Cards with a live WERK-VERIFIER specifically. A strict subset of nothing --
    * it overlaps `inFlight` and that is correct, they answer different questions.
    *
-   * `inFlight` answers "may this card be dispatched to an implementer"; this
+   * `inFlight` answers "may this card be dispatched to a werk-worker"; this
    * answers "does this card already have someone writing its verdict". The beat
    * needs both, and for a long time it only had the first -- so a card in
-   * `in-review` asked for a new verifier every sweep, forever.
+   * `in-review` asked for a new werk-verifier every sweep, forever.
    */
   inVerify: string[]
   /**
-   * Is a conversation holding the overseer seat still alive?
+   * Is a conversation holding the werk-master seat still alive?
    *
    * REAPED, not merely read off the registry. A conversation whose end was never
    * recorded sits at `active`/`idle`/`starting` forever, and `werkLiveness` reads
    * that as LIVE -- which held `guardBeat` and therefore the WHOLE RUN for the
-   * life of the broker. An overseer that has held no socket and said nothing past
-   * `OVERSEER_SILENCE_MS` is excluded here and reported in
-   * {@link EpicGroup.abandonedOverseers} instead.
+   * life of the broker. A werk-master that has held no socket and said nothing past
+   * `WERK_MASTER_SILENCE_MS` is excluded here and reported in
+   * {@link EpicGroup.abandonedWerkMasters} instead.
    */
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   /**
-   * The ids of the live overseer-seat conversations, not just whether any exist.
+   * The ids of the live werk-master-seat conversations, not just whether any exist.
    *
-   * The lease CAS asks "is THE HOLDER alive", and `overseerAlive` cannot answer
-   * that -- it says only that SOME overseer lives, which is a different question
+   * The lease CAS asks "is THE HOLDER alive", and `werkMasterAlive` cannot answer
+   * that -- it says only that SOME werk-master lives, which is a different question
    * and reads `true` in exactly the case the CAS exists to stop (a second
-   * overseer already running alongside a stale holder).
+   * werk-master already running alongside a stale holder).
    *
-   * REAPED IN THE SAME PASS as `overseerAlive`, and that identity is required
+   * REAPED IN THE SAME PASS as `werkMasterAlive`, and that identity is required
    * rather than tidy: this is `holderAlive`'s input (epic-beat-actions.ts
    * `holderIsAlive`). Reaping one and not the other would unfreeze `guardBeat`
    * only for the replacement wake to be refused by a holder the same fold had
    * just declared dead -- the run frozen by a second mechanism instead of the
    * first, with a different log line and the same silence.
    */
-  liveOverseers: string[]
+  liveWerkMasters: string[]
   /**
-   * OVERSEER SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED
+   * WERK-MASTER SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED
    * -- dead by silence rather than by a recorded end, at
-   * `OVERSEER_SILENCE_MS` (`epic-vitality.ts`).
+   * `WERK_MASTER_SILENCE_MS` (`epic-vitality.ts`).
    *
-   * Never overlaps `liveOverseers`: an entry here is precisely a conversation
+   * Never overlaps `liveWerkMasters`: an entry here is precisely a conversation
    * that would have been in that list and no longer is.
    *
    * The lane exists so the replacement generation can SAY WHAT IT REPLACED. A
-   * fresh overseer woken after a corpse and one woken after a finished turn are
+   * fresh werk-master woken after a corpse and one woken after a finished turn are
    * the same spawn with the same prompt shape, and a reader of `log.md` alone
    * must be able to tell them apart -- one is the engine doing its job, the other
    * is a host that died and nobody noticed. Reported per CONVERSATION, with the
    * evidence, because a run can lose two supervisors.
    */
-  abandonedOverseers: AbandonedOverseer[]
+  abandonedWerkMasters: AbandonedWerkMaster[]
   /**
    * Cards whose every backing conversation has ended AND at least one of them
    * produced something. Candidates for a wake.
    *
    * The second half of that sentence is the 2026-08-20 fix. A spawn that dies
    * in 1.2s also ends with every backing conversation dead, and folding it in
-   * here told the overseer a card had reached a terminal state when the seat
+   * here told the werk-master a card had reached a terminal state when the seat
    * never started -- one wasted generation per sweep, forever, with no verdict
    * ever written. See `failedLegs`.
    */
@@ -107,7 +107,7 @@ export interface EpicGroup {
   /**
    * SEATS THE REGISTRY STILL CALLS LIVE AND THE ENGINE HAS JUST REAPED -- dead
    * by silence rather than by a recorded end, at `SEAT_SILENCE_MS` -- a SHORTER
-   * grace than the overseer's, and `epic-vitality.ts` says why.
+   * grace than the werk-master's, and `epic-vitality.ts` says why.
    *
    * Their cards have ALREADY been folded as dead: an abandoned seat is absent
    * from `inFlight` and present in `settled` (or `failedLegs`, if it never
@@ -115,8 +115,8 @@ export interface EpicGroup {
    *
    * This lane exists so the SETTLE CAN SAY WHICH KIND IT IS. Both a clean exit
    * and a silent death arrive at `settled` and both get one machine
-   * `completion` entry, and an overseer reading `log.md` alone must be able to
-   * tell "the work finished" from "the worker died" -- one invites a verifier,
+   * `completion` entry, and a werk-master reading `log.md` alone must be able to
+   * tell "the work finished" from "the worker died" -- one invites a werk-verifier,
    * the other invites somebody to go and look at the worktree. Reported per
    * CONVERSATION, like `failedLegs`, because a card can lose two seats this way.
    */
@@ -130,7 +130,7 @@ export interface EpicGroup {
    * `dispatch` entries for one card, thirteen seats died, and the engine would
    * happily have written a fourteenth. A card in here is dispatched no further
    * -- it goes into `idleReason`, which drives a dry generation, which wakes the
-   * overseer once and parks the run on the second. Visible and stopped, rather
+   * werk-master once and parks the run on the second. Visible and stopped, rather
    * than retried forever.
    */
   unspawnable: string[]
@@ -139,7 +139,7 @@ export interface EpicGroup {
    * live or dead. The denominator of the run's spend cap (epic-executor.ts).
    *
    * Deliberately not derived from the lanes above: those are keyed on CARDS and
-   * drop the overseer entirely, drop a card's earlier retries once a later seat
+   * drop the werk-master entirely, drop a card's earlier retries once a later seat
    * settles it, and drop failed launches -- all of which still cost money. A cap
    * fed from them would under-count exactly the runs that are going wrong.
    */
@@ -154,7 +154,7 @@ export interface EpicGroup {
 export interface FailedLeg {
   cardId: string
   convId: string
-  role: 'implementer' | 'verifier'
+  role: 'werk-worker' | 'werk-verifier'
   /** The generation that dispatched it -- so the baton entry can say WHEN. */
   gen: number
 }
@@ -172,7 +172,7 @@ export interface FailedLeg {
 export interface AbandonedSeat {
   cardId: string
   convId: string
-  role: 'implementer' | 'verifier'
+  role: 'werk-worker' | 'werk-verifier'
   /** The generation that dispatched it. */
   gen: number
   /** The conversation's own last sign of life, epoch ms. */
@@ -185,7 +185,7 @@ export interface AbandonedSeat {
 }
 
 /**
- * One overseer the engine reaped: the registry still calls it live, and it has
+ * One werk-master the engine reaped: the registry still calls it live, and it has
  * held no connection and said nothing for longer than the engine will wait.
  *
  * Carries the EVIDENCE rather than a verdict, because the baton entry it becomes
@@ -194,9 +194,9 @@ export interface AbandonedSeat {
  * thing legible -- the status the registry was still reporting while the
  * supervisor was gone.
  */
-export interface AbandonedOverseer {
+export interface AbandonedWerkMaster {
   convId: string
-  /** The generation this overseer was serving. */
+  /** The generation this werk-master was serving. */
   gen: number
   /** The conversation's own last sign of life, epoch ms. */
   lastActivity: number
@@ -250,9 +250,9 @@ export function emptyGroup(epicId: string, project: string): EpicGroup {
     project,
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -277,13 +277,13 @@ interface Accumulators {
   groups: Map<string, EpicGroup>
   /** Any conversation for this card still alive? */
   cards: CardLiveness
-  /** Any VERIFIER for this card still alive? */
-  verifiers: CardLiveness
+  /** Any WERK-VERIFIER for this card still alive? */
+  werkVerifiers: CardLiveness
   /** Any conversation for this card ever produce anything? */
   outputs: CardLiveness
 }
 
-/** A card-holding seat -- implementer or verifier -- folded into all three
+/** A card-holding seat -- werk-worker or werk-verifier -- folded into all three
  *  per-card accumulators. Its own function so `absorb` stays "which kind of
  *  conversation is this" and nothing else. */
 function absorbCardSeat(
@@ -320,8 +320,8 @@ function absorbCardSeat(
   // Second, role-scoped fold. The combined one above still owns settle/dispatch;
   // this one exists so the beat can ask "is a VERDICT already being written" --
   // a question the combined bit cannot answer, which is how one card ended up
-  // with eight simultaneous verifiers.
-  if (tag.role === 'verifier') noteCardLiveness(acc.verifiers, tag.epicId, tag.cardId, live)
+  // with eight simultaneous werk-verifiers.
+  if (tag.role === 'werk-verifier') noteCardLiveness(acc.werkVerifiers, tag.epicId, tag.cardId, live)
 
   const output = producedOutput(conv)
   noteCardLiveness(acc.outputs, tag.epicId, tag.cardId, output)
@@ -333,7 +333,7 @@ function absorbCardSeat(
 }
 
 /**
- * THE OVERSEER SEAT, FOLDED -- alive, reaped, or already ended.
+ * THE WERK-MASTER SEAT, FOLDED -- alive, reaped, or already ended.
  *
  * Its own function because the reap is asked ONLY of a seat the registry still
  * claims is live: a conversation already known dead has nothing to reap, and
@@ -341,17 +341,23 @@ function absorbCardSeat(
  * corpse and wake a replacement for a supervisor that simply went home.
  *
  * Both live lanes are written from the SAME verdict -- see
- * `EpicGroup.liveOverseers` for why splitting them freezes the run twice.
+ * `EpicGroup.liveWerkMasters` for why splitting them freezes the run twice.
  */
-function absorbOverseer(conv: Conversation, gen: number, claimsLive: boolean, reaper: Reaper, group: EpicGroup): void {
+function absorbWerkMaster(
+  conv: Conversation,
+  gen: number,
+  claimsLive: boolean,
+  reaper: Reaper,
+  group: EpicGroup,
+): void {
   if (!claimsLive) return
   const reaping = reaper(conv)
   if (!reaping) {
-    group.overseerAlive = true
-    group.liveOverseers.push(conv.id)
+    group.werkMasterAlive = true
+    group.liveWerkMasters.push(conv.id)
     return
   }
-  group.abandonedOverseers.push({
+  group.abandonedWerkMasters.push({
     convId: conv.id,
     gen,
     lastActivity: conv.lastActivity,
@@ -374,8 +380,8 @@ function absorb(
 
   const group = acc.groups.get(tag.epicId) ?? emptyGroup(tag.epicId, conv.project)
   group.maxGenSeen = Math.max(group.maxGenSeen, tag.gen)
-  // Recorded HERE, before the role split below returns early for the overseer:
-  // the overseer is a seat like any other and its generations are billed like
+  // Recorded HERE, before the role split below returns early for the werk-master:
+  // the werk-master is a seat like any other and its generations are billed like
   // any other. A ledger that forgets the supervisor is a ledger that under-reads
   // precisely on the runs that wake it most.
   group.convIds.push(conv.id)
@@ -385,11 +391,11 @@ function absorb(
   // ONE RULE, TWO PRICES. Both lanes ask the same question -- "is the host behind
   // this conversation gone" -- of the same predicate, and both are blind to
   // `status` for the same reason. They are asked with DIFFERENT graces, because
-  // an overseer reaped wrongly wakes a second supervisor onto a board the first
+  // a werk-master reaped wrongly wakes a second supervisor onto a board the first
   // is still rewriting, while a card seat reaped wrongly strands one card. See
   // `epic-vitality.ts` for the rule and for both numbers.
-  if (tag.role === 'overseer') {
-    absorbOverseer(conv, tag.gen, live, reapers.overseer, group)
+  if (tag.role === 'werk-master') {
+    absorbWerkMaster(conv, tag.gen, live, reapers.werkMaster, group)
     return
   }
   const { epicId, cardId, role, gen } = tag
@@ -401,7 +407,7 @@ function absorb(
  * IS THE CONVERSATION THAT HOLDS THIS EPIC ONE OF THE CORPSES? The standing
  * question the replacement wake is driven from.
  *
- * KEYED ON THE LEASE HOLDER, and that is what bounds the wake. `abandonedOverseers`
+ * KEYED ON THE LEASE HOLDER, and that is what bounds the wake. `abandonedWerkMasters`
  * is re-derived from the registry on EVERY sweep and never empties -- a dead
  * conversation stays dead and stays in the list -- so a wake fired from the lane
  * itself would fire again every 45 seconds for the life of the broker. The lease
@@ -409,11 +415,11 @@ function absorb(
  * function goes null on the very next beat, and the fact is spent exactly once.
  *
  * Returns the reaping rather than a boolean so the baton entry can quote the
- * evidence -- see `AbandonedOverseer`.
+ * evidence -- see `AbandonedWerkMaster`.
  */
-export function lostOverseer(group: EpicGroup, holder: EpicLease | null): AbandonedOverseer | null {
+export function lostWerkMaster(group: EpicGroup, holder: EpicLease | null): AbandonedWerkMaster | null {
   if (!holder?.convId) return null
-  return group.abandonedOverseers.find(o => o.convId === holder.convId) ?? null
+  return group.abandonedWerkMasters.find(o => o.convId === holder.convId) ?? null
 }
 
 /**
@@ -446,7 +452,7 @@ function foldWorkLanes(group: EpicGroup, byCard: Map<string, boolean>, outputs: 
   group.unspawnable.sort()
 }
 
-/** Verifier-role only, and only the LIVE half: a dead verifier is not a reason
+/** WerkVerifier-role only, and only the LIVE half: a dead werk-verifier is not a reason
  *  to withhold a verdict, it is a reason to write one. */
 function foldVerifyLane(group: EpicGroup, byCard: Map<string, boolean>): void {
   for (const [cardId, live] of byCard) if (live) group.inVerify.push(cardId)
@@ -459,7 +465,7 @@ function splitLanes(acc: Accumulators): void {
     const group = acc.groups.get(epicId)
     if (group) foldWorkLanes(group, byCard, acc.outputs.get(epicId) ?? new Map())
   }
-  for (const [epicId, byCard] of acc.verifiers) {
+  for (const [epicId, byCard] of acc.werkVerifiers) {
     const group = acc.groups.get(epicId)
     if (group) foldVerifyLane(group, byCard)
   }
@@ -475,7 +481,7 @@ export function groupEpicConversations(
   isLive: IsLive,
   producedOutput: ProducedOutput = () => true,
   /**
-   * BOTH LANES' REAPERS, AS ONE ARGUMENT -- a card seat's and the overseer's, each
+   * BOTH LANES' REAPERS, AS ONE ARGUMENT -- a card seat's and the werk-master's, each
    * carrying its own grace. One parameter rather than two adjacent positionals
    * because the two share a structural type and the compiler cannot tell them
    * apart; see {@link EpicReapers}.
@@ -485,7 +491,7 @@ export function groupEpicConversations(
    */
   reapers: EpicReapers = NO_REAPING,
 ): Map<string, EpicGroup> {
-  const acc: Accumulators = { groups: new Map(), cards: new Map(), verifiers: new Map(), outputs: new Map() }
+  const acc: Accumulators = { groups: new Map(), cards: new Map(), werkVerifiers: new Map(), outputs: new Map() }
   for (const conv of convs) absorb(conv, isLive, producedOutput, reapers, acc)
   splitLanes(acc)
   return acc.groups
@@ -546,7 +552,7 @@ export function generationMismatch(group: EpicGroup, leaseGen: number): string |
 /**
  * A RESERVED SCANNER LANE IS NOT AN EPIC.
  *
- * `planImplementerSpawn` has no seat without an `EpicLaunchTag`, so a scanner
+ * `planWerkWorkerSpawn` has no seat without an `EpicLaunchTag`, so a scanner
  * that dispatches a card belonging to no epic -- the work-order scanner is the
  * first -- must stamp SOME epic id. It stamps its own scanner id rather than a
  * real epic's, because a seat wearing a real epic's id gets absorbed into that

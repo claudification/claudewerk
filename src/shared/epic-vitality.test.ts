@@ -7,7 +7,7 @@ function input(over: Partial<RunVitalityInput> = {}): RunVitalityInput {
   return {
     status: 'running',
     inFlight: 0,
-    overseerAlive: false,
+    werkMasterAlive: false,
     armed: true,
     lastBeatAt: BEAT,
     stale: false,
@@ -18,11 +18,11 @@ function input(over: Partial<RunVitalityInput> = {}): RunVitalityInput {
 describe('runVitality', () => {
   /**
    * THE LIE THIS MODULE EXISTS TO KILL. `epic-the-wall-ii`, 2026-08-20: status
-   * `running`, armed forgotten by a broker restart, overseer conversation ended,
+   * `running`, armed forgotten by a broker restart, werk-master conversation ended,
    * zero seats -- and every surface printed RUNNING.
    */
   test('a status of running with no seat at all is NOT reported as running', () => {
-    const out = runVitality(input({ armed: false, inFlight: 0, overseerAlive: false }))
+    const out = runVitality(input({ armed: false, inFlight: 0, werkMasterAlive: false }))
     expect(out.vitality).toBe('idle')
     expect(out.label).toBe('IDLE')
     expect(out.breathing).toBe(false)
@@ -39,8 +39,8 @@ describe('runVitality', () => {
     expect(out.why).toContain('2 seat')
   })
 
-  test('an awake overseer counts as working even before it dispatches', () => {
-    expect(runVitality(input({ overseerAlive: true })).vitality).toBe('working')
+  test('an awake werk-master counts as working even before it dispatches', () => {
+    expect(runVitality(input({ werkMasterAlive: true })).vitality).toBe('working')
   })
 
   test('a quiet sweep is STALLED, whatever the status says', () => {

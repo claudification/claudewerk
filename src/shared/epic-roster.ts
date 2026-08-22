@@ -1,10 +1,10 @@
 /**
- * THE OPEN-EPIC ROSTER -- the few lines of board context a refiner needs before
+ * THE OPEN-EPIC ROSTER -- the few lines of board context a werk-refiner needs before
  * it can soft-link the one card it was handed to an epic.
  *
  * `epic:` is declared BY THE CHILD (`project-task-types.ts`), so parenting a
- * card is a one-line edit on the file the refiner already has open. The only
- * thing it was ever missing is knowing which epics exist: a refiner seat is
+ * card is a one-line edit on the file the werk-refiner already has open. The only
+ * thing it was ever missing is knowing which epics exist: a werk-refiner seat is
  * handed ONE card and nothing else, and a Haiku seat on a $0.50 budget will not
  * go and read a 664-card board to find out.
  *
@@ -14,13 +14,13 @@
  *
  * WHAT IT DELIBERATELY LEAVES OUT:
  *
- *   TERMINAL EPICS. `done` and `archived` epics are excluded: offering a refiner
+ *   TERMINAL EPICS. `done` and `archived` epics are excluded: offering a werk-refiner
  *   a finished epic as a parent is offering it the one answer that is certainly
  *   wrong, and the roster is prompt weight on the cheapest seat in the fleet.
  *
  *   EPICS WITH NO CARD OF THEIR OWN. `buildEpicIndex` keeps a rollup for an id
  *   that only children point at (`card: null`) so the doctor can report the
- *   dangling reference. Naming it here would invite a refiner to point a second
+ *   dangling reference. Naming it here would invite a werk-refiner to point a second
  *   card at an id nothing on the board defines -- one dangling ref becoming two.
  *
  *   THE EPIC'S BODY PREVIEW. Cheap signal, and the single thing most likely to
@@ -88,7 +88,7 @@ export interface EpicRosterOptions {
 
 /**
  * THE INSTRUCTION THAT CONSUMES THE ROSTER, written once and imported by both
- * definitions of "refine" -- `REFINER_INSTRUCTIONS` (the scanner seat) and
+ * definitions of "refine" -- `WERK_REFINER_INSTRUCTIONS` (the scanner seat) and
  * `TASK_MODES.refine` (the panel's batch and single runs). Those two files both
  * carry a header warning about having drifted apart once already; a soft-link
  * step added to one and not the other is exactly that drift, and a step COPIED
@@ -129,7 +129,7 @@ export const EPIC_ROSTER_HEADER = 'OPEN EPICS on this board -- candidate parents
  * act on. It has to be a REFINE: no other mode is instructed to parent anything,
  * and a work run that quietly re-parented its card would be a card moving epics
  * with nobody deciding it. And at least one card in the run has to be an ORPHAN:
- * a refiner ADDS a missing parent, it does not re-home a card that has one.
+ * a werk-refiner ADDS a missing parent, it does not re-home a card that has one.
  *
  * `isRefine` is a boolean rather than a `TaskMode` because `task-modes.ts`
  * imports this module for {@link EPIC_SOFT_LINK_STEP}, and the mode union is

@@ -1,5 +1,5 @@
 /**
- * The small shared pieces of the overseer window -- status pill, section block,
+ * The small shared pieces of the werk-master window -- status pill, section block,
  * stat, the empty state.
  *
  * Their own file because five components each used twice is exactly the shape
@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
  *
  * Keyed on the DERIVED vitality, never on `run.status`. The status field is an
  * intent that nothing writes back down, so a pill keyed on it printed a green
- * RUNNING over a run whose overseer was dead and whose seats had all ended.
+ * RUNNING over a run whose werk-master was dead and whose seats had all ended.
  * `runVitality` is the one derivation (src/shared/epic-vitality.ts); this map is
  * only its colours.
  */

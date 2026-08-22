@@ -34,7 +34,7 @@ describe('task modes', () => {
 
   /**
    * BOTH REFINE SURFACES OR NEITHER. There are two definitions of "refine" in
-   * this repo -- these three templates and `REFINER_INSTRUCTIONS` -- and both
+   * this repo -- these three templates and `WERK_REFINER_INSTRUCTIONS` -- and both
    * files' headers already warn that they drifted apart once. A soft-link step
    * present in one and missing from the other is that drift, so it is asserted
    * against the shared constant rather than against a copy of the prose.

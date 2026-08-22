@@ -13,7 +13,7 @@
  *
  *     CARD (what to build) + ORDER (who builds it) => the dispatched seat
  *
- * The planners below are the compile sites. Their exported signatures are
+ * The werk-planners below are the compile sites. Their exported signatures are
  * unchanged and so is every byte they emit -- the orders were written to
  * reproduce what was hardcoded here, and `epic-spawn-plan.test.ts` is what says
  * so. What changed is that a fifth seat is now a file rather than an edit to
@@ -24,13 +24,13 @@
  */
 
 import { EPIC_ORDERS, orderRole } from '../shared/epic-orders'
-import { buildImplementerPrompt } from '../shared/epic-prompt-implementer'
-import { buildOverseerPrompt, type OverseerPromptCtx } from '../shared/epic-prompt-overseer'
-import { buildPlannerPrompt, type PlannerPromptCtx } from '../shared/epic-prompt-planner'
+import { buildWerkMasterPrompt, type WerkMasterPromptCtx } from '../shared/epic-prompt-werk-master'
+import { buildWerkPlannerPrompt, type WerkPlannerPromptCtx } from '../shared/epic-prompt-werk-planner'
+import { buildWerkVerifierPrompt } from '../shared/epic-prompt-werk-verifier'
+import { buildWerkWorkerPrompt } from '../shared/epic-prompt-werk-worker'
 import type { EpicLaunchTag } from '../shared/epic-run-types'
 import { buildEpicWorkerSettings } from '../shared/epic-worker-permissions'
 import { fnv1aHex } from '../shared/fnv1a'
-import { buildGuardPrompt } from '../shared/guard-prompt'
 import type { Order, OrderCaps } from '../shared/order'
 import {
   type ComposedOrderCaps,
@@ -56,13 +56,13 @@ import { worktreeBranch } from '../shared/worktree-path'
  * Declaring it honestly is also the correct mode on its merits. `dontAsk` denies
  * anything not on `permissions.allow`, and you cannot enumerate what a coding
  * agent needs -- DEFAULT_ALLOW does not carry `git merge`, `git rebase` or
- * `git fetch`, all three of which the OVERSEER is explicitly instructed to run.
+ * `git fetch`, all three of which the WERK-MASTER is explicitly instructed to run.
  * An allowlist is a treadmill; the deny-floor is a wall.
  *
  * WHAT STILL STOPS A RUNAWAY, none of which is the permission mode:
  *   - the deny-floor PreToolUse hook (force-push, push to main, sudo, kill,
  *     external send, rm outside the worktree). A hook runs in EVERY mode.
- *   - the mute hook, for every seat that is not the overseer.
+ *   - the mute hook, for every seat that is not the werk-master.
  *   - worktree isolation: worst case a worker dirties its own branch.
  *
  * THE VALUE NOW COMES FROM THE ORDER, not from this file. All four shipped
@@ -158,7 +158,7 @@ const NAME_BUDGET = 60
 function seatName(epicId: string, gen: number, cardId: string | undefined, prefix = ''): string {
   const suffix = ` g${gen}`
   const head = `[${epicId}] ${prefix}`
-  if (!cardId) return `${head}overseer${suffix}`.slice(0, NAME_BUDGET)
+  if (!cardId) return `${head}werk-master${suffix}`.slice(0, NAME_BUDGET)
   const room = NAME_BUDGET - head.length - suffix.length
   return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
 }
@@ -166,7 +166,7 @@ function seatName(epicId: string, gen: number, cardId: string | undefined, prefi
 /**
  * Claude Code refuses a `--worktree` name over this and exits 1 in about a
  * second, before anything reaches the transcript. THE 2026-08-20 INCIDENT: the
- * verifier for `epic-engine-baton-window-relitigates-settles` asked for a
+ * werk-verifier for `epic-engine-baton-window-relitigates-settles` asked for a
  * 73-character branch and died with
  * `ERR Error creating worktree: Invalid worktree name: must be 64 characters or
  * fewer (got 73)` -- one line, in CC's headless log, which nothing forwarded.
@@ -199,7 +199,7 @@ const EPIC_SEGMENT_BUDGET = 24
  *     second one. No generation in here, unlike the conversation name.
  *   - COLLIDING SIBLINGS STAY DISTINCT. Truncation alone would map
  *     `...-relitigates-settles` and `...-relitigates-settled` onto one branch,
- *     and two implementers would then write to the same tree -- the one thing
+ *     and two werk-workers would then write to the same tree -- the one thing
  *     worktree isolation exists to prevent. The tail hash is over the FULL
  *     original, so it differs wherever the ids do.
  */
@@ -273,33 +273,33 @@ function compileSeat(
 }
 
 /**
- * The OVERSEER. No worktree: it reads the board, answers questions and merges on
+ * The WERK-MASTER. No worktree: it reads the board, answers questions and merges on
  * main -- giving it an isolated checkout would hide the very state it exists to
  * judge. It is also the only seat whose settings leave the human channels open.
  */
-export function planOverseerSpawn(ctx: EpicSpawnCtx, promptCtx: OverseerPromptCtx): EpicSpawnPlan {
+export function planWerkMasterSpawn(ctx: EpicSpawnCtx, promptCtx: WerkMasterPromptCtx): EpicSpawnPlan {
   return {
-    ...compileSeat(ctx, EPIC_ORDERS.overseer),
-    prompt: buildOverseerPrompt(promptCtx),
+    ...compileSeat(ctx, EPIC_ORDERS['werk-master']),
+    prompt: buildWerkMasterPrompt(promptCtx),
   }
 }
 
 /**
- * THE PLANNER -- generation 0. The OVERSEER SEAT with a different prompt.
+ * THE WERK-PLANNER -- generation 0. The WERK-MASTER SEAT with a different prompt.
  *
- * Same role tag on purpose, and it is not laziness: `overseerAlive` is what stops
+ * Same role tag on purpose, and it is not laziness: `werkMasterAlive` is what stops
  * the engine dispatching underneath a live supervisor, and a planning generation
- * needs exactly that guard. Tagging it `planner` would have made it invisible to
+ * needs exactly that guard. Tagging it `werk-planner` would have made it invisible to
  * the check whose whole job is to hold the beat -- so the engine would race the
  * pass that exists to tell it what may safely run at once.
  *
- * No worktree, for the overseer's reason: it edits the board, which lives on
+ * No worktree, for the werk-master's reason: it edits the board, which lives on
  * main, and an isolated checkout would hide the state it exists to fix.
  */
-export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx): EpicSpawnPlan {
+export function planWerkPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: WerkPlannerPromptCtx): EpicSpawnPlan {
   return {
-    ...compileSeat(ctx, EPIC_ORDERS.planner),
-    prompt: buildPlannerPrompt(promptCtx),
+    ...compileSeat(ctx, EPIC_ORDERS['werk-planner']),
+    prompt: buildWerkPlannerPrompt(promptCtx),
   }
 }
 
@@ -311,7 +311,7 @@ export function planPlannerSpawn(ctx: EpicSpawnCtx, promptCtx: PlannerPromptCtx)
  * a long card id gets), and `worktreeBranch` is the `worktree-` prefix
  * `scripts/worktree-create.sh` puts on the branch it cuts. The seat plan carries
  * the WORKTREE name, which is the un-prefixed half -- so a prompt that quoted
- * `plan.worktree` at an implementer would hand it an unmergeable ref.
+ * `plan.worktree` at a werk-worker would hand it an unmergeable ref.
  *
  * EXPORTED because the promise ledger asks the same question from the other end:
  * given a settled card, which branch's commits delivered it. Two callers
@@ -323,17 +323,17 @@ export function cardBranch(epicId: string, cardId: string): string {
 }
 
 /**
- * An IMPLEMENTER. Own worktree, own branch, muted.
+ * An WERK-WORKER. Own worktree, own branch, muted.
  *
  * TWO NAMES, NOT ONE, and they differ by exactly the `worktree-` prefix:
  * `plan.worktree` is the worktree NAME (what CC is handed, what the 64-character
  * cap is measured against), and the prompt quotes the BRANCH that
  * `scripts/worktree-create.sh` actually cuts. Passing one string as both told an
- * implementer to work on `epic/<epic>/<card>` while `git branch --show-current`
+ * werk-worker to work on `epic/<epic>/<card>` while `git branch --show-current`
  * in its own tree said `worktree-epic/<epic>/<card>` -- measured on this very
  * fix's worktree. Harmless while the branch was never named for a git command;
  * not harmless once `dependsOn` put a SECOND, correctly-prefixed branch ref in
- * the same prompt, because an implementer that trusts rule 1's spelling then
+ * the same prompt, because a werk-worker that trusts rule 1's spelling then
  * merges a ref that does not resolve.
  *
  * `dependsOn` is the card's own `depends_on`, passed through so the prompt can
@@ -342,24 +342,24 @@ export function cardBranch(epicId: string, cardId: string): string {
  * where it was (see epic-implementer-base-lacks-deps).
  *
  * `model` is the card's `model:` hint, and it arrives ALREADY CLAMPED against
- * `IMPLEMENTER@1`'s cap -- the clamp lives at the dispatch site because that is
+ * `WERK-WORKER@1`'s cap -- the clamp lives at the dispatch site because that is
  * where the log line has somewhere to go (card-model.ts). Passing it as the
  * composition's base is then correct rather than dangerous: an explicit base
  * wins over an order's selection cap, which is exactly what a value that has
  * already been narrowed is entitled to do. Omitted by the epic engine, whose
  * seats keep running on the project default until a card asks otherwise.
  */
-export function planImplementerSpawn(
+export function planWerkWorkerSpawn(
   ctx: EpicSpawnCtx,
   cardId: string,
   baseRef = 'main',
   dependsOn: readonly string[] = [],
   model?: string,
 ): EpicSpawnPlan {
-  const seat = compileSeat(ctx, EPIC_ORDERS.implementer, cardId, model ? { model } : {})
+  const seat = compileSeat(ctx, EPIC_ORDERS['werk-worker'], cardId, model ? { model } : {})
   return {
     ...seat,
-    prompt: buildImplementerPrompt({
+    prompt: buildWerkWorkerPrompt({
       projectUri: ctx.project,
       projectRoot: ctx.projectRoot,
       epicId: ctx.epicId,
@@ -372,16 +372,21 @@ export function planImplementerSpawn(
 }
 
 /**
- * A VERIFIER, using the Guard prompt that has existed unused since the quest
+ * A WERK-VERIFIER, using the Guard prompt that has existed unused since the quest
  * engine landed. Its scratch worktree is its own, and it is given the card plus
- * the diff -- never the implementer's conversation. A reviewer that reads the
+ * the diff -- never the werk-worker's conversation. A reviewer that reads the
  * coder's reasoning inherits the coder's blind spots (werk-done-gate).
  */
-export function planVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
+export function planWerkVerifierSpawn(ctx: EpicSpawnCtx, cardId: string): EpicSpawnPlan {
   return {
-    ...compileSeat(ctx, EPIC_ORDERS.verifier, cardId),
+    ...compileSeat(ctx, EPIC_ORDERS['werk-verifier'], cardId),
     // `epicId` is what switches the seat-lease order on: this Guard is a WERK
     // seat, unlike the quest engine's, so `epic_seat` will answer it.
-    prompt: buildGuardPrompt({ projectUri: ctx.project, projectRoot: ctx.projectRoot, cardId, epicId: ctx.epicId }),
+    prompt: buildWerkVerifierPrompt({
+      projectUri: ctx.project,
+      projectRoot: ctx.projectRoot,
+      cardId,
+      epicId: ctx.epicId,
+    }),
   }
 }

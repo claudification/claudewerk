@@ -1,7 +1,7 @@
 /**
  * The close X sits on the SAME ROW as the rest of the window chrome.
  *
- * It did not. Measured on the Overseer window: the X rendered 6 CSS px below the
+ * It did not. Measured on the WerkMaster window: the X rendered 6 CSS px below the
  * minimize / maximize / detach glyphs and 43 px to the right of them, when the
  * glyphs themselves sit ~15 px apart. Two independent causes:
  *

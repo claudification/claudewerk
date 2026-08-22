@@ -1,7 +1,7 @@
 /**
  * THE EPIC BATON -- log.md, append-only, never rewritten.
  *
- * This is the overseer's memory. Every generation is a FRESH conversation with no
+ * This is the werk-master's memory. Every generation is a FRESH conversation with no
  * transcript from the last one, so what the run knows about itself is exactly
  * what is in this file. That is the point: an epic that takes three days and
  * forty generations cannot live in a context window, and a summary written by
@@ -20,7 +20,7 @@ import type { EpicLogEntry, EpicLogKind } from './epic-run-types'
 import { appendSectionLog, readSectionLog, renderLogSection } from './md-section-log'
 
 const LOG_HEADER =
-  '# Epic Baton\n\nAppend-only. Every overseer generation reads this and nothing else about the past.\n\n'
+  '# Epic Baton\n\nAppend-only. Every werk-master generation reads this and nothing else about the past.\n\n'
 
 const KINDS: readonly EpicLogKind[] = [
   'intent',
@@ -32,10 +32,28 @@ const KINDS: readonly EpicLogKind[] = [
   'merge',
   'steering',
   'checkpoint',
-  'overseer-lost',
+  'werk-master-lost',
   'record',
 ]
 
+/**
+ * The kind, or `intent` for a word this build does not know.
+ *
+ * `werk-master-lost` WAS `overseer-lost` UNTIL THE SEAT RENAME, and baton lines
+ * written before it keep the old word: a baton is append-only and never
+ * rewritten, which is the whole premise of this file. So one class of historical
+ * line -- a supervisor the engine reaped -- now reads back as `intent`.
+ *
+ * That is the accepted cost, stated rather than papered over, and it is small
+ * for two reasons. The kind is read by the RENDERER and by `ACKNOWLEDGING_KINDS`
+ * (which never contained it), so no decision moves. And `epic-beat-actions.ts`
+ * dedupes its reap entry on the kind, so an epic live across the rename may
+ * append one duplicate for a supervisor already recorded under the old word --
+ * once, per already-reaped supervisor.
+ *
+ * The alternative was tolerating the old spelling here forever, which is exactly
+ * the permanent alias the rename decided against. See `migrate.ts` v8.
+ */
 function asEpicLogKind(v: unknown): EpicLogKind {
   return KINDS.includes(v as EpicLogKind) ? (v as EpicLogKind) : 'intent'
 }
@@ -135,11 +153,11 @@ export function readEpicLog(root: string, epicId: string): EpicLogEntry[] {
 }
 
 /**
- * The last `n` entries, newest last. What a fresh overseer generation is handed.
+ * The last `n` entries, newest last. What a fresh werk-master generation is handed.
  *
  * Tail rather than whole-file because the baton grows without bound and the
  * prompt does not: a forty-generation epic's early entries are already reflected
- * in the board state the overseer reads alongside this.
+ * in the board state the werk-master reads alongside this.
  */
 export function readEpicLogTail(root: string, epicId: string, n = 20): EpicLogEntry[] {
   const all = readEpicLog(root, epicId)
@@ -171,7 +189,7 @@ export interface BatonQuery {
 /**
  * The baton, FILTERED then tailed -- the read a human debugging a run wants
  * ("every verdict", "everything about t5"), as opposed to the fixed prompt-sized
- * tail an overseer generation is handed.
+ * tail a werk-master generation is handed.
  *
  * Filter-then-tail, never tail-then-filter: asking for the last 10 verdicts must
  * search the whole log, not return however many verdicts happen to fall inside
@@ -228,7 +246,7 @@ export function acknowledgedCardIds(entries: readonly EpicLogEntry[]): string[] 
  * this one exists to stop the thirteen-seat night.
  *
  * ROLE-BLIND on purpose. `spawnForCard` writes the same `dispatch` kind for an
- * implementer and for a verifier, and nothing in the entry distinguishes them
+ * werk-worker and for a werk-verifier, and nothing in the entry distinguishes them
  * (adding a role would be a schema change to `md-section-log` for a number whose
  * only consumer is a ceiling). So this counts SEATS, which is the unit the
  * ceiling is denominated in -- a healthy card costs two, one of each.

@@ -5,11 +5,11 @@
  * row on screen -- deliberately carries no plan, no lease and no baton, because
  * it backs a badge that is on screen permanently. Everything this row is ABOUT
  * costs a board read and a DAG plan, so it is fetched per visible run through
- * `useOverseerInspect`, the same hook the overseer window's detail pane uses:
+ * `useWerkMasterInspect`, the same hook the werk-master window's detail pane uses:
  * visibility-gated, refetched on reconnect, and honest about its own age. A
  * second inspect client here would be a second set of those bugs.
  *
- * THE ALARM IS THE LEASE. A run whose overseer never woke looks exactly like a
+ * THE ALARM IS THE LEASE. A run whose werk-master never woke looks exactly like a
  * healthy one on every other surface in this tree -- that is the 2026-08-18
  * failure -- so a stale lease is rendered in the destructive tone and nothing
  * else on the row is allowed to be louder.
@@ -17,7 +17,7 @@
 
 import { whenWaitingLine } from '@shared/epic-when'
 import type { EpicQueueReading, EpicRunSnapshot } from '@shared/protocol'
-import { useOverseerInspect } from '@/components/overseer/use-overseer-inspect'
+import { useWerkMasterInspect } from '@/components/werk-master/use-werk-master-inspect'
 import { type LeaseState, leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { formatDurationShort } from '@/lib/status-style'
 import { RunActions } from './run-actions'
@@ -41,12 +41,12 @@ function StallBanner({ stall }: { stall: RunStall }) {
   )
 }
 
-/** THE ALARM. A run whose overseer never woke looks healthy on every other
+/** THE ALARM. A run whose werk-master never woke looks healthy on every other
  *  surface in this tree -- that is the 2026-08-18 failure -- so a stale lease
  *  takes the destructive tone and nothing else on the row is allowed to be
  *  louder. */
 function LeaseLine({ lease }: { lease: LeaseState }) {
-  const tone = lease.kind === 'stale' ? 'wall-run-overseer wall-run-overseer-bad' : 'wall-run-overseer'
+  const tone = lease.kind === 'stale' ? 'wall-run-werk-master wall-run-werk-master-bad' : 'wall-run-werk-master'
   return <div className={tone}>{leaseSentence(lease)}</div>
 }
 
@@ -59,7 +59,7 @@ function LeaseLine({ lease }: { lease: LeaseState }) {
  */
 function QueueLine({ queue }: { queue: EpicQueueReading | undefined }) {
   if (!queue) return null
-  return <div className={queue.blocked ? 'wall-run-why' : 'wall-run-overseer'}>{queue.reason}</div>
+  return <div className={queue.blocked ? 'wall-run-why' : 'wall-run-werk-master'}>{queue.reason}</div>
 }
 
 /**
@@ -104,7 +104,7 @@ function ReadAge({ stale, fetchedAt, nowMs }: { stale: boolean; fetchedAt: numbe
  */
 export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number }) {
   const { entry, project, epicId } = row
-  const { data, fetchedAt, stale: readStale, refresh } = useOverseerInspect(project, epicId)
+  const { data, fetchedAt, stale: readStale, refresh } = useWerkMasterInspect(project, epicId)
 
   const view = runView(entry)
   const stall = runStall(entry, nowMs)
@@ -128,7 +128,7 @@ export function EpicRunRow({ row, nowMs }: { row: EpicRunRowData; nowMs: number 
       <WhenLine run={run} nowMs={nowMs} />
       <BucketStrip buckets={runBuckets(inspect)} />
       <CapStrip caps={runCaps(run, nowMs)} />
-      <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.overseerAlive, nowMs)} />
+      <LeaseLine lease={leaseState(inspect?.lease ?? null, entry.werkMasterAlive, nowMs)} />
       <IdleWhy sentence={idleSentence(entry, inspect)} />
       <BatonTail entries={batonTail(inspect?.baton ?? [])} nowMs={nowMs} />
       <RunActions project={project} epicId={epicId} run={run} live={view.live} onDone={refresh} />

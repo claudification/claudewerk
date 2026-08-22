@@ -4,7 +4,7 @@
  *
  * A beat does several sentinel round trips, and a slow sentinel is exactly when
  * a second tick would fire on top of the first -- both would read the same
- * generation, and while the lease CAS would refuse the second overseer, the two
+ * generation, and while the lease CAS would refuse the second werk-master, the two
  * would still both dispatch the same ready card. The reentrancy guard is
  * cheaper and more obvious than making every action idempotent.
  */
@@ -20,7 +20,7 @@ import { mergeReadings, type ProfileHeadroom, readingsFrom } from './epic-headro
 import { forgetArmedEpic, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, type IsLive, type ProducedOutput } from './epic-sweep'
 import type { GitDirt } from './epic-types'
-import { buildOverseerReaper, buildSeatReaper, type EpicReapers } from './epic-vitality'
+import { buildSeatReaper, buildWerkMasterReaper, type EpicReapers } from './epic-vitality'
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
@@ -98,13 +98,13 @@ export interface SweepDeps extends BeatDeps {
    */
   publishActivity?: () => Promise<void>
   /**
-   * BOTH REAPERS -- a card seat's and the overseer's -- see `epic-vitality.ts`.
+   * BOTH REAPERS -- a card seat's and the werk-master's -- see `epic-vitality.ts`.
    * One field rather than two, because the two are one structural type and
    * nothing but a field name can tell them apart at a call site.
    *
    * ABSENT MEANS NOTHING IS EVER REAPED. For a card seat that is exactly the
    * behaviour that leaked a concurrency slot for twelve minutes on 2026-08-21;
-   * for the overseer it is a beat frozen forever at `overseer alive at gen N`.
+   * for the werk-master it is a beat frozen forever at `werk-master alive at gen N`.
    * Both are bad, and both are still the right default for a test that builds
    * deps by hand: an unwired caller keeps the old arithmetic rather than reaping
    * against a clock it never supplied. `buildSweepDeps` always installs the real
@@ -288,7 +288,7 @@ export function buildSweepDeps(store: ConversationStore, overrides: Partial<Swee
   const now = () => deps.now()
   deps.reapers ??= {
     seat: buildSeatReaper({ hasSocket, now }),
-    overseer: buildOverseerReaper({ hasSocket, now }),
+    werkMaster: buildWerkMasterReaper({ hasSocket, now }),
   }
   return deps
 }
@@ -397,9 +397,9 @@ export async function sweepEpics(deps: SweepDeps): Promise<void> {
  * the RPC caller as `claude:///path` while `g.project` comes off the
  * conversation store as `claude://default/path`. Spelt differently, `.find()`
  * missed, and the beat ran against a group with no `inFlight`, no `inVerify` and
- * a dead overseer -- so every seat-ceiling check inside it saw zero seats and a
+ * a dead werk-master -- so every seat-ceiling check inside it saw zero seats and a
  * manual beat could dispatch a second seat onto a card that already had a live
- * implementer. That is the same duplicate-fleet failure the restart quarantine
+ * werk-worker. That is the same duplicate-fleet failure the restart quarantine
  * below guards; the quarantine covers the restart window, this covers the
  * spelling.
  *
@@ -437,7 +437,7 @@ function pickBeatGroup(watched: readonly EpicGroup[], project: string, epicId: s
  * It takes the SAME reentrancy guard as the scheduled sweep, and that is the
  * whole reason this lives here rather than in the route. Two beats on one epic
  * would both read the same generation; the lease CAS refuses the second
- * overseer, but nothing stops them both dispatching the same ready card, so the
+ * werk-master, but nothing stops them both dispatching the same ready card, so the
  * concurrency ceiling would be overshot by exactly the race the guard prevents.
  */
 export async function beatOneEpic(

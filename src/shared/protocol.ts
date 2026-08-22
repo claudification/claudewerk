@@ -3785,7 +3785,7 @@ export interface LaunchConfig {
    * BUYS (the mute, the merge authority) is enforced by the settings the spawn
    * carried; nothing re-reads this field to decide what an agent may do.
    *
-   * `gen` is the overseer generation that dispatched this conversation, which is
+   * `gen` is the werk-master generation that dispatched this conversation, which is
    * what makes a wake idempotent: two guardians seeing the same settle compute
    * the same generation, and the lease CAS lets exactly one of them through.
    */
@@ -4999,7 +4999,7 @@ export type EpicOpKind =
   | 'get' // run meta + baton tail + the computed plan
   | 'patch' // merge scalars into run.md (gen, status, dryGens); `digest` writes digest.md
   | 'log_append' // append-only baton entry (NEVER rewrites)
-  | 'lease' // compare-and-swap the overseer singleton on the epic card
+  | 'lease' // compare-and-swap the werk-master singleton on the epic card
   | 'release' // drop the lease, keeping the generation counter
   | 'seat_get' // read one (card, role) seat lease off the WORK card
   | 'seat_claim' // compare-and-swap that seat lease -- the per-card mutex
@@ -5046,7 +5046,7 @@ export interface EpicLeaseInput {
  * Addressed by `(cardId, role)` and written to the WORK CARD's frontmatter, not
  * the epic's: the envelope's `epicId` still says which run this belongs to, but
  * the lease itself belongs to the card whose worktree is at stake. Role is part
- * of the key because an implementer and a verifier on one card are two
+ * of the key because a werk-worker and a werk-verifier on one card are two
  * legitimate concurrent seats.
  */
 export interface EpicSeatInput {
@@ -5083,7 +5083,7 @@ export interface EpicLogAppendInput {
 /**
  * `get` payload -- HOW MUCH of the baton, and which of it.
  *
- * Absent means the prompt-sized default an overseer generation is handed. A
+ * Absent means the prompt-sized default a werk-master generation is handed. A
  * human debugging a forty-generation run needs a different read entirely ("every
  * verdict", "everything about t5", "the last 200"), and hard-coding one number
  * for both callers meant the debugging one simply could not be served.
@@ -5130,7 +5130,7 @@ export interface EpicRunPatchInput {
   /** Generation 0 has run. Only ever set TRUE, and only by the engine -- a run
    *  that could un-plan itself would re-plan on every resume. */
   planned?: boolean
-  /** Board fingerprint taken when the planner was dispatched; empty string
+  /** Board fingerprint taken when the werk-planner was dispatched; empty string
    *  clears it. See epic-board-fingerprint.ts. */
   planBaseline?: string
 }
@@ -5302,9 +5302,9 @@ export interface EpicInspectLive {
   inFlight: string[]
   settled: string[]
   /** Settled cards the baton has never acknowledged. This is what a wake is FOR;
-   *  a non-empty list with no overseer alive means the next beat will wake one. */
+   *  a non-empty list with no werk-master alive means the next beat will wake one. */
   unacknowledged: string[]
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   maxGenSeen: number
   /** Present only when the conversations and `run.md` disagree about the
    *  generation -- spawns racing the lease, which silently freezes a run. */
@@ -5313,7 +5313,7 @@ export interface EpicInspectLive {
 }
 
 /** One beat the sweep performed. The mechanical layer under the baton: the
- *  baton is the overseer's memory, this is what the machine actually did. */
+ *  baton is the werk-master's memory, this is what the machine actually did. */
 export interface EpicBeatRecord {
   at: string
   gen: number
@@ -5330,7 +5330,7 @@ export interface EpicInspectResult {
   epicId: string
   project: string
   run: EpicRunSnapshot | null
-  /** The overseer singleton's grip, read off the epic CARD. `convId: ''` means
+  /** The werk-master singleton's grip, read off the epic CARD. `convId: ''` means
    *  it ran and released; `null` means it has never run. */
   lease: EpicLease | null
   /** Null when the epic is not on the board at all -- see `error`. */
@@ -5370,7 +5370,7 @@ export interface EpicActivityEntry {
   gen: number
   maxGens: number
   inFlight: number
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   armed: boolean
   /** ISO of the last beat the sweep recorded; null if it has never beaten. */
   lastBeatAt: string | null
@@ -5426,7 +5426,7 @@ export interface EpicRunListEntry {
   gen: number
   armed: boolean
   inFlight: number
-  overseerAlive: boolean
+  werkMasterAlive: boolean
   /**
    * HAS A HUMAN BURIED THIS RUN? -- `acknowledged` (somebody pressed CLEAR) or
    * `aged-out` (dead longer than `RUN_AGE_OUT_MS`). Null while the run is still

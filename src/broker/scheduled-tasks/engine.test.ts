@@ -7,10 +7,10 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { REFINER_ORDER, REFINER_ORDER_ID } from '../../shared/refiner-order'
 import { DEFAULT_SCHEDULE_SPAWN, newScheduledTaskId, type ScheduledTask } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { DENY_FLOOR_RULES, denyFloorHookCommand } from '../../shared/unattended-permissions'
+import { WERK_REFINER_ORDER, WERK_REFINER_ORDER_ID } from '../../shared/werk-refiner-order'
 import { createMemoryDriver } from '../store/memory/driver'
 import type { StoreDriver } from '../store/types'
 import { type EngineDeps, startScheduledTaskEngine } from './engine'
@@ -473,7 +473,7 @@ describe('the unattended deny-floor on a scheduled fire', () => {
  * deduped, with everything else in the fragment left alone.
  */
 describe('an order and a settingsInline fragment composed on one fire', () => {
-  /** The order's own rule. Asserted against `REFINER_ORDER` inside the test, so
+  /** The order's own rule. Asserted against `WERK_REFINER_ORDER` inside the test, so
    *  an order that stops carrying it fails loudly instead of testing nothing. */
   const ORDER_RULE = 'mcp__rclaude__project_set_status'
   /** The human's own rule -- nobody else carries it. */
@@ -491,7 +491,7 @@ describe('an order and a settingsInline fragment composed on one fire', () => {
   function orderedTaskWithFragment(deny: string[]): ScheduledTask {
     return makeTask({
       name: 'refine with settings',
-      orderId: REFINER_ORDER_ID,
+      orderId: WERK_REFINER_ORDER_ID,
       spawn: {
         ...DEFAULT_SCHEDULE_SPAWN,
         permissionMode: 'dontAsk',
@@ -507,7 +507,7 @@ describe('an order and a settingsInline fragment composed on one fire', () => {
   }
 
   test("the caller's rules, the order's rule and the whole floor all land, each exactly once", async () => {
-    expect(REFINER_ORDER.permissions?.deny).toContain(ORDER_RULE)
+    expect(WERK_REFINER_ORDER.permissions?.deny).toContain(ORDER_RULE)
 
     const h = harness()
     h.store.scheduledTasks.upsert(orderedTaskWithFragment([CALLER_RULE, SHARED_WITH_FLOOR]))
@@ -571,7 +571,7 @@ describe('an order and a settingsInline fragment composed on one fire', () => {
     const h = harness()
     const task = makeTask({
       name: 'refine with junk settings',
-      orderId: REFINER_ORDER_ID,
+      orderId: WERK_REFINER_ORDER_ID,
       spawn: { ...DEFAULT_SCHEDULE_SPAWN, settingsInline: { permissions: { deny: 'Bash(sudo:*)' } } },
     })
     h.store.scheduledTasks.upsert(task)
@@ -581,7 +581,7 @@ describe('an order and a settingsInline fragment composed on one fire', () => {
     expect(h.requests).toHaveLength(0)
     const run = h.store.scheduledTasks.listRuns(task.id)[0]
     expect(run?.outcome).toBe('error')
-    expect(run?.error).toContain(`order ${REFINER_ORDER_ID}`)
+    expect(run?.error).toContain(`order ${WERK_REFINER_ORDER_ID}`)
     expect(run?.error).toContain('cannot apply its deny rules')
     // The floor never got a say: its refusal wording is absent.
     expect(run?.error).not.toContain('deny-floor')

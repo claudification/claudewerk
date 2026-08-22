@@ -27,8 +27,8 @@ vi.mock('./runs/use-unattended-runs', () => ({
 // sentinel round trip, a board read and a DAG plan, so a run in the not-running
 // tail must never appear in this list.
 const inspect = vi.hoisted(() => ({ data: null as unknown, asked: [] as string[] }))
-vi.mock('@/components/overseer/use-overseer-inspect', () => ({
-  useOverseerInspect: (_project: string, epicId: string) => {
+vi.mock('@/components/werk-master/use-werk-master-inspect', () => ({
+  useWerkMasterInspect: (_project: string, epicId: string) => {
     if (!inspect.asked.includes(epicId)) inspect.asked.push(epicId)
     return {
       data: inspect.data,
@@ -62,7 +62,7 @@ function entry(over: Partial<EpicActivityEntry> = {}): EpicActivityEntry {
     gen: 3,
     maxGens: 40,
     inFlight: 2,
-    overseerAlive: true,
+    werkMasterAlive: true,
     armed: true,
     lastBeatAt: iso(20_000),
     stale: false,
@@ -104,7 +104,7 @@ function inspectResult(over: Partial<EpicInspectResult> = {}): EpicInspectResult
       inFlight: ['c1', 'c2'],
       settled: [],
       unacknowledged: [],
-      overseerAlive: true,
+      werkMasterAlive: true,
       maxGenSeen: 3,
       conversations: [],
     },
@@ -156,12 +156,12 @@ describe('the unattended-runs pane', () => {
     expect(screen.getByText('0 parked')).toBeTruthy()
   })
 
-  it('makes a STALE OVERSEER LEASE unmistakable -- the alarm this pane exists for', () => {
+  it('makes a STALE WERK-MASTER LEASE unmistakable -- the alarm this pane exists for', () => {
     feed.rows = [epicRow()]
     inspect.data = inspectResult({ lease: { convId: 'deadbeef99', gen: 4, at: iso(45 * 60_000) } })
     render(<UnattendedRunsPane />)
 
-    const line = document.querySelector('.wall-run-overseer-bad')
+    const line = document.querySelector('.wall-run-werk-master-bad')
     expect(line).toBeTruthy()
     expect(line?.textContent).toContain('STALE LEASE')
     expect(line?.textContent).toContain('deadbeef')

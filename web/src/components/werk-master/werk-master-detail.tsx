@@ -13,11 +13,17 @@ import { useState } from 'react'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { leaseSentence, leaseState } from '@/lib/epic-lease-view'
 import { cn } from '@/lib/utils'
-import { ago, Empty, Stat, StatusPill } from './overseer-bits'
-import { OverseerControls } from './overseer-controls'
-import { OverseerDag } from './overseer-dag'
-import { OverseerSeats } from './overseer-seats'
-import { OverseerBaton, OverseerBeats, OverseerDigest, type OverseerTab, OverseerTabStrip } from './overseer-tabs'
+import { ago, Empty, Stat, StatusPill } from './werk-master-bits'
+import { WerkMasterControls } from './werk-master-controls'
+import { WerkMasterDag } from './werk-master-dag'
+import { WerkMasterSeats } from './werk-master-seats'
+import {
+  WerkMasterBaton,
+  WerkMasterBeats,
+  WerkMasterDigest,
+  type WerkMasterTab,
+  WerkMasterTabStrip,
+} from './werk-master-tabs'
 
 /** Everything the heading DERIVES, in one place. Pulled out of the component
  *  because a header that is 90% `?.` and `??` reads as complicated when the only
@@ -53,7 +59,7 @@ export function headFacts(data: EpicInspectResult, nowMs: number) {
     vitality: runVitality({
       status: run?.status ?? null,
       inFlight: data.live.inFlight.length,
-      overseerAlive: data.live.overseerAlive,
+      werkMasterAlive: data.live.werkMasterAlive,
       armed: data.live.armed,
       lastBeatAt: lastBeat,
       stale: beatStale(lastBeat, nowMs),
@@ -73,7 +79,7 @@ function RunHead({
   stale: boolean
 }) {
   const { gen, maxGens, pct, lastBeat, target, concurrency, vitality, waiting } = headFacts(data, nowMs)
-  const lease = leaseState(data.lease, data.live.overseerAlive, nowMs)
+  const lease = leaseState(data.lease, data.live.werkMasterAlive, nowMs)
 
   return (
     <div className="px-3.5 py-2.5 border-b border-border border-l-[3px] border-l-[color:var(--epic-badge)] bg-[color:var(--epic-badge-tint)] shrink-0">
@@ -99,7 +105,7 @@ function RunHead({
           IDLE and means it, and this is the reason that is the whole story. */}
       {waiting && <div className="text-meta mt-0.5 text-warning">{`WAITING -- ${waiting}`}</div>}
       {/* WHO HOLDS THE LEASE, AND AT WHICH GENERATION. This window used to
-          collapse the whole lease to a boolean and show live overseer
+          collapse the whole lease to a boolean and show live werk-master
           CONVERSATIONS beside it -- a different fact, which the engine keeps
           apart and the panel did not. On 2026-08-20 the lease named 0dc1e780 at
           gen 11 with no live conversation, which IS the explanation of the
@@ -151,13 +157,13 @@ function Stats({ data }: { data: EpicInspectResult }) {
   )
 }
 
-const TAB_BODY: Record<OverseerTab, (d: EpicInspectResult, nowMs: number) => React.ReactNode> = {
-  baton: (d, nowMs) => <OverseerBaton baton={d.baton} nowMs={nowMs} />,
-  beats: (d, nowMs) => <OverseerBeats beats={d.beats} nowMs={nowMs} />,
-  digest: d => <OverseerDigest run={d.run} />,
+const TAB_BODY: Record<WerkMasterTab, (d: EpicInspectResult, nowMs: number) => React.ReactNode> = {
+  baton: (d, nowMs) => <WerkMasterBaton baton={d.baton} nowMs={nowMs} />,
+  beats: (d, nowMs) => <WerkMasterBeats beats={d.beats} nowMs={nowMs} />,
+  digest: d => <WerkMasterDigest run={d.run} />,
 }
 
-export function OverseerDetail({
+export function WerkMasterDetail({
   data,
   error,
   loading,
@@ -172,11 +178,11 @@ export function OverseerDetail({
   nowMs: number
   onRefresh: () => void
   /** When the displayed snapshot was fetched, and whether that is old enough to
-   *  say so. See use-overseer-inspect.ts for why an open pane can go stale. */
+   *  say so. See use-werk-master-inspect.ts for why an open pane can go stale. */
   fetchedAt?: number | null
   stale?: boolean
 }) {
-  const [tab, setTab] = useState<OverseerTab>('baton')
+  const [tab, setTab] = useState<WerkMasterTab>('baton')
   const selectConversation = useConversationsStore(s => s.selectConversation)
 
   if (loading) return <Empty>Reading the run...</Empty>
@@ -186,7 +192,7 @@ export function OverseerDetail({
   return (
     <section className="flex-1 min-w-0 flex flex-col">
       <RunHead data={data} nowMs={nowMs} fetchedAt={fetchedAt} stale={stale} />
-      <OverseerControls
+      <WerkMasterControls
         project={data.project}
         epicId={data.epicId}
         run={data.run}
@@ -198,15 +204,15 @@ export function OverseerDetail({
 
       <div className="flex-1 min-h-0 flex">
         <div className="w-72 shrink-0 border-r border-border overflow-y-auto">
-          <OverseerSeats
+          <WerkMasterSeats
             live={data.live}
             concurrency={data.run?.concurrency ?? 3}
             onOpenConversation={selectConversation}
           />
-          <OverseerDag plan={data.plan} />
+          <WerkMasterDag plan={data.plan} />
         </div>
         <div className="flex-1 min-w-0 flex flex-col">
-          <OverseerTabStrip tab={tab} onTab={setTab} batonCount={data.baton.length} beatCount={data.beats.length} />
+          <WerkMasterTabStrip tab={tab} onTab={setTab} batonCount={data.baton.length} beatCount={data.beats.length} />
           <div className="flex-1 min-h-0 overflow-y-auto">{TAB_BODY[tab](data, nowMs)}</div>
         </div>
       </div>

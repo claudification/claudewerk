@@ -2,7 +2,7 @@
  * Sentinel handlers for the PER-CARD SEAT LEASE (epic-seat-lease.ts).
  *
  * Three ops, and the only interesting one is `seat_claim`. It is the same CAS
- * the overseer lease uses -- `evaluateLease`, unchanged -- pointed at a
+ * the werk-master lease uses -- `evaluateLease`, unchanged -- pointed at a
  * different set of frontmatter keys on a different card, and it carries the same
  * hard requirement: NO AWAIT between the read and the write, or two seats
  * connecting in the same second would both read "free" and both grant. Node's
@@ -69,9 +69,9 @@ export const SEAT_HANDLERS: Record<string, SeatHandler> = {
   /**
    * THE CLAIM. Every refusal path lives inside `evaluateLease` and there is NO
    * EARLY RETURN ABOVE THE CAS -- that is deliberate and it is the whole of
-   * Done-when 4. The overseer beat's own deadlock on 2026-08-20 was not a
+   * Done-when 4. The werk-master beat's own deadlock on 2026-08-20 was not a
    * missing TTL: the TTL existed and worked, and `epic-beat.ts:251` returned
-   * "overseer alive; holding the beat" above the CAS so the question was never
+   * "werk-master alive; holding the beat" above the CAS so the question was never
    * put. A wedged holder is displaced here because the CAS is REACHED.
    */
   seat_claim(root, msg, nowMs) {
@@ -89,7 +89,7 @@ export const SEAT_HANDLERS: Record<string, SeatHandler> = {
   /**
    * THE RELEASE, and it REFUSES A NON-HOLDER.
    *
-   * The overseer's `release` is unguarded because only the broker ever sends it.
+   * The werk-master's `release` is unguarded because only the broker ever sends it.
    * This one is sent by the SEAT, and the seat that most wants to send it is the
    * one that just lost -- a losing claimant that could release would hand the
    * card to nobody while the winner is mid-edit, which is the corruption this

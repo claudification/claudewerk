@@ -1,7 +1,7 @@
 /**
  * THE PLANNING GENERATION -- generation 0, before anything is dispatched.
  *
- * It is not a fourth role. It is the OVERSEER seat with a different prompt and
+ * It is not a fourth role. It is the WERK-MASTER seat with a different prompt and
  * dispatch suppressed for one beat: same permissions, same board access, same
  * baton, same right to reach a human. A separate role would have duplicated all
  * four for no capability nobody needed.
@@ -21,13 +21,13 @@
  * It is also the only moment in the run where the board can be fixed cheaply:
  * closing what is already done, filing what everyone forgot, and splitting the
  * card that is secretly four cards all cost one generation here, versus a
- * bounced verdict and a wasted implementer later.
+ * bounced verdict and a wasted werk-worker later.
  */
 
 import type { EpicPlan } from './epic-ready'
 import type { EpicRunReading } from './epic-run-types'
 
-export interface PlannerPromptCtx {
+export interface WerkPlannerPromptCtx {
   projectUri: string
   projectRoot: string
   /** The run, WITH the generation projected onto it from the epic card's lease
@@ -70,7 +70,7 @@ const ORDERING = [
   'in the card body, not in `depends_on`.',
 ].join('\n')
 
-function theJob(ctx: PlannerPromptCtx): string {
+function theJob(ctx: WerkPlannerPromptCtx): string {
   const id = ctx.run.epicId
   return [
     'YOUR JOB, IN THIS ORDER:',
@@ -79,14 +79,14 @@ function theJob(ctx: PlannerPromptCtx): string {
     '   card. You are looking for the gap between what the epic wants and what the cards actually cover.',
     '',
     '2. CLOSE WHAT IS ALREADY DONE. Check the repo, not the board -- a card describing work that is already in',
-    '   the tree is the most expensive kind of card, because an implementer will be dispatched to redo it and a',
-    '   verifier will be dispatched to judge the redo. Verify against the code, then',
+    '   the tree is the most expensive kind of card, because a werk-worker will be dispatched to redo it and a',
+    '   werk-verifier will be dispatched to judge the redo. Verify against the code, then',
     '   project_set_status(id, status="done") with a one-line note in the body saying where it landed.',
     '   If you are not certain it is done, LEAVE IT. A wrongly-closed card is silently dropped scope.',
     '',
     `3. FILE WHAT IS MISSING. Anything the intent requires and no card covers becomes a new card with`,
-    `   \`epic: ${id}\`. Split any card that is secretly several -- a card an implementer cannot finish in one`,
-    '   sitting comes back bounced, which costs a full implementer plus a full verifier to learn.',
+    `   \`epic: ${id}\`. Split any card that is secretly several -- a card a werk-worker cannot finish in one`,
+    '   sitting comes back bounced, which costs a full werk-worker plus a full werk-verifier to learn.',
     '',
     '4. DROP WHAT STOPPED MAKING SENSE. Archive it with the reason in the body. `archived` leaves the',
     '   denominator, so a dropped card does not fake progress.',
@@ -118,13 +118,13 @@ const STOPPING = [
   'If the epic is fundamentally unclear -- you cannot tell what it is FOR, and guessing would send agents off',
   'to build the wrong thing -- ask Jonas ONE crisp question with your recommendation. You are the only seat in',
   'this run that may. Getting the intent wrong here is the most expensive mistake available to you: every',
-  'implementer after this inherits it.',
+  'werk-worker after this inherits it.',
 ].join('\n')
 
-export function buildPlannerPrompt(ctx: PlannerPromptCtx): string {
+export function buildWerkPlannerPrompt(ctx: WerkPlannerPromptCtx): string {
   const r = ctx.plan.rollup
   return [
-    `You are THE PLANNER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
+    `You are THE WERK-PLANNER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
     `This is generation 0 -- the analysis pass, before any card is dispatched. Target: ${ctx.run.target}.`,
     `Concurrency ceiling once work starts: ${ctx.run.concurrency}.`,
     '',

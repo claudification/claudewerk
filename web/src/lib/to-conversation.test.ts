@@ -47,13 +47,13 @@ function summaryWith(extra: Partial<ConversationSummary>): ConversationSummary {
 
 describe('toConversation -- origin tags survive the whitelist', () => {
   it('carries the epic seat tag through', () => {
-    const conv = toConversation(summaryWith({ epic: { epicId: 'epic-the-wall', role: 'implementer', gen: 11 } }))
-    expect(conv.epic).toEqual({ epicId: 'epic-the-wall', role: 'implementer', gen: 11 })
+    const conv = toConversation(summaryWith({ epic: { epicId: 'epic-the-wall', role: 'werk-worker', gen: 11 } }))
+    expect(conv.epic).toEqual({ epicId: 'epic-the-wall', role: 'werk-worker', gen: 11 })
   })
 
   it('carries the epic cardId, which is what a row renders as its card chip', () => {
     const conv = toConversation(
-      summaryWith({ epic: { epicId: 'epic-the-wall', role: 'verifier', gen: 3, cardId: 'wall-now-bar' } }),
+      summaryWith({ epic: { epicId: 'epic-the-wall', role: 'werk-verifier', gen: 3, cardId: 'wall-now-bar' } }),
     )
     expect(conv.epic?.cardId).toBe('wall-now-bar')
   })

@@ -97,7 +97,7 @@ describe('pinnedEpicRows', () => {
     const rows = pinnedEpicRows(PROJECT, [
       epicCard(),
       child('moving', 'in-progress'),
-      child('question', 'open', { tags: ['needs-overseer'], title: 'which colour?' }),
+      child('question', 'open', { tags: ['needs-werk-master'], title: 'which colour?' }),
       child('waiting', 'open', { dependsOn: ['moving'] }),
     ])
     const by = Object.fromEntries(rows[0].children.map(c => [c.slug, c]))

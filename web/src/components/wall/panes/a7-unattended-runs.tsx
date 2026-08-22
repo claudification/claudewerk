@@ -1,11 +1,11 @@
 /**
- * A7 UNATTENDED RUNS -- epic runs, the overseer, and nightshift, on one pane.
+ * A7 UNATTENDED RUNS -- epic runs, the werk-master, and nightshift, on one pane.
  *
  * The fleet runs itself now, and until this pane the only way to know whether any
  * of it was actually moving was `epic_run action=inspect` from inside a
  * conversation. That is a debug command, not a surface, and a run that silently
  * stopped looked exactly like a run that was thinking. On 2026-08-18 an epic run
- * completed its loop, the OVERSEER NEVER WOKE, and nothing said so.
+ * completed its loop, the WERK-MASTER NEVER WOKE, and nothing said so.
  *
  * READ-MOSTLY. Three verbs live here -- beat, pause, resume -- each behind a
  * second click. ABORT is deliberately not on this pane: a terminal action does
@@ -99,7 +99,7 @@ export default function UnattendedRunsPane() {
   const { rows, matched, total } = useWallFilter(runs, AXES, row => ({
     project: row.projectName,
     title: rowTitle(row),
-    action: row.kind === 'epic' ? 'epic run overseer' : 'nightshift night run',
+    action: row.kind === 'epic' ? 'epic run werk-master' : 'nightshift night run',
   }))
 
   const { live, tail, cleared } = runSections(rows, nowMs)

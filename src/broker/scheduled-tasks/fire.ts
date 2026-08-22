@@ -14,11 +14,11 @@
 import type { LaunchProfile } from '../../shared/launch-profile'
 import { composeSeatPrompt, type Order } from '../../shared/order'
 import { composeOrderCaps, internalOrderCaller } from '../../shared/order-caps'
-import { seatOrder } from '../../shared/refiner-order'
 import { newScheduledRunId, type RunOutcome, type RunTrigger, type ScheduledRun } from '../../shared/scheduled-run'
 import { type ScheduledTask, scheduleAction } from '../../shared/scheduled-task'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { applyDenyFloor, buildUnattendedSettings } from '../../shared/unattended-permissions'
+import { seatOrder } from '../../shared/werk-refiner-order'
 import { nextFailureState } from './policy'
 import { decideSeatAdmission } from './seat-reservation'
 
@@ -117,10 +117,10 @@ export interface FireResult {
  *
  * THE ORDER'S INSTRUCTION BLOCK IS FOLDED INTO THE PROMPT HERE, and here is the
  * only place a scheduled fire has one. An `order@1` for a seat no broker builder
- * covers carries its own `instructions` (`REFINER@1` is the first), and until
+ * covers carries its own `instructions` (`WERK-REFINER@1` is the first), and until
  * something turns that field into prompt text a schedule naming such an order
- * gets the seat's CAPS and never its definition -- a refiner that was never told
- * to drain the tag, running on a refiner's budget.
+ * gets the seat's CAPS and never its definition -- a werk-refiner that was never told
+ * to drain the tag, running on a werk-refiner's budget.
  *
  * NOT IN `applyOrderToRequest`, DELIBERATELY. That function is shared with
  * `refine-scanner.ts`, which composes its own prompt from the same block
@@ -224,8 +224,8 @@ function withDenyRules(settings: Record<string, unknown> | undefined, deny: stri
  * one every other order path uses, and the result is written back over
  * `permissions.deny` alone. Leaving the fragment alone instead -- which this
  * did until `order-deny-union-settings-inline` -- silently downgraded an
- * order's strongest guarantee to advice: `REFINER@1` denies the status verb so
- * a refiner CANNOT move a lane, and a refiner that quietly regained that verb
+ * order's strongest guarantee to advice: `WERK-REFINER@1` denies the status verb so
+ * a werk-refiner CANNOT move a lane, and a werk-refiner that quietly regained that verb
  * looks exactly like a correct run until a card lands in the wrong lane.
  *
  * A fragment whose shape cannot be unioned FAILS THE FIRE, naming the order,

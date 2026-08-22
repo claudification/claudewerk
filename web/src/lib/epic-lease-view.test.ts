@@ -1,6 +1,6 @@
 /**
  * The lease alarm. Moved here with the code, out of the wall's `run-model`,
- * because the overseer window renders the same sentence now.
+ * because the werk-master window renders the same sentence now.
  */
 
 import type { EpicLease } from '@shared/epic-lease'
@@ -17,7 +17,7 @@ const held = (over: Partial<EpicLease> = {}): EpicLease => ({
   ...over,
 })
 
-describe('the overseer lease -- the alarm', () => {
+describe('the werk-master lease -- the alarm', () => {
   it('reads a live, recent holder as healthy', () => {
     expect(leaseState(held(), true, NOW)).toEqual({ kind: 'held', sinceMs: 30_000, holder: 'abcdef12', gen: 4 })
   })
@@ -55,6 +55,6 @@ describe('the sentence', () => {
   })
 
   it('says never woken rather than inventing a holder', () => {
-    expect(leaseSentence(leaseState(null, true, NOW))).toBe('overseer has never woken')
+    expect(leaseSentence(leaseState(null, true, NOW))).toBe('werk-master has never woken')
   })
 })

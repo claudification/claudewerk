@@ -9,7 +9,7 @@
  *
  * `blocks:` is left ON DISK untouched. It still means "runs before" on cards
  * that used it for sequencing, and destroying that while promoting parenthood
- * would lose the only copy. The planner decides later what to strip.
+ * would lose the only copy. The werk-planner decides later what to strip.
  *
  * Pure planning here (`planEpicMigration`); the CLI does the writing, so the
  * decision table is testable without a board on disk.

@@ -1,13 +1,13 @@
 /**
  * BEAT NOW / PAUSE / RESUME, each behind a two-step confirm.
  *
- * THE VERBS ARE NOT REIMPLEMENTED HERE. `overseer-verbs.ts` already holds them
+ * THE VERBS ARE NOT REIMPLEMENTED HERE. `werk-master-verbs.ts` already holds them
  * and already decides what each one reports back; this file is the wall's
  * GATE in front of them, nothing else.
  *
  * ABORT IS DELIBERATELY ABSENT. A terminal, unresumable action does not belong
  * on a surface whose whole purpose is to be glanced at from across a room. The
- * overseer window has it, behind its own confirm, and that is the right place.
+ * werk-master window has it, behind its own confirm, and that is the right place.
  *
  * THE GATE IS A SECOND CLICK, NOT `window.confirm`. A wall is often a DETACHED
  * window sitting on another monitor: a native modal there steals focus from
@@ -21,7 +21,7 @@
 import type { EpicRunSnapshot } from '@shared/protocol'
 import { useEffect, useState } from 'react'
 import { cn, haptic } from '@/lib/utils'
-import { VERBS, type Verb } from '../../overseer/overseer-verbs'
+import { VERBS, type Verb } from '../../werk-master/werk-master-verbs'
 
 /** How long an armed button stays armed. Long enough to finish the gesture,
  *  short enough that it is never still armed when you look back. */

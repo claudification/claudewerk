@@ -11,7 +11,7 @@
  * the filter store, not here.
  *
  * Extracted at the P2 merge (R19) -- P1 and P2 had grown the identical handler
- * on branches that were open at the same time, so neither implementer could have
+ * on branches that were open at the same time, so neither werk-worker could have
  * seen the other's copy.
  */
 

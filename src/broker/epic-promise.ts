@@ -25,7 +25,7 @@
  * of beats:
  *
  *   1. ACKNOWLEDGEMENT -- the moment the card specified. A card settles the beat
- *      its implementer ends; that is engine-side, once per card, card id known,
+ *      its werk-worker ends; that is engine-side, once per card, card id known,
  *      branch already committed. LANE-AGNOSTIC: a settled card in `in-review`
  *      gets its `closes:` immediately, without waiting for a verdict.
  *   2. LAST CALL -- the beat that parks or completes the run. After it, every
@@ -112,7 +112,7 @@ const settledPromises = new Set<string>()
 /** Cards whose RETRYABLE refusal has already been said once. Separate from the
  *  set above precisely because those refusals are retried -- the commit may
  *  simply not have been made yet -- and repeating the same line every 45 seconds
- *  would bury the baton the overseer actually reads. */
+ *  would bury the baton the werk-master actually reads. */
 const announced = new Set<string>()
 
 const memoKey = (project: string, epicId: string, cardId: string) => `${project}|${epicId}|${cardId}`
@@ -165,7 +165,7 @@ function agreedDate(card: ProjectTaskMeta, nowMs: number): string {
 }
 
 /** One structured baton entry. EVERYTHING IS A STRUCTURED MESSAGE -- the write
- *  and every refusal both land in the log the overseer actually reads, never in
+ *  and every refusal both land in the log the werk-master actually reads, never in
  *  a `console.log` nobody greps. */
 async function say(deps: BeatDeps, group: EpicGroup, cardId: string, body: string): Promise<void> {
   const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
@@ -279,7 +279,7 @@ function report(out: PromiseRecordOutcome, lastCall: boolean): string {
   if (out.refused) {
     // At last call a "retryable" refusal is retryable by nobody -- the run goes
     // inert on this same beat. Saying "we will ask again" there would be a lie
-    // the overseer never gets to catch.
+    // the werk-master never gets to catch.
     const again =
       lastCall && out.retryable
         ? ' The run ends on this beat, so there is no later beat to ask again: this is FINAL.'
@@ -330,7 +330,7 @@ export async function recordSettledPromises(
  * WHY THIS EXISTS AT ALL, and it is not a duplicate of the pass above. A run
  * completes off CARD LANES alone (`planEpic` -> `rollup.complete`); it does not
  * wait for the conversations behind those cards to end. So on the beat where the
- * last child first reads `done` while its verifier is still alive, that card is
+ * last child first reads `done` while its werk-verifier is still alive, that card is
  * NOT in `group.settled`, the normal pass skips it -- and `settleRun` then flips
  * the run to `complete`, after which every later beat returns at `isInertRun`
  * before the card is reached. There is no next beat. Without this, the one card
@@ -397,7 +397,7 @@ async function recordOne(
   // AN IDEMPOTENT NO-OP IS A NON-EVENT. Dropping the lane gate means a card can
   // legitimately be asked again beat after beat (see `retires`), and a baton
   // line every 45 seconds saying "nothing to add" would bury the entries the
-  // overseer actually reads.
+  // werk-master actually reads.
   if (result.added.length > 0 || result.refused) await say(deps, group, card.slug, report(result, lastCall))
   if (result.refused) deps.log(`${tag(group.epicId, 0)} promise NOT recorded for ${card.slug}: ${result.refused}`)
   return result
@@ -406,8 +406,8 @@ async function recordOne(
 /**
  * Is this card DONE WITH for the rest of the run, or can it still gain commits?
  *
- * THE BOUNCE IS WHY THIS IS NOT JUST "we got an answer". A verifier can send a
- * card back to `open`, a second implementer picks it up and commits more, and
+ * THE BOUNCE IS WHY THIS IS NOT JUST "we got an answer". A werk-verifier can send a
+ * card back to `open`, a second werk-worker picks it up and commits more, and
  * that card settles a second time. Retiring it on the first settle would freeze
  * its `closes:` at round one's shas and quietly under-report what delivered it.
  * So a card is only retired once its LANE says nobody is going back to it -- or

@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 /**
  * Hold Option to see through every scrim at once.
  *
- * A modal is usually ABOUT something on the page behind it -- you open Overseer
+ * A modal is usually ABOUT something on the page behind it -- you open WerkMaster
  * to act on the run you were just reading. Dimming that context is right by
  * default and wrong for the two seconds you want to check it, and the answer
  * "close the window, look, reopen it" loses the window's state.

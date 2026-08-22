@@ -3,7 +3,7 @@
  *
  *   <project>/.rclaude/project/epics/<epicId>/
  *     run.md     run frontmatter (EpicRunMeta), machine-owned, NOTHING else
- *     digest.md  the overseer's prose account of where the epic stands
+ *     digest.md  the werk-master's prose account of where the epic stands
  *     log.md     the append-only baton
  *
  * THE DIGEST IS A SEPARATE FILE ON PURPOSE. It used to be `run.md`'s body, which
@@ -69,7 +69,7 @@ export function epicRunFile(root: string, epicId: string): string {
 }
 
 /**
- * The overseer's digest. A SIBLING of `run.md`, never a section of it.
+ * The werk-master's digest. A SIBLING of `run.md`, never a section of it.
  *
  * The whole point of the separation is that an agent can be handed this path and
  * be unable to reach a single field the engine reads -- so nothing here ever

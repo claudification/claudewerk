@@ -38,7 +38,7 @@ function seat(cardId: string, over: Partial<Conversation> = {}, epicId = WORK_OR
     id: `conv_${epicId}_${cardId}_${seq}`,
     project: 'claude://s/p',
     status: 'ended',
-    launchConfig: { epic: { epicId, role: 'implementer', gen: 0, cardId } },
+    launchConfig: { epic: { epicId, role: 'werk-worker', gen: 0, cardId } },
     ...over,
   } as unknown as Conversation
 }
@@ -96,14 +96,14 @@ describe('the tag it selects on', () => {
 })
 
 describe('what it dispatches', () => {
-  test('an authorised card gets an IMPLEMENTER@1 seat', async () => {
+  test('an authorised card gets an WERK-WORKER@1 seat', async () => {
     const report = await runScan(workOrderScanner, deps({ getCards: async () => [card('a')] }))
 
     expect(report.acted).toEqual(['a'])
     expect(report.unaccounted).toEqual([])
     expect(dispatched.map(d => d.cardId)).toEqual(['a'])
     const plan = dispatched[0]?.plan as EpicSpawnPlan
-    expect(plan.epic).toEqual({ epicId: WORK_ORDER_EPIC_ID, role: 'implementer', gen: 0, cardId: 'a' })
+    expect(plan.epic).toEqual({ epicId: WORK_ORDER_EPIC_ID, role: 'werk-worker', gen: 0, cardId: 'a' })
     expect(plan.worktree).toBe(`epic/${WORK_ORDER_EPIC_ID}/a`)
     expect(plan.adHoc).toBe(true)
   })
@@ -137,7 +137,7 @@ describe('what it dispatches', () => {
   })
 
   /**
-   * THE CARD'S `model:` HINT REACHES THE SEAT. `IMPLEMENTER@1` sets no model cap
+   * THE CARD'S `model:` HINT REACHES THE SEAT. `WERK-WORKER@1` sets no model cap
    * today, so the clamp has nothing to narrow against and the hint is the
    * choice -- which is what makes this the interesting half of the pair: the
    * refine scanner proves the clamp bites, this one proves it does not bite when
@@ -219,13 +219,13 @@ describe('what it refuses, and by what name', () => {
     expect(buckets(report.refused)).toEqual({ 'live-conversation': ['live'], 'held-back': ['b'] })
   })
 
-  test('a question card is answered by the overseer, never implemented', async () => {
+  test('a question card is answered by the werk-master, never implemented', async () => {
     const report = await runScan(
       workOrderScanner,
-      deps({ getCards: async () => [card('q', 'open', { tags: [READY_TAG, 'needs-overseer'] })] }),
+      deps({ getCards: async () => [card('q', 'open', { tags: [READY_TAG, 'needs-werk-master'] })] }),
     )
     expect(dispatched).toEqual([])
-    expect(buckets(report.refused)['needs-overseer']).toEqual(['q'])
+    expect(buckets(report.refused)['needs-werk-master']).toEqual(['q'])
   })
 
   test('a card whose seats keep dying is not retried forever', async () => {
@@ -238,7 +238,7 @@ describe('what it refuses, and by what name', () => {
     expect(buckets(report.refused)['unspawnable']).toEqual(['a'])
   })
 
-  test('an in-review card waits for a verdict -- this scanner dispatches implementers only', async () => {
+  test('an in-review card waits for a verdict -- this scanner dispatches werk-workers only', async () => {
     const report = await runScan(workOrderScanner, deps({ getCards: async () => [card('a', 'in-review')] }))
     expect(dispatched).toEqual([])
     expect(buckets(report.refused)['awaiting-verdict']).toEqual(['a'])
@@ -366,7 +366,7 @@ describe('the accounting -- no `ready` card is ever dropped', () => {
           card('surplus'),
           card('owned', 'open', { tags: [READY_TAG], epic: 'e' }),
           card('waiting', 'open', { dependsOn: ['never'] }),
-          card('question', 'open', { tags: [READY_TAG, 'needs-overseer'] }),
+          card('question', 'open', { tags: [READY_TAG, 'needs-werk-master'] }),
           card('review', 'in-review'),
           card('finished', 'done'),
         ],
