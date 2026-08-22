@@ -89,9 +89,9 @@ describe('the three seats differ in what they CAN do, not just what they are tol
     expect(hookCount(overseer().settingsInline)).toBe(1)
   })
 
-  test('every seat runs bypassPermissions and headless, ad-hoc', () => {
+  test('every seat runs auto and headless, ad-hoc', () => {
     for (const plan of [overseer(), planImplementerSpawn(CTX, 't1'), planVerifierSpawn(CTX, 't1')]) {
-      expect(plan.permissionMode).toBe('bypassPermissions')
+      expect(plan.permissionMode).toBe('auto')
       expect(plan.headless).toBe(true)
       expect(plan.adHoc).toBe(true)
     }
@@ -113,10 +113,12 @@ describe('the three seats differ in what they CAN do, not just what they are tol
   })
 
   /**
-   * The mode is only safe because the guards are mode-INDEPENDENT. If the deny
-   * floor ever became allowlist-shaped, bypassPermissions would be a blank cheque.
+   * The mode is only ever a LAYER, because the guards are mode-INDEPENDENT: a
+   * `permissions.deny` rule and a PreToolUse hook run under every mode, so the
+   * floor is what holds whether the seat is on `auto` or was on bypass. If the
+   * floor ever became allowlist-shaped it would stop being a floor.
    */
-  test('bypass does not disarm the deny-floor', () => {
+  test('the seat mode does not disarm the deny-floor', () => {
     const settings = planImplementerSpawn(CTX, 't1').settingsInline as {
       permissions: { deny: string[] }
       hooks: { PreToolUse: unknown[] }
@@ -433,7 +435,7 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
       cwd: CTX.project,
       headless: true,
       adHoc: true,
-      permissionMode: 'bypassPermissions',
+      permissionMode: 'auto',
       settingsInline: buildEpicWorkerSettings(s.role, undefined),
       epic: { epicId: 'werk-epic', role: s.role, gen: 4, ...(s.cardId ? { cardId: s.cardId } : {}) },
       name: s.name,
@@ -496,10 +498,17 @@ describe('an order can never widen the trust of whoever runs it', () => {
     expect(() => planVerifierSpawn({ ...CTX, trustLevel: 'benevolent' }, 't1')).not.toThrow()
   })
 
-  test('bypassPermissions from a merely-trusted caller is REFUSED, not downgraded', () => {
+  /**
+   * The refusal used to come from the MODE: the seats named `bypassPermissions`
+   * and the spawn gate refuses that below benevolent trust. Narrowing them to
+   * `auto` removed that refusal, so the gate is now `Order.minTrust` and this
+   * asserts THAT -- the seats stayed exactly as hard to dispatch as they were,
+   * which is the property, rather than the sentence git happened to produce.
+   */
+  test('a merely-trusted caller is REFUSED, not downgraded', () => {
     const ctx: EpicSpawnCtx = { ...CTX, trustLevel: 'trusted' }
     expect(() => planImplementerSpawn(ctx, 't1')).toThrow(OrderCapsError)
-    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(/bypassPermissions mode requires benevolent trust/)
+    expect(() => planImplementerSpawn(ctx, 't1')).toThrow(/requires benevolent trust \(caller is trusted\)/)
   })
 
   test('the refusal names the order, so a log line says WHICH seat asked', () => {

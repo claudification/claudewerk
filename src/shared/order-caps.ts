@@ -37,7 +37,8 @@
  *              a human's spawn, which is the same class of surprise as widening.
  */
 
-import type { Order, OrderCaps } from './order'
+import type { Order, OrderCaps, OrderTrustLevel } from './order'
+import { ORDER_TRUST_RANK } from './order'
 import type { SpawnCallerContext, SpawnEvalResult, TrustLevel } from './spawn-permissions'
 import { evaluateSpawnPermission } from './spawn-permissions'
 import type { SpawnRequest } from './spawn-schema'
@@ -109,6 +110,29 @@ function narrowestMode(
   return MODE_RANK[order] < MODE_RANK[base] ? order : base
 }
 
+/**
+ * WHO MAY DISPATCH THIS ORDER -- checked before anything else, and separately
+ * from what the seat may do.
+ *
+ * The two used to be the same check by accident: every fleet order named
+ * `bypassPermissions`, `evaluateSpawnPermission` refuses bypass below benevolent
+ * trust, so the access control rode along on the privilege declaration. That
+ * coupling meant NARROWING a seat -- `bypassPermissions` to `auto`, strictly
+ * less power -- would also have removed the gate on who could start it, which is
+ * the opposite of what narrowing is supposed to do. `Order.minTrust` says it out
+ * loud so the two can move independently.
+ *
+ * Returns the refusal reason, or null when the caller clears the bar. An order
+ * with no `minTrust` has no opinion and always clears -- the ordinary spawn gate
+ * below is still there.
+ */
+function belowMinTrust(order: Order, caller: TrustLevel): string | null {
+  const required = order.minTrust
+  if (required === undefined) return null
+  if (ORDER_TRUST_RANK[caller] >= ORDER_TRUST_RANK[required]) return null
+  return `dispatching this order requires ${required} trust (caller is ${caller})`
+}
+
 /** Dedupe preserving first-seen order, matching `unattended-permissions.ts`. */
 function uniq(items: string[]): string[] {
   return [...new Set(items)]
@@ -158,6 +182,9 @@ function refusal(order: Order, verdict: Extract<SpawnEvalResult, { ok: false }>)
  * enforces and this function refuses to keep its own copy of it.
  */
 export function composeOrderCaps(order: Order, base: OrderCapBase, caller: SpawnCallerContext): OrderCapResult {
+  const underTrusted = belowMinTrust(order, caller.trustLevel)
+  if (underTrusted !== null) return { ok: false, reason: `order ${order.id}: ${underTrusted}`, field: 'minTrust' }
+
   const mode = narrowestMode(base.permissionMode, order.caps.permissionMode)
   // The composed mode goes through the REAL gate. The caller context is passed
   // through untouched: an order cannot supply, spoof or improve it.

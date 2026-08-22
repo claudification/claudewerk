@@ -66,15 +66,34 @@ describe('resolveSpawnConfig', () => {
   })
 
   describe('permissionMode', () => {
-    it('adHoc forces bypassPermissions', () => {
-      expect(resolveSpawnConfig({ adHoc: true }, null, null).permissionMode).toBe('bypassPermissions')
+    it('adHoc with nothing declared falls back to auto, not bypass', () => {
+      expect(resolveSpawnConfig({ adHoc: true }, null, null).permissionMode).toBe('auto')
     })
 
-    it('adHoc overrides explicit permissionMode', () => {
+    /**
+     * THE REGRESSION. This used to assert the opposite -- "adHoc overrides
+     * explicit permissionMode" -- and that override is what made every epic
+     * order's declared mode a dead letter: the orders said one thing, the
+     * sentinel got `bypassPermissions`, and narrowing a single seat could not be
+     * expressed at all. An ad-hoc caller that names a mode gets that mode.
+     */
+    it('adHoc HONOURS an explicitly declared permissionMode', () => {
       expect(
         resolveSpawnConfig({ adHoc: true, permissionMode: 'plan' as SpawnRequest['permissionMode'] }, null, null)
           .permissionMode,
-      ).toBe('bypassPermissions')
+      ).toBe('plan')
+    })
+
+    /**
+     * An unattended seat must never inherit the human's interactive default: a
+     * `default` there prompts, and a prompt with nobody to answer it hangs the
+     * seat until the watchdog reaps it. Only the caller's own choice, or `auto`.
+     */
+    it('adHoc ignores the ambient defaultPermissionMode', () => {
+      expect(resolveSpawnConfig({ adHoc: true }, { defaultPermissionMode: 'default' }, null).permissionMode).toBe(
+        'auto',
+      )
+      expect(resolveSpawnConfig({ adHoc: true }, null, { defaultPermissionMode: 'plan' }).permissionMode).toBe('auto')
     })
 
     it('respects explicit permissionMode when not adHoc', () => {

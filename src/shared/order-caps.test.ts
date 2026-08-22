@@ -186,6 +186,50 @@ describe('model / effort / agent -- selection, not privilege', () => {
   })
 })
 
+/**
+ * `minTrust` -- WHO may dispatch, which is not WHAT the seat may do.
+ *
+ * These two questions shared one answer until 2026-08-22: the fleet orders named
+ * `bypassPermissions`, the spawn gate refuses that below benevolent trust, and so
+ * "only a benevolent caller may start an epic" held without anyone writing it.
+ * Narrowing the seats to `auto` -- less privilege -- removed the bypass and would
+ * have removed the access control with it. That is the failure these lock down:
+ * the gate must survive a change that makes the seat WEAKER.
+ */
+describe('minTrust -- the access field', () => {
+  test('a caller below the bar is refused, and the reason names both levels', () => {
+    const result = composeOrderCaps(order({ minTrust: 'benevolent' }), {}, TRUSTED)
+    expect(result.ok).toBe(false)
+    if (result.ok) throw new Error('unreachable')
+    expect(result.field).toBe('minTrust')
+    expect(result.reason).toContain('SEAT@1')
+    expect(result.reason).toContain('requires benevolent trust (caller is trusted)')
+  })
+
+  test('a caller AT the bar clears it', () => {
+    expect(composeOrderCaps(order({ minTrust: 'benevolent' }), {}, BENEVOLENT).ok).toBe(true)
+  })
+
+  test('a caller ABOVE the bar clears it -- the check is at-least, not equals', () => {
+    expect(composeOrderCaps(order({ minTrust: 'trusted' }), {}, BENEVOLENT).ok).toBe(true)
+  })
+
+  /** The gate is independent of the mode: a seat can be weak AND hard to start. */
+  test('it refuses even when the seat asks for no privilege at all', () => {
+    expect(composeOrderCaps(order({ minTrust: 'benevolent', caps: { permissionMode: 'plan' } }), {}, TRUSTED).ok).toBe(
+      false,
+    )
+  })
+
+  test('an order with no minTrust has no opinion', () => {
+    expect(composeOrderCaps(order(), {}, TRUSTED).ok).toBe(true)
+  })
+
+  test('an unknown level is refused at validation, not silently dropped', () => {
+    expect(() => order({ minTrust: 'superuser' })).toThrow(/minTrust must be one of/)
+  })
+})
+
 describe('composeOrderCapsOrThrow', () => {
   test('throws OrderCapsError on a widening attempt, naming the order', () => {
     expect(() =>

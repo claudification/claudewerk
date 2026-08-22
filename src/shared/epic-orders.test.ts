@@ -143,7 +143,18 @@ describe('names and prompts', () => {
  */
 describe('no shipped order changes what the engine emits today', () => {
   test.each(ALL)('$id declares only the permission mode', order => {
-    expect(order.caps).toEqual({ permissionMode: 'bypassPermissions' })
+    expect(order.caps).toEqual({ permissionMode: 'auto' })
+  })
+
+  /**
+   * The gate on WHO may dispatch a fleet seat, asserted separately from the
+   * privilege the seat runs at -- because it used not to be. It rode on the
+   * seats naming `bypassPermissions`, so narrowing them to `auto` would have
+   * dropped it silently. If a future edit relaxes the mode again, this still
+   * fails on its own.
+   */
+  test.each(ALL)('$id may only be dispatched by a benevolent caller', order => {
+    expect(order.minTrust).toBe('benevolent')
   })
 
   test.each(ALL)('$id adds no deny rules and no raw flags', order => {

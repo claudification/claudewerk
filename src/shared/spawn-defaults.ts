@@ -135,6 +135,38 @@ function globalLaunchMode(global?: DefaultsSource | null): 'headless' | 'pty' | 
 }
 
 /**
+ * The permission mode for an AD-HOC (agent-spawned, unattended) conversation.
+ *
+ * ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+ * ┃  AN AD-HOC SPAWN'S OWN DECLARED MODE IS HONOURED. IT USED NOT TO BE.      ┃
+ * ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+ *
+ * This line read `partial.adHoc ? 'bypassPermissions' : ...` and so REWROTE
+ * every ad-hoc spawn's mode unconditionally. Every epic seat is ad-hoc, so the
+ * mode each order declared never reached CC -- `epic-spawn-plan.ts` documents
+ * the damage: a test asserted a value with no effect, and anyone reading the
+ * orders believed the seats were constrained in a way they were not. Narrowing
+ * one seat was IMPOSSIBLE to express, because this line undid it.
+ *
+ * `auto` IS THE FALLBACK, NOT BYPASS. When a caller declares nothing, the seat
+ * runs under the managed classifier rather than with no gate at all. The
+ * classifier is what makes this safe to default: unlike `dontAsk` it needs no
+ * allowlist, and unlike `default` it does not prompt -- and a prompt is fatal
+ * for an unattended seat, which has no human to answer it and simply hangs until
+ * the watchdog reaps it.
+ *
+ * THE AMBIENT DEFAULT IS DELIBERATELY NOT CONSULTED. `permissionModeResolved`
+ * folds in the profile / project / global `defaultPermissionMode`, which exist
+ * to describe how a HUMAN's interactive sessions should launch. Letting an
+ * unattended seat inherit an interactive `default` would hang the entire fleet
+ * on the first prompt, from a settings change nobody connected to the fleet.
+ * Only the caller's own explicit choice, or `auto`.
+ */
+function adHocPermissionMode(declared: SpawnRequest['permissionMode']): SpawnRequest['permissionMode'] {
+  return declared ?? 'auto'
+}
+
+/**
  * Merge spawn request defaults: explicit > profile > project > global > undefined.
  * Empty strings, 'default' sentinel, and 0 numerics in defaults are treated as unset.
  */
@@ -210,7 +242,7 @@ export function resolveSpawnConfig(
     ...partial,
     model,
     effort,
-    permissionMode: partial.adHoc ? 'bypassPermissions' : permissionModeResolved,
+    permissionMode: partial.adHoc ? adHocPermissionMode(partial.permissionMode) : permissionModeResolved,
     backend: partial.backend,
     transport,
     headless,

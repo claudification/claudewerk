@@ -110,14 +110,16 @@ status verb is denied to this seat), and do NOT start implementing the work.`
  * NO WORKTREE, for the overseer's reason: the board lives in the main checkout
  * and a card refined inside an isolated worktree is a card nobody else sees.
  *
- * `bypassPermissions` IS THE NARROW CHOICE HERE, counter-intuitively, and the
- * reasoning is `epic-orders.ts`': `dontAsk` denies everything not on an allow
- * list, you cannot enumerate what an agent needs, and an unattended seat that
- * hits a prompt hangs until the watchdog reaps it. What actually bounds this
- * seat is the deny rules below plus the budget -- both mode-independent. The
- * order still cannot WIDEN anyone: `composeOrderCaps` runs the composed mode
- * through the real trust gate, so a non-benevolent caller gets a refusal, and a
- * caller already narrower than bypass keeps its own mode.
+ * `auto`, for `epic-orders.ts`' reasoning: an ALLOWLIST is what does not work
+ * for a coding agent (you cannot enumerate what it needs, and an unattended seat
+ * that hits a prompt hangs until the watchdog reaps it), and the answer to that
+ * is a classifier, not an absence of one. What ALSO bounds this seat is the deny
+ * rules below plus the budget, both mode-independent, and both unchanged.
+ *
+ * The order still cannot WIDEN anyone: `composeOrderCaps` runs the composed mode
+ * through the real trust gate, and `narrowestMode` keeps whichever of the base
+ * and the order sits lower on the ladder -- so a caller already at `plan` stays
+ * at `plan`.
  */
 export const REFINER_ORDER: Order = validateOrder({
   kind: 'order@1',
@@ -126,6 +128,8 @@ export const REFINER_ORDER: Order = validateOrder({
   seat: 'refiner',
   instructions: REFINER_INSTRUCTIONS,
   namePrefix: 'refine ',
+  // Was implied by `bypassPermissions`; now stated, for `epic-orders.ts`' reason.
+  minTrust: 'benevolent',
   caps: {
     // Rewriting a four-word capture into a spec is the cheapest thing the fleet
     // does. "A GUARD does not need Opus-tier budget to read a diff" applied one
@@ -138,7 +142,7 @@ export const REFINER_ORDER: Order = validateOrder({
     // implementing, which is the failure this seat exists to not do -- and it is
     // a failure the BUDGET does not catch, because 30 haiku turns are cheap.
     maxTurns: 30,
-    permissionMode: 'bypassPermissions',
+    permissionMode: 'auto',
   },
   // ONE OF THE SCHEDULER'S THREE. Forty tagged cards must not hold every slot:
   // the nightly board sweep fires once, at a fixed minute, and does not retry.

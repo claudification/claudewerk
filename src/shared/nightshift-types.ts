@@ -380,10 +380,21 @@ export interface NightshiftConfig {
   deny?: string[]
 }
 
-/** Recommended defaults (plan §8 PARKED decisions resolved to the rec values). */
+/**
+ * Recommended defaults (plan §8 PARKED decisions resolved to the rec values).
+ *
+ * `permissionMode: 'auto'`, changed from `dontAsk` on 2026-08-22. `dontAsk`
+ * denies everything absent from `permissions.allow`, and the H1 field finding
+ * (2026-07-05) was that a worker under it can do NOTHING useful -- the shipped
+ * `DEFAULT_ALLOW` does not carry `git merge`, `git rebase` or `git fetch`, so
+ * the documented default was one no nightshift run could actually work under.
+ * `auto` needs no allowlist and does not prompt, which is the pair of properties
+ * an unattended worker requires; the deny-floor is mode-independent and still
+ * applies underneath it.
+ */
 export const DEFAULT_NIGHTSHIFT_CONFIG: NightshiftConfig = {
   enabled: false,
   mergePolicy: 'branch-for-review',
-  permissionMode: 'dontAsk',
+  permissionMode: 'auto',
   caps: { concurrency: 2, totalTasks: 8, perTaskMinutes: 120, idleMinutes: 20, perTaskTokens: 2_000_000, maxTurns: 80 },
 }

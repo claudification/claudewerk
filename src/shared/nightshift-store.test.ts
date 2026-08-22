@@ -43,7 +43,10 @@ describe('config.json', () => {
     const cfg = readNightshiftConfig(root)
     expect(cfg).toEqual(DEFAULT_NIGHTSHIFT_CONFIG)
     expect(cfg.mergePolicy).toBe('branch-for-review')
-    expect(cfg.permissionMode).toBe('dontAsk')
+    // `auto`, not `dontAsk`: the H1 field finding (2026-07-05) was that a worker
+    // under `dontAsk` can do nothing at all without an allowlist nobody can
+    // enumerate, so the documented default described a run that could not work.
+    expect(cfg.permissionMode).toBe('auto')
   })
 
   test('write then read round-trips + merges over defaults', () => {

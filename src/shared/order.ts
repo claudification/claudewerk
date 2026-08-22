@@ -78,6 +78,19 @@ export type OrderEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export type OrderPermissionMode = 'plan' | 'acceptEdits' | 'auto' | 'dontAsk' | 'bypassPermissions'
 
 /**
+ * Caller trust levels an order may demand, mirroring `spawn-permissions.ts`'
+ * `TrustLevel` -- spelled out here for the same reason {@link OrderPermissionMode}
+ * is, so this schema file keeps its zero imports and an order stays readable
+ * without chasing another module. `order-caps.ts` binds the two: it enforces
+ * this field against the real `TrustLevel`, so a drift is a type error there
+ * rather than a silently unenforced rule here.
+ */
+export type OrderTrustLevel = 'untrusted' | 'trusted' | 'benevolent'
+
+/** The trust ladder, least to most. Ordering is what makes "at least" checkable. */
+export const ORDER_TRUST_RANK: Record<OrderTrustLevel, number> = { untrusted: 0, trusted: 1, benevolent: 2 }
+
+/**
  * Every CLI flag an order may set through the raw `flags` escape hatch.
  *
  * DEFAULT-DENY, and the list is short on purpose. These five are the ones a
@@ -261,6 +274,28 @@ export interface Order {
    * See `src/broker/scheduled-tasks/seat-reservation.ts` for the decision.
    */
   reservation?: number
+  /**
+   * The LOWEST caller trust that may dispatch this order at all.
+   *
+   * ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   * ┃  WHO MAY RUN THE SEAT IS A SEPARATE QUESTION FROM WHAT THE SEAT MAY DO. ┃
+   * ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+   *
+   * It was not separate until 2026-08-22, and that was an accident nobody chose.
+   * Every shipped order declared `permissionMode: 'bypassPermissions'`, and
+   * `evaluateSpawnPermission` refuses bypass from a non-benevolent caller -- so
+   * "only a benevolent caller may start an epic" was true, but only as a SIDE
+   * EFFECT of the mode. Narrowing the seats to `auto` -- strictly less privilege
+   * -- would therefore have silently WIDENED who may start one, because there
+   * was no longer a bypass to refuse. A change that reduces privilege must not
+   * be able to remove an access control by accident, so the control is written
+   * down here and enforced on its own terms.
+   *
+   * ABSENT MEANS NO REQUIREMENT: an order that says nothing is dispatchable by
+   * anyone the ordinary spawn gate already lets through. The shipped fleet
+   * orders all name `benevolent`, which is exactly the trust they held before.
+   */
+  minTrust?: OrderTrustLevel
   /** Raw flag escape hatch. Default-deny against `ORDER_FLAG_ALLOWLIST`. */
   flags?: Record<string, string>
   permissions?: OrderPermissions
@@ -312,6 +347,8 @@ export class OrderValidationError extends Error {
 
 const EFFORTS: readonly OrderEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const MODES: readonly OrderPermissionMode[] = ['plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions']
+
+const TRUST_LEVELS: readonly OrderTrustLevel[] = ['untrusted', 'trusted', 'benevolent']
 const PROMPTS: readonly NonNullable<Order['prompt']>[] = ['implementer', 'guard', 'overseer', 'planner']
 
 /** `NAME@VERSION`, upper-kebab name and an integer version. */
@@ -579,6 +616,7 @@ export function validateOrder(input: unknown): Order {
   put(order, 'reservation', optionalCount(raw, 'reservation', 'reservation', 0))
   put(order, 'namePrefix', optionalSafeString(raw, 'namePrefix', 'namePrefix'))
   put(order, 'worktree', validateWorktree(raw.worktree))
+  put(order, 'minTrust', optionalMember(raw, 'minTrust', TRUST_LEVELS, 'minTrust'))
   put(order, 'flags', validateFlags(raw.flags))
   put(order, 'permissions', validatePermissions(raw.permissions))
   put(order, 'notes', typeof raw.notes === 'string' ? raw.notes : undefined)

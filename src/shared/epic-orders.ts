@@ -105,16 +105,45 @@ export function orderRole(order: Order): EpicRole {
 }
 
 /**
- * Every seat runs `bypassPermissions`, and the reasoning lives in
- * `epic-spawn-plan.ts`'s `EpicPermissionMode` doc: `dontAsk` denies anything not
- * on `permissions.allow`, you cannot enumerate what a coding agent needs, and
- * what actually stops a runaway is the deny-floor hook plus worktree isolation
- * -- both of which are mode-independent.
+ * EVERY SEAT RUNS `auto`. It used to be `bypassPermissions`.
  *
- * Declared once here rather than four times so a future decision to narrow one
- * seat is visibly a decision about THAT seat.
+ * The old reasoning ruled out the only alternative anyone had considered:
+ * `dontAsk` denies anything not on `permissions.allow`, you cannot enumerate
+ * what a coding agent needs, and an unattended seat that hits a prompt hangs
+ * until the watchdog reaps it. All of that is still true, and none of it argues
+ * for bypass -- it argues against ALLOWLISTS. `auto` is neither: a managed
+ * classifier judges each action against rules written as prose, so the seat is
+ * not enumerated and it does not prompt.
+ *
+ * WHAT CHANGES, CONCRETELY. Under bypass the only thing between an unattended
+ * fleet and a catastrophic action was our own deny-floor -- a regex list we
+ * wrote, that only inspects Bash, and that cannot reason about where a `curl`
+ * body ends up or what a committed CI workflow will do when it runs. `auto`
+ * adds a judgement layer that can, and the floor stays exactly where it was:
+ * hooks and `permissions.deny` run in EVERY mode, so this narrows the seat
+ * without giving anything up.
+ *
+ * WHAT DOES NOT CHANGE. The classifier can BLOCK, and a blocked unattended seat
+ * has no human to appeal to -- it gets a denial in its transcript and must route
+ * around or stop. That is the accepted cost, and it is why the deny rules are
+ * tuned in the user's `autoMode` settings rather than made stricter here.
+ *
+ * Declared once rather than four times so a future decision to narrow ONE seat
+ * is visibly a decision about that seat. `order-caps.ts` ranks `auto` below
+ * `bypassPermissions`, so this is a narrowing and composes as one.
  */
-const BYPASS = { permissionMode: 'bypassPermissions' } as const
+const AUTO = { permissionMode: 'auto' } as const
+
+/**
+ * WHO MAY START AN EPIC. Every seat also carries `minTrust: 'benevolent'`.
+ *
+ * That was already true and nobody had written it down: it fell out of the seats
+ * naming `bypassPermissions`, which `evaluateSpawnPermission` refuses below
+ * benevolent trust. Narrowing to `auto` removes the bypass and would therefore
+ * have removed the gate along with it -- a reduction in what a seat may do,
+ * quietly widening who may run one. The field states the rule so the two stop
+ * being the same accident. See `Order.minTrust`.
+ */
 
 /**
  * THE OVERSEER. No worktree: it reads the board, answers questions and merges
@@ -127,7 +156,8 @@ export const OVERSEER_ORDER: Order = validateOrder({
   title: 'Overseer -- decides what happens next, and the only seat that may ask a human',
   seat: 'overseer',
   prompt: 'overseer',
-  caps: BYPASS,
+  caps: AUTO,
+  minTrust: 'benevolent',
   notes:
     'Singleton per epic, one generation per beat. Not muted: the mute exists so no worker BLOCKS on a human, ' +
     'and the overseer is the seat the blocking is routed TO.',
@@ -145,7 +175,8 @@ export const PLANNER_ORDER: Order = validateOrder({
   seat: 'planner',
   prompt: 'planner',
   namePrefix: 'planner ',
-  caps: BYPASS,
+  caps: AUTO,
+  minTrust: 'benevolent',
   notes:
     'Runs once, before beat 1. Reads every card and the epic intent, closes what is already done, files what ' +
     'is missing, and writes the `depends_on` edges nobody declared -- so dispatch arithmetic has a complete graph.',
@@ -165,7 +196,8 @@ export const IMPLEMENTER_ORDER: Order = validateOrder({
   seat: 'implementer',
   prompt: 'implementer',
   worktree: { prefix: '' },
-  caps: BYPASS,
+  caps: AUTO,
+  minTrust: 'benevolent',
   notes:
     'Cannot ask a question, cannot approve its own work, cannot decide the epic direction. Each of those is ' +
     "somebody else's job, and every one of them used to be quietly absorbed by whichever agent got stuck.",
@@ -185,7 +217,8 @@ export const GUARD_ORDER: Order = validateOrder({
   prompt: 'guard',
   namePrefix: 'verify ',
   worktree: { prefix: 'verify-' },
-  caps: BYPASS,
+  caps: AUTO,
+  minTrust: 'benevolent',
   notes:
     'Re-runs `test_cmd` and every acceptance step itself. Muted like an implementer: it judges, it does not ' +
     'escalate -- a verifier that can reach a human turns every hard call into a question.',
