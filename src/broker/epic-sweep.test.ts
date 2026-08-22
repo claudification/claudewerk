@@ -599,8 +599,8 @@ describe('generationMismatch', () => {
 
 describe('a reserved scanner lane is never an epic', () => {
   /** A seat stamped with a scanner's own id -- what `planImplementerSpawn` emits
-   *  for a card that belongs to no epic. `work-orders` is the first such lane. */
-  const lane = (cardId: string, epicId = 'work-orders'): EpicLaunchTag & never =>
+   *  for a card that belongs to no epic. `work-order` is the first such lane. */
+  const lane = (cardId: string, epicId = 'work-order'): EpicLaunchTag & never =>
     ({ epicId, role: 'implementer', cardId, gen: 1 }) as never
 
   const watched = (convs: Conversation[]) => epicsToWatch(convs, isLive, producedOutput).map(g => g.epicId)
@@ -613,8 +613,17 @@ describe('a reserved scanner lane is never an epic', () => {
     for (const id of SCANNER_IDS) expect(isReservedScannerLane(id)).toBe(true)
     expect(isReservedScannerLane('epic-scanner-fabric')).toBe(false)
     // Substrings and near-misses are not lanes -- the match is on the whole id.
-    expect(isReservedScannerLane('work-orders-2')).toBe(false)
+    expect(isReservedScannerLane('work-order-2')).toBe(false)
     expect(isReservedScannerLane('')).toBe(false)
+  })
+
+  test('a RENAMED id stays reserved under its old spelling -- seats already wear it', () => {
+    // The launch tag of every work-order seat dispatched before the singular
+    // rename says `work-orders`, and a tag is written once and never rewritten.
+    // Drop the alias here and each of those becomes a phantom epic with no
+    // `run.md`, beaten every 45s for the life of the broker.
+    expect(isReservedScannerLane('work-orders')).toBe(true)
+    expect(watched([conv(lane('t1', 'work-orders'), false)])).toEqual([])
   })
 
   test('a LIVE work-order seat is invisible to the sweep', () => {
@@ -623,7 +632,7 @@ describe('a reserved scanner lane is never an epic', () => {
 
   test('and an ENDED one stays invisible -- the registry keeps it forever', () => {
     // The phantom this exists to kill: the group survives the seat, so without
-    // the filter the sweep beats `work-orders` every 45s for the life of the
+    // the filter the sweep beats `work-order` every 45s for the life of the
     // broker and logs "armed but nothing is on disk for it" each time.
     expect(watched([conv(lane('t1'), false)])).toEqual([])
   })
@@ -635,7 +644,7 @@ describe('a reserved scanner lane is never an epic', () => {
   test('an ARMED entry carrying a scanner id is dropped too, not just a tagged conversation', () => {
     // `epicsToWatch` unions two sources; filtering one of them would leave the
     // hole open on the other.
-    noteArmedEpic('claude://s/p', 'work-orders')
+    noteArmedEpic('claude://s/p', 'work-order')
     noteArmedEpic('claude://s/p', 'e1')
     expect(watched([]).sort()).toEqual(['e1'])
   })
@@ -646,6 +655,6 @@ describe('a reserved scanner lane is never an epic', () => {
 
   test('the raw grouping still SEES the lane -- epic-inspect needs its seats', () => {
     const groups = groupEpicConversations([conv(lane('t1'), true)], isLive, producedOutput)
-    expect(groups.get('work-orders')?.inFlight).toEqual(['t1'])
+    expect(groups.get('work-order')?.inFlight).toEqual(['t1'])
   })
 })

@@ -1,7 +1,12 @@
 import { projectIdentityKey } from '@shared/project-uri'
 import { listSuites, type RecapSuiteId } from '@shared/recap-suites'
 import { SCANNER_IDS, type ScannerId } from '@shared/scanner-ids'
-import { packScannerToggles, type ScannerToggles, scannerEnabled } from '@shared/scanner-opt-in'
+import {
+  canonicalizeScannerToggles,
+  packScannerToggles,
+  type ScannerToggles,
+  scannerEnabled,
+} from '@shared/scanner-opt-in'
 import { OPENCODE_TOOL_PERMISSION_OPTIONS, type OpenCodeToolPermission } from '@shared/spawn-schema'
 import { Check, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -67,7 +72,10 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
   )
   const [lessonsEnabled, setLessonsEnabled] = useState(current.lessonsEnabled ?? false)
   // Only the true entries are ever stored, so an empty object IS "all off".
-  const [scanners, setScanners] = useState<ScannerToggles>(current.scanners ?? {})
+  // CANONICALISED on the way in: a stored map may carry a renamed id's old
+  // spelling, and form state that keeps it writes a `false` for the new key
+  // beside a surviving `true` for the old one -- an untick that does nothing.
+  const [scanners, setScanners] = useState<ScannerToggles>(canonicalizeScannerToggles(current.scanners))
   // undefined = Auto: let the broker pick from how each recap was started.
   const [recapSuite, setRecapSuite] = useState<RecapSuiteId | undefined>(current.recapSuite)
   const [keytermInput, setKeytermInput] = useState('')
@@ -90,7 +98,7 @@ export function ProjectSettingsEditor({ project, onClose }: ProjectSettingsEdito
     setOpenCodeModel(c.defaultOpenCodeModel || '')
     setOpenCodeToolPermission((c.defaultOpenCodeToolPermission ?? 'safe') as OpenCodeToolPermission)
     setLessonsEnabled(c.lessonsEnabled ?? false)
-    setScanners(c.scanners ?? {})
+    setScanners(canonicalizeScannerToggles(c.scanners))
     setRecapSuite(c.recapSuite)
   }, [projectSettings, project])
 

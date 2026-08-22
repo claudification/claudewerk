@@ -22,7 +22,7 @@
  * the whole contract exists to protect.
  */
 
-import type { ScannerId } from './scanner-ids'
+import { canonicalScannerId, type ScannerId } from './scanner-ids'
 
 /** The per-project opt-in map. Absent key = off. */
 export type ScannerToggles = Partial<Record<ScannerId, boolean>>
@@ -43,9 +43,33 @@ export interface ScannerSettings {
   scannersLastRun?: ScannerLastRuns
 }
 
+/**
+ * READ A STORED MAP BY THE CANONICAL ID, ACCEPTING ANY SPELLING THAT MEANS IT.
+ *
+ * Both maps below are PERSISTED, so their keys are whatever spelling was current
+ * when the row was written -- `work-orders` for every project that ticked that
+ * box before the singular rename (`scanner-ids.ts` states why the alias is
+ * permanent). Typed `Partial<Record<ScannerId, T>>` and yet iterated as raw
+ * strings on purpose: the type describes what we WRITE, and this function exists
+ * because it does not describe what is already on disk.
+ *
+ * The canonical key WINS when both are present. An `||` across spellings would
+ * mean a box you just unticked comes back on from its own alias, which is a
+ * worse failure than a stale row lingering until the next save.
+ */
+function readByAnySpelling<T>(map: Partial<Record<ScannerId, T>> | undefined, id: ScannerId): T | undefined {
+  if (!map) return undefined
+  const direct = map[id]
+  if (direct !== undefined) return direct
+  for (const [key, value] of Object.entries(map)) {
+    if (canonicalScannerId(key) === id) return value as T
+  }
+  return undefined
+}
+
 /** May this scanner run against this project? Default OFF, always. */
 export function scannerEnabled(settings: ScannerSettings | null | undefined, id: ScannerId): boolean {
-  return settings?.scanners?.[id] === true
+  return readByAnySpelling(settings?.scanners, id) === true
 }
 
 /**
@@ -57,7 +81,38 @@ export function scannerEnabled(settings: ScannerSettings | null | undefined, id:
  * somebody looks at.
  */
 export function scannerLastRun(settings: ScannerSettings | null | undefined, id: ScannerId): number | undefined {
-  return settings?.scannersLastRun?.[id]
+  return readByAnySpelling(settings?.scannersLastRun, id)
+}
+
+/**
+ * THE MAP, RESPELLED IN CANONICAL IDS -- how an alias drains.
+ *
+ * Called on the way IN (the settings editor's form state) and again on the way
+ * OUT (`packScannerToggles`), which are the two places a stored map becomes a
+ * map we are about to write back. Nothing migrates a row on read: the broker
+ * reads through `scannerEnabled`, which already accepts either spelling, and a
+ * read that rewrites its own input is a read that needs a database handle.
+ *
+ * CANONICALISING ON LOAD IS NOT COSMETIC. Without it the editor's form state
+ * keeps the alias key it loaded, so unticking the box writes
+ * `{'work-orders': true, 'work-order': false}` -- the pack below drops the false
+ * one, the alias survives, and the scanner stays on. The box would simply not
+ * work for exactly the projects the alias exists to serve.
+ *
+ * A key that is not a scanner in any spelling is DROPPED. Only a hand-edited
+ * settings row can produce one, and carrying it forward would mean the union
+ * `ScannerId` says nothing about what is in the map.
+ */
+export function canonicalizeScannerToggles(toggles: ScannerToggles | undefined): ScannerToggles {
+  if (!toggles) return {}
+  const out: ScannerToggles = {}
+  for (const [key, value] of Object.entries(toggles)) {
+    const id = canonicalScannerId(key)
+    // The canonical spelling wins over an alias, the same rule (and for the same
+    // reason) as `readByAnySpelling` -- so an alias may not overwrite it here.
+    if (id && !(id in out && key !== id)) out[id] = value
+  }
+  return out
 }
 
 /**
@@ -71,6 +126,9 @@ export function scannerLastRun(settings: ScannerSettings | null | undefined, id:
  * falses forever.
  */
 export function packScannerToggles(toggles: ScannerToggles): ScannerToggles | undefined {
-  const on = Object.entries(toggles).filter(([, v]) => v === true)
+  // Canonical FIRST, then filter: an alias key set to `true` must survive as its
+  // canonical spelling rather than be written back as the alias, which is the
+  // only thing that ever drains an alias out of the store.
+  const on = Object.entries(canonicalizeScannerToggles(toggles)).filter(([, v]) => v === true)
   return on.length > 0 ? (Object.fromEntries(on) as ScannerToggles) : undefined
 }

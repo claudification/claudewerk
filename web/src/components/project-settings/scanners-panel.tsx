@@ -1,6 +1,6 @@
 import type { ProjectSettings } from '@shared/protocol'
 import { SCANNER_IDS, type ScannerId } from '@shared/scanner-ids'
-import { type ScannerToggles, scannerLastRun } from '@shared/scanner-opt-in'
+import { type ScannerToggles, scannerEnabled, scannerLastRun } from '@shared/scanner-opt-in'
 import { GroupHeader, SettingCheckbox, SettingRow } from '@/components/settings/settings-inputs'
 import { formatAgo } from '@/sheaf/format'
 
@@ -21,7 +21,7 @@ import { formatAgo } from '@/sheaf/format'
 const ROWS: Record<ScannerId, { label: string; description: string }> = {
   refine: { label: 'Refine', description: 'Drain #needs-refine -- turn rough cards into worked specs' },
   nightshift: { label: 'Nightshift', description: 'Dispatch the nightly batch inside the configured night window' },
-  'work-orders': { label: 'Work orders', description: 'Dispatch authorised cards as work orders' },
+  'work-order': { label: 'Work order', description: 'Dispatch an authorised card as a work order' },
   epics: { label: 'Epics', description: 'The epic sweep -- beat every armed run and dispatch its ready cards' },
   'morning-report': { label: 'Morning report', description: 'Publish the nightly reconciliation' },
 }
@@ -67,7 +67,11 @@ export function ScannersPanel({
         for every project -- an agent that switches itself on is spending money in a repo nobody opted in for.
       </div>
       {SCANNER_IDS.map(id => {
-        const enabled = toggles[id] === true
+        // Through `scannerEnabled`, never `toggles[id]`: a project that ticked
+        // this box before an id was renamed has the OLD spelling in its stored
+        // map, and a raw index would render that box unticked while the scanner
+        // is in fact running -- the one lie a default-deny opt-in must not tell.
+        const enabled = scannerEnabled({ scanners: toggles }, id)
         return (
           <SettingRow key={id} label={ROWS[id].label} description={ROWS[id].description}>
             <div className="flex items-center gap-2">

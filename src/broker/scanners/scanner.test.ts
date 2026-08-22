@@ -170,7 +170,7 @@ describe('self-catching', () => {
 
   test('a non-Error throw still produces a message rather than `undefined`', async () => {
     const boom: Scanner<ScannerDeps, 'untagged'> = {
-      id: 'work-orders',
+      id: 'work-order',
       tag: '[boom]',
       selects: '#ready',
       does: 'dispatch',

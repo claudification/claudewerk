@@ -1,4 +1,5 @@
 import { SCANNER_IDS } from '@shared/scanner-ids'
+import type { ScannerToggles } from '@shared/scanner-opt-in'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ScannersPanel } from './scanners-panel'
@@ -58,6 +59,16 @@ describe('ScannersPanel', () => {
     const never = screen.getAllByText('last ran never')
     const amber = never.filter(el => el.className.includes('amber'))
     expect(amber).toHaveLength(1)
+  })
+
+  it("ticks a box whose toggle is stored under a renamed id's old spelling", () => {
+    // A project that opted in before the singular rename has `work-orders` in
+    // its stored map. A raw `toggles[id]` would draw that box UNTICKED while the
+    // scanner is in fact running -- the panel lying about an unattended agent.
+    const legacy = { 'work-orders': true } as ScannerToggles
+    render(<ScannersPanel settings={{}} toggles={legacy} onToggle={vi.fn()} />)
+    const box = screen.getByLabelText('Enable the Work order scanner for this project') as HTMLInputElement
+    expect(box.checked).toBe(true)
   })
 
   it('reads the stamps from the SAVED settings, not from the unsaved toggles', () => {

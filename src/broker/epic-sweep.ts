@@ -19,7 +19,7 @@
 import type { EpicLease } from '../shared/epic-lease'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { Conversation } from '../shared/protocol'
-import { SCANNER_IDS } from '../shared/scanner-ids'
+import { isScannerWord } from '../shared/scanner-ids'
 import { isDeletedEpic, listArmedEpics } from './epic-registry'
 import { type EpicReapers, NO_REAPING, type Reaper } from './epic-vitality'
 
@@ -567,11 +567,18 @@ export function generationMismatch(group: EpicGroup, leaseGen: number): string |
  * shared vocabulary of `src/shared/scanner-ids.ts`, and a rule that only covered
  * the ones that happen to dispatch today is a rule the sixth scanner has to
  * rediscover. The price is that an epic CARD may not be named exactly `refine`,
- * `nightshift`, `work-orders`, `epics` or `morning-report` -- five words against
+ * `nightshift`, `work-order`, `epics` or `morning-report` -- five words against
  * a whole engine's worth of special cases.
+ *
+ * ALIASES ARE RESERVED TOO, which is why this asks `isScannerWord` rather than
+ * testing `SCANNER_IDS` directly. A launch tag is written once and never
+ * rewritten, so every work-order seat dispatched before the singular rename
+ * still wears `work-orders` -- and a lane this predicate stops recognising is a
+ * phantom epic with no `run.md`, beaten every 45s for the life of the process
+ * and rendered on every surface that reads `epicsToWatch`.
  */
 export function isReservedScannerLane(epicId: string): boolean {
-  return (SCANNER_IDS as readonly string[]).includes(epicId)
+  return isScannerWord(epicId)
 }
 
 /**

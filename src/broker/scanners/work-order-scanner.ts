@@ -55,7 +55,7 @@ export const READY_TAG = 'ready'
 /** Log prefix. Named here because `scanWorkOrders` hands it to the shared
  *  dispatch tail, and the `Scanner` record below quotes the same constant --
  *  two spellings of a log prefix is how a grep stops finding half the lines. */
-const WORK_ORDER_TAG = '[work-orders]'
+const WORK_ORDER_TAG = '[work-order]'
 
 /**
  * THE EPIC ID EVERY WORK-ORDER SEAT IS TAGGED WITH -- a reserved lane, not a
@@ -69,8 +69,14 @@ const WORK_ORDER_TAG = '[work-orders]'
  * as one of its in-flight legs and acknowledged into its baton, which is two
  * engines dispatching the same card. See `epic-owned` below for the other half
  * of that guard.
+ *
+ * SEATS DISPATCHED BEFORE THE SINGULAR RENAME WEAR `work-orders`, and their tags
+ * are immutable -- which is why `isReservedScannerLane` asks `isScannerWord`
+ * (aliases included) rather than testing membership of `SCANNER_IDS`. Changing
+ * this constant without that predicate would turn every seat already in the
+ * registry into a phantom epic, beaten every 45s forever.
  */
-export const WORK_ORDER_EPIC_ID = 'work-orders'
+export const WORK_ORDER_EPIC_ID = 'work-order'
 
 /**
  * Every way this scanner can decline a `ready` card. Closed, so a reason it did
@@ -173,7 +179,7 @@ function attemptsFor(deps: WorkOrderDeps, cardId: string): number {
  */
 async function dispatchCard(deps: WorkOrderDeps, card: ProjectTaskMeta): Promise<boolean> {
   const model = clampCardModel(card.model, EPIC_ORDERS.implementer.caps.model)
-  if (model.note) deps.log(`[work-orders] ${card.slug}: ${model.note}`)
+  if (model.note) deps.log(`${WORK_ORDER_TAG} ${card.slug}: ${model.note}`)
   const plan = planImplementerSpawn(
     { ...deps.spawnCtx, epicId: WORK_ORDER_EPIC_ID, gen: attemptsFor(deps, card.slug) },
     card.slug,
@@ -295,7 +301,7 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
 }
 
 export const workOrderScanner: Scanner<WorkOrderDeps, WorkOrderBucket> = {
-  id: 'work-orders',
+  id: 'work-order',
   tag: WORK_ORDER_TAG,
   selects: `cards tagged \`${READY_TAG}\``,
   does: 'dispatch',

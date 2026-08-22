@@ -276,7 +276,7 @@ describe('what it refuses, and by what name', () => {
     )
     expect(report.acted).toEqual(['b'])
     expect(buckets(report.refused)['dispatch-failed']).toEqual(['a'])
-    expect(log.join('\n')).toContain('[work-orders] dispatch threw for a: sentinel is down')
+    expect(log.join('\n')).toContain('[work-order] dispatch threw for a: sentinel is down')
   })
 })
 
@@ -398,7 +398,7 @@ describe('the accounting -- no `ready` card is ever dropped', () => {
       }),
     )
     expect(report.crashed).toBe('sentinel unreachable')
-    expect(report.scanner).toBe('work-orders')
-    expect(log.join('\n')).toContain('[work-orders] scan crashed')
+    expect(report.scanner).toBe('work-order')
+    expect(log.join('\n')).toContain('[work-order] scan crashed')
   })
 })
