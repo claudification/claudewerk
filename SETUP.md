@@ -625,10 +625,23 @@ bun run build           # All: web + broker + agent host + sentinel
 
 ```bash
 bun run lint              # fallow + biome + boundary check
-bun run lint:biome        # Biome only (format + lint with auto-fix)
+bun run lint:biome        # Biome only, CHECK mode -- reports, never writes
+bun run lint:biome:fix    # Biome only, FIX mode -- rewrites the tree
 bun run lint:boundary     # Boundary rule enforcement
 bun run typecheck         # TypeScript validation (root + web)
 ```
+
+**Nothing on the lint path writes to your tree.** `lint:fast` (and therefore
+`lint`) runs biome in check mode: a formatting or lint *error* fails the command
+and tells you to run `lint:biome:fix` yourself. It used to run `biome check
+--fix .`, which rewrote files and still exited 0 -- so unformatted code landed on
+`main` twice and every worktree cut from it afterwards opened with stray modified
+files belonging to nobody. Applying a rewrite is now the author's explicit call,
+which keeps a commit's diff equal to what its author wrote.
+
+Only **error** severity fails the gate. A clean tree carries ~142 biome
+*warnings* (unsafe fixes biome will not apply unprompted); those are a separate
+cleanup and are deliberately not gated.
 
 ### Frontend-only deploy shortcut
 
