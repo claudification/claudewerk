@@ -88,6 +88,30 @@ describe('checkWrittenCard', () => {
   })
 
   /**
+   * DELIVERY, not the rule -- card-test-cmd.test.ts owns what counts as the bare
+   * runner. What is pinned here is that the finding reaches the agent AT THE
+   * WRITE, because every later moment (the sweep, the dispatch, the gate) is one
+   * where nobody is watching, and that is the whole argument of the card.
+   */
+  describe('test_cmd', () => {
+    test('a bare runner the repo hard-denies reaches the agent that just typed it', () => {
+      const bad = card('title: T\nstatus: open\ntest_cmd: bun test src/shared && bun run typecheck')
+      expect(checks(checkWrittenCard(target, io(bad, ['my-card'])))).toContain('card-test-cmd-denied')
+    })
+
+    test('the wrapper form passes silently', () => {
+      const good = card('title: T\nstatus: open\ntest_cmd: bun run test src/shared && bun run typecheck')
+      expect(checkWrittenCard(target, io(good, ['my-card']))).toEqual([])
+    })
+
+    test('it survives the info filter -- an error is never dropped as noise', () => {
+      const bad = card('title: T\nstatus: open\ntest_cmd: bun test')
+      const finding = checkWrittenCard(target, io(bad, ['my-card'])).find(f => f.check === 'card-test-cmd-denied')
+      expect(finding?.severity).toBe('error')
+    })
+  })
+
+  /**
    * The lifecycle keys reach the agent through this same path and no other --
    * that is the entire economics of the card that added them: one finding
    * function, zero new wiring. These tests pin the DELIVERY, not the rules

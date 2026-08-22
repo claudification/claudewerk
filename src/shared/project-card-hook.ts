@@ -18,6 +18,7 @@
 
 import { parseCardFrontmatter } from './card-frontmatter'
 import { CARDS_DIR, canonicalizeCardPath } from './card-path'
+import { checkCardTestCmd } from './card-test-cmd'
 import { checkCard } from './project-doctor-cards'
 import { checkLifecycleKeys, duplicateTargetOf } from './project-doctor-lifecycle'
 import { checkLinkageKeys } from './project-doctor-linkage'
@@ -112,6 +113,11 @@ export function checkWrittenCard(target: CardWriteTarget, io: CardWriteChecks): 
     // invisible afterwards -- it parses, it persists, and nothing reads it. This
     // is the only moment somebody is still looking at the key they just typed.
     findings.push(...checkLinkageKeys({ id: target.id, meta }))
+    // THE ONE MOMENT `test_cmd:` is cheap to fix. It is not read again until a
+    // seat is dispatched at this card and runs it -- hours later, unattended, and
+    // by then the bare runner is a hard denial the seat has to improvise around.
+    // The agent that just typed the line is the only one still looking at it.
+    findings.push(...checkCardTestCmd({ id: target.id, meta }))
     findings.push(...checkLinks({ id: target.id, body, refs }, ids))
     // THE ONE MOMENT the lifecycle keys can be checked against the clock: "in
     // the future" is a fact about when the value was written, and this is the

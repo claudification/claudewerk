@@ -231,7 +231,17 @@ const ORDER = [
  */
 const GATE_SPECS: readonly CardKeySpec[] = [
   { key: 'gate', type: 'enum', values: GATE_MODES, doc: 'per-card DONE-gate override', owner: 'human' },
-  { key: 'test_cmd', type: 'string', doc: 'command the gate runs before allowing in-review/done', owner: 'human' },
+  {
+    key: 'test_cmd',
+    type: 'string',
+    // "the gate runs" was the whole doc, and it taught the wrong thing: fifty
+    // cards ended up carrying a bare `bun test`, which the gate's own child
+    // process runs fine and this repo's PreToolUse hook hard-denies to a SEAT.
+    // Saying both readers out loud is what stops the next one (card-test-cmd.ts).
+    doc: "command the gate runs before allowing in-review/done, and that a dispatched seat runs by hand -- so it must survive this repo's hooks",
+    consequence: 'the gate has nothing to verify, and a seat sent here has no stated way to check its own work',
+    owner: 'human',
+  },
   { key: 'base', type: 'string', doc: 'git ref the gate diffs against (default main)', owner: 'human' },
   {
     key: 'acceptance_verified',
