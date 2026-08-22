@@ -10,7 +10,13 @@ function setup() {
     onSetStatus: s => statuses.push(s),
     onNotify: m => buzzes.push(m),
   }
-  const ctx = { callbacks, elog: () => {} } as unknown as McpToolContext
+  // `getIdentity` is real here, not a stub convenience: the harvest asks who is
+  // reporting so it can find the verdict THIS conversation wrote (verdict-harvest.ts).
+  const ctx = {
+    callbacks,
+    elog: () => {},
+    getIdentity: () => ({ conversationId: 'conv_status_test' }),
+  } as unknown as McpToolContext
   const tools = registerStatusTool(ctx)
   const call = (rawArgs: Record<string, unknown>) =>
     tools.set_status.handle(rawArgs as Record<string, string>, { rawArgs } as ToolCtx)

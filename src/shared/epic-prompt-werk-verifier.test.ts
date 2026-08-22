@@ -18,8 +18,28 @@ describe('buildWerkVerifierPrompt', () => {
 
   it('references the exact approve + bounce transitions for this card', () => {
     const p = buildWerkVerifierPrompt(base)
-    expect(p).toContain('project_set_status(id="fix-the-thing", status="done")')
-    expect(p).toContain('project_set_status(id="fix-the-thing", status="in-progress")')
+    expect(p).toContain('project_set_status(id="fix-the-thing", status="done",')
+    expect(p).toContain('project_set_status(id="fix-the-thing", status="in-progress",')
+  })
+
+  /**
+   * REGRESSION (2026-08-22): this prompt used to say "if the gate is off the move
+   * stamps nothing, so write your verdict into the card body by hand" -- and a
+   * Guard that COULD not write by hand then reported APPROVED into a transcript
+   * nobody could find. The verdict is a parameter of the move now, so the prompt
+   * must order it as one and must not send the Guard back to hand-writing.
+   */
+  it('orders the verdict as a parameter of the move, never as a hand-written afterthought', () => {
+    const p = buildWerkVerifierPrompt(base)
+    expect(p).toContain('verdict=')
+    expect(p).toContain('REFUSES the move if it cannot')
+    expect(p).not.toContain('by hand')
+  })
+
+  it('tells the Guard its caveats/notes are harvested from set_status', () => {
+    const p = buildWerkVerifierPrompt(base)
+    expect(p).toContain('`caveats` and `notes`')
+    expect(p).toContain('set_status')
   })
 
   it('tells the Guard to re-run test_cmd and acceptance itself', () => {

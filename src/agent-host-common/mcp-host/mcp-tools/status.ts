@@ -2,6 +2,7 @@ import type { LiveStatusInput, LiveStatusState } from '../../../shared/protocol'
 import { debug } from '../debug'
 import { repairStatusParams } from './status-field-repair'
 import type { McpToolContext, ToolDef } from './types'
+import { harvestVerdictExtras } from './verdict-harvest'
 
 const STATES: readonly LiveStatusState[] = ['working', 'done', 'needs_you', 'blocked']
 
@@ -108,8 +109,19 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
         if (!STATES.includes(state)) return errorResult(`Error: state must be one of ${STATES.join(', ')}`)
         if (!ctx.callbacks.onSetStatus) return errorResult('set_status is not available in this conversation.')
 
-        ctx.callbacks.onSetStatus(buildStatus(params, state))
+        const status = buildStatus(params, state)
+        ctx.callbacks.onSetStatus(status)
         debug(`[channel] set_status: ${state}`)
+
+        // THE HARVEST. A verifier settles the card first and signs off here last,
+        // so this is the only moment its caveats/notes can reach the verdict it
+        // already wrote. No verdict written by this conversation -> '' and nothing
+        // happens (verdict-harvest.ts).
+        const harvested = harvestVerdictExtras(ctx.getIdentity()?.conversationId, {
+          caveats: status.caveats,
+          notes: status.notes,
+        })
+        if (harvested) ctx.elog(`[verdict]${harvested}`)
         if (repaired) debug(`[channel] set_status REPAIRED leaked markup; recovered: ${Object.keys(fields).join(', ')}`)
 
         // Optional attention-grab: a `notify` line shortcuts the `notify` tool,
@@ -129,7 +141,9 @@ export function registerStatusTool(ctx: McpToolContext): Record<string, ToolDef>
           ? ` NOTE: your call leaked tool-call markup into a text field; recovered ${Object.keys(fields).join(', ') || 'nothing'}. Use one parameter syntax consistently.`
           : ''
         return {
-          content: [{ type: 'text', text: `Status recorded: ${state}${resultTail(state, buzzed)}${repairNote}` }],
+          content: [
+            { type: 'text', text: `Status recorded: ${state}${resultTail(state, buzzed)}${repairNote}${harvested}` },
+          ],
         }
       },
     },

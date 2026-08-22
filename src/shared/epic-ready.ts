@@ -987,7 +987,7 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
     when: i => i.exhausted.length > 0,
     say: i =>
       `${i.exhausted.length} card(s) back in \`in-progress\` that have already cost ${MAX_CARD_SEATS} or more ` +
-      `seats, no longer re-dispatched: ${i.exhausted.map(c => c.slug).join(', ')} -- read the \`## Guard Findings\` ` +
+      `seats, no longer re-dispatched: ${i.exhausted.map(c => c.slug).join(', ')} -- read the \`## Verdict\` ` +
       'on the card and decide whether it is one card or two',
   },
   {
