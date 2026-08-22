@@ -273,15 +273,7 @@ export interface EpicBeatPatch {
 
 /** Every field a beat may write. The prune below walks THIS, so adding a field
  *  to `EpicBeatPatch` without adding it here makes it silently un-writable. */
-const LEDGER_KEYS = [
-  'dryGens',
-  'spentUsd',
-  'startedAt',
-  'unlandedWoken',
-  'planned',
-  'legStartUsd',
-  'leg',
-] as const
+const LEDGER_KEYS = ['dryGens', 'spentUsd', 'startedAt', 'unlandedWoken', 'planned', 'legStartUsd', 'leg'] as const
 
 export interface EpicBeat {
   actions: EpicAction[]
@@ -643,7 +635,8 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
   // a human still has to go and stop.
   const leg = readLeg(run, spent)
   if (leg.hard) {
-    const live = input.inFlight.length > 0 ? ` Still live and NOT stopped by this park: ${input.inFlight.join(', ')}.` : ''
+    const live =
+      input.inFlight.length > 0 ? ` Still live and NOT stopped by this park: ${input.inFlight.join(', ')}.` : ''
     return beat(`leg ${leg.leg} HARD cap reached (${formatUsd(leg.spentUsd)}/${formatUsd(leg.hardUsd)})`, [
       {
         kind: 'park',

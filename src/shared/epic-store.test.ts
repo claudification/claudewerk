@@ -154,7 +154,9 @@ describe('the run artifact', () => {
       const file = join(root, '.rclaude', 'project', 'epics', 'e1', 'run.md')
       writeFileSync(
         file,
-        readFileSync(file, 'utf8').replace(/^leg.*\n/gm, '').replace(/^spentUsd:.*$/m, 'spentUsd: 340'),
+        readFileSync(file, 'utf8')
+          .replace(/^leg.*\n/gm, '')
+          .replace(/^spentUsd:.*$/m, 'spentUsd: 340'),
         'utf8',
       )
       expect(readEpicRun(root, 'e1')).toMatchObject({ leg: 1, legStartUsd: 340, legBudgetUsd: 200 })

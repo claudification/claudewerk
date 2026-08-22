@@ -140,14 +140,14 @@ describe('the soft stop settles rather than kills', () => {
   test('legs disarmed by a typed zero changes nothing at all', () => {
     // Far past ANY leg threshold, and still under this fixture's run ceiling --
     // otherwise `capBeat` parks on `maxUsd` and the test proves nothing.
-    const b = beat({ spentUsd: 50_000 }, { dispatch: [card('t1')] },{ legBudgetUsd: 0 })
+    const b = beat({ spentUsd: 50_000 }, { dispatch: [card('t1')] }, { legBudgetUsd: 0 })
     expect(kinds(b)).toEqual(['dispatch'])
   })
 
   test('a run with no planning stage has no leg budget to be held by', () => {
     // Far past ANY leg threshold, and still under this fixture's run ceiling --
     // otherwise `capBeat` parks on `maxUsd` and the test proves nothing.
-    const b = beat({ spentUsd: 50_000 }, { dispatch: [card('t1')] },{ plan: false })
+    const b = beat({ spentUsd: 50_000 }, { dispatch: [card('t1')] }, { plan: false })
     expect(kinds(b)).toEqual(['dispatch'])
   })
 })

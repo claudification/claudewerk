@@ -150,6 +150,12 @@ Decided from the board itself, never from the werk-planner's summary -- so the p
 tells it to write the baton for the human who has to read it, not to influence
 the gate.
 
+**The gate is generation 0's only.** A leg's re-plan (§3a) takes the same
+`plan-checkpoint` branch with `gate: false`: it files the delta in the baton and
+the run carries straight on. A re-plan that does its job *always* changes the
+board -- that is what it is for -- so gating there would stop the run on every
+leg and train exactly the reflex a checkpoint must never train.
+
 ### Defaults and the three states
 
 `plan` defaults **on** (`EPIC_RUN_DEFAULTS`); no caller currently exposes a way
@@ -166,6 +172,137 @@ planned* rather than as owing a plan, for the same reason.
 Generation 0 outranks every other beat decision except the caps and a live
 werk-master -- including unacknowledged settles -- because dispatching while a plan is
 owed races the pass that exists to say what may run in parallel.
+
+---
+
+## 3a. LEGS -- the run advances in bounded stretches
+
+**The plan of record decays as work lands.** Edges written at generation 0 stop
+being true once three cards merge, cards become obsolete, and what a werk-worker
+discovered mid-card changes the scope of two others. Readiness is arithmetic over
+`depends_on` and the arithmetic is only ever as good as the edges somebody wrote,
+so nothing else in the engine catches that. A periodic stop-and-re-plan does.
+
+A **leg** is a bounded stretch of dispatch. The numbers
+(`EPIC_RUN_DEFAULTS`, `epic-legs.ts`):
+
+| Knob | Value |
+|---|---|
+| Leg budget (SOFT) | **$200** (`legBudgetUsd`; a typed `0` disarms legs) |
+| Leg hard cap | **$400** -- budget x `LEG_HARD_MULTIPLIER`, never a second knob |
+| Between legs | re-plan and continue **automatically** |
+
+Two thresholds from one knob, so they cannot be set into an incoherent pair (a
+hard cap below the soft one would disarm the settle with nothing saying so).
+
+### A leg ends when
+
+- the **budget is spent** -- a SOFT stop, then a settle; or
+- **nothing ready is left to dispatch** -- the dry generation.
+
+Whichever fires first. Card-count and drift triggers were considered and
+rejected: measured spend cannot be wrong, and "nothing left" is the natural floor
+that stops a leg burning beats waiting for a budget it will never spend.
+
+### Soft settles, hard kills
+
+**Soft is not a kill.** At the budget the leg stops *dispatching* -- it is a gate
+on the `when` axis (`legGate`), not a `capBeat` park. Everything already out is
+left alone, and **verification still goes out**: a leg that withheld verdicts
+could never settle the work it is waiting on, so the drain it needs could not
+happen and the soft stop would be a permanent freeze. The boundary is simply the
+first beat with nothing in flight and nothing awaiting a verdict.
+
+**Twice the budget parks immediately**, without waiting. The settle had its
+chance and the spend climbed anyway. No seat-stopping primitive reaches a beat --
+the sentinel owns the hosts -- so the park note *names the conversations a human
+still has to stop* rather than implying the fleet went with it.
+
+A forced beat (`action=beat`) does **not** override the leg budget. The
+appointment and headroom gates are overridable because they are one human's call
+about one run's *timing*; this is a budget that human set.
+
+### The boundary is a re-plan
+
+The boundary writes three scalars and files one baton entry. It spawns nothing:
+clearing `planned` is what makes the *next* beat dispatch a werk-planner through
+`planningBeat` -- the generation-0 pass reused whole, against the remainder,
+rather than a second way to spawn the same seat.
+
+| Field | Meaning |
+|---|---|
+| `leg` | 1-based; leg 1 is the stretch after generation 0 |
+| `legStartUsd` | cumulative `spentUsd` when this leg opened; leg spend is the difference |
+| `legBudgetUsd` | the soft budget |
+
+The new watermark is the ledger *now*, not the old watermark plus the budget: a
+leg that overshot by $30 while settling would otherwise hand that $30 to the next
+leg. Every leg gets a whole budget; `maxUsd` bounds the sum.
+
+A **dry** boundary carries the dry streak instead of clearing it, and that is the
+termination argument. Clear it and the two-dry park becomes unreachable: a run
+with nothing left to do re-plans, finds nothing, re-plans, forever. Carried, it
+gets exactly one re-plan and then parks.
+
+### Legs require `plan`
+
+The entire payload of a boundary is a re-plan, and `planningBeat` returns null
+outright when planning is off. On such a run the boundary would dispatch nothing
+while the soft stop above it went on withholding dispatch with nothing able to
+lift it. A budget that freezes a run instead of re-planning it is worse than no
+budget, so `legsArmed` requires both `legBudgetUsd > 0` and `plan`.
+
+### What the re-plan is told, and what it reports
+
+The werk-planner prompt branches on the leg: past leg 1 it is told the plan has
+DECAYED, to scope itself to the remainder, and to treat existing `depends_on`
+edges as **evidence rather than decisions** -- re-derived against the code as it
+now exists. A model given generation 0's wording reads those edges as somebody's
+decision and leaves them alone, which is the one step that matters.
+
+What it changed is filed under a **`leg`** baton entry, card by card
+(`describeBoardDelta`): `b: depends_on a -> c`, `a: lane open -> done`,
+`c: NEW (open, depends on nothing)`. Its own kind, not `checkpoint` -- a
+checkpoint means *we are waiting for you*, and a boundary is the run explicitly
+not waiting. The edge rewrite is the line this exists for: no card appears, none
+disappears, no lane moves, and the next beat simply dispatches a different set.
+
+**Sizing is a schedule, not a safety.** The werk-planner sizes cards in USD to
+decide what to *admit* into a leg. That estimate is a guess and is allowed to be
+wrong -- nothing in the engine reads it. Every number above comes from
+`spentUsd`, folded from `turns.cost_usd`.
+
+`legBudgetUsd` and `legStartUsd` are on `EPIC_CAP_FIELDS`, so a sentinel bundle
+too old to carry them refuses to dispatch rather than reading absent as unlimited
+(§10).
+
+### Not yet tunable at arm time
+
+There is no `leg_budget_usd` on the `epic_run` verb. The budget is the default
+until a run's `run.md` is edited by hand -- a file whose own banner says it is
+machine-owned and that an edit to it is clobbered by the next write.
+
+That is a deliberate scope call rather than an oversight, and the reason is worth
+keeping: `maxUsd` reaches the arm surface through **seven** files, and wiring
+`legBudgetUsd` into some of them and not others is worse than wiring it into
+none. An epic you can schedule with a `max_usd` but not a leg budget is a surface
+that lies about which of its two money knobs is real. The seven, from the
+`maxUsd` trail:
+
+| File | What it carries |
+|---|---|
+| `src/shared/protocol.ts` | `EpicStartInput.maxUsd` |
+| `src/shared/epic-run-store.ts` | `StartEpicRunInput.maxUsd`, honoured on resume |
+| `src/agent-host-common/mcp-host/mcp-tools/epic.ts` | the `max_usd` tool param |
+| `src/agent-host-common/mcp-host/mcp-tools/schedule-body.ts` | scheduled-epic payload (twice) |
+| `src/agent-host-common/mcp-host/mcp-tools/schedule-render.ts` | rendering a scheduled epic back |
+| `src/broker/scheduled-tasks/epic-start-dispatch.ts` | schedule -> `start` |
+| `src/shared/scheduled-task.ts` | the zod schema |
+
+Whoever picks this up: all seven or none, honour it on a RESUME (raising it is
+how a human says "carry on" to a run that keeps stopping at its boundary), and
+test the SCHEDULE round trip -- that is the surface where a half-wired field goes
+unnoticed longest. The hard cap stays derived; see the multiplier argument above.
 
 ---
 
@@ -382,15 +519,17 @@ dispatch when 02:00 arrived.
 | Every child terminal | `complete` -- the werk-master reports what landed and what was dropped |
 | An irreversible step, or a decision that is Jonas's | `checkpoint` -- one crisp question, recommendation first. The only path to a human. |
 | Generation 0 rewrote the board | `plan-checkpoint` -- the plan is reviewed before any work goes out (§3) |
-| Two consecutive generations with nothing dispatchable | `park` -- the werk-master gets exactly one chance to replan first |
+| Two consecutive generations with nothing dispatchable | `park` -- one re-plan first (a leg boundary, §3a, when legs are armed) |
 | `spentUsd >= maxUsd` (default **$100**) | `park` -- see below |
+| Leg spend `>= legBudgetUsd` (default **$200**) | **not a stop** -- dispatch pauses, the leg settles and re-plans (§3a) |
+| Leg spend `>= 2x legBudgetUsd` | `park` **immediately**, without settling (§3a) |
 | `maxWallClockMinutes` since first dispatch (default **480**) | `park` -- see below |
 | `gen >= maxGens` (default 40) | `park` -- the run is thrashing, not working |
 
-**The ceilings are checked dollars, then wall clock, then generations** -- most
-expensive unit first, so a run over two at once reports the one that actually
-cost something. `0` disarms any of them, and it has to be typed: none of the
-defaults is infinity.
+**The ceilings are checked run dollars, then leg dollars, then wall clock, then
+generations** -- most expensive unit first, so a run over two at once reports the
+one that actually cost something. `0` disarms any of them, and it has to be
+typed: none of the defaults is infinity.
 
 `maxGens` was the only brake for the life of the feature, and it is a unit of
 **planning** rather than of spend: it bounds how many times the werk-master thinks
@@ -491,6 +630,17 @@ read as unlimited anywhere, and four mechanisms replace the grep:
 The passthrough is forward-looking only and cannot repair a bundle already frozen
 without it; that is what the arm refusal and the beat park are for. Every field
 added from here on is skew-proof by construction rather than by remembering.
+
+**LEGS ARE ON THE SAME PROBE.** `legBudgetUsd` and `legStartUsd` joined
+`EPIC_CAP_FIELDS` when legs landed, for the identical reason the run pair is on
+it: a leg's HARD cap is arithmetic over both, and a bundle answering without them
+would leave the run dispatching with the leg ceiling silently absent. The leg
+*counter* is deliberately NOT on the list -- it buys no spend, and a run whose
+counter is missing is on leg 1, which is a real answer rather than a lost one.
+Consequence at deploy time: **every armed run refuses to dispatch until the
+sentinel bundle is rebuilt**, with the refusal naming the fields. That is the
+mechanism working, and it is why this deploy is a `build:packages` + sentinel
+restart and not a broker-only push.
 
 Both refusals name the fix: `bun run build:packages`, restart the sentinel, arm
 again.

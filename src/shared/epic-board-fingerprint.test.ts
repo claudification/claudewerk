@@ -101,10 +101,7 @@ describe('describeBoardDelta', () => {
   test('names a REWRITTEN ordering edge, in one line, with both sides', () => {
     const before = print([card('a'), card('b', { dependsOn: ['a'] })])
     const after = print([card('a'), card('b', { dependsOn: ['c'] }), card('c')])
-    expect(describeBoardDelta(before, after)).toEqual([
-      'b: depends_on a -> c',
-      'c: NEW (open, depends on nothing)',
-    ])
+    expect(describeBoardDelta(before, after)).toEqual(['b: depends_on a -> c', 'c: NEW (open, depends on nothing)'])
   })
 
   test('a stale edge DELETED reads as a rewrite to nothing, not as a vanished card', () => {
@@ -127,10 +124,7 @@ describe('describeBoardDelta', () => {
   test('a card that both moved lane and lost an edge says both', () => {
     const before = print([card('a', { dependsOn: ['z'] })])
     const after = print([card('a', { status: 'in-progress' })])
-    expect(describeBoardDelta(before, after)).toEqual([
-      'a: depends_on z -> nothing',
-      'a: lane open -> in-progress',
-    ])
+    expect(describeBoardDelta(before, after)).toEqual(['a: depends_on z -> nothing', 'a: lane open -> in-progress'])
   })
 
   test('an archived-away card is named as GONE, with the lane it left', () => {

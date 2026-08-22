@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { LEG_HARD_MULTIPLIER, type LegFields, describeLeg, legNumber, legsArmed, nextLeg, readLeg } from './epic-legs'
+import { describeLeg, LEG_HARD_MULTIPLIER, type LegFields, legNumber, legsArmed, nextLeg, readLeg } from './epic-legs'
 
 const RUN: LegFields = { leg: 1, legBudgetUsd: 200, legStartUsd: 0, plan: true }
 const run = (over: Partial<LegFields> = {}): LegFields => ({ ...RUN, ...over })
