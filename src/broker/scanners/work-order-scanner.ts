@@ -149,11 +149,12 @@ function attemptsFor(deps: WorkOrderDeps, cardId: string): number {
  * as select -> refuse -> dispatch and nothing else.
  *
  * THE CARD'S `model:` HINT IS SPENT HERE, and it is clamped against
- * `WERK-WORKER@1`'s own cap on the way past. That order sets no model today, so
- * the hint passes through untouched and a card with no hint changes nothing --
- * but the clamp is in the path from the first day rather than added the day an
- * order first caps a seat, because "the order still wins" is not a property you
- * can retrofit onto dispatches that already happened.
+ * `WERK-WORKER@1`'s own cap on the way past. Since `werk-seat-model-policy` that
+ * cap is a real value rather than an absence, so the clamp now BITES: a hint at
+ * or below the seat's tier wins, a hint above it runs at the cap and logs the
+ * line below. The clamp was in the path from the first day rather than added
+ * here, because "the order still wins" is not a property you can retrofit onto
+ * dispatches that already happened.
  */
 async function dispatchCard(deps: WorkOrderDeps, card: ProjectTaskMeta): Promise<boolean> {
   const model = clampCardModel(card.model, EPIC_ORDERS['werk-worker'].caps.model)

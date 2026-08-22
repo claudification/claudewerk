@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { SYSTEM_TAGS } from '../../shared/board-system-tags'
+import { EPIC_ORDERS } from '../../shared/epic-orders'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
 import type { Conversation } from '../../shared/protocol'
 import type { TaskStatus } from '../../shared/task-statuses'
@@ -137,22 +138,40 @@ describe('what it dispatches', () => {
   })
 
   /**
-   * THE CARD'S `model:` HINT REACHES THE SEAT. `WERK-WORKER@1` sets no model cap
-   * today, so the clamp has nothing to narrow against and the hint is the
-   * choice -- which is what makes this the interesting half of the pair: the
-   * refine scanner proves the clamp bites, this one proves it does not bite when
-   * there is no cap to bite with.
+   * THE CARD'S `model:` HINT REACHES THE SEAT, NARROWED.
+   *
+   * `WERK-WORKER@1` declares a real tier since `werk-seat-model-policy`, so the
+   * clamp now has something to narrow against and this is the pair's downward
+   * half: a hint the seat allows is the choice, and the seat's own tier is what
+   * a card that said nothing gets.
    */
   test("a card's `model:` hint becomes the seat's model", async () => {
-    await runScan(workOrderScanner, deps({ getCards: async () => [card('a', 'open', { model: 'opus' })] }))
+    await runScan(workOrderScanner, deps({ getCards: async () => [card('a', 'open', { model: 'haiku' })] }))
 
-    expect(dispatched[0]?.plan.model).toBe('opus')
+    expect(dispatched[0]?.plan.model).toBe('haiku')
   })
 
-  test('a card with no hint leaves the seat on the project default, exactly as before', async () => {
+  /**
+   * WAS "leaves the seat on the project default, exactly as before", and the
+   * project default is exactly what a seat no longer resolves to: an unhinted
+   * werk-worker used to inherit whatever a machine's spawn config happened to
+   * say, which is a cost decision nobody committed. It now runs the tier its
+   * order names.
+   */
+  test("a card with no hint runs at the seat's own declared tier", async () => {
     await runScan(workOrderScanner, deps({ getCards: async () => [card('a')] }))
 
-    expect(dispatched[0]?.plan.model).toBeUndefined()
+    expect(dispatched[0]?.plan.model).toBe(EPIC_ORDERS['werk-worker'].caps.model)
+    expect(dispatched[0]?.plan.model).toBeTruthy()
+  })
+
+  /** The direction that may never happen: a card cannot buy a tier its seat
+   *  refused it. The clamp says so in the log rather than silently. */
+  test('a card asking above the seat runs at the cap, and the clamp is logged', async () => {
+    await runScan(workOrderScanner, deps({ getCards: async () => [card('a', 'open', { model: 'fable' })] }))
+
+    expect(dispatched[0]?.plan.model).toBe(EPIC_ORDERS['werk-worker'].caps.model)
+    expect(log.join('\n')).toContain('asks for more than')
   })
 })
 

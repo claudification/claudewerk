@@ -75,3 +75,37 @@ describe('requires_deploy', () => {
     expect(serializeCard(raw?.meta ?? {}, raw?.body ?? '', raw?.raw ?? {})).toContain('requires_deploy: [tok]')
   })
 })
+
+/**
+ * ONE SPELLING OF THE MODEL HINT REACHES DISPATCH, and it is the frontmatter key.
+ *
+ * `#model-opus` is a CAPTURE ergonomic -- `project-task-input.ts` folds it into
+ * the `model:` key on the way in and the tag does not survive. What must never
+ * grow is a SECOND reader on the way out: the moment this projection also
+ * consulted tags, "which model does this card run" would have two answers on a
+ * card carrying both, and the one that won would depend on which reader you
+ * asked. That is exactly the drift `work-order` cost a morning to.
+ *
+ * So: a tag is a tag here, even when it looks like a hint.
+ */
+describe('model', () => {
+  test('the frontmatter key is what dispatch reads', () => {
+    expect(parse('title: A\nstatus: open\nmodel: haiku\n').model).toBe('haiku')
+  })
+
+  test('a `model-<slug>` TAG is not a hint at this seam -- it stays an ordinary tag', () => {
+    const card = parse('title: A\nstatus: open\ntags: [model-opus]\n')
+    expect(card.model).toBeUndefined()
+    expect(card.tags).toEqual(['model-opus'])
+  })
+
+  test('the key wins outright when a card somehow carries both', () => {
+    expect(parse('title: A\nstatus: open\nmodel: haiku\ntags: [model-opus]\n').model).toBe('haiku')
+  })
+
+  /** An unrecognised slug reads as ABSENT rather than reaching CC as
+   *  `--model <typo>` hours later; the doctor reports it (card-model.ts). */
+  test('a slug nothing can resolve projects as no hint at all', () => {
+    expect(parse('title: A\nstatus: open\nmodel: frobnicate\n').model).toBeUndefined()
+  })
+})

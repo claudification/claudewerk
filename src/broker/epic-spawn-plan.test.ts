@@ -411,11 +411,28 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
     name: string
     worktree?: string
     cardId?: string
+    /** The tier its order pins it to (`werk-seat-model-policy`). */
+    model: string
+    effort: EpicSpawnPlan['effort']
   }
 
   const SEATS: SeatCase[] = [
-    { seat: 'werk-master', plan: werkMaster, role: 'werk-master', name: '[werk-epic] werk-master g4' },
-    { seat: 'werk-planner', plan: werkPlanner, role: 'werk-master', name: '[werk-epic] werk-planner werk-master g4' },
+    {
+      seat: 'werk-master',
+      plan: werkMaster,
+      role: 'werk-master',
+      name: '[werk-epic] werk-master g4',
+      model: 'opus',
+      effort: 'max',
+    },
+    {
+      seat: 'werk-planner',
+      plan: werkPlanner,
+      role: 'werk-master',
+      name: '[werk-epic] werk-planner werk-master g4',
+      model: 'opus',
+      effort: 'max',
+    },
     {
       seat: 'werk-worker',
       plan: () => planWerkWorkerSpawn(CTX, 't1'),
@@ -423,6 +440,8 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
       name: '[werk-epic] t1 g4',
       worktree: 'epic/werk-epic/t1',
       cardId: 't1',
+      model: 'opus',
+      effort: 'high',
     },
     {
       seat: 'werk-verifier',
@@ -431,6 +450,8 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
       name: '[werk-epic] verify t1 g4',
       worktree: 'epic/werk-epic/verify-t1',
       cardId: 't1',
+      model: 'opus',
+      effort: 'high',
     },
   ]
 
@@ -447,20 +468,43 @@ describe('compiling card + order emits EXACTLY what the hardcoded seats emitted'
       name: s.name,
       failOnNameCollision: false,
       ...(s.worktree ? { worktree: s.worktree } : {}),
+      // From the seat's order since `werk-seat-model-policy`. Spelled out per
+      // seat rather than read off `EPIC_ORDERS` here, because a test that
+      // derives its expectation from the thing under test agrees with a typo.
+      model: s.model,
+      effort: s.effort,
     })
   })
 
   /**
-   * `order@1` can pin a model, an effort tier, an agent, a per-seat budget and
-   * an MCP config, and no shipped order does. An extra key here is not cosmetic:
-   * `spawn-launch-config.test.ts` walks the plan through the real spawn schema,
-   * so a caps key that appears is a value that reaches CC.
+   * THE TIER EACH SEAT ACTUALLY SPAWNS AT, at the seam that decides it.
+   *
+   * `epic-orders.test.ts` says what the orders declare; this says the compile
+   * step carries it onto the plan, and `spawn-launch-config.test.ts` walks that
+   * plan through the real spawn schema -- so these two keys are values that
+   * reach CC rather than documentation. The other three caps stay absent: no
+   * shipped epic order sets them, and an extra key here is not cosmetic.
    */
-  test.each(SEATS)('$seat: no per-order cap leaked into the spawn', s => {
-    const keys = Object.keys(s.plan())
-    for (const cap of ['model', 'effort', 'agent', 'maxBudgetUsd', 'mcpConfigPath']) {
-      expect(keys).not.toContain(cap)
-    }
+  test.each(SEATS)('$seat: spawns at its order’s model and effort, and leaks no other cap', s => {
+    const plan = s.plan()
+    expect(plan.model).toBe(s.model)
+    expect(plan.effort).toBe(s.effort)
+    const keys = Object.keys(plan)
+    for (const cap of ['agent', 'maxBudgetUsd', 'mcpConfigPath']) expect(keys).not.toContain(cap)
+  })
+
+  /**
+   * A card's hint narrows its werk-worker and can never widen it. The hint is
+   * clamped before it arrives (card-model.ts owns that, at the dispatch site
+   * where the log line has somewhere to go), so what this pins is the half after
+   * the clamp: an already-narrowed explicit value beats the order's selection
+   * cap, which is what `composeOrderCaps` classes `model` as a SELECTION field
+   * for.
+   */
+  test('a card’s cheaper model reaches the werk-worker’s spawn', () => {
+    expect(planWerkWorkerSpawn(CTX, 't1', 'main', [], 'haiku').model).toBe('haiku')
+    // and the seat's effort is untouched by it -- a cheap model is not a cheap think
+    expect(planWerkWorkerSpawn(CTX, 't1', 'main', [], 'haiku').effort).toBe('high')
   })
 
   /**

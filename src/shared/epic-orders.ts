@@ -25,13 +25,21 @@
  * legal `order@1`, the module fails to load rather than dispatching something
  * the schema would have refused from a stranger.
  *
- * WHAT IS DELIBERATELY NOT SET HERE: model, effort and per-seat budget. Every
- * one of them is a real capability of `order@1` and every one of them would be
- * a BEHAVIOUR CHANGE -- the seats run today on the project default, and this
- * card is a refactor whose acceptance test is that the engine emits what it
- * emitted before. "A GUARD does not need Opus-tier budget to read a diff" is
- * true and it is the next card's to prove, one seat at a time, with the run
- * data to say whether it hurt.
+ * MODEL AND EFFORT ARE NOW SET, ON EVERY SEAT, INCLUDING THE ONES THAT RUN THE
+ * ORDINARY TIER. They used to be absent on all four, which meant the seats ran
+ * on whatever the spawn default happened to resolve to -- a value written in a
+ * settings file, or in no file at all, that nothing in this repo names and no
+ * commit records changing. That is how a cost regression arrives without a
+ * commit, and it is the reason an ABSENT value here is now wrong even when the
+ * seat wants the ordinary tier: an absent value cannot be told apart from an
+ * oversight, and it cannot be read by the resolver `werk-seat-model-per-project`
+ * layers a per-project override on top of.
+ *
+ * PER-SEAT BUDGET IS STILL NOT SET HERE, and that is still the right absence.
+ * `werk-run-caps` bounds the RUN, `WERK-REFINER@1` bounds its own seat because a
+ * refine is a known-small job, and a bound on a WERK-WORKER is a bound on a job
+ * nobody has sized yet. It wants run data, one seat at a time -- unlike a model,
+ * which every seat spends on every turn whether or not anybody chose it.
  */
 
 import type { EpicRole } from './epic-run-types'
@@ -135,6 +143,67 @@ export function orderRole(order: Order): EpicRole {
 const AUTO = { permissionMode: 'auto' } as const
 
 /**
+ * THE LEAD SEATS' MODEL -- `werk-master` and `werk-planner`, PINNED.
+ *
+ * There is ONE of these per run and it is the seat that decides what every other
+ * seat does: the werk-master holds the plan of record, chooses what dispatches,
+ * and is the sole writer of `done`. The cheapest place in the system to spend the
+ * most capable model is the one seat that runs once per beat, and the most
+ * expensive place to be wrong is the one whose wrong answer is then built by
+ * everybody else. The werk-planner is the same judgement work with a different
+ * prompt (it writes the dependency graph the whole run is arithmetic over), so
+ * it gets the same tier.
+ *
+ * SEPARATE FROM {@link WERK_DEFAULT_MODEL} EVEN THOUGH THE VALUE IS THE SAME
+ * TODAY, and the separation is the point: the default is a knob -- a project may
+ * turn it down, a card may hint below it -- and the pin is not. One shared
+ * constant would mean the day somebody cheapens ordinary work also cheapens the
+ * seat that decides what ordinary work is, in a commit whose message says
+ * nothing about the werk-master.
+ */
+const WERK_LEAD_MODEL = 'opus'
+
+/** The lead seats' effort. `max`, for {@link WERK_LEAD_MODEL}'s reason: the
+ *  judgement is the product, and it is made once per beat. */
+const WERK_LEAD_EFFORT = 'max' as const
+
+/**
+ * THE ORDINARY TIER -- what a seat runs when nothing more specific was decided.
+ *
+ * `opus`, and it is written down rather than inherited. This is what the fleet
+ * already runs (nothing in this repo or in `~/.config/rclaude` sets a
+ * `defaultModel`, so every seat resolves to CC's own default, which is Opus),
+ * so baking it changes no seat's behaviour today -- what changes is that the
+ * value is now NAMED, capped, and reachable by a resolver instead of being a
+ * property of a machine's configuration.
+ *
+ * WHY NOT SOMETHING CHEAPER, WHICH IS THE OBVIOUS QUESTION FOR A CARD TAGGED
+ * `cost`. This value is not only the default, it is also the CAP:
+ * `clampCardModel` clamps a card's `model:` hint against it and
+ * `werk-seat-model-per-project` will clamp a project override against it too, in
+ * both cases downward only. So the number here is the CEILING of everything a
+ * card or a project may ever ask a werk-worker for, and a `sonnet` ceiling would
+ * permanently foreclose the case `werk-seat-model-per-project` exists to serve
+ * ("a repo where the *worker* needs opus"), as well as the refiner's own
+ * instruction to write `opus` on a design job. Cheapening happens where the
+ * judgement is -- the refiner's per-card hint and the per-project override, both
+ * of which only work downward, and both of which need this ceiling high enough
+ * to have room underneath it.
+ */
+const WERK_DEFAULT_MODEL = 'opus'
+
+/**
+ * The ordinary tier's effort. A DECISION, not an inherited value: CC's own
+ * default effort depends on the account class (`docs/frontend-internals.md` --
+ * CC 2.1.94 moved API/Team users to `high`), which is exactly the kind of
+ * invisible, machine-dependent input this card exists to remove. `high` is the
+ * right rung on its merits for the two seats that spend it: writing an
+ * implementation and reviewing a diff are both work where thinking is the
+ * cheapest part of the turn.
+ */
+const WERK_DEFAULT_EFFORT = 'high' as const
+
+/**
  * WHO MAY START AN EPIC. Every seat also carries `minTrust: 'benevolent'`.
  *
  * That was already true and nobody had written it down: it fell out of the seats
@@ -156,7 +225,7 @@ export const WERK_MASTER_ORDER: Order = validateOrder({
   title: 'WerkMaster -- decides what happens next, and the only seat that may ask a human',
   seat: 'werk-master',
   prompt: 'werk-master',
-  caps: AUTO,
+  caps: { ...AUTO, model: WERK_LEAD_MODEL, effort: WERK_LEAD_EFFORT },
   minTrust: 'benevolent',
   notes:
     'Singleton per epic, one generation per beat. Not muted: the mute exists so no worker BLOCKS on a human, ' +
@@ -175,7 +244,7 @@ export const WERK_PLANNER_ORDER: Order = validateOrder({
   seat: 'werk-planner',
   prompt: 'werk-planner',
   namePrefix: 'werk-planner ',
-  caps: AUTO,
+  caps: { ...AUTO, model: WERK_LEAD_MODEL, effort: WERK_LEAD_EFFORT },
   minTrust: 'benevolent',
   notes:
     'Runs once, before beat 1. Reads every card and the epic intent, closes what is already done, files what ' +
@@ -196,7 +265,9 @@ export const WERK_WORKER_ORDER: Order = validateOrder({
   seat: 'werk-worker',
   prompt: 'werk-worker',
   worktree: { prefix: '' },
-  caps: AUTO,
+  // The ordinary tier, and the CEILING a card's `model:` hint is clamped to --
+  // see WERK_DEFAULT_MODEL for why one value is both.
+  caps: { ...AUTO, model: WERK_DEFAULT_MODEL, effort: WERK_DEFAULT_EFFORT },
   minTrust: 'benevolent',
   notes:
     'Cannot ask a question, cannot approve its own work, cannot decide the epic direction. Each of those is ' +
@@ -217,7 +288,12 @@ export const WERK_VERIFIER_ORDER: Order = validateOrder({
   prompt: 'werk-verifier',
   namePrefix: 'verify ',
   worktree: { prefix: 'verify-' },
-  caps: AUTO,
+  // The ordinary tier, deliberately the SAME as the werk-worker's. "A GUARD does
+  // not need Opus-tier budget to read a diff" is true of a REFINE (which is why
+  // `WERK-REFINER@1` runs haiku) and false of a verdict: this seat re-runs the
+  // acceptance steps itself and its output is a merge or a bounce. A werk-verifier
+  // cheaper than the werk-worker it judges is a gate that cannot see the work.
+  caps: { ...AUTO, model: WERK_DEFAULT_MODEL, effort: WERK_DEFAULT_EFFORT },
   minTrust: 'benevolent',
   notes:
     'Re-runs `test_cmd` and every acceptance step itself. Muted like a werk-worker: it judges, it does not ' +

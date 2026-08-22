@@ -96,11 +96,13 @@ export interface EpicSpawnPlan {
   /**
    * PER-SEAT CAPS, from the order, composed through `order-caps.ts`.
    *
-   * All five are ABSENT for every seat the engine dispatches today, because no
-   * shipped order sets them -- and an absent key is not the same as an explicit
-   * `undefined` here: `spawn-launch-config.test.ts` asserts that every field the
-   * plan sets survives the spawn schema, so a key that appears must be a key the
-   * wire carries. Each of these is a real `SpawnRequest` field.
+   * `model` and `effort` are PRESENT for every seat the engine dispatches --
+   * `werk-seat-model-policy` made every order declare both, so no seat resolves
+   * its tier from a machine's spawn default any more. The other three are absent
+   * because no shipped epic order sets them, and an absent key is not the same as
+   * an explicit `undefined` here: `spawn-launch-config.test.ts` asserts that
+   * every field the plan sets survives the spawn schema, so a key that appears
+   * must be a key the wire carries. Each of these is a real `SpawnRequest` field.
    */
   model?: string
   effort?: OrderCaps['effort']
@@ -346,8 +348,12 @@ export function cardBranch(epicId: string, cardId: string): string {
  * where the log line has somewhere to go (card-model.ts). Passing it as the
  * composition's base is then correct rather than dangerous: an explicit base
  * wins over an order's selection cap, which is exactly what a value that has
- * already been narrowed is entitled to do. Omitted by the epic engine, whose
- * seats keep running on the project default until a card asks otherwise.
+ * already been narrowed is entitled to do. STILL OMITTED BY THE EPIC ENGINE,
+ * which does not thread the card's hint through `spawnForCard` at all -- so an
+ * epic-dispatched werk-worker runs `WERK-WORKER@1`'s own tier no matter what the
+ * refiner wrote on the card. That is a gap, not a decision, and it belongs to
+ * `werk-epic-engine-spends-card-model-hint` rather than to the card that baked
+ * the tiers.
  */
 export function planWerkWorkerSpawn(
   ctx: EpicSpawnCtx,

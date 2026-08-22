@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { clampCardModel } from './card-model'
 import {
   EPIC_ORDERS,
   isEpicOrderSeat,
@@ -133,17 +134,83 @@ describe('names and prompts', () => {
 })
 
 /**
- * THE NO-BEHAVIOUR-CHANGE GUARD, as an assertion rather than a promise.
+ * WHICH MODEL EACH SEAT SPENDS, as an assertion rather than a settings file.
  *
- * `order@1` can pin a model, an effort tier and a per-seat budget, and none of
- * the four uses any of it -- on purpose. Every one of those would change what
- * the engine spawns, and this card's acceptance test is that it does not. When
- * a later card DOES tune a seat, this test fails and its author has to say which
- * seat and why, in the same commit.
+ * This block used to say the opposite -- "no shipped order changes what the
+ * engine emits today", pinning `caps` to the permission mode alone -- and it
+ * named its own successor: "when a later card DOES tune a seat, this test fails
+ * and its author has to say which seat and why, in the same commit."
+ * `werk-seat-model-policy` is that card and this is that saying.
+ *
+ * THE POINT IS THE ABSENCE OF ABSENCES. An unset `model` does not mean "the
+ * ordinary tier", it means the seat resolves to whatever a machine's spawn
+ * default happens to be -- a value no commit records and no resolver can read.
+ * So the first test below is the one that matters: every seat declares both,
+ * including the two that want the ordinary tier.
  */
-describe('no shipped order changes what the engine emits today', () => {
-  test.each(ALL)('$id declares only the permission mode', order => {
-    expect(order.caps).toEqual({ permissionMode: 'auto' })
+describe('every seat declares the model and the effort it spends', () => {
+  test.each(ALL)('$id leaves neither to the spawn default', order => {
+    expect(order.caps.model).toBeTruthy()
+    expect(order.caps.effort).toBeTruthy()
+  })
+
+  /**
+   * PINNED, and pinned separately from the ordinary tier below. The werk-master
+   * holds the plan of record, decides what dispatches and is the sole writer of
+   * `done`; the werk-planner writes the dependency graph the whole run is
+   * arithmetic over. One seat per beat, and the most expensive place in the
+   * system to be wrong.
+   */
+  test.each([WERK_MASTER_ORDER, WERK_PLANNER_ORDER])('$id is pinned to opus at max effort', order => {
+    expect(order.caps.model).toBe('opus')
+    expect(order.caps.effort).toBe('max')
+  })
+
+  /**
+   * The ordinary tier -- ONE value, shared, so "the default" is a single fact.
+   * It is also the CEILING `clampCardModel` clamps a card's hint to, which is
+   * why it is not something cheaper: a lower ceiling would foreclose the case
+   * `werk-seat-model-per-project` exists to serve.
+   */
+  test('the werk-worker and the werk-verifier share one ordinary tier', () => {
+    expect(WERK_WORKER_ORDER.caps.model).toBe(WERK_VERIFIER_ORDER.caps.model)
+    expect(WERK_WORKER_ORDER.caps.effort).toBe(WERK_VERIFIER_ORDER.caps.effort)
+    expect(WERK_WORKER_ORDER.caps.model).toBe('opus')
+    expect(WERK_WORKER_ORDER.caps.effort).toBe('high')
+  })
+
+  /**
+   * A card may narrow its seat and may never widen it -- the ordering
+   * `card-model.ts` owns, asserted here against the REAL cap rather than a
+   * literal, so it keeps meaning the same thing if the tier is retuned.
+   */
+  test('a card can spend less than the werk-worker seat, never more', () => {
+    const cap = WERK_WORKER_ORDER.caps.model
+    expect(clampCardModel('haiku', cap).model).toBe('haiku')
+    expect(clampCardModel('fable', cap).model).toBe(cap)
+    expect(clampCardModel('fable', cap).note).toContain('asks for more than')
+  })
+
+  /** Nobody may talk a lead seat down. */
+  test('a card cannot talk a werk-master down to haiku', () => {
+    expect(clampCardModel('haiku', WERK_MASTER_ORDER.caps.model).model).toBe('haiku')
+    expect(WERK_MASTER_ORDER.caps.model).toBe('opus')
+  })
+
+  test.each(ALL)('$id still runs at the `auto` permission mode', order => {
+    expect(order.caps.permissionMode).toBe('auto')
+  })
+
+  /**
+   * PER-SEAT BUDGET AND TURN CEILING STAY ABSENT, and that absence is still a
+   * decision: `werk-run-caps` bounds the RUN, and a per-seat bound on a job
+   * nobody has sized yet is a number invented rather than measured.
+   */
+  test.each(ALL)('$id sets no per-seat budget or turn ceiling', order => {
+    expect(order.caps.maxBudgetUsd).toBeUndefined()
+    expect(order.caps.maxTurns).toBeUndefined()
+    expect(order.caps.agent).toBeUndefined()
+    expect(order.caps.mcpConfigPath).toBeUndefined()
   })
 
   /**
