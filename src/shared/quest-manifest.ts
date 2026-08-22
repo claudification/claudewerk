@@ -7,7 +7,8 @@
  * Path-jailed via quest-paths + resolveInRoot. Pure filesystem + string work.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { writeFileAtomic } from './atomic-write'
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter'
 import { resolveInRoot } from './project-store'
 import { manifestFile, questDir } from './quest-paths'
@@ -87,7 +88,7 @@ export function writeManifest(root: string, m: QuestManifest): void {
   mkdirSync(questDir(root, m.petname), { recursive: true })
   const file = manifestFile(root, m.petname)
   resolveInRoot(root, file.slice(root.length)) // path-jail belt-and-suspenders
-  writeFileSync(file, serializeFrontmatter(manifestFrontmatter(m), manifestBody(m.goal, m.contracts)), 'utf8')
+  writeFileAtomic(file, serializeFrontmatter(manifestFrontmatter(m), manifestBody(m.goal, m.contracts)))
 }
 
 export function readManifest(root: string, petname: string): QuestManifest | null {

@@ -7,9 +7,17 @@
  *   2. NOTHING IS EVER WRITTEN INTO A LANE DIRECTORY AGAIN. A write that lands
  *      on a legacy-resident card relocates it into `cards/` first, so a board
  *      drains itself card by card even if the upgrade script never runs.
+ *
+ * Every write here goes through `writeFileAtomic`. The board is the record the
+ * engine runs on and `project_set_status` rewrites a WHOLE card on every lane
+ * move, so a bare `writeFileSync` -- truncate, then write -- gave a killed
+ * sentinel a window in which the card on disk still exists and no longer carries
+ * its own `epic:`, `depends_on:` or promise ledger. `board-record-durability` put
+ * the board in git, which makes a tear recoverable; it does not stop it.
  */
 
-import { existsSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, unlinkSync, utimesSync } from 'node:fs'
+import { writeFileAtomic } from './atomic-write'
 import { makeBodyPreview } from './body-preview'
 import { readCardModel } from './card-model'
 import { asStatus, readRawCard, serializeCard } from './project-card-file'
@@ -83,7 +91,7 @@ export function createProjectTask(root: string, raw: ProjectTaskInput, nowMs: nu
   }
   // No blocks: a card being created has no prior bytes to preserve. A `promise:`
   // block arrives later, via promise-ledger's line surgery.
-  writeFileSync(cardPath(root, id), serializeCard(meta, input.body, {}), 'utf8')
+  writeFileAtomic(cardPath(root, id), serializeCard(meta, input.body, {}))
   return {
     slug: id,
     status,
@@ -178,7 +186,7 @@ export function updateProjectTask(root: string, id: string, rawPatch: Partial<Pr
   const status = asStatus(meta.status) ?? target.laneStatus ?? 'inbox'
   meta.status = status
 
-  writeFileSync(target.abs, serializeCard(meta, patch.body ?? raw.body, raw.raw), 'utf8')
+  writeFileAtomic(target.abs, serializeCard(meta, patch.body ?? raw.body, raw.raw))
   return getProjectTask(root, id)
 }
 
@@ -200,7 +208,7 @@ export function setProjectTaskStatus(root: string, id: string, toStatus: TaskSta
   if (!raw) return null
 
   const prev = asStatus(raw.meta.status) ?? target.laneStatus ?? 'inbox'
-  writeFileSync(target.abs, serializeCard({ ...raw.meta, status: toStatus }, raw.body, raw.raw), 'utf8')
+  writeFileAtomic(target.abs, serializeCard({ ...raw.meta, status: toStatus }, raw.body, raw.raw))
   const now = new Date(nowMs)
   try {
     utimesSync(target.abs, now, now)

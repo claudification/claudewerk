@@ -29,7 +29,8 @@
  * is.
  */
 
-import { statSync, writeFileSync } from 'node:fs'
+import { statSync } from 'node:fs'
+import { writeFileAtomic } from './atomic-write'
 import { parseCardFrontmatter } from './card-frontmatter'
 import { serializeCard } from './project-card-file'
 import type { DoctorFinding } from './project-doctor-types'
@@ -166,6 +167,6 @@ export function fsStampDeps(nowMs: number): CreatedStampDeps {
         return null
       }
     },
-    write: (abs, content) => writeFileSync(abs, content, 'utf8'),
+    write: (abs, content) => writeFileAtomic(abs, content),
   }
 }

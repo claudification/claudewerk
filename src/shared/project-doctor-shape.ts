@@ -24,7 +24,7 @@
  * mentions once, at info.
  */
 
-import { writeFileSync } from 'node:fs'
+import { writeFileAtomic } from './atomic-write'
 import { parseCardFrontmatter } from './card-frontmatter'
 import { cardKeySpec } from './card-schema'
 import { cardValueProblem } from './card-schema-validate'
@@ -121,5 +121,5 @@ export function repairCardShape(card: StampTarget, mode: RepairMode, deps: Shape
 
 /** The real filesystem. */
 export function fsShapeRepairDeps(): ShapeRepairDeps {
-  return { write: (abs, content) => writeFileSync(abs, content, 'utf8') }
+  return { write: (abs, content) => writeFileAtomic(abs, content) }
 }

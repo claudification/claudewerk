@@ -23,7 +23,17 @@
  * ENTIRELY; what it can no longer do is leave half of one behind.
  */
 
-import { renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  appendFileSync,
+  closeSync,
+  existsSync,
+  openSync,
+  readSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 
 /** The sibling. Deliberately not `.md`, so nothing that globs an artifact
  *  directory for markdown can ever pick a half-written staging file up. */
@@ -54,4 +64,48 @@ export function writeFileAtomic(file: string, content: string): void {
     throw err
   }
   renameSync(tmp, file)
+}
+
+/**
+ * Is the last byte on disk a newline? A file that is absent or empty counts as
+ * yes -- there is nothing for the next entry to collide with.
+ *
+ * One byte read, never the file: this is asked on every append, and the file it
+ * guards for `epic-the-wall` reached 1.0 MB.
+ */
+function endsWithNewline(file: string): boolean {
+  if (!existsSync(file)) return true
+  const size = statSync(file).size
+  if (size === 0) return true
+  const fd = openSync(file, 'r')
+  try {
+    const byte = Buffer.alloc(1)
+    readSync(fd, byte, 0, 1, size - 1)
+    return byte[0] === 0x0a
+  } finally {
+    closeSync(fd)
+  }
+}
+
+/**
+ * Append `content` to `file`, first repairing a missing final newline.
+ *
+ * THE OTHER HALF OF THE DURABILITY STORY, and for an accumulating log it is the
+ * better half. `writeFileAtomic` on a read-whole-rewrite-whole log rewrites every
+ * byte of it per entry, and while a kill can no longer TEAR it, a rename still
+ * makes the whole file the unit at risk. An `appendFileSync` of one entry is a
+ * single write past the end: a killed process cannot damage it at all, and the
+ * worst a power loss can do is leave a partial TAIL.
+ *
+ * The newline guard is what keeps that damage to one entry. Every reader in this
+ * codebase splits sections on `/^### /m`, so a torn tail with no final newline
+ * would put the next `### ` mid-line where the regex cannot see it -- and the
+ * GOOD entry that followed the bad one would vanish along with it.
+ *
+ * Callers that need the file to exist with a header first write that header with
+ * `writeFileAtomic`: creating a file is a whole-file write, not an extension.
+ */
+export function appendFileGuarded(file: string, content: string): void {
+  const gap = endsWithNewline(file) ? '' : '\n'
+  appendFileSync(file, `${gap}${content}`, 'utf8')
 }
