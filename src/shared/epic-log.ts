@@ -36,6 +36,24 @@ const KINDS: readonly EpicLogKind[] = [
   'record',
 ]
 
+/**
+ * The kind, or `intent` for a word this build does not know.
+ *
+ * `werk-master-lost` WAS `overseer-lost` UNTIL THE SEAT RENAME, and baton lines
+ * written before it keep the old word: a baton is append-only and never
+ * rewritten, which is the whole premise of this file. So one class of historical
+ * line -- a supervisor the engine reaped -- now reads back as `intent`.
+ *
+ * That is the accepted cost, stated rather than papered over, and it is small
+ * for two reasons. The kind is read by the RENDERER and by `ACKNOWLEDGING_KINDS`
+ * (which never contained it), so no decision moves. And `epic-beat-actions.ts`
+ * dedupes its reap entry on the kind, so an epic live across the rename may
+ * append one duplicate for a supervisor already recorded under the old word --
+ * once, per already-reaped supervisor.
+ *
+ * The alternative was tolerating the old spelling here forever, which is exactly
+ * the permanent alias the rename decided against. See `migrate.ts` v8.
+ */
 function asEpicLogKind(v: unknown): EpicLogKind {
   return KINDS.includes(v as EpicLogKind) ? (v as EpicLogKind) : 'intent'
 }

@@ -153,7 +153,7 @@ describe('worktrees', () => {
   })
 
   /**
-   * The hazard the card was raised for: from `epic-werk-worker-base-lacks-deps`
+   * The hazard the card was raised for: from `epic-implementer-base-lacks-deps`
    * onwards one prompt quotes TWO branch refs. If they disagree on the prefix, an
    * werk-worker that reasons "rule 1 drops it, so the merge ref probably does
    * too" runs `git merge` against a ref that does not resolve.

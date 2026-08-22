@@ -197,7 +197,7 @@ describe('a seat that dies without its end being recorded is reaped', () => {
    * BOUNDED ON PURPOSE. A werk-master stuck at a non-`ended` status holds
    * `werkMasterAlive`, which holds the WHOLE beat, and unfreezing it means granting
    * the lease to a second werk-master -- a full generation if it is wrong. That is
-   * `epic-werk-master-seat-never-reaped`, not this card.
+   * `epic-overseer-seat-never-reaped`, not this card.
    */
   test('the werk-master is deliberately NOT reaped', () => {
     const g = group([named(werkMaster(), 'conv_dead')])

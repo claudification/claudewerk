@@ -177,7 +177,7 @@ export async function reapWerkMasters(
 }
 
 /**
- * Write an `werk-master-lost` entry for a supervisor the engine has just reaped.
+ * Write a `werk-master-lost` entry for a supervisor the engine has just reaped.
  *
  * THE POINT OF THE ENTRY, which is the whole reason the card exists: a run whose
  * werk-master's agent host died without recording an end used to write `werk-master

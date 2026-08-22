@@ -15,7 +15,8 @@
  *
  * THE PHYSICAL FACT IS ONE FACT -- "the host behind this conversation is gone" --
  * and this file is the one place it is stated. It used to be stated twice, in
- * `epic-seat-vitality.ts` and `epic-werk-master-vitality.ts`, because the two cards
+ * `epic-seat-vitality.ts` and `epic-overseer-vitality.ts` (the file names of the
+ * day, before the seat rename), because the two cards
  * that needed it were built on branches neither of which could see the other's
  * file. That was deliberate at the time and carded rather than smuggled; this is
  * the card.

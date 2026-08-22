@@ -222,7 +222,7 @@ describe('the two graces are deliberately different', () => {
    * The second, INDEPENDENT constraint on the werk-master's grace. A fold that
    * declared the werk-master dead while `evaluateLease` still refused to replace it
    * would freeze the run by a second mechanism instead of the first -- the exact
-   * trap `epic-werk-master-seat-never-reaped` names.
+   * trap `epic-overseer-seat-never-reaped` names.
    */
   test('WERK_MASTER_SILENCE_MS clears LEASE_STALE_MS', () => {
     expect(graceClearsLeaseStaleness()).toBe(true)

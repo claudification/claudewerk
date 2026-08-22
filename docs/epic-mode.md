@@ -38,11 +38,11 @@ card and the diff, never the transcript.
                     question /  │                      │  steer / GO
                     checkpoint  │                      ▼
    ┌────────────────────────────┴──────────────────────────────────────┐
-   │  EPIC WERK-MASTER   gen N        one conversation, one turn, dies    │
+   │  EPIC WERK-MASTER  gen N    one conversation, one turn, dies      │
    │  SINGLETON -- holds the lease on the epic card                    │
    │                                                                   │
    │  READS   epic rollup (children + waitingOn) . epic baton tail .   │
-   │          git state . the needs-werk-master question cards            │
+   │          git state . the needs-werk-master question cards         │
    │  DECIDES answer questions | handle verdicts | merge | replan |    │
    │          ask Jonas | epic DONE                                    │
    │  WRITES  card frontmatter + append-only baton + the run digest    │
@@ -58,7 +58,7 @@ card and the diff, never the transcript.
        │               + deny-floor + THE MUTE)        │
        ▼                                               │
    ┌──────────────────┐  ┌──────────────────┐          │
-   │  WERK-WORKER     │  │  WERK-VERIFIER        │   ...    │
+   │  WERK-WORKER     │  │  WERK-VERIFIER   │   ...    │
    │  card t2         │  │  card t5         │          │
    │  own worktree    │  │  scratch tree    │          │
    │  NO dialog       │  │  NO dialog       │          │
@@ -70,7 +70,7 @@ card and the diff, never the transcript.
    ┌───────────────────────────────────────────────────┴───────────────┐
    │  GUARDIAN SWEEP   (broker, every 45s)                             │
    │  a settled card the baton has NOT acknowledged -> wake the        │
-   │  werk-master at gen+1. The lease CAS lets exactly one waker through. │
+   │  werk-master at gen+1. The lease CAS lets one waker through.      │
    └───────────────────────────────────────────────────────────────────┘
 ```
 

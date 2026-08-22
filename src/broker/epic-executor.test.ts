@@ -1348,8 +1348,8 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
  * A CARD RENAMED WHILE ITS SEAT IS STILL TYPING -- the 2026-08-20 double
  * dispatch, end to end.
  *
- * Generation 3 renamed `epic-werk-verifier-spawn-failed-claude-launch` to
- * `epic-werk-verifier-spawn-64char` at 02:46; at 03:15 the beat dispatched a SECOND
+ * Generation 3 renamed `epic-verifier-spawn-failed-claude-launch` to
+ * `epic-verifier-spawn-64char` at 02:46; at 03:15 the beat dispatched a SECOND
  * werk-worker onto it while the first was still writing to
  * `src/broker/epic-sweep.ts`. The launch tag stamps the card id at spawn time
  * and never revisits it, so the live conversation went on answering to a key
@@ -1360,8 +1360,8 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
  * the OLD id, because that is the id they were launched under.
  */
 describe('a card renamed under a live seat', () => {
-  const OLD = 'epic-werk-verifier-spawn-failed-claude-launch'
-  const NEW = 'epic-werk-verifier-spawn-64char'
+  const OLD = 'epic-verifier-spawn-failed-claude-launch'
+  const NEW = 'epic-verifier-spawn-64char'
   const epic = () => card('e1', 'open', { tags: ['epic'] })
   const renamed = (status: TaskStatus) => card(NEW, status, { epic: 'e1', renamedFrom: [OLD] })
 

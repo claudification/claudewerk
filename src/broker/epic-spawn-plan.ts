@@ -339,7 +339,7 @@ export function cardBranch(epicId: string, cardId: string): string {
  * `dependsOn` is the card's own `depends_on`, passed through so the prompt can
  * order a base check. It is only ever data here: this function does not consult
  * it, gate on it, or change the base ref because of it -- readiness stays exactly
- * where it was (see epic-werk-worker-base-lacks-deps).
+ * where it was (see epic-implementer-base-lacks-deps).
  *
  * `model` is the card's `model:` hint, and it arrives ALREADY CLAMPED against
  * `WERK-WORKER@1`'s cap -- the clamp lives at the dispatch site because that is
