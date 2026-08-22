@@ -40,6 +40,8 @@ const RUN: EpicRunReading = {
   dryGens: 0,
   unlandedWoken: '',
   spentUsd: 0,
+  legStartUsd: 0,
+  leg: 1,
   planned: true,
   created: '2026-08-19T11:00:00.000Z',
   updated: '2026-08-19T11:23:50.000Z',

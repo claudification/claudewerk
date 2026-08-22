@@ -26,8 +26,14 @@ const RUN: EpicRunReading = {
   maxUsd: 100,
   maxWallClockMinutes: 480,
   spentUsd: 0,
+  legBudgetUsd: 200,
+  legStartUsd: 0,
+  leg: 1,
   concurrency: 3,
-  plan: false,
+  // LEGS NEED `plan` ON -- a leg boundary IS a re-plan, so a run that opted out
+  // of planning generations has no legs (`legsArmed`). The fixture carries it so
+  // the readings below are about the arithmetic rather than about the opt-out.
+  plan: true,
   planned: true,
   created: '',
   updated: '',
@@ -52,8 +58,36 @@ describe('elapsedRunMinutes', () => {
 })
 
 describe('epicRunCaps', () => {
-  test('reports all three ceilings, money first', () => {
-    expect(epicRunCaps(run(), T0).map(c => c.label)).toEqual(['spend', 'wall clock', 'generations'])
+  test('reports every ceiling, money first -- run spend, then the leg, then time', () => {
+    expect(epicRunCaps(run(), T0).map(c => c.label)).toEqual(['spend', 'leg 1 spend', 'wall clock', 'generations'])
+  })
+
+  test('the leg is measured from its own watermark, not from the run total', () => {
+    expect(byLabel(run({ spentUsd: 512, legStartUsd: 400, leg: 3 }), T0, 'leg 3 spend')).toMatchObject({
+      used: '$112.00',
+      limit: '$200.00',
+      remaining: '$88.00',
+      over: false,
+    })
+  })
+
+  /**
+   * `over` ON A LEG IS NOT `over` ON A RUN, and this test is the difference.
+   *
+   * Every other reading in this file goes `over` when a brake has FIRED. A leg
+   * over its budget has stopped dispatching and is settling its in-flight work
+   * before it re-plans -- the engine working, not a run that stopped -- and the
+   * surface has to be able to say so without borrowing the vocabulary of a park.
+   */
+  test('a leg past its budget reads OVER while the run itself is nowhere near its ceiling', () => {
+    const r = run({ maxUsd: 5000, spentUsd: 220, legStartUsd: 0 })
+    expect(byLabel(r, T0, 'leg 1 spend')?.over).toBe(true)
+    expect(byLabel(r, T0, 'spend')?.over).toBe(false)
+  })
+
+  test('a lost legBudgetUsd is UNENFORCEABLE, never $0.00 and never no cap', () => {
+    const blind = { ...run(), legBudgetUsd: undefined } as unknown as Parameters<typeof epicRunCaps>[0]
+    expect(byLabel(blind, T0, 'leg spend')).toMatchObject({ limit: 'UNENFORCEABLE', over: false })
   })
 
   test('spend shows what is left, to the cent', () => {
@@ -98,7 +132,8 @@ describe('formatEpicRunCaps', () => {
   test('is one line a human and an agent can both read', () => {
     const line = formatEpicRunCaps(run({ spentUsd: 12.5, startedAt: '2026-08-21T00:00:00.000Z' }), at(37))
     expect(line).toBe(
-      'spend $12.50/$100.00 ($87.50 left) . wall clock 37 min/480 min (443 min left) . generations 3/40 (37 left)',
+      'spend $12.50/$100.00 ($87.50 left) . leg 1 spend $12.50/$200.00 ($187.50 left) . ' +
+        'wall clock 37 min/480 min (443 min left) . generations 3/40 (37 left)',
     )
   })
 

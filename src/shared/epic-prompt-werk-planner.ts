@@ -24,6 +24,7 @@
  * bounced verdict and a wasted werk-worker later.
  */
 
+import { legNumber } from './epic-legs'
 import type { EpicPlan } from './epic-ready'
 import type { EpicRunReading } from './epic-run-types'
 
@@ -70,8 +71,41 @@ const ORDERING = [
   'in the card body, not in `depends_on`.',
 ].join('\n')
 
+/**
+ * THE RE-PLAN'S EXTRA INSTRUCTION -- the one thing a leg boundary asks for that
+ * generation 0 cannot.
+ *
+ * Generation 0 completes a graph nobody wrote. A re-plan does something harder: it
+ * REPAIRS a graph that was true and stopped being true, against a tree that has
+ * moved under it. An edge written before three branches merged may now point at
+ * work that is already in the code, or miss a collision that only exists because
+ * of what landed -- and a model handed the gen-0 wording will read the existing
+ * edges as somebody's decision and leave them alone. Naming the decay is what gets
+ * them rewritten.
+ */
+function theDrift(leg: number): string {
+  return [
+    `THIS IS A RE-PLAN, NOT A FIRST PLAN. Leg ${leg - 1} has ended and leg ${leg} starts with you. Work has`,
+    'LANDED since the last plan was written, and that is the entire reason you were woken: a plan of record',
+    'decays as work merges. Cards get done by side effect, cards stop making sense, cards turn out to be two',
+    'cards, and -- the one nobody catches -- ORDERING EDGES GO STALE. An edge that was right before three',
+    'branches merged can now be pointing at work that is already in the tree, and a collision that did not',
+    'exist when the epic was written can exist now because of what landed.',
+    '',
+    'SO SCOPE YOURSELF TO THE REMAINDER, and treat the existing `depends_on` edges as EVIDENCE RATHER THAN',
+    'DECISIONS. Re-derive every one of them against the code as it NOW exists -- read the tree, not the board.',
+    'An edge you keep because it was already there is an edge you have not checked. Deleting a stale edge is',
+    'as valuable as adding a missing one: it costs the run parallelism for nothing.',
+    '',
+    'The run does NOT wait for a human after you. It reads what you changed, files it in the baton for Jonas,',
+    'and dispatches against your edges on the very next beat.',
+  ].join('\n')
+}
+
 function theJob(ctx: WerkPlannerPromptCtx): string {
   const id = ctx.run.epicId
+  const leg = legNumber(ctx.run)
+  const record = leg <= 1 ? 'the plan of record' : `leg ${leg}'s plan of record`
   return [
     'YOUR JOB, IN THIS ORDER:',
     '',
@@ -96,7 +130,7 @@ function theJob(ctx: WerkPlannerPromptCtx): string {
     '',
     '6. WRITE THE BATON. Append ONE `intent` entry listing EVERY card you created, closed, archived, split or',
     `   re-ordered, and why. Then write the run digest -- the WHOLE of`,
-    `   \`${ctx.projectRoot}/.rclaude/project/epics/${id}/digest.md\` -- as the plan of record. Be complete: this`,
+    `   \`${ctx.projectRoot}/.rclaude/project/epics/${id}/digest.md\` -- as ${record}. Be complete: this`,
     '   entry is the only account Jonas gets of what you changed on his board, and the next generation knows',
     '   nothing except these files and the board.',
     '',
@@ -106,29 +140,46 @@ function theJob(ctx: WerkPlannerPromptCtx): string {
   ].join('\n')
 }
 
-const STOPPING = [
-  'WHEN YOU ARE DONE: stop. Do not dispatch anything, do not implement a card, do not spawn anything -- the',
-  'engine takes over the moment you exit and it will not start until then.',
-  '',
-  'The engine compares the board against the snapshot it took before you started. If you changed it, the run',
-  'CHECKPOINTS and Jonas reviews your plan before any work goes out; if the board was already sound, it',
-  'proceeds straight to the first beat. Either way that is decided from the board itself, not from your',
-  'summary -- so write the baton for the human who has to understand it, not to influence the gate.',
-  '',
-  'If the epic is fundamentally unclear -- you cannot tell what it is FOR, and guessing would send agents off',
-  'to build the wrong thing -- ask Jonas ONE crisp question with your recommendation. You are the only seat in',
-  'this run that may. Getting the intent wrong here is the most expensive mistake available to you: every',
-  'werk-worker after this inherits it.',
-].join('\n')
+function stopping(first: boolean): string {
+  return [
+    'WHEN YOU ARE DONE: stop. Do not dispatch anything, do not implement a card, do not spawn anything -- the',
+    'engine takes over the moment you exit and it will not start until then.',
+    '',
+    'The engine compares the board against the snapshot it took before you started.',
+    ...(first
+      ? [
+          'If you changed it, the run CHECKPOINTS and Jonas reviews your plan before any work goes out; if the board',
+          'was already sound, it proceeds straight to the first beat. Either way that is decided from the board',
+          'itself, not from your summary -- so write the baton for the human who has to understand it, not to',
+          'influence the gate.',
+        ]
+      : [
+          'Whatever you changed is written into the baton, CARD BY CARD, as the record Jonas gets that a model',
+          'reshaped his board while he was not watching. The run then CONTINUES -- there is no gate at a leg',
+          'boundary. So the baton entry is not a formality and it is not an argument: it is the only account of',
+          'this re-plan that survives, and it must be complete enough for somebody to disagree with it later.',
+        ]),
+    '',
+    'If the epic is fundamentally unclear -- you cannot tell what it is FOR, and guessing would send agents off',
+    'to build the wrong thing -- ask Jonas ONE crisp question with your recommendation. You are the only seat in',
+    'this run that may. Getting the intent wrong here is the most expensive mistake available to you: every',
+    'werk-worker after this inherits it.',
+  ].join('\n')
+}
 
 export function buildWerkPlannerPrompt(ctx: WerkPlannerPromptCtx): string {
   const r = ctx.plan.rollup
+  const leg = legNumber(ctx.run)
+  const first = leg <= 1
   return [
     `You are THE WERK-PLANNER of epic \`${ctx.run.epicId}\` in project ${ctx.projectUri}.`,
-    `This is generation 0 -- the analysis pass, before any card is dispatched. Target: ${ctx.run.target}.`,
+    first
+      ? `This is generation 0 -- the analysis pass, before any card is dispatched. Target: ${ctx.run.target}.`
+      : `This is the RE-PLAN that opens leg ${leg} -- no card dispatches until you exit. Target: ${ctx.run.target}.`,
     `Concurrency ceiling once work starts: ${ctx.run.concurrency}.`,
     '',
     AUTHORITY,
+    ...(first ? [] : ['', theDrift(leg)]),
     '',
     `THE EPIC'S OWN CARD (this is the intent -- everything else is an attempt at it):`,
     ctx.epicBody.trim() || '  _empty -- the epic card says nothing about what it is for, which is itself a finding_',
@@ -144,6 +195,6 @@ export function buildWerkPlannerPrompt(ctx: WerkPlannerPromptCtx): string {
     '',
     `THE BATON: ${ctx.projectRoot}/.rclaude/project/epics/${ctx.run.epicId}/log.md`,
     '',
-    STOPPING,
+    stopping(first),
   ].join('\n')
 }

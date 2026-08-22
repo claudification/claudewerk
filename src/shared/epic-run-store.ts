@@ -35,6 +35,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync } from 'node:fs'
 import { writeFileAtomic } from './atomic-write'
+import { legNumber } from './epic-legs'
 import {
   deletedEpicDir,
   deletedEpicsRoot,
@@ -94,6 +95,9 @@ export const EPIC_RUN_KEYS: readonly string[] = [
   'maxUsd',
   'maxWallClockMinutes',
   'spentUsd',
+  'legBudgetUsd',
+  'legStartUsd',
+  'leg',
   'startedAt',
   'plan',
   'planned',
@@ -299,6 +303,16 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     maxUsd: dec(meta.maxUsd, EPIC_RUN_DEFAULTS.maxUsd),
     maxWallClockMinutes: num(meta.maxWallClockMinutes, EPIC_RUN_DEFAULTS.maxWallClockMinutes),
     spentUsd: dec(meta.spentUsd, 0),
+    // A run armed before LEGS existed is on its FIRST leg, budgeted at the
+    // default, measuring from wherever its ledger already stands. The watermark
+    // is the interesting one: falling back to 0 would charge every dollar the run
+    // has ALREADY spent against its first leg, so a long-lived run would cross the
+    // hard cap on the very first beat after the deploy and park. Reading the
+    // ledger instead means legs start counting from HERE, which is the only thing
+    // the field can honestly mean for a run that never had one.
+    legBudgetUsd: dec(meta.legBudgetUsd, EPIC_RUN_DEFAULTS.legBudgetUsd),
+    legStartUsd: dec(meta.legStartUsd, dec(meta.spentUsd, 0)),
+    leg: num(meta.leg, 1),
     concurrency: num(meta.concurrency, EPIC_RUN_DEFAULTS.concurrency),
     // A run armed before the planning stage existed carries neither field. It
     // reads as ALREADY PLANNED rather than as owing a plan: retro-fitting a
@@ -432,6 +446,9 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     maxUsd: EPIC_RUN_DEFAULTS.maxUsd,
     maxWallClockMinutes: EPIC_RUN_DEFAULTS.maxWallClockMinutes,
     spentUsd: 0,
+    legBudgetUsd: EPIC_RUN_DEFAULTS.legBudgetUsd,
+    legStartUsd: 0,
+    leg: 1,
     concurrency: EPIC_RUN_DEFAULTS.concurrency,
     plan: wantsPlan,
     planned: !wantsPlan,
@@ -463,6 +480,19 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     // -- a run that parked at $100 and resumes unchanged parks again on the next
     // beat, which is the brake working. Raise `maxUsd` to mean "keep going".
     startedAt: undefined,
+    // A RESUME OPENS A FRESH LEG, and this is the wall clock's rule rather than
+    // the ledger's. A run that parked on the leg HARD cap has, by definition, a
+    // leg whose spend is already past every leg threshold there is -- so carrying
+    // the watermark across would park it again on the first beat, and the only way
+    // to say "carry on" would be hand-editing a machine-owned file. Advancing the
+    // counter as well as the watermark is what keeps the baton honest: what
+    // follows a resume is a new leg, and calling it the old one would put two
+    // different stretches of work under one number.
+    //
+    // KEYED ON `existing`, NOT ON `base` -- a fresh run opens leg 1 at $0 and must
+    // not be advanced past a leg that never happened.
+    legStartUsd: existing ? existing.spentUsd : 0,
+    leg: existing ? legNumber(existing) + 1 : 1,
     updated: ts,
     abortReason: undefined,
     // A RUN THAT STARTED AGAIN IS NEWS AGAIN. Leaving the acknowledgement on a

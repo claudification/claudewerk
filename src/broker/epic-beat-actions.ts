@@ -7,9 +7,10 @@
  * its entire contract -- rather than the order plus four spawn recipes.
  */
 
-import { fingerprintDelta } from '../shared/epic-board-fingerprint'
+import { describeBoardDelta, fingerprintDelta } from '../shared/epic-board-fingerprint'
 import type { EpicLease } from '../shared/epic-lease'
 import type { planEpic } from '../shared/epic-ready'
+import { formatUsd } from '../shared/epic-run-caps'
 import type { EpicLogEntry } from '../shared/epic-run-types'
 import type { EpicRunSnapshot } from '../shared/protocol'
 import type { TaskStatus } from '../shared/task-statuses'
@@ -480,12 +481,24 @@ async function standDown(
 
 /**
  * The planning generation settled. Either the board is as it was -- proceed --
- * or it was rewritten, in which case the run stops and Jonas reads the plan
- * before a single werk-worker goes out.
+ * or it was rewritten, and what happens then depends on WHICH plan this was.
  *
- * `planned` is set in BOTH branches. A checkpoint is not a retry: resuming after
- * one must go straight to beat 1, or approving a plan would re-run the werk-planner
- * that produced it, forever.
+ * `planned` is set in EVERY branch. A checkpoint is not a retry: resuming after
+ * one must go straight to the next beat, or approving a plan would re-run the
+ * werk-planner that produced it, forever.
+ *
+ * GENERATION 0'S CHECKPOINT IS A GATE. Nothing has been dispatched yet, the whole
+ * run is downstream of whatever the werk-planner decided, and stopping costs
+ * nothing because there is nothing in flight to strand.
+ *
+ * A LEG BOUNDARY'S CHECKPOINT IS A NOTIFICATION. Jonas chose `auto`: re-plan and
+ * continue. A re-plan that does its job CHANGES the board -- that is the entire
+ * reason the boundary exists -- so gating on it would stop the run on every single
+ * leg and train exactly the reflex a checkpoint must never train, which is
+ * clicking through it. The human-visible RECORD is what is being kept, and it is
+ * kept: the same delta, in the same baton, naming the cards rather than counting
+ * them. `beat.gate` is the pure decision's, so this function never has to re-derive
+ * which kind of plan it just resolved.
  */
 async function resolvePlanning(
   deps: BeatDeps,
@@ -503,6 +516,25 @@ async function resolvePlanning(
   }
 
   const { added, removed } = fingerprintDelta(action.before, action.after)
+  const changed = describeBoardDelta(action.before, action.after)
+  if (!action.gate) {
+    await io.sendEpicOp(deps, group.project, { op: 'patch', epicId: group.epicId, patch })
+    await io.appendBaton(deps, group.project, group.epicId, {
+      kind: 'leg',
+      convId: 'broker',
+      body:
+        `RE-PLAN COMPLETE -- leg ${action.leg} starts here. The werk-planner rewrote the board against the tree ` +
+        `as it now stands, and the run CONTINUES rather than waiting (the boundary is set to auto). ` +
+        `${changed.length} change(s):\n${changed.map(c => `  - ${c}`).join('\n')}\n` +
+        "Read the werk-planner's `intent` entry above for why. To stop here instead, pause the run.",
+    })
+    // The lease goes back exactly as `plan-accept` releases it -- the werk-planner
+    // has exited and the next beat must be free to dispatch under the new plan.
+    await io.sendEpicOp(deps, group.project, { op: 'release', epicId: group.epicId })
+    deps.log(`${tag(group.epicId, gen)} leg ${action.leg} re-plan: ${changed.length} board change(s); continuing`)
+    return
+  }
+
   await io.sendEpicOp(deps, group.project, {
     op: 'patch',
     epicId: group.epicId,
@@ -513,11 +545,50 @@ async function resolvePlanning(
     group,
     gen,
     'CHECKPOINT -- the planning generation changed the board, so nothing has been dispatched. ' +
-      `${added.length} card state(s) added or changed, ${removed.length} gone. ` +
+      `${added.length} card state(s) added or changed, ${removed.length} gone:\n` +
+      `${changed.map(c => `  - ${c}`).join('\n')}\n` +
       "Read the werk-planner's `intent` entry above for what it decided and why, then RUN again to accept the plan " +
       'and start beat 1 -- resuming does NOT re-plan.',
     `plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`,
   )
+}
+
+/**
+ * A LEG ENDED. The scalars are already on disk -- `applyBeatPatch` ran before this
+ * -- so all that is left is to say so where somebody will find it.
+ *
+ * THE BATON AND NOT `deps.log`, for `recordFriction`'s reason and one more of its
+ * own: this is the moment the engine decided to let a model reshape Jonas's board
+ * without asking. The record of that decision has to outlive a container restart,
+ * and it has to sit in the file a fresh werk-master reads about the past -- which
+ * is exactly one file, and it is this one.
+ *
+ * IT NAMES THE MONEY, because the boundary is otherwise unfalsifiable. "Leg 2
+ * ended" tells a reader nothing they can check; "leg 2: $212.40 of $200.00, ended
+ * because the budget was spent and everything it dispatched settled" tells them
+ * both what happened and what the next leg is allowed.
+ */
+async function recordLegEnd(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  action: Extract<EpicAction, { kind: 'leg-end' }>,
+): Promise<void> {
+  const why =
+    action.reason === 'budget'
+      ? 'the leg budget was spent, dispatch stopped, and everything it had out has settled'
+      : `nothing ready was left to dispatch (${action.detail ?? 'unknown'})`
+  const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
+    kind: 'leg',
+    convId: 'broker',
+    body:
+      `LEG ${action.leg} ENDED -- ${formatUsd(action.spentUsd)} of a ${formatUsd(action.budgetUsd)} leg budget. ` +
+      `Ended because ${why}. Leg ${action.leg + 1} opens with a full budget and begins with a RE-PLAN: the ` +
+      'werk-planner re-runs against the unfinished work, rewriting the `depends_on` edges against the code as it ' +
+      'NOW exists. That drift repair is the reason this boundary exists -- the plan of record decays as work ' +
+      'lands. The run does NOT wait for a human here.',
+  })
+  if (!res.ok) deps.log(`${tag(group.epicId, gen)} leg-end append FAILED: ${res.error}`)
 }
 
 /** Park or complete: patch the run and stop. Both are terminal for the sweep. */
@@ -635,6 +706,8 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
     settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
   friction: (p, a: Extract<EpicAction, { kind: 'friction' }>) =>
     recordFriction(p.deps, p.group, p.ctx.gen, a).then(() => null),
+  'leg-end': (p, a: Extract<EpicAction, { kind: 'leg-end' }>) =>
+    recordLegEnd(p.deps, p.group, p.ctx.gen, a).then(() => null),
 } as Record<EpicAction['kind'], Performer>
 
 /**

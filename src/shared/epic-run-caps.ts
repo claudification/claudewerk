@@ -12,6 +12,7 @@
  * decides anything, it only says where the run stands.
  */
 
+import { readLeg } from './epic-legs'
 import type { EpicRunMeta, EpicRunReading } from './epic-run-types'
 import { whenWaitingLine } from './epic-when'
 
@@ -33,10 +34,24 @@ export function formatUsd(n: number): string {
  * `maxGens` is NOT here, deliberately: a generation ceiling is bounded anyway by
  * the lease and its absence cannot buy unbounded SPEND, which is the only thing
  * this list exists to protect.
+ *
+ * THE LEG PAIR IS HERE FOR EXACTLY THE SAME REASON THE RUN PAIR IS. A leg's HARD
+ * cap is the only thing that stops a leg that has already ignored its soft stop,
+ * and it is arithmetic over `legBudgetUsd` and `legStartUsd` -- so a bundle that
+ * answers a `get` without them would leave the run dispatching with the leg
+ * ceiling silently absent, which is precisely the reading this module exists to
+ * refuse. `leg` (the counter) is NOT here: it buys no spend, and a run whose
+ * counter is missing is on leg 1 (`legNumber`), which is a real answer.
  */
-export type EpicCapField = 'maxUsd' | 'maxWallClockMinutes' | 'spentUsd'
+export type EpicCapField = 'maxUsd' | 'maxWallClockMinutes' | 'spentUsd' | 'legBudgetUsd' | 'legStartUsd'
 
-export const EPIC_CAP_FIELDS: readonly EpicCapField[] = ['maxUsd', 'maxWallClockMinutes', 'spentUsd']
+export const EPIC_CAP_FIELDS: readonly EpicCapField[] = [
+  'maxUsd',
+  'maxWallClockMinutes',
+  'spentUsd',
+  'legBudgetUsd',
+  'legStartUsd',
+]
 
 /**
  * A CEILING HAS THREE READINGS, NOT TWO -- and collapsing the third into the
@@ -209,10 +224,47 @@ function generationReading(run: EpicRunReading): EpicCapReading {
   }
 }
 
-/** All three ceilings, in the order `epic-beat.ts` checks them: dollars, wall
- *  clock, generations -- most expensive unit first. */
+/**
+ * WHERE THE CURRENT LEG STANDS -- read like a ceiling, because from a surface's
+ * point of view that is what it is.
+ *
+ * IT IS THE SOFT BUDGET THAT IS RENDERED, not the hard cap, and `over` means the
+ * leg has stopped dispatching rather than that the run has stopped. That is the
+ * honest reading of what a human is looking at: a leg sitting OVER its budget is
+ * settling its in-flight work and about to re-plan, which is the engine working
+ * and not a brake that fired. The hard cap has no reading of its own for the same
+ * reason `maxGens` has no unenforceable state -- it is derived (`hardUsd`), it
+ * cannot be set incoherently, and a run that reaches it parks with the number in
+ * the park note.
+ *
+ * BOTH SCALARS OR NEITHER, exactly as `spendReading` insists: a budget with no
+ * watermark under it is as unjudgeable as a watermark with no budget over it.
+ */
+function legReading(run: EpicRunReading, spent: number): EpicCapReading {
+  const budget = readCeiling(run.legBudgetUsd)
+  const start = readCeiling(run.legStartUsd)
+  if (budget.kind === 'unenforceable') return lostReading('leg spend', `legBudgetUsd ${budget.why}`)
+  if (start.kind === 'unenforceable') return lostReading('leg spend', `legStartUsd ${start.why}`)
+  const reading = readLeg(run, spent)
+  const capped = budget.kind === 'capped'
+  return {
+    label: `leg ${reading.leg} spend`,
+    used: formatUsd(reading.spentUsd),
+    limit: capped ? formatUsd(reading.budgetUsd) : NO_CAP,
+    remaining: capped ? formatUsd(reading.remainingUsd) : null,
+    over: reading.soft,
+  }
+}
+
+/** Every ceiling, in the order `epic-beat.ts` checks them: run dollars, leg
+ *  dollars, wall clock, generations -- most expensive unit first. */
 export function epicRunCaps(run: EpicRunReading, nowMs: number): EpicCapReading[] {
-  return [spendReading(run), wallClockReading(run, nowMs), generationReading(run)]
+  // THE LEG IS MEASURED FROM THE SAME LEDGER THE RUN IS, and reading it off
+  // `run.spentUsd` here rather than taking a second parameter is what guarantees
+  // it: one number, folded from `turns.cost_usd` by the executor, never a size a
+  // planner estimated.
+  const spent = readCeiling(run.spentUsd).kind === 'capped' ? run.spentUsd : 0
+  return [spendReading(run), legReading(run, spent), wallClockReading(run, nowMs), generationReading(run)]
 }
 
 /**

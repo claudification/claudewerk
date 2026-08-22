@@ -27,6 +27,14 @@ const RUN: EpicRunSnapshot = {
   maxUsd: 100,
   maxWallClockMinutes: 480,
   spentUsd: 0,
+  // LEGS OFF IN THE BASE FIXTURE. Every test in this file predates legs and
+  // asserts what a beat decides without one; arming a $200 leg here would change
+  // nothing about most of them and silently change the dry-generation branch for
+  // all of them. The leg tests live in `epic-legs-beat.test.ts` and arm it
+  // explicitly, which is also how a reader tells which assertions are about legs.
+  legBudgetUsd: 0,
+  legStartUsd: 0,
+  leg: 1,
   concurrency: 3,
   plan: false,
   planned: true,
@@ -351,7 +359,10 @@ describe('the planning generation', () => {
   test('CHECKPOINTS when the werk-planner rewrote the board -- nothing dispatches first', () => {
     const b = beat({ boardFingerprint: 'after' }, { dispatch: [card('t1')] }, { ...OWED, planBaseline: 'before' })
     expect(kinds(b)).toEqual(['plan-checkpoint'])
-    expect(b.actions[0]).toEqual({ kind: 'plan-checkpoint', before: 'before', after: 'after' })
+    // `gate: true` is the GENERATION 0 checkpoint -- the one that stops the run.
+    // A leg re-plan carries the same action with `gate: false`; see
+    // `epic-legs-beat.test.ts`.
+    expect(b.actions[0]).toEqual({ kind: 'plan-checkpoint', before: 'before', after: 'after', gate: true, leg: 1 })
   })
 
   test('is skipped entirely once it has run -- a RESUME never re-plans', () => {

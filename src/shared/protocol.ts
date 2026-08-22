@@ -5131,9 +5131,23 @@ export interface EpicRunPatchInput {
   startedAt?: string
   concurrency?: number
   digest?: string
-  /** Generation 0 has run. Only ever set TRUE, and only by the engine -- a run
-   *  that could un-plan itself would re-plan on every resume. */
+  /**
+   * A PLANNING GENERATION HAS RUN. Set by the ENGINE only.
+   *
+   * It used to be true that this was only ever set TRUE -- "a run that could
+   * un-plan itself would re-plan on every resume". LEGS ARE THE ONE WRITER THAT
+   * SETS IT FALSE, and deliberately: a leg boundary IS a re-plan, and re-using the
+   * planning stage the engine already has is the whole reason the boundary costs
+   * no second mechanism. The resume hazard the old rule guarded against is still
+   * guarded: `startEpicRun` never touches this field on an existing run, so a run
+   * parked between a leg's end and its re-plan resumes owing exactly the re-plan
+   * it owed, which is correct rather than a loop.
+   */
   planned?: boolean
+  /** Cumulative spend at the moment the current leg opened, and which leg that is.
+   *  Written together, only by a leg boundary. See `epic-legs.ts`. */
+  legStartUsd?: number
+  leg?: number
   /** Board fingerprint taken when the werk-planner was dispatched; empty string
    *  clears it. See epic-board-fingerprint.ts. */
   planBaseline?: string

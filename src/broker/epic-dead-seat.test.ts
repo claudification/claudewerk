@@ -48,6 +48,9 @@ const RUN: EpicRunSnapshot = {
   maxUsd: 500,
   maxWallClockMinutes: 960,
   spentUsd: 0,
+  legBudgetUsd: 0,
+  legStartUsd: 0,
+  leg: 1,
   // ONE, so a single leaked slot is the whole ceiling and the arithmetic below
   // has exactly one possible explanation.
   concurrency: 1,

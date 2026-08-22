@@ -18,6 +18,7 @@
 
 import { type CardLanding, describeLanding, formatEscalations, parseEscalations } from '../shared/epic-landing'
 import { LEASE_STALE_MS } from '../shared/epic-lease'
+import { describeLeg, legNumber, nextLeg, readLeg } from '../shared/epic-legs'
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd, unenforceableCapLine } from '../shared/epic-run-caps'
 import type { EpicWakeReason } from '../shared/epic-run-types'
@@ -45,8 +46,18 @@ export type EpicAction =
   | { kind: 'plan'; baseline: string }
   /** The planning generation settled and left the board as it found it. */
   | { kind: 'plan-accept' }
-  /** The planning generation rewrote the board. Stop and show Jonas. */
-  | { kind: 'plan-checkpoint'; before: string; after: string }
+  /**
+   * The planning generation rewrote the board.
+   *
+   * `gate` DECIDES WHETHER THE RUN STOPS FOR IT, and it is on the action rather
+   * than re-derived by the performer because it is a DECISION -- which is this
+   * file's half of the split. Generation 0 gates: nothing has dispatched, the
+   * whole run is downstream of the plan, and stopping strands nothing. A LEG
+   * boundary does not: Jonas chose `auto`, and a re-plan that did its job always
+   * changes the board, so gating there would stop the run on every leg and teach
+   * him to click through the one checkpoint that still means something.
+   */
+  | { kind: 'plan-checkpoint'; before: string; after: string; gate: boolean; leg: number }
   /**
    * THE SAME MECHANICAL OPERATION, DONE BY HAND ENOUGH TIMES THAT IT SHOULD NOT
    * HAVE BEEN. A durable `friction` entry in the baton, for the retrospect to
@@ -58,6 +69,33 @@ export type EpicAction =
    * here, in the pure beat, beside the counter it is derived from.
    */
   | { kind: 'friction'; operation: string; count: number; detail: string }
+  /**
+   * THIS LEG IS OVER; OPEN THE NEXT ONE. The patch beside it has already rolled
+   * the counter, moved the watermark and cleared `planned` -- so what this action
+   * PERFORMS is the notification, and nothing else.
+   *
+   * AN ACTION RATHER THAN A BARE PATCH for `friction`'s reason: a boundary that
+   * only moved scalars would be a re-plan nobody was told about, and the human-
+   * visible record that a model is about to reshape the board is the thing Jonas
+   * kept when he chose `auto` over a gate.
+   *
+   * IT SPAWNS NOTHING. The re-plan itself is the NEXT beat's `plan` action, which
+   * `planningBeat` emits for free once `planned` is false -- reusing the planning
+   * generation whole rather than inventing a second way to dispatch a werk-planner.
+   */
+  | {
+      kind: 'leg-end'
+      /** The leg that just ended. The next one is this plus one. */
+      leg: number
+      /** What ended it. `budget` is the soft stop having settled its in-flight
+       *  work; `dry` is the leg running out of dispatchable cards first. */
+      reason: 'budget' | 'dry'
+      /** What the leg cost and what it was allowed, for the baton entry. */
+      spentUsd: number
+      budgetUsd: number
+      /** Why there was nothing left to dispatch. Only on a `dry` boundary. */
+      detail?: string
+    }
 
 export interface EpicBeatInput {
   run: EpicRunSnapshot
@@ -216,11 +254,34 @@ export interface EpicBeatPatch {
    * forever; `formatEscalations` sorts, so equal sets serialise to equal bytes.
    */
   unlandedWoken?: string
+  /**
+   * THE LEG BOUNDARY'S THREE SCALARS, written together or not at all.
+   *
+   * `planned: false` is what makes the re-plan happen: `planningBeat` owes a
+   * werk-planner for any run with `plan` on and `planned` off, so clearing it hands
+   * the whole planning stage back to the engine rather than building a second
+   * route to the same seat. The other two open the new leg's ledger.
+   *
+   * They are three keys rather than one nested object for `unlandedWoken`'s
+   * reason: `pruned` compares by `!==`, and an object would compare unequal to
+   * itself every beat and rewrite `run.md` every 45 seconds forever.
+   */
+  planned?: boolean
+  legStartUsd?: number
+  leg?: number
 }
 
 /** Every field a beat may write. The prune below walks THIS, so adding a field
  *  to `EpicBeatPatch` without adding it here makes it silently un-writable. */
-const LEDGER_KEYS = ['dryGens', 'spentUsd', 'startedAt', 'unlandedWoken'] as const
+const LEDGER_KEYS = [
+  'dryGens',
+  'spentUsd',
+  'startedAt',
+  'unlandedWoken',
+  'planned',
+  'legStartUsd',
+  'leg',
+] as const
 
 export interface EpicBeat {
   actions: EpicAction[]
@@ -260,7 +321,7 @@ const beat = (note: string, actions: EpicAction[] = [], patch?: EpicBeatPatch): 
  * from there to the wall.
  */
 function whenGate(input: EpicBeatInput): { allowed: boolean; reason: string; overrode: string | null } {
-  const gates = [windowGate(input), queueGate(input), appointmentGate(input), headroomGate(input)]
+  const gates = [windowGate(input), queueGate(input), appointmentGate(input), headroomGate(input), legGate(input)]
   const reasons = gates.flatMap(g => (g.reason ? [g.reason] : []))
   const overrides = gates.flatMap(g => (g.overrode ? [g.overrode] : []))
   return {
@@ -337,6 +398,95 @@ function appointmentGate(input: EpicBeatInput): GateAnswer {
   return { reason: waiting, overrode: null }
 }
 
+/**
+ * THE SOFT STOP -- the leg has spent its budget, so it stops DISPATCHING.
+ *
+ * ON THE `when` AXIS AND NOT IN `capBeat`, which is the whole difference between
+ * this and every other money ceiling in this file. `capBeat` PARKS: a run over
+ * `maxUsd` is finished until a human raises it. A leg over its budget is not
+ * finished at all -- it is settling, and the very next thing it does is re-plan
+ * and carry on. Parking it would need a human to un-park a run for a condition the
+ * engine resolves by itself, which is the argument `headroomGate` makes one region
+ * up and it is the same argument.
+ *
+ * IT HOLDS DISPATCH ONLY, NEVER VERIFICATION, and here that is not a nicety but
+ * the thing that makes the boundary reachable at all. `whenGate` is consulted by
+ * `workBeat` AFTER the `verify` actions are built, so a verdict still goes out
+ * under a held gate. A leg that withheld verification could never settle the work
+ * it is waiting on, so it would wait forever for a drain that cannot happen --
+ * the same deadlock the queue gate documents, arrived at from the other side.
+ *
+ * NOT OVERRIDABLE BY A FORCED BEAT. `headroom` and the appointment are overridable
+ * because they are one human's call about one run's timing; this is a budget that
+ * human set, and a BEAT NOW that spent past it would make the number decorative.
+ * A human who wants the leg to keep going raises `legBudgetUsd` or re-arms, both
+ * of which open a fresh leg on the record.
+ */
+function legGate(input: EpicBeatInput): GateAnswer {
+  const leg = readLeg(input.run, spentSoFar(input))
+  if (!leg.soft) return { reason: null, overrode: null }
+  return {
+    reason:
+      `${describeLeg(leg)} -- leg budget SPENT, dispatching nothing more; ` +
+      `settling ${input.inFlight.length} in flight, then re-planning`,
+    overrode: null,
+  }
+}
+
+/**
+ * THE LEG BOUNDARY -- this leg is over, so open the next one.
+ *
+ * TWO WAYS IN, and they are the two the card names. The BUDGET path arrives here
+ * only once `legGate` has held dispatch long enough for the fleet to drain, which
+ * is what "soft stop, then settle" means in this engine: no seat is stopped, and
+ * the boundary is simply the first beat on which there is nothing left to wait
+ * for. The DRY path is `movedBeat`'s, and it is here so a leg with a spent budget
+ * and a leg with no work left produce the same event rather than two.
+ *
+ * DRAINED MEANS BOTH LANES. `inFlight` is cards with a live seat; `plan.verify` is
+ * cards sitting in review with no verifier yet. A boundary taken with either
+ * outstanding would re-plan a board that is about to move underneath the
+ * werk-planner -- which is precisely the race generation 0 is suppressed for.
+ *
+ * THE PATCH IS THE MECHANISM. Clearing `planned` is what makes the next beat
+ * dispatch a werk-planner through `planningBeat` -- the whole planning stage,
+ * reused, rather than a second route to the same seat.
+ *
+ * THE DRY STREAK IS CARRIED, NOT CLEARED, AND THAT IS THE TERMINATION ARGUMENT.
+ * A budget boundary clears it because work was moving right up until the money ran
+ * out; a DRY boundary must not, or the two-dry park becomes unreachable and a run
+ * with nothing left to do re-plans, finds nothing, re-plans, forever, billing a
+ * werk-planner every round. Carrying it means a dry run gets exactly ONE re-plan
+ * and parks on the next dry generation -- the same one-chance-then-park the plain
+ * werk-master replan below has always had, with a better chance in the middle.
+ */
+function legBoundary(input: EpicBeatInput, reason: 'budget' | 'dry', detail?: string): EpicBeat | null {
+  const spent = spentSoFar(input)
+  const leg = readLeg(input.run, spent)
+  if (leg.budgetUsd === 0) return null
+  if (input.inFlight.length > 0 || input.plan.verify.length > 0) return null
+  const opened = nextLeg(input.run, spent)
+  const dryGens = reason === 'dry' ? input.run.dryGens + 1 : 0
+  const why =
+    reason === 'budget'
+      ? 'the leg budget is spent and everything it dispatched has settled'
+      : `nothing ready is left to dispatch (${detail ?? 'unknown'})`
+  return beat(
+    `${describeLeg(leg)} ENDS -- ${why}; re-planning the remainder as leg ${opened.leg}`,
+    [
+      {
+        kind: 'leg-end',
+        leg: leg.leg,
+        reason,
+        spentUsd: leg.spentUsd,
+        budgetUsd: leg.budgetUsd,
+        ...(detail ? { detail } : {}),
+      },
+    ],
+    { ...opened, planned: false, dryGens },
+  )
+}
+
 /** Terminal run states do nothing at all. Checked first so an aborted run cannot
  *  be revived by a late settle arriving from a worker nobody killed in time. */
 const INERT: readonly EpicRunSnapshot['status'][] = ['paused', 'complete', 'aborted']
@@ -357,20 +507,36 @@ export function isInertRun(status: EpicRunSnapshot['status']): boolean {
  *
  * Returns null when no planning is owed, which is the common case (planning off,
  * or already done, or a run armed before this stage existed).
+ *
+ * IT SERVES BOTH PLANS. Generation 0 and a leg's re-plan are the SAME three
+ * states, reached the same way -- a leg boundary clears `planned`, and everything
+ * from there is this function. That reuse is the point rather than a saving: the
+ * card asked for "the gen-0 pass re-run against the remainder", and a second
+ * planning mechanism would be a second thing to keep in step with the first.
+ * `run.leg` is the only thing that tells them apart, and it decides exactly one
+ * bit -- whether a changed board GATES the run or merely notifies.
  */
 function planningBeat(run: EpicRunSnapshot, fingerprint: string): EpicBeat | null {
   if (!run.plan || run.planned) return null
+  const leg = legNumber(run)
+  const first = leg <= 1
 
   if (!run.planBaseline) {
-    return beat('generation 0: analysing the board before anything dispatches', [
-      { kind: 'plan', baseline: fingerprint },
-    ])
+    return beat(
+      first
+        ? 'generation 0: analysing the board before anything dispatches'
+        : `leg ${leg}: re-planning the remainder before anything else dispatches`,
+      [{ kind: 'plan', baseline: fingerprint }],
+    )
   }
 
   if (run.planBaseline !== fingerprint) {
-    return beat('the planning generation rewrote the board; checkpointing before any work goes out', [
-      { kind: 'plan-checkpoint', before: run.planBaseline, after: fingerprint },
-    ])
+    return beat(
+      first
+        ? 'the planning generation rewrote the board; checkpointing before any work goes out'
+        : `the leg ${leg} re-plan rewrote the board; notifying and continuing`,
+      [{ kind: 'plan-checkpoint', before: run.planBaseline, after: fingerprint, gate: first, leg }],
+    )
   }
 
   return beat('the planning generation left the board unchanged; proceeding to the first beat', [
@@ -456,6 +622,37 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
           `hit the spend ceiling: ${formatUsd(spent)} of ${formatUsd(run.maxUsd)} across every conversation this run ` +
           'spawned. A generation is a unit of planning, not of spend -- raise `maxUsd` and start the run ' +
           'again if this epic genuinely warrants more.',
+      },
+    ])
+  }
+
+  // THE LEG THAT RAN AWAY. Below the run ceiling, because a run that is over BOTH
+  // is over for good and the bigger unit is the one a human needs told; above the
+  // wall clock, because dollars outrank minutes here as they do everywhere else in
+  // this function.
+  //
+  // THIS ONE DOES NOT WAIT. Every other leg outcome settles: the soft stop stops
+  // dispatching and lets the seats it has out finish, because throwing away
+  // half-done work is the most expensive way this engine can save money. Reaching
+  // twice the budget means that settle was given its chance and the spend climbed
+  // anyway, and there is nothing left to be careful with.
+  //
+  // "KILLS" IS AS FAR AS THE BEAT CAN GO, and the park note says so rather than
+  // implying otherwise: no seat-stopping primitive reaches a beat -- the sentinel
+  // owns the hosts -- so what this does is stop the RUN and name the conversations
+  // a human still has to go and stop.
+  const leg = readLeg(run, spent)
+  if (leg.hard) {
+    const live = input.inFlight.length > 0 ? ` Still live and NOT stopped by this park: ${input.inFlight.join(', ')}.` : ''
+    return beat(`leg ${leg.leg} HARD cap reached (${formatUsd(leg.spentUsd)}/${formatUsd(leg.hardUsd)})`, [
+      {
+        kind: 'park',
+        reason:
+          `leg ${leg.leg} blew through its HARD cap: ${formatUsd(leg.spentUsd)} against a leg budget of ` +
+          `${formatUsd(leg.budgetUsd)} (hard cap ${formatUsd(leg.hardUsd)}). The soft stop at ` +
+          `${formatUsd(leg.budgetUsd)} had already stopped this leg dispatching, and the spend kept climbing ` +
+          `anyway -- so this is not a leg that needs re-planning, it is one that has run away.${live} Read the ` +
+          'digest, stop anything still running, then re-arm: re-arming opens a fresh leg.',
       },
     ])
   }
@@ -836,6 +1033,19 @@ function workBeat(input: EpicBeatInput): EpicBeat {
   // a quiet runner could never enter.
   const gate = whenGate(input)
   if (!gate.allowed) {
+    // A LEG THAT HAS SPENT ITS BUDGET AND DRAINED IS NOT WAITING -- IT IS OVER.
+    // Asked inside the hold because that is exactly where the soft stop puts it:
+    // `legGate` is one of the gates that made `allowed` false, and the boundary is
+    // the first beat on which the wait it imposed has nothing left to wait for.
+    //
+    // NOT CONDITIONED ON THE LEG BEING THE ONLY GATE HOLDING. A boundary spawns
+    // nothing -- it moves three scalars and files a baton entry -- and the
+    // werk-planner it leads to goes out through `planningBeat`, which sits above
+    // this gate and has never been window- or queue-gated for generation 0 either.
+    // Withholding it would leave a drained, soft-stopped leg sitting idle until
+    // the window opened, doing nothing, with its plan decaying further.
+    const ended = legBoundary(input, 'budget')
+    if (ended) return ended
     return beat(`${gate.reason}; ${plan.dispatch.length} card(s) waiting`, actions)
   }
 
@@ -901,6 +1111,20 @@ function movedBeat(input: EpicBeatInput, actions: EpicAction[]): EpicBeat {
       { kind: 'park', reason: plan.idleReason ?? 'nothing dispatchable and replanning did not help' },
     ])
   }
+
+  // NOTHING READY IS LEFT TO DISPATCH -- THE SECOND WAY A LEG ENDS.
+  //
+  // BELOW the two-dry park above, and that ordering is what keeps the floor. A leg
+  // boundary re-plans the remainder, which is a strictly better answer than waking
+  // a plain werk-master to think again -- but a run whose SECOND consecutive dry
+  // generation follows a re-plan has now been re-planned and still has nothing to
+  // do, and that is a human's problem rather than another leg's.
+  //
+  // ONLY WHEN LEGS ARE ARMED. `legBoundary` returns null for `legBudgetUsd: 0`, so
+  // a run with legs disarmed falls through to the werk-master replan below and
+  // behaves exactly as it always has.
+  const ended = legBoundary(input, 'dry', plan.idleReason ?? 'nothing dispatchable')
+  if (ended) return ended
 
   // A DRY generation: nothing to dispatch, nothing running, so the werk-master gets
   // one chance to replan. Counting it is what makes the park above reachable --

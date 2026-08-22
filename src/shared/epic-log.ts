@@ -35,6 +35,7 @@ const KINDS: readonly EpicLogKind[] = [
   'werk-master-lost',
   'record',
   'friction',
+  'leg',
 ]
 
 /**

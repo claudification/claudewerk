@@ -172,6 +172,26 @@ export type EpicLogKind =
    * a verdict about a card.
    */
   | 'friction'
+  /**
+   * A LEG OF THE RUN ENDED AND THE NEXT ONE BEGAN -- what ended it, what the leg
+   * cost, and what the re-plan then changed on the board.
+   *
+   * ITS OWN KIND rather than a `checkpoint`, and the distinction is the one thing
+   * a reader of `log.md` most needs here: a `checkpoint` is the run STOPPING and
+   * handing the decision to Jonas, and a leg boundary is the run explicitly NOT
+   * stopping. Jonas chose `auto` -- re-plan and continue -- so this entry is a
+   * NOTIFICATION, and filing it under the kind that means "we are waiting for you"
+   * would make every leg look like a run that had parked.
+   *
+   * It is also not a `record`: that is a fact about a CARD (the sha in its
+   * `closes:`), and a leg is a fact about the RUN.
+   *
+   * Acknowledges NOTHING (`ACKNOWLEDGING_KINDS`, epic-log.ts). A leg boundary is
+   * not a verdict about any card, and a boundary that silently acknowledged the
+   * settles it happened to follow would rob the werk-master of the wake it exists
+   * for.
+   */
+  | 'leg'
 
 export interface EpicLogEntry {
   ts: string
@@ -297,6 +317,42 @@ export interface EpicRunMeta {
    */
   spentUsd: number
   /**
+   * THE SOFT BUDGET FOR ONE LEG, in USD. `0` disarms legs -- deliberately, and it
+   * has to be typed, exactly like `maxUsd`.
+   *
+   * A LEG IS THE UNIT OF PLANNING VALIDITY, which is a different thing from every
+   * other ceiling on this type. `maxUsd` and `maxWallClockMinutes` bound what the
+   * whole run may cost before a human is asked; this one bounds how long the PLAN
+   * OF RECORD is trusted before it is rewritten against the tree as it now stands.
+   * Reaching it does not stop the run -- it stops the leg, re-plans the remainder,
+   * and carries on. See `epic-legs.ts`.
+   *
+   * The hard cap is not a second field: it is this times `LEG_HARD_MULTIPLIER`,
+   * so the two thresholds cannot be set into an incoherent pair.
+   */
+  legBudgetUsd: number
+  /**
+   * CUMULATIVE `spentUsd` AT THE MOMENT THE CURRENT LEG OPENED -- the watermark
+   * the leg's own spend is measured from.
+   *
+   * PERSISTED BECAUSE IT IS NOT DERIVABLE. `spentUsd` is cumulative for the life
+   * of the run and must never be reset (a brake garbage collection can release is
+   * not a brake), so "what has THIS leg cost" has no other source. Deriving it
+   * from `leg * legBudgetUsd` would be a lie the moment a leg overshoots, and legs
+   * overshoot by design: the soft stop settles in-flight work rather than killing
+   * it.
+   */
+  legStartUsd: number
+  /**
+   * WHICH LEG THE RUN IS ON. 1-based -- leg 1 is the stretch after generation 0.
+   *
+   * NOT DERIVABLE EITHER, and for a sharper reason than the watermark: a leg ends
+   * on spend OR on running out of dispatchable work, so the count of legs is not a
+   * function of money. It is what the between-legs baton entry, the werk-planner's
+   * re-plan framing and the checkpoint notification all name themselves after.
+   */
+  leg: number
+  /**
    * When the wall clock started -- the first beat this run was PERMITTED to
    * dispatch, not when it was armed.
    *
@@ -409,6 +465,16 @@ export interface EpicRunReading extends EpicRunFull {
  * shift has outlived the supervision it was armed under. The clock only starts
  * when the run is first allowed to dispatch (see `startedAt`), so a window run
  * does not spend its budget waiting for the window.
+ *
+ * `legBudgetUsd: 200`, hard cap $400. NOT a safety number -- `maxUsd` above is
+ * the safety -- but a decay number: how much work may land before the edges
+ * written at generation 0 stop being worth trusting. Chosen against the same day
+ * the other two were: $200 is roughly what this project's unattended fleet burns
+ * in a couple of productive hours, which is about the point where enough branches
+ * have merged that a plan written before them describes a tree that no longer
+ * exists. It sits ABOVE `maxUsd`'s default deliberately, so a run armed with the
+ * defaults hits the human-facing ceiling first and legs only start mattering on a
+ * run somebody deliberately gave a bigger budget.
  */
 export const EPIC_RUN_DEFAULTS = {
   cadence: ['now'] as EpicCadence[],
@@ -416,6 +482,7 @@ export const EPIC_RUN_DEFAULTS = {
   maxGens: 40,
   maxUsd: 100,
   maxWallClockMinutes: 480,
+  legBudgetUsd: 200,
   concurrency: 3,
   /** ON by default: an unplanned epic dispatches against whatever edges someone
    *  remembered to write, which is the failure this stage exists to prevent. */

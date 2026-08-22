@@ -45,6 +45,11 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   // mechanical job by hand for the third time. That is a lesson somebody should
   // read, not an alarm -- and at four feet it must not read as a failed dispatch.
   friction: 'var(--warning)',
+  // A LEG BOUNDARY IS THE RUN WORKING, so it gets the prompt hue rather than the
+  // amber the two "somebody should look" kinds above carry. It is the loudest
+  // NORMAL thing on this pane -- a model has just reshaped the board and the run
+  // carried on -- and at four feet it should read as an event, not an alarm.
+  leg: 'var(--event-prompt)',
 }
 
 /** Bucket -> label + tone. A list rather than six ternaries in JSX, and in the
