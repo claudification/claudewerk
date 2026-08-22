@@ -396,7 +396,7 @@ export interface EpicPlan {
   alreadyRun: ProjectTaskMeta[]
   /**
    * Cards the board calls `done` whose work is NOT delivered -- unmerged, or
-   * merged with the worktree still standing (`epic-landing.ts`).
+   * merged with its branch and worktree still standing (`epic-landing.ts`).
    *
    * NAMED rather than folded into the counts, for `exhausted`'s reason: this is
    * the single most important thing on the pane when it is non-empty, and it is

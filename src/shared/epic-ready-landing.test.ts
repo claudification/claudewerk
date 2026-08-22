@@ -64,7 +64,7 @@ describe('a `done` dependency whose work never reached main', () => {
   })
 
   test('a merged-but-not-cleaned-up dependency does NOT hold its dependents', () => {
-    // The dependent's problem is a missing base, and a standing worktree's code
+    // The dependent's problem is a missing base, and a standing branch's code
     // is in main. Holding work for a `rm -rf` would be a whole-run stall over
     // tidiness -- `standing` refuses COMPLETION instead (below).
     expect(plan(board, [landing('dep', 'standing')]).dispatch.map(c => c.slug)).toEqual(['child'])
@@ -136,7 +136,7 @@ describe('completion', () => {
     expect(p.unlanded.map(l => l.cardId)).toEqual(['t2'])
   })
 
-  test('a worktree still standing refuses it too -- resolved means merged AND cleaned up', () => {
+  test('a branch left standing refuses it too -- resolved means merged AND cleaned up', () => {
     expect(plan(finished, [landing('t1', 'landed'), landing('t2', 'standing')]).complete).toBe(false)
   })
 

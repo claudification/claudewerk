@@ -60,10 +60,14 @@ export type LandingEvidence = 'merged' | 'committed' | 'none'
  *   `landed`    the run's `target` is satisfied and nothing is left standing.
  *   `unmerged`  the work exists on a branch and is NOT on main. THIS is the one
  *               that corrupts sequencing, so it is the one that holds dependents.
- *   `standing`  the commit is on main and the WORKTREE IS STILL THERE. A branch
- *               merged but left behind is half a resolution -- see
- *               `worktree-remove.sh`, which refuses removal while unmerged
- *               commits exist and is therefore the verifier for this half.
+ *   `standing`  the commit is on main and THE BRANCH IS STILL THERE. A branch
+ *               merged but left behind is half a resolution: RESOLVED MEANS
+ *               MERGED **AND** CLEANED UP -- the commit on main, the worktree
+ *               removed, the branch gone. `worktree-remove.sh` does all three and
+ *               REFUSES while unmerged commits exist, so "the branch is no longer
+ *               a local ref" is itself evidence the removal ran and was allowed
+ *               to. That refusal is the verifier for this half, and nothing here
+ *               re-checks merged-ness to second-guess it.
  *   `unknown`   nobody could answer. NOT a synonym for either of the above, and
  *               that distinction is the whole safety property of this gate -- see
  *               {@link landingVerdict}.
@@ -95,13 +99,27 @@ export interface LandingFacts {
   ledgerReady: boolean
   evidence: LandingEvidence
   /**
-   * Does a worktree still hold this branch? `null` MEANS NOBODY LOOKED, which is
-   * the same convention `GitDirt.known` uses one layer down: the git-fabric scan
-   * is a sentinel round trip with a 15s ceiling and the beat only buys it when
+   * IS THIS BRANCH STILL A LOCAL REF? `null` MEANS NOBODY LOOKED.
+   *
+   * THE BRANCH AND NOT THE WORKTREE, because the branch is the thing the fabric
+   * scan actually enumerates (`for-each-ref refs/heads`, `git-fabric.ts`) and
+   * because it is the STRICTER of the two: `worktree-remove.sh` removes the
+   * worktree and deletes the branch together, so a surviving ref means the
+   * cleanup did not run or was refused. A branch with no worktree still fails
+   * this, which is right -- "the branch is gone" is half the definition of
+   * resolved.
+   *
+   * `null` follows `GitDirt.known`'s convention one layer down: the scan is a
+   * sentinel round trip with a 15s ceiling, and the beat only buys it when
    * cleanliness can change an outcome. "We could not look" must never read as
    * "there is nothing there".
+   *
+   * THE SCAN IS CAPPED (`MAX_BRANCHES`), so a repo with hundreds of branches can
+   * report a surviving branch as absent. That errs toward `landed` -- the run
+   * finishes rather than freezing on a truncated scan -- which is the only
+   * direction a capped read may safely fail in.
    */
-  worktreeStanding: boolean | null
+  branchStanding: boolean | null
   /** The run's delivery rung. READ BY THE ENGINE, at last. */
   target: EpicRunTarget
 }
@@ -129,7 +147,8 @@ export interface LandingFacts {
  * WHY `pr` SKIPS THE CLEANUP HALF. `worktree-remove.sh` refuses to remove a
  * worktree while unmerged commits exist -- which for a `pr` run is the NORMAL
  * state, by definition of the rung. Requiring cleanup there would demand a
- * removal the verifier is built to refuse.
+ * removal the verifier is built to refuse, and the branch has to survive anyway:
+ * it is the thing the PR is opened from.
  *
  * `shipped` is treated as `merged`. The engine cannot verify a deploy; what it
  * can verify is the subset every shipped thing must first satisfy, and claiming
@@ -140,7 +159,7 @@ export function landingVerdict(facts: LandingFacts): LandingVerdict {
   if (!facts.ledgerReady || facts.evidence === 'none') return 'unknown'
   if (facts.target === 'pr') return 'landed'
   if (facts.evidence === 'committed') return 'unmerged'
-  return facts.worktreeStanding === true ? 'standing' : 'landed'
+  return facts.branchStanding === true ? 'standing' : 'landed'
 }
 
 /**
@@ -175,8 +194,8 @@ export function unresolvedLandings(landings: readonly CardLanding[]): CardLandin
 /** One card, in a sentence a werk-master can act on without asking anything else. */
 export function describeLanding(l: CardLanding): string {
   return l.verdict === 'standing'
-    ? `${l.cardId} -- \`${l.branch}\` IS on main, but its worktree is still standing (remove it with ` +
-        '`scripts/worktree-remove.sh`, which refuses while anything is unmerged)'
+    ? `${l.cardId} -- \`${l.branch}\` IS on main, but the branch and its worktree are still standing; run ` +
+        '`scripts/worktree-remove.sh`, which fast-forwards first and REFUSES while anything is unmerged'
     : `${l.cardId} -- \`${l.branch}\` has commits that are NOT on main; the card says \`done\` and the work ` +
         'is not delivered'
 }

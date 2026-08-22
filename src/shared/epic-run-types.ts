@@ -88,7 +88,7 @@ export type EpicWakeReason =
   | 'resumed' // pause lifted / window opened
   /**
    * A CARD THE BOARD CALLS `done` WHOSE WORK IS NOT ON main -- or is on main with
-   * its worktree still standing (`epic-landing.ts`).
+   * its branch still standing (`epic-landing.ts`).
    *
    * Its own reason rather than `card-settled`, for `werk-master-lost`'s reason:
    * the two produce the same spawn and are not the same event. A settle is the

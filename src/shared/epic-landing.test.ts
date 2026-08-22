@@ -14,7 +14,7 @@ import {
 const FACTS: LandingFacts = {
   ledgerReady: true,
   evidence: 'committed',
-  worktreeStanding: false,
+  branchStanding: false,
   target: 'merged',
 }
 
@@ -29,17 +29,17 @@ describe('landingVerdict', () => {
     expect(verdict({ evidence: 'merged' })).toBe('landed')
   })
 
-  test('merged but the worktree is still standing is STANDING, not landed', () => {
+  test('merged but the branch is still a local ref is STANDING, not landed', () => {
     // RESOLVED MEANS MERGED **AND** CLEANED UP. A branch merged and left behind
     // is half a resolution, and a run that "completes" over one has not.
-    expect(verdict({ evidence: 'merged', worktreeStanding: true })).toBe('standing')
+    expect(verdict({ evidence: 'merged', branchStanding: true })).toBe('standing')
   })
 
   test('a NULL worktree answer is not a clean one -- nobody looked, so nothing is claimed', () => {
     // The opposite reading would let a beat that skipped the 15s git scan certify
     // a directory it never opened.
-    expect(verdict({ evidence: 'merged', worktreeStanding: null })).toBe('landed')
-    expect(verdict({ evidence: 'committed', worktreeStanding: null })).toBe('unmerged')
+    expect(verdict({ evidence: 'merged', branchStanding: null })).toBe('landed')
+    expect(verdict({ evidence: 'committed', branchStanding: null })).toBe('unmerged')
   })
 
   describe('the two refusals to guess', () => {
@@ -68,7 +68,7 @@ describe('landingVerdict', () => {
     test('pr does NOT demand the cleanup half', () => {
       // `worktree-remove.sh` refuses while unmerged commits exist, which for a
       // `pr` run is the normal state. Demanding removal would demand a refusal.
-      expect(verdict({ target: 'pr', worktreeStanding: true })).toBe('landed')
+      expect(verdict({ target: 'pr', branchStanding: true })).toBe('landed')
     })
 
     test('shipped is at least merged -- the engine cannot verify a deploy, so it verifies the subset', () => {

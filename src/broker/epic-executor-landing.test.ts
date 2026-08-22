@@ -265,7 +265,7 @@ describe('the git-fabric round trip is bought only when it can change an answer'
     expect(patches().some(p => p.status === 'complete')).toBe(true)
   })
 
-  test('a worktree still standing REFUSES the completion', async () => {
+  test('a branch left standing REFUSES the completion', async () => {
     cards = [card('e1', 'open', { tags: ['epic'], epic: undefined }), card('a', 'done')]
     ledger[branchOf('a')] = 'merge'
     dirt = { ok: true, dirty: new Set(), known: new Set([branchOf('a')]) }

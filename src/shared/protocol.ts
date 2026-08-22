@@ -5285,7 +5285,7 @@ export interface EpicInspectPlan {
   waitingOnDeps: EpicInspectCard[]
   /**
    * Cards the board calls `done` whose work is not delivered -- the branch is not
-   * on main, or it is and the worktree is still standing (`epic-landing.ts`).
+   * on main, or it is and the branch was never cleaned up (`epic-landing.ts`).
    *
    * Absent when there are none, so an inspect of a healthy run is unchanged. When
    * present it is the FIRST thing to read: every other lane here can be

@@ -13,9 +13,14 @@
  *   so it is taken for every terminal card on every beat, which is what makes
  *   merged-ness DERIVED rather than stored.
  *
- *   THE GIT FABRIC (`BeatDeps.gitDirt`) answers "is a worktree still holding this
- *   branch". A sentinel round trip with a 15-second ceiling, so it is bought only
- *   on the beats where the answer can change an outcome -- see `wantsFabric`.
+ *   THE GIT FABRIC (`BeatDeps.gitDirt`) answers "is this still a local branch".
+ *   `GitDirt.known` is every ref `for-each-ref refs/heads` returned, so a branch
+ *   missing from it is one `worktree-remove.sh` removed -- worktree and ref
+ *   together, after the fast-forward it does first and the refusal it raises when
+ *   anything is unmerged. That refusal is the cleanup verifier; nothing here
+ *   re-derives merged-ness to second-guess it. A sentinel round trip with a
+ *   15-second ceiling, so it is bought only on the beats where the answer can
+ *   change an outcome -- see `wantsFabric`.
  *
  * NOTHING HERE MERGES ANYTHING, and that is the boundary rather than an omission:
  * the broker is a broker, the sentinel owns the filesystem and git, and the
@@ -71,12 +76,12 @@ export interface LandingScope {
   /** The run's delivery rung. THE ENGINE READS IT HERE. */
   target: EpicRunTarget
   /**
-   * The git fabric's answer about standing worktrees, or `null` when this beat
-   * did not buy the round trip.
+   * The git fabric's branch list, or `null` when this beat did not buy the round
+   * trip.
    *
    * `null` IS "NOBODY LOOKED", and it travels all the way to `landingVerdict` as
-   * such. A beat that skipped the scan must not certify a worktree it never
-   * opened, and it must not invent one either.
+   * such. A beat that skipped the scan must not certify a repo it never looked
+   * at, and it must not invent a surviving branch either.
    */
   fabric: GitDirt | null
 }
@@ -110,7 +115,7 @@ export function resolveLandings(scope: LandingScope, cards: readonly ProjectTask
       verdict: landingVerdict({
         ledgerReady,
         evidence,
-        worktreeStanding: standing === null ? null : standing.has(branch),
+        branchStanding: standing === null ? null : standing.has(branch),
         target: scope.target,
       }),
     })
@@ -125,7 +130,8 @@ export function resolveLandings(scope: LandingScope, cards: readonly ProjectTask
  * only ever changes a verdict from `landed` to `standing`, which only matters
  * when a run is otherwise FINISHED -- so the trip is bought exactly when the
  * ledger has no complaint left and every child is terminal, which is the beat
- * that would otherwise flip the run to `complete`.
+ * that would otherwise flip the run to `complete`. A run that never gets there
+ * never pays for it.
  *
  * On a healthy run mid-flight the cost is zero. On the beat where it matters it
  * buys the difference between "the board says done" and "the work is in main and

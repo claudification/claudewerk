@@ -155,7 +155,7 @@ describe('step 3 -- PARK, once the seat whose job it is has had its generation',
     ])
   })
 
-  test('a merged branch with its worktree still standing escalates and parks on the same path', () => {
+  test('a merged branch left standing escalates and parks on the same path', () => {
     expect(wake(beat({ unlanded: [unlanded('t1', 'standing')] }))?.reason).toBe('unmerged-work')
     expect(kinds(beat({ unlanded: [unlanded('t1', 'standing')] }, { gen: 4, unlandedWoken: 't1@3' }))).toEqual(['park'])
   })
