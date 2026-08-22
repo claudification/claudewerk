@@ -16,6 +16,8 @@
  * that need no board (open, copy).
  */
 
+import { findSystemTag } from '@shared/board-system-tags'
+import { READY_TAG } from '@shared/scanner-contracts'
 import { DropdownMenu } from 'radix-ui'
 import { menuItemClass, menuSeparatorClass } from '@/components/project-list/menu-shared'
 import { useCardLookup } from '@/hooks/use-card-lookup'
@@ -32,11 +34,32 @@ const BOARD_PROVIDER = 'project-board'
 export function CardMenuItems({ target, onDone }: { target: CardMenuTarget; onDone: () => void }) {
   const lookup = useCardLookup(target.ref)
   const conversationId = useConversationsStore(s => s.selectedConversationId)
-  const { moveTask } = useProject(conversationId)
+  const { moveTask, updateTask } = useProject(conversationId)
 
   const summary = lookup.status === 'ready' ? lookup.summary : null
   const board = target.ref.provider === BOARD_PROVIDER && summary !== null
   const id = target.ref.id
+
+  /**
+   * ONE CLICK TO AUTHORISE A CARD, without opening the editor -- which is the
+   * whole point, since the alternative is remembering how `ready` is spelled.
+   *
+   * `detail === 'full'` IS A CORRECTNESS GATE, not tidiness. A `partial`
+   * summary is the manifest-cheap row: it knows the lane and reports
+   * `tags: []` because it has not read the card. Patching from that array
+   * would send `[ready]` as the card's WHOLE tag list and silently delete
+   * every other tag it carries. The menu resolves the card on mount, so this
+   * fills in; until it does, the verb that cannot be performed safely is not
+   * offered.
+   */
+  const readyKnown = board && summary.detail === 'full'
+  const isReady = readyKnown && summary.tags.includes(READY_TAG)
+
+  function toggleReady() {
+    if (!summary) return
+    const next = isReady ? summary.tags.filter(t => t !== READY_TAG) : [...summary.tags, READY_TAG]
+    void updateTask(id, { tags: next })
+  }
 
   function run(action: () => void) {
     haptic('tap')
@@ -69,6 +92,20 @@ export function CardMenuItems({ target, onDone }: { target: CardMenuTarget; onDo
           <DropdownMenu.Separator className={menuSeparatorClass} />
           <CardMoveSub id={id} lane={summary.statusLabel} onMove={moveTask} onDone={onDone} />
         </>
+      )}
+
+      {/* The tag's own registry line is the tooltip. Anything written fresh
+          here would be a second answer to "what reads this?", and it would
+          have to avoid implying the card gets picked up -- nothing calls the
+          work-order scanner yet. */}
+      {readyKnown && (
+        <DropdownMenu.Item
+          className={menuItemClass}
+          title={findSystemTag(READY_TAG)?.detail}
+          onSelect={() => run(toggleReady)}
+        >
+          {`${isReady ? 'UNMARK' : 'MARK'} ${READY_TAG.toUpperCase()}`}
+        </DropdownMenu.Item>
       )}
 
       <DropdownMenu.Separator className={menuSeparatorClass} />

@@ -62,7 +62,10 @@ async function pressNightshift(editingTask: ProjectTask) {
       updateTask={updateTask}
     />,
   )
-  const button = await screen.findByRole('button', { name: /nightshift/i })
+  // EXACT, not `/nightshift/i`: the editor also carries a `nightshift` entry in
+  // the system-tag toggle row, and this test is about the FOOTER button --
+  // which tags AND closes the editor, where the toggle only edits local state.
+  const button = await screen.findByRole('button', { name: 'Nightshift' })
   fireEvent.click(button)
   return updateTask
 }

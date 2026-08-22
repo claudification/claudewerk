@@ -12,6 +12,7 @@
  * points -- if either mount point rots, one of these goes red.
  */
 
+import { READY_TAG } from '@shared/scanner-contracts'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -19,8 +20,13 @@ import type { CardLookup, CardProvider, CardSummary } from '@/lib/cards'
 import { registerCardProvider, resetCardProviders } from '@/lib/cards'
 
 const moveTask = vi.fn(async (_id: string, _to: string) => 'wall-time-cursor')
+const updateTask = vi.fn(async (_id: string, _patch: { tags?: string[] }) => null)
 vi.mock('@/hooks/use-project', () => ({
-  useProject: () => ({ moveTask: (id: string, to: string) => moveTask(id, to), tasks: [] }),
+  useProject: () => ({
+    moveTask: (id: string, to: string) => moveTask(id, to),
+    updateTask: (id: string, patch: { tags?: string[] }) => updateTask(id, patch),
+    tasks: [],
+  }),
 }))
 
 const { CardChip } = await import('./card-chip')
@@ -45,7 +51,7 @@ function provider(lookup: CardLookup): CardProvider {
   }
 }
 
-function ready(kind: CardSummary['kind']): CardLookup {
+function ready(kind: CardSummary['kind'], over: Partial<CardSummary> = {}): CardLookup {
   return {
     status: 'ready',
     summary: {
@@ -56,6 +62,7 @@ function ready(kind: CardSummary['kind']): CardLookup {
       detail: 'full',
       title: 'Wall time cursor',
       tags: [],
+      ...over,
     },
   }
 }
@@ -92,6 +99,7 @@ afterEach(() => {
   clearPending()
   resetCardProviders()
   moveTask.mockClear()
+  updateTask.mockClear()
 })
 
 describe('the menu reaches BOTH card renderers', () => {
@@ -168,6 +176,50 @@ describe('the verbs', () => {
     expect(screen.queryByText(/LAUNCH/)).toBeNull()
     expect(screen.queryByText('Move to')).toBeNull()
     expect(screen.getByText('Copy id')).toBeTruthy()
+  })
+
+  /**
+   * ONE CLICK TO AUTHORISE. The point of the verb is that you never have to
+   * remember how the tag is spelled, so these tests never spell it either --
+   * they read `READY_TAG` and assert the menu wrote that word.
+   */
+  test('MARK READY tags an untagged card, through the normal update path', async () => {
+    registerCardProvider(provider(ready('card', { tags: ['ui'] })))
+    chip()
+    fireEvent.contextMenu(screen.getByRole('button'))
+    fireEvent.click(await screen.findByText(`MARK ${READY_TAG.toUpperCase()}`))
+    expect(updateTask).toHaveBeenCalledWith(ID, { tags: ['ui', READY_TAG] })
+  })
+
+  test('UNMARK READY clears it and touches nothing else the card carries', async () => {
+    registerCardProvider(provider(ready('card', { tags: ['ui', READY_TAG] })))
+    chip()
+    fireEvent.contextMenu(screen.getByRole('button'))
+    fireEvent.click(await screen.findByText(`UNMARK ${READY_TAG.toUpperCase()}`))
+    expect(updateTask).toHaveBeenCalledWith(ID, { tags: ['ui'] })
+  })
+
+  test('the verb is board-only -- an unresolved card gets no ready toggle', async () => {
+    registerCardProvider(provider({ status: 'unknown' }))
+    chip()
+    fireEvent.contextMenu(screen.getByRole('button'))
+    await screen.findByText('OPEN')
+    expect(screen.queryByText(new RegExp(READY_TAG, 'i'))).toBeNull()
+  })
+
+  /**
+   * A `partial` summary reports `tags: []` because it has not read the card --
+   * it is the manifest row, lane and mtime only. Offering the toggle there
+   * would patch the card's tag list down to `[ready]` and delete every other
+   * tag it has, silently. Not offered until the card is actually known.
+   */
+  test('a card whose tags are not loaded yet is NOT offered the toggle', async () => {
+    registerCardProvider(provider(ready('card', { detail: 'partial', tags: [] })))
+    chip()
+    fireEvent.contextMenu(screen.getByRole('button'))
+    await screen.findByText('OPEN')
+    expect(screen.queryByText(new RegExp(READY_TAG, 'i'))).toBeNull()
+    expect(updateTask).not.toHaveBeenCalled()
   })
 
   test('Copy id copies the id, Copy path copies the path it was linked by', async () => {

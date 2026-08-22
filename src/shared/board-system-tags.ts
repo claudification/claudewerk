@@ -67,3 +67,21 @@ export const SYSTEM_TAGS: readonly SystemTag[] = [
   { tag: 'needs-verification', detail: 'declared only -- werk-verify-by-tag brings the behaviour' },
   { tag: 'needs-retrospect', detail: 'declared only -- werk-retrospect-hook brings the behaviour' },
 ] as const
+
+/**
+ * The registry row for one tag, or `undefined` if the machinery does not know
+ * the word.
+ *
+ * For a surface that offers ONE system tag rather than the whole list -- the
+ * card context menu's one-click `ready` -- and needs its help text. Written
+ * fresh, that line becomes a second answer to "what reads this tag?"; taken
+ * from here it stays the registry's answer, and a tag whose consumer changes
+ * updates every surface at once.
+ *
+ * Returning `undefined` rather than throwing is deliberate: this is a REGISTRY,
+ * not an enforcement point (see the header). An unlisted tag is a perfectly
+ * legal thing for a card to carry, so asking about one is not an error.
+ */
+export function findSystemTag(tag: string): SystemTag | undefined {
+  return SYSTEM_TAGS.find(entry => entry.tag === tag)
+}

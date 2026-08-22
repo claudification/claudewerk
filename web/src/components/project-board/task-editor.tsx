@@ -21,6 +21,7 @@ import { cn, haptic } from '@/lib/utils'
 import { Markdown } from '../markdown'
 import { NEXT_STATUS, PREV_STATUS, PRIORITY_COLORS, TASK_COLUMNS, tagColor, taskAge } from './board-constants'
 import { CardEpicStrip } from './card-epic-strip'
+import { SystemTagToggles } from './system-tag-toggles'
 
 // CodeMirror markdown editor for task bodies, lazy-loaded.
 const MarkdownBodyPane = lazy(() => import('../markdown-body-pane'))
@@ -160,6 +161,17 @@ export function TaskEditor({
     setTagInput('')
   }
 
+  /**
+   * The system-tag row edits the SAME `tags` array the chips and the free-text
+   * input edit, so there is one value and one save path (`handleSave`). A
+   * toggle that had its own mutation route would be a second way for this card's
+   * tags to change, and the two would eventually disagree.
+   */
+  function toggleTag(tag: string) {
+    haptic('tap')
+    setTags(prev => (prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]))
+  }
+
   async function handleSave() {
     setSaving(true)
     await onSave(task.slug, { title, body, priority, tags })
@@ -232,6 +244,11 @@ export function TaskEditor({
           </select>
           <span className="text-[9px] text-fg-dim font-mono">{taskAge(task.created)}</span>
         </div>
+
+        {/* The tags the MACHINERY reads, one click each -- above the free-text
+            row because they are the shortcut, and free text is the escape
+            hatch that must never stop working. */}
+        <SystemTagToggles tags={tags} onToggle={toggleTag} />
 
         {/* Tags */}
         <div className="flex items-center gap-1 px-4 py-1.5 border-b border-primary/12 flex-wrap shrink-0">

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { SYSTEM_TAGS } from './board-system-tags'
+import { findSystemTag, SYSTEM_TAGS } from './board-system-tags'
 import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 
 /**
@@ -40,5 +40,22 @@ describe('SYSTEM_TAGS', () => {
     const tags = SYSTEM_TAGS.map(t => t.tag)
     expect(tags).toContain('needs-verification')
     expect(tags).toContain('needs-retrospect')
+  })
+})
+
+/**
+ * The one-tag lookup, for a surface that offers a single system tag (the card
+ * menu's one-click `ready`) and wants the registry's help text rather than a
+ * second one written fresh.
+ */
+describe('findSystemTag', () => {
+  test('hands back the row a surface would render, for every registered tag', () => {
+    for (const entry of SYSTEM_TAGS) expect(findSystemTag(entry.tag)).toEqual(entry)
+  })
+
+  /** A REGISTRY, not an enforcement point: an unlisted tag is a legal thing for
+   *  a card to carry, so asking about one is a miss and not an error. */
+  test('an unregistered tag is a miss, not a throw', () => {
+    expect(findSystemTag('some-label-someone-invented')).toBeUndefined()
   })
 })
