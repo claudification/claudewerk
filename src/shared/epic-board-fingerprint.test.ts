@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { boardFingerprint, fingerprintDelta } from './epic-board-fingerprint'
+import { boardFingerprint, describeBoardDelta, fingerprintDelta } from './epic-board-fingerprint'
 import type { ProjectTaskMeta } from './project-task-types'
 
 function card(slug: string, over: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
@@ -78,5 +78,71 @@ describe('fingerprintDelta', () => {
   test('an unchanged board has nothing to report', () => {
     const p = print([card('a')])
     expect(fingerprintDelta(p, p)).toEqual({ added: [], removed: [] })
+  })
+})
+
+/**
+ * THE BETWEEN-LEGS NOTIFICATION. A leg's re-plan does NOT stop the run, so this
+ * baton entry is the only account Jonas gets of a model reshaping his board while
+ * he was not watching -- and `+4/-3 card states` is not an account, it is a
+ * receipt for one.
+ */
+describe('describeBoardDelta', () => {
+  /**
+   * THE LINE THIS FUNCTION EXISTS FOR, and the card's own requirement: A TEST THAT
+   * A STALE EDGE GETS REWRITTEN.
+   *
+   * Rewriting `depends_on` against the code as it NOW exists is the whole job of a
+   * re-plan, and it is the one change invisible everywhere else -- no card
+   * appears, none disappears, no lane moves, and the next beat simply dispatches a
+   * different set. Reported as ONE card whose edges moved, not as a delete plus an
+   * insert.
+   */
+  test('names a REWRITTEN ordering edge, in one line, with both sides', () => {
+    const before = print([card('a'), card('b', { dependsOn: ['a'] })])
+    const after = print([card('a'), card('b', { dependsOn: ['c'] }), card('c')])
+    expect(describeBoardDelta(before, after)).toEqual([
+      'b: depends_on a -> c',
+      'c: NEW (open, depends on nothing)',
+    ])
+  })
+
+  test('a stale edge DELETED reads as a rewrite to nothing, not as a vanished card', () => {
+    const before = print([card('a'), card('b', { dependsOn: ['a'] })])
+    const after = print([card('a'), card('b')])
+    expect(describeBoardDelta(before, after)).toEqual(['b: depends_on a -> nothing'])
+  })
+
+  /**
+   * PAIRED BY SLUG. A card whose lane moved appears in `added` AND `removed`, and
+   * reporting it as a new card plus a deleted one is how a re-plan that closed
+   * three cards reads like one that deleted three.
+   */
+  test('a closed card is ONE line about a lane, never a delete plus an insert', () => {
+    const before = print([card('a')])
+    const after = print([card('a', { status: 'done' })])
+    expect(describeBoardDelta(before, after)).toEqual(['a: lane open -> done'])
+  })
+
+  test('a card that both moved lane and lost an edge says both', () => {
+    const before = print([card('a', { dependsOn: ['z'] })])
+    const after = print([card('a', { status: 'in-progress' })])
+    expect(describeBoardDelta(before, after)).toEqual([
+      'a: depends_on z -> nothing',
+      'a: lane open -> in-progress',
+    ])
+  })
+
+  test('an archived-away card is named as GONE, with the lane it left', () => {
+    expect(describeBoardDelta(print([card('a'), card('b')]), print([card('a')]))).toEqual(['b: GONE (was open)'])
+  })
+
+  test('an unchanged board says nothing at all', () => {
+    const p = print([card('a', { dependsOn: ['b'] }), card('b')])
+    expect(describeBoardDelta(p, p)).toEqual([])
+  })
+
+  test('the very first plan, against an empty board, is all NEW rather than a diff', () => {
+    expect(describeBoardDelta('', print([card('a')]))).toEqual(['a: NEW (open, depends on nothing)'])
   })
 })

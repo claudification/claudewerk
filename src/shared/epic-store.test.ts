@@ -119,6 +119,63 @@ describe('the run artifact', () => {
     expect(run).not.toHaveProperty('gen')
   })
 
+  describe('legs', () => {
+    test('a fresh run opens leg 1 at a zero watermark, budgeted at the default', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      expect(readEpicRun(root, 'e1')).toMatchObject({ leg: 1, legStartUsd: 0, legBudgetUsd: 200 })
+    })
+
+    test('the boundary scalars survive a patch round trip through the file', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { leg: 4, legStartUsd: 612.5, spentUsd: 612.5 }, T0 + 1)
+      expect(readEpicRun(root, 'e1')).toMatchObject({ leg: 4, legStartUsd: 612.5 })
+    })
+
+    /**
+     * MONEY IS FRACTIONAL AND `num` IS NOT. `legStartUsd` read with the counter
+     * parser would truncate $612.50 to $612, which makes the leg over-report its
+     * spend by fifty cents and trip its ceiling early -- the same defect `dec`
+     * exists to stop for `spentUsd`.
+     */
+    test('the watermark keeps its cents', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { legStartUsd: 612.5 }, T0 + 1)
+      expect(readEpicRun(root, 'e1')?.legStartUsd).toBe(612.5)
+    })
+
+    /**
+     * A RUN ARMED BEFORE LEGS EXISTED MEASURES FROM HERE, NOT FROM ZERO. Falling
+     * back to a zero watermark would charge every dollar such a run had ALREADY
+     * spent against its first leg, so a long-lived run would cross the HARD cap on
+     * the first beat after the deploy and park -- a brake firing on history.
+     */
+    test('a run.md with no leg fields starts its first leg at whatever it has already spent', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      const file = join(root, '.rclaude', 'project', 'epics', 'e1', 'run.md')
+      writeFileSync(
+        file,
+        readFileSync(file, 'utf8').replace(/^leg.*\n/gm, '').replace(/^spentUsd:.*$/m, 'spentUsd: 340'),
+        'utf8',
+      )
+      expect(readEpicRun(root, 'e1')).toMatchObject({ leg: 1, legStartUsd: 340, legBudgetUsd: 200 })
+    })
+
+    /**
+     * A RESUME OPENS A FRESH LEG. A run parked on the leg hard cap has a leg whose
+     * spend is past every leg threshold there is, so carrying the watermark across
+     * would park it again on the first beat and leave hand-editing a machine-owned
+     * file as the only way to say "carry on".
+     */
+    test('re-arming advances the leg and re-bases the watermark on the sticky ledger', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { spentUsd: 430, leg: 2, legStartUsd: 30 }, T0 + 1)
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 2)
+      // The ledger is untouched -- spend is cumulative for the life of the run and
+      // re-arming must never launder it -- but the LEG starts again from there.
+      expect(readEpicRun(root, 'e1')).toMatchObject({ spentUsd: 430, leg: 3, legStartUsd: 430 })
+    })
+  })
+
   test('cadence is a MODE -- the same engine takes either value', () => {
     startEpicRun(root, { epicId: 'e1', project: 'p', cadence: 'window' }, T0)
     expect(readEpicRun(root, 'e1')?.cadence).toEqual(['window'])

@@ -274,3 +274,90 @@ describe('a plan ACCEPT keeps the run armed', () => {
     expect(listArmedEpics()).toEqual([{ project: PROJECT, epicId: EPIC }])
   })
 })
+
+/**
+ * THE SECOND NEGATIVE CASE, and the sharper one: A LEG'S RE-PLAN TAKES THE
+ * CHECKPOINT BRANCH AND MUST NOT STAND DOWN.
+ *
+ * It reaches `resolvePlanning` through the SAME `plan-checkpoint` action the
+ * generation-0 gate does, with the same rewritten board underneath it, and the
+ * only thing separating them is `gate` on the action. Get that bit wrong and the
+ * failure is silent in the worst direction available here: every leg boundary
+ * would pause the run and take the epic out of the sweep, so an unattended epic
+ * would stop dead at its first boundary having reported nothing but a checkpoint
+ * -- which is exactly the "run goes quiet with nobody told" failure this whole
+ * engine keeps having.
+ *
+ * Jonas chose `auto`: re-plan and continue. These three tests are that choice.
+ */
+describe('a LEG re-plan notifies and keeps the run armed', () => {
+  const replanned = async () => {
+    cards = [card(EPIC, 'open', { tags: ['epic'] }), card('t1', 'open', { epic: EPIC })]
+    // Leg 2 -- the run is past its first boundary -- with a baseline that no
+    // longer matches, which is `planningBeat`'s "the werk-planner changed things".
+    run = { ...RUN, plan: true, planned: false, leg: 2, planBaseline: 'a-board-that-no-longer-exists' }
+    await runEpicBeat(deps(), group())
+  }
+
+  test('planning is closed and the lease released, but the run is NOT paused', async () => {
+    await replanned()
+    expect(ops.some(o => (o.patch as { status?: string })?.status === 'paused')).toBe(false)
+    expect(ops.some(o => (o.patch as { planned?: boolean })?.planned === true)).toBe(true)
+    expect(opKinds()).toContain('release')
+  })
+
+  /** A `leg` entry, NOT a `checkpoint`. A checkpoint means "we are waiting for
+   *  you", and filing a boundary under it makes every leg look like a park. */
+  test('it files a `leg` entry naming the board changes, and no checkpoint', async () => {
+    await replanned()
+    expect(baton.filter(e => e.kind === 'checkpoint')).toEqual([])
+    const entry = baton.find(e => e.kind === 'leg')
+    expect(entry?.body).toContain('leg 2 starts here')
+    expect(entry?.body).toContain('t1: NEW')
+  })
+
+  test('and the epic is STILL ARMED -- the run carries straight on into the leg', async () => {
+    await replanned()
+    expect(isArmed(PROJECT, EPIC)).toBe(true)
+    expect(listArmedEpics()).toEqual([{ project: PROJECT, epicId: EPIC }])
+  })
+})
+
+/**
+ * THE BOUNDARY ITSELF, end to end through the executor: the scalars land on disk
+ * and the notification lands in the baton.
+ *
+ * Here rather than in `epic-legs-beat.test.ts` because that file asserts the pure
+ * DECISION and this asserts that the decision is actually performed -- which is
+ * the seam a `PERFORMERS` table entry can be missing from without anything failing
+ * to compile (the map is cast).
+ */
+describe('a leg boundary is written down', () => {
+  const ended = async () => {
+    cards = [card(EPIC, 'open', { tags: ['epic'] }), card('t1', 'open', { epic: EPIC })]
+    // Legs armed, planning done, and the ledger already past the budget with
+    // nothing in flight: the drained soft stop.
+    run = { ...RUN, plan: true, planned: true, legBudgetUsd: 200, legStartUsd: 0, spentUsd: 240, maxUsd: 0 }
+    await runEpicBeat(deps(), group())
+  }
+
+  test('the patch rolls the leg, moves the watermark and re-owes a plan', async () => {
+    await ended()
+    const patch = ops.find(o => (o.patch as { leg?: number })?.leg !== undefined)?.patch
+    expect(patch).toMatchObject({ leg: 2, legStartUsd: 240, planned: false })
+  })
+
+  test('and the baton says what the leg cost and why it ended', async () => {
+    await ended()
+    const entry = baton.find(e => e.kind === 'leg')
+    expect(entry?.body).toContain('LEG 1 ENDED -- $240.00 of a $200.00 leg budget')
+    expect(entry?.body).toContain('the leg budget was spent')
+    expect(entry?.body).toContain('does NOT wait for a human')
+  })
+
+  test('the run stays armed and is NOT paused -- a boundary is not a stop', async () => {
+    await ended()
+    expect(ops.some(o => (o.patch as { status?: string })?.status === 'paused')).toBe(false)
+    expect(isArmed(PROJECT, EPIC)).toBe(true)
+  })
+})

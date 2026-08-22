@@ -229,6 +229,24 @@ describe('unenforceableCapFields -- the probe', () => {
     expect(unenforceableCapFields(partial)).toEqual(['spentUsd'])
     expect(unenforceableCapLine(partial)).toBe('spentUsd (absent -- the writer of run.md does not carry this field)')
   })
+
+  /**
+   * THE LEG PAIR IS ON THE PROBE FOR THE SAME REASON THE RUN PAIR IS. A leg's hard
+   * cap is arithmetic over `legBudgetUsd` and `legStartUsd`, so a bundle that
+   * answers without them would dispatch with the leg ceiling silently absent --
+   * `legBudgetUsd > 0` is false for a field lost in transit exactly as it is for a
+   * deliberate disarm, and it picks the dangerous reading of the two.
+   */
+  test.each(['legBudgetUsd', 'legStartUsd'] as const)('a bundle that lost %s cannot enforce a leg', field => {
+    const stale = { ...run() } as Partial<EpicRunReading>
+    stale[field] = undefined
+    expect(unenforceableCapFields(stale)).toEqual([field])
+    expect(unenforceableCapLine(stale)).toContain(`${field} (absent`)
+  })
+
+  test('a leg budget disarmed by a typed 0 is an answer, not a lost field', () => {
+    expect(unenforceableCapFields(run({ legBudgetUsd: 0 }))).toEqual([])
+  })
 })
 
 /**
