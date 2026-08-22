@@ -17,7 +17,7 @@
  * So the key is `werkMasterScopeKey()` -- the epic today, the project the day the
  * lease becomes a project singleton. Nothing here changes when that happens.
  *
- * TWO LIVE OVERSEERS IN ONE PROJECT IS POSSIBLE, and is not a case to guard
+ * TWO LIVE WERK-MASTERS IN ONE PROJECT IS POSSIBLE, and is not a case to guard
  * against: the lease is per epic card, so each epic holds its own. One subtree
  * per scope key falls out of that, which keeps the missing project singleton
  * VISIBLE rather than silently merging two runs into one misleading tree.
