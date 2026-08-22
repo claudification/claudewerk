@@ -233,8 +233,20 @@ describe('linkage verbs reach the report', () => {
   })
 
   test('the gate machinery keeps its open frontmatter bag', () => {
-    writeCard('a', 'title: A\nstatus: open\nevidence_commits: 4\ngate: tier2\ntest_cmd: bun test')
+    // `test_cmd` carries the WRAPPER form here, and that is not incidental: the
+    // value is a command a dispatched seat executes under this repo's hooks, so
+    // it is the one gate key the doctor has an opinion about (card-test-cmd.ts).
+    // Everything else in this bag is still passed over untouched.
+    writeCard('a', 'title: A\nstatus: open\nevidence_commits: 4\ngate: tier2\ntest_cmd: bun run test')
     expect(runProjectDoctor(root).findings).toEqual([])
+  })
+
+  test('a test_cmd the repo hard-denies is an ERROR -- the seat sent here cannot run it', () => {
+    writeCard('a', 'title: A\nstatus: open\ngate: tier2\ntest_cmd: bun test src/shared && bun run typecheck')
+    const found = forCheck(runProjectDoctor(root).findings, 'card-test-cmd-denied')
+    expect(found).toHaveLength(1)
+    expect(found[0].severity).toBe('error')
+    expect(found[0].remedy).toContain('bun run test src/shared && bun run typecheck')
   })
 
   test('a key NOBODY declares is preserved and reported by nobody -- OPEN, not closed', () => {
