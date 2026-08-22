@@ -142,6 +142,24 @@ export interface EpicBeatInput {
    */
   leaseAt?: string
   /**
+   * HOW FAR THIS BEAT'S CLOCK RUNS AHEAD OF THE CLOCK THAT STAMPED `leaseAt`,
+   * in ms -- `brokerNow - sentinelNow`, measured on the same `get` the lease came
+   * from (`EpicResult.clockMs`).
+   *
+   * WITHOUT IT `leaseHeldMs` IS A TWO-CLOCK SUBTRACTION presented as a duration.
+   * The sentinel writes every `_at` on the laptop; the broker judges the age in a
+   * container that deploys separately and, on this box, inside a VM whose clock
+   * jumps when the host sleeps. Twenty minutes of drift one way makes every live
+   * werk-master read as instantly past its TTL, so the beat dispatches underneath a
+   * supervisor that is mid-turn on EVERY tick -- the exact thing the gate exists
+   * to prevent, arrived at through the gate's own arithmetic. Twenty the other way
+   * pins the age at zero and restores the unbounded hold the TTL replaced.
+   *
+   * ABSENT MEANS NO CORRECTION, which is what the beat did before the reading
+   * existed -- never an assertion that the two clocks agree.
+   */
+  clockSkewMs?: number
+  /**
    * THE CONVERSATION HOLDING THIS EPIC IS A CORPSE, and the fold has just said so
    * for the first time (`lostWerkMaster`, epic-sweep.ts).
    *
@@ -680,11 +698,19 @@ function capBeat(input: EpicBeatInput): EpicBeat | null {
  * waker take the grip", which a released or never-stamped lease should not
  * block, while this asks "may the engine dispatch underneath a live supervisor",
  * which on no evidence at all it should not.
+ *
+ * MEASURED ON ONE CLOCK. `input.nowMs` is the broker's and `leaseAt` was stamped
+ * by the sentinel, so the raw difference is two clocks subtracted from each other
+ * and called a duration. `clockSkewMs` is what the two disagree by, taken from the
+ * same `get` the lease came from; taking it back off leaves the age as the
+ * SENTINEL would have measured it -- which is also the clock `evaluateLease`'s own
+ * `isStale` uses, so the gate here and the CAS there can no longer disagree about
+ * whether one grip is old.
  */
 function leaseHeldMs(input: EpicBeatInput): number | null {
   if (!input.leaseAt) return null
   const taken = Date.parse(input.leaseAt)
-  return Number.isFinite(taken) ? Math.max(0, input.nowMs - taken) : null
+  return Number.isFinite(taken) ? Math.max(0, input.nowMs - (input.clockSkewMs ?? 0) - taken) : null
 }
 
 /** The werk-master gate's two outcomes, and never both: HOLD this beat, or say out

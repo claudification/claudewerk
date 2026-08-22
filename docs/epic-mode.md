@@ -413,8 +413,14 @@ explicitly when it finishes; a seat that dies without releasing loses the lease
 to the registry-liveness check; and a holder that is **alive but wedged** (the
 classic case is blocking in a Bash call, which emits nothing and reads as idle)
 loses it after `LEASE_STALE_MS`. That last one only works because the claim path
-has **no early return above the CAS** -- the defect in `epic-beat.ts:251` that
-deadlocks the werk-master lease is exactly a return placed above the question.
+has **no early return above the CAS** -- the defect that deadlocked the
+werk-master lease on 2026-08-20 was exactly a return placed above the question.
+
+> **That defect is CLOSED.** It was a real bug and it is gone: `werkMasterGate`
+> (`epic-beat.ts`) reaches the CAS by giving the grip an age, and it uses
+> `LEASE_STALE_MS` itself rather than a second number. Audited and confirmed dead
+> 2026-08-22 -- see [epic-runner-resilience.md](epic-runner-resilience.md) §3,
+> which is where the whole lease model and every recovery path now live.
 
 **It is a mutex between seats, never an authorisation gate.** If the claim cannot
 reach the broker at all, the seat is told to PROCEED and note it; the dispatch
@@ -572,6 +578,13 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 ---
 
 ## 10. Status
+
+> **This table is a CLAIM, not evidence.** Every row says what was built and
+> tested; none says what happens when the process holding it is killed. That
+> question is [epic-runner-resilience.md](epic-runner-resilience.md), which
+> audits this engine against every way it can be interrupted and ends in a
+> verdict -- currently **not trusted for unattended auto-arm**, for the reason
+> stated there.
 
 | Piece | State |
 |---|---|

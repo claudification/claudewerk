@@ -5226,6 +5226,30 @@ export interface EpicResult {
    *  `granted` mean two different things depending on which op you asked. */
   currentLease?: EpicLease | null
   /**
+   * get -- THE SENTINEL'S OWN CLOCK at the instant it answered, epoch ms.
+   *
+   * WHY A REPLY CARRIES A TIMESTAMP AT ALL. Every `_at` stamp in this engine --
+   * `overseer_at`, `seat_<role>_at` -- is written by the SENTINEL, and the
+   * sentinel is the laptop. The broker is a container, deploys separately, and on
+   * this box runs inside a VM whose clock is famous for jumping after the host
+   * sleeps. `werkMasterGate` (epic-beat.ts) then measures "how long has this grip
+   * been held" by subtracting a sentinel-stamped instant from a broker `Date.now()`
+   * -- a two-clock subtraction presented as a duration. Twenty minutes of skew in
+   * one direction makes every live werk-master read as instantly stale and the beat
+   * dispatches underneath it on every tick; twenty in the other freezes the TTL
+   * that exists to stop a wedged supervisor holding the run forever.
+   *
+   * So the reply states the clock it stamped with, and the broker measures the age
+   * ON ONE CLOCK. It includes the reply's own flight time, which inflates the
+   * measured offset by a one-way latency -- tens of milliseconds against a
+   * ten-minute TTL, i.e. nothing.
+   *
+   * OPTIONAL for version skew only, exactly as `acknowledgedCardIds` above: a new
+   * broker meeting an older bundle gets no reading and falls back to the
+   * two-clock subtraction, which is the behaviour it had.
+   */
+  clockMs?: number
+  /**
    * delete -- where the run's tree WENT, relative to the project root.
    *
    * The evidence that `delete` is a move and not an `rm`: a caller can print it,

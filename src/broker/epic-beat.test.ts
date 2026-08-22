@@ -296,6 +296,74 @@ describe('a stale lease stops holding the beat', () => {
   })
 })
 
+/**
+ * THE TTL ABOVE IS A SUBTRACTION ACROSS TWO MACHINES, AND IT SAYS SO NOW.
+ *
+ * `leaseAt` is stamped by the SENTINEL (`casLeaseOnCard`, on the laptop);
+ * `nowMs` is the BROKER's (a container that deploys separately and, on this box,
+ * runs in a VM whose clock jumps when the host sleeps). Every case in the block
+ * above passes both from one fixture clock, which is exactly the assumption
+ * production does not get to make.
+ *
+ * The direction that costs the most is the broker running AHEAD: every live
+ * werk-master then reads as instantly past its TTL, so the beat dispatches
+ * underneath a supervisor that is mid-turn -- on every tick, for the life of the
+ * skew. That is the failure the gate exists to prevent, produced by the gate's own
+ * arithmetic.
+ */
+describe('two clocks -- the lease age is corrected for the offset between them', () => {
+  const SKEW = 20 * 60_000
+  /** Held for four minutes by the SENTINEL's reckoning, on a broker whose clock is
+   *  `skewMs` ahead. Uncorrected that reads as 24 minutes and trips the TTL. */
+  const heldOnTheOtherClock = (realAgeMs: number, skewMs: number) => new Date(T0 - skewMs - realAgeMs).toISOString()
+
+  test('a fresh grip on a broker running 20m fast still HOLDS the beat', () => {
+    const b = beat(
+      { werkMasterAlive: true, leaseAt: heldOnTheOtherClock(4 * 60_000, SKEW), clockSkewMs: SKEW },
+      { dispatch: [card('t1')] },
+    )
+    expect(b.actions).toEqual([])
+    expect(b.note).toContain('WORKING')
+    expect(b.note).toContain('4m')
+  })
+
+  /** The regression, stated as the failure rather than as the fix: the SAME input
+   *  with the offset withheld strips a working supervisor of the beat. */
+  test('and without the correction that same grip reads STALE and work goes out under it', () => {
+    const b = beat(
+      { werkMasterAlive: true, leaseAt: heldOnTheOtherClock(4 * 60_000, SKEW) },
+      { dispatch: [card('t1')] },
+    )
+    expect(kinds(b)).toEqual(['dispatch'])
+    expect(b.note).toContain('STALE')
+  })
+
+  /** The other direction is the deadlock's, and the correction has to recover a
+   *  genuinely wedged holder there too -- a broker running BEHIND pins every age at
+   *  zero, which is the unbounded hold the TTL replaced. */
+  test('a broker running 20m SLOW still ages out a grip that really is wedged', () => {
+    const b = beat(
+      {
+        werkMasterAlive: true,
+        leaseAt: heldOnTheOtherClock(LEASE_STALE_MS + 60_000, -SKEW),
+        clockSkewMs: -SKEW,
+      },
+      { dispatch: [card('t1')] },
+    )
+    expect(kinds(b)).toEqual(['dispatch'])
+    expect(b.note).toContain('STALE')
+  })
+
+  /** VERSION SKEW, not a default: a sentinel too old to report its clock leaves the
+   *  field off, and the beat must keep the arithmetic it has always had rather than
+   *  assert an offset of zero it never measured. */
+  test('no reading at all is the old two-clock behaviour, unchanged', () => {
+    const held = { werkMasterAlive: true, leaseAt: new Date(T0 - 4 * 60_000).toISOString() }
+    expect(beat(held, { dispatch: [card('t1')] }).actions).toEqual([])
+    expect(beat({ ...held, clockSkewMs: 0 }, { dispatch: [card('t1')] }).actions).toEqual([])
+  })
+})
+
 describe('cadence is a mode on one engine', () => {
   test('cadence=now ignores the clock', () => {
     const b = beat({ windowOpen: false }, { dispatch: [card('t1')] }, { cadence: ['now'] })
