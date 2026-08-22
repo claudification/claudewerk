@@ -48,12 +48,26 @@ describe('ScannerContractCard', () => {
   })
 
   it('says "no caller yet" rather than inventing a cadence for a scanner nothing schedules', () => {
-    // `refine` and `work-order` are built, tested, and invoked by nothing. A
-    // made-up interval here would turn the one alarming sentence on this screen
-    // into a puzzle.
-    render(<ScannerContractCard contract={SCANNER_CONTRACTS['work-order']} lastRun={undefined} />)
-    expect(SCANNER_CONTRACTS['work-order'].cadence).toBeUndefined()
+    // A HAND-BUILT contract, because no shipped one reaches this branch any
+    // more: `refine` and `work-order` were exactly this case -- built, tested,
+    // invoked by nothing -- until `scanner-clock.ts` gave them a clock, and
+    // `morning-report` is caught one branch earlier as not built at all. The
+    // rule is for the NEXT scanner written ahead of its caller, and a made-up
+    // interval there would turn the one alarming sentence on this screen into a
+    // puzzle.
+    render(<ScannerContractCard contract={{ ...SCANNER_CONTRACTS.refine, cadence: undefined }} lastRun={undefined} />)
     expect(text()).toContain('no caller yet -- never scheduled')
+  })
+
+  it('every built scanner in the shipped table states an interval', () => {
+    for (const id of SCANNER_IDS) {
+      const contract = SCANNER_CONTRACTS[id]
+      if (!contract.built) continue
+      render(<ScannerContractCard contract={contract} lastRun={undefined} />)
+      expect(text(), `${id}: names its cadence`).toContain(contract.cadence ?? 'MISSING')
+      expect(text(), `${id}: no longer claims nothing calls it`).not.toContain('no caller yet')
+      cleanup()
+    }
   })
 
   it('says a scanner with no implementation is not built, rather than describing one', () => {
