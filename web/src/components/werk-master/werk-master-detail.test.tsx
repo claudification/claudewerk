@@ -142,7 +142,7 @@ describe('the werk-master block -- the thing the first live run hid', () => {
     show(data)
 
     expect(screen.queryByText(/never woken/)).toBeNull()
-    expect(screen.getByText('OVER')).toBeTruthy()
+    expect(screen.getByText('MSTR')).toBeTruthy()
   })
 
   it('warns when the broker forgot the run -- armed on disk, not in the sweep', () => {
