@@ -214,12 +214,24 @@ describe('runCaps', () => {
     expect(runCaps(null, NOW)).toEqual([])
   })
 
-  it('reports spend and wall clock, money first -- the head already prints the generation', () => {
-    expect(runCaps(RUN, NOW).map(c => c.label)).toEqual(['spend', 'wall clock'])
+  // THE LEG CAP SITS BETWEEN THE TWO, AND IT IS PRESENT EVEN WHEN THIS RUN HAS NO
+  // LEG FIELDS. `RUN` carries no `legBudgetUsd`/`legStartUsd`, and `readCeiling`
+  // reads absent as UNENFORCEABLE rather than uncapped -- deliberately, per
+  // `epic-run-caps.ts`: a ceiling the engine cannot enforce is an error to show,
+  // never an absence to hide. So the row is `leg spend ?/UNENFORCEABLE` until the
+  // sentinel bundle that writes those fields is built. Dropping it here would put
+  // the caps row back to picking the dangerous reading of a missing field.
+  it('reports spend, leg spend and wall clock, money first -- the head already prints the generation', () => {
+    expect(runCaps(RUN, NOW).map(c => c.label)).toEqual(['spend', 'leg spend', 'wall clock'])
   })
 
   it('brings the generation cap back when it is the ceiling that stopped the run', () => {
-    expect(runCaps({ ...RUN, gen: 40 }, NOW).map(c => c.label)).toEqual(['spend', 'wall clock', 'generations'])
+    expect(runCaps({ ...RUN, gen: 40 }, NOW).map(c => c.label)).toEqual([
+      'spend',
+      'leg spend',
+      'wall clock',
+      'generations',
+    ])
   })
 
   it('shows what is left of the budget', () => {
