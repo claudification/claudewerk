@@ -144,7 +144,12 @@ describe('the nightshift store', () => {
 
   test('a failed task patch leaves the previous task artifact intact', () => {
     startRun(root, { runId: RUN }, NOW)
-    writeTask(root, RUN, { id: '1', title: 'A task', project: 'p', status: 'running', feasibility: 'feasible' }, NOW)
+    writeTask(
+      root,
+      RUN,
+      { id: '1', title: 'A task', project: 'p', status: 'running', verdict: 'needs-you', feasibility: 'feasible' },
+      NOW,
+    )
     survivesAFailedWrite(onlyFileIn(tasksDir()), () =>
       patchTask(root, RUN, { id: '1', status: 'done', note: 'finished' }, NOW + 1),
     )
@@ -222,10 +227,10 @@ describe('the quest manifest writer', () => {
     petname: 'swift-otter',
     project: 'claude://default/tmp/p',
     goal,
-    target: 'branch' as const,
+    target: 'merged' as const,
     status: 'running' as const,
-    gate: 'auto' as const,
-    contracts: [{ id: 'c1', statement: 'it builds', verify: 'bun test' }],
+    gate: 'blessed' as const,
+    contracts: [{ id: 'c1', command: 'bun test', description: 'it builds' }],
     created: '2026-08-22T09:00:00.000Z',
     updated: '2026-08-22T09:00:00.000Z',
   })
