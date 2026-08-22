@@ -606,7 +606,7 @@ function unlandedBeat(input: EpicBeatInput): EpicBeat | null {
   // `plan.unlanded` AND NOT A SECOND INPUT OF ITS OWN. The plan already withheld
   // this card's dependents from the exact same list, and two routes to the same
   // fact is how a hold and an escalation end up disagreeing about which cards
-  // they are talking about. Empty for any caller with no commit ledger to ask,
+  // they are talking about. Empty for any caller with no git-fabric scan to ask,
   // which is the "absent means no gate" convention `queue` and `headroom` use.
   const blocking = input.plan.unlanded
   if (blocking.length === 0) return null

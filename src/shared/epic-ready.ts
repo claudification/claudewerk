@@ -274,7 +274,7 @@ export interface PlanCohortInput {
    * unrelated branch of the DAG keeps dispatching.
    *
    * Omitted means NO GATE, the same convention `dispatches` and `settled` use: a
-   * caller with no commit ledger to ask dispatches as it did before rather than
+   * caller with no git-fabric scan to ask dispatches as it did before rather than
    * withholding work on evidence nobody supplied.
    */
   landings?: readonly CardLanding[]
