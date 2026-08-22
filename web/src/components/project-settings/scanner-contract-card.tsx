@@ -27,10 +27,16 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 /**
  * The cadence line, and the one place this panel is allowed to say nothing.
  *
- * A scanner with no caller renders as having no caller. Two of them are built,
- * tested and invoked by nothing at all, and inventing an interval for them would
- * turn the single most useful sentence on this screen -- "enabled, last ran
- * never" -- into a puzzle instead of an alarm.
+ * A scanner with no caller renders as having no caller, because inventing an
+ * interval for one would turn the single most useful sentence on this screen --
+ * "enabled, last ran never" -- into a puzzle instead of an alarm.
+ *
+ * No SHIPPED contract reaches that branch today: `refine` and `work-order` were
+ * built, tested and invoked by nothing until `scanner-clock.ts`, and the only row
+ * left without a cadence is `morning-report`, which has no implementation either
+ * and is caught one branch above. The branch stays anyway -- it is the rule for
+ * the NEXT scanner someone writes ahead of its caller, and deleting it would
+ * quietly leave that one rendering a blank line where the alarm goes.
  */
 function Cadence({ contract, lastRun }: { contract: ScannerContract; lastRun: number | undefined }) {
   const ran = lastRun === undefined ? 'last ran never' : `last ran ${formatAgo(Date.now() - lastRun)}`

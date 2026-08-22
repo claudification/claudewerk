@@ -121,6 +121,7 @@ import {
   releaseReporterSocket,
 } from './reporter-connections'
 import { createRouter } from './routes'
+import { startScannerClock } from './scanner-clock'
 import { setScheduledTaskEngine } from './scheduled-tasks/engine-registry'
 import { wireScheduledTasks } from './scheduled-tasks/wiring'
 import { createSentinelRegistry } from './sentinel-registry'
@@ -1544,6 +1545,14 @@ async function main() {
   // park or complete. Inert until an epic run is armed: with no epic-tagged
   // conversations the sweep returns immediately.
   startEpicSweep(buildSweepDeps(conversationStore))
+
+  // THE OTHER TWO SCANNERS' CLOCK: `refine` drains `#needs-refine`, `work-order`
+  // drains `#ready`. Both were built, tested and invoked by nothing -- the
+  // "enabled, last ran never" failure that killed nightshift, scheduled tasks and
+  // quests -- so ticking either box in Project Settings did nothing at all. One
+  // guarded tick each, off by default for every project, gated before a board is
+  // read and stamped on a completed pass.
+  startScannerClock(conversationStore)
 
   // Print status periodically
   if (verbose) {

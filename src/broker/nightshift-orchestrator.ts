@@ -33,17 +33,19 @@ import {
 import type { Conversation } from '../shared/protocol'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import { buildUnattendedSettings } from '../shared/unattended-permissions'
+import type { CallBoard } from './board-cards'
 import { callBoard } from './board-rpc'
 import { fillSlotsWithAdmission, taskRefOf } from './capacity-admission'
 import { CapacityLedger } from './capacity-ledger'
 import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
-import { buildNightshiftScanDeps, type CallBoard, untagBoardCard } from './nightshift-board'
+import { buildNightshiftScanDeps, untagBoardCard } from './nightshift-board'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { settleWorkerFromStore } from './nightshift-guardians'
 import { computeWindowEndMs } from './nightshift-window'
 import { getProjectSettings } from './project-settings'
+import { buildScannerOptIn, type ScannerOptIn } from './scanner-gate'
 import { type NightshiftScanDeps, nightshiftScanner } from './scanners/nightshift-scanner'
 import { runScan } from './scanners/scanner'
 import { dispatchSpawn } from './spawn-dispatch'
@@ -86,9 +88,27 @@ export interface NightshiftIo {
    *  to `#nightshift` cards. Same seam, same reason: a test that stubs it never
    *  needs a sentinel to open a run. */
   callBoard: CallBoard
+  /**
+   * THE PER-PROJECT OPT-IN AND THE LAST-RUN STAMP for the `nightshift` scanner.
+   *
+   * `nightshift` had a caller before this and was still outside the fabric's
+   * gate-and-stamp contract, which is the worse half of "enabled, last ran
+   * never": its row read `never` forever while it was in fact running. That is
+   * the amber column lying in the one direction nobody checks.
+   *
+   * On the IO seam rather than imported directly so a test can open a run
+   * without a settings store -- the same reason the spawn and the sentinel are
+   * here.
+   */
+  scannerOptIn: ScannerOptIn
 }
 
-const REAL_IO: NightshiftIo = { dispatchSpawn, sendNightshiftOp, callBoard }
+const REAL_IO: NightshiftIo = {
+  dispatchSpawn,
+  sendNightshiftOp,
+  callBoard,
+  scannerOptIn: buildScannerOptIn('nightshift'),
+}
 let io: NightshiftIo = REAL_IO
 
 /** Swap the IO seam (tests only). Call `resetNightshiftIo()` when done. */
@@ -396,6 +416,11 @@ async function scanBoardForTasks(
   for (const r of report.refused) {
     console.log(`[nightshift-scan] ${r.unit} REFUSED(${r.bucket}) project=${project}: ${r.detail}`)
   }
+  // THE STAMP, on a COMPLETED pass -- and a crash is not one. A pass that
+  // selected nothing still stamps: that is the whole value of the column, because
+  // "enabled, last ran never" then means the caller is dead rather than the board
+  // being quiet. Written by the CALLER, never by the scanner (project-settings).
+  if (!report.crashed) io.scannerOptIn.stamp(project, Date.now())
   return { tasks: admitted, idleReason: report.idleReason, crashed: report.crashed }
 }
 
@@ -417,6 +442,27 @@ async function runNightshiftImpl(
   opts: { trigger: 'manual' | 'scheduler' },
 ): Promise<RunNightshiftOutcome> {
   if (activeRuns.has(project)) return { ok: false, skipped: 'a nightshift run is already in flight for this project' }
+
+  // THE OPT-IN, CHECKED BY THE CALLER, BEFORE ANYTHING IS SPENT -- before the
+  // config RPC, before the board read, long before a worker.
+  //
+  // IT REFUSES A MANUAL RUN TOO, and that is deliberate rather than an
+  // oversight. Run-now dispatches the identical fleet the scheduler does, so
+  // honouring it in an opted-out project would be a back door around a
+  // default-deny gate -- the exact reasoning `beatOneEpic` already gives for
+  // refusing BEAT NOW. Saying which box to tick is more use than either doing it
+  // anyway or pretending to.
+  //
+  // It is NOT the same gate as `config.enabled` below: that one is the project's
+  // own night-window arming, which a human at the Run-now button deliberately
+  // overrides. This one is the fabric's per-scanner authorisation, and nothing
+  // overrides it.
+  if (!io.scannerOptIn.enabled(project)) {
+    return {
+      ok: false,
+      skipped: `the "nightshift" scanner is off for ${project} -- tick it in Project Settings > Scanners to let it run`,
+    }
+  }
 
   const cfgRes = await io.sendNightshiftOp(store, project, { op: 'config_read' })
   const config = (cfgRes.config ?? DEFAULT_NIGHTSHIFT_CONFIG) as NightshiftConfig

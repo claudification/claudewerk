@@ -1,51 +1,24 @@
 /**
- * THE NIGHT RUN'S BOARD DOOR -- the three reads/writes the nightshift scanner
- * needs, plus the one builder that wires them into its deps.
+ * THE NIGHT RUN'S BOARD DOOR -- the write only nightshift makes, plus the one
+ * builder that wires the board into the scanner's deps.
  *
- * `board-rpc.ts` already owns the broker -> sentinel -> `.rclaude/project/cards/`
- * hop and hands back a value rather than writing to a socket. This file is the
- * thin nightshift-shaped adapter over it: list, read one, drop the routing tag.
+ * The two READS moved to `board-cards.ts` when `refine` and `work-order` got a
+ * caller of their own and needed the identical list; they were module-private
+ * here only because nightshift was once the only scanner anything invoked. The
+ * dequeue below stayed: it WRITES, and no other scanner has business reaching it.
  *
- * It exists as its own module so the scanner's deps can be built from a
- * `callBoard`-shaped function alone, which is what lets the orchestrator swap
- * the board out in a test the same way it already swaps the spawn and the
- * sentinel (`NightshiftIo`). Nothing here holds state.
+ * This file exists so the scanner's deps can be built from a `callBoard`-shaped
+ * function alone, which is what lets the orchestrator swap the board out in a
+ * test the same way it already swaps the spawn and the sentinel (`NightshiftIo`).
+ * Nothing here holds state.
  */
 
 import { NIGHTSHIFT_TAG } from '../shared/nightshift-types'
-import type { ProjectTask, ProjectTaskMeta } from '../shared/project-task-types'
 import type { Conversation } from '../shared/protocol'
-import type { callBoard } from './board-rpc'
+import { type CallBoard, listBoardCards, readBoardCard } from './board-cards'
 import type { ConversationStore } from './conversation-store'
 import type { NightshiftScanDeps } from './scanners/nightshift-scanner'
 import { werkLiveness } from './werk-liveness'
-
-/** The one effect these helpers need. Shaped as the real `callBoard` so the
- *  orchestrator's IO seam can hold either it or a double. */
-export type CallBoard = typeof callBoard
-
-/** Every card on the project's board, any lane. `[]` when the sentinel is gone
- *  -- a night run with no board is an empty run, never a crash.
- *  Module-internal: `buildNightshiftScanDeps` below is the only door to it. */
-async function listBoardCards(call: CallBoard, store: ConversationStore, project: string): Promise<ProjectTaskMeta[]> {
-  const res = await call(store, project, { op: 'list' })
-  if (!res.ok) return []
-  return (res.tasks as ProjectTaskMeta[] | undefined) ?? []
-}
-
-/** One card WITH its body -- the read that makes the task a reference rather
- *  than a copy. `null` when the card is gone or the sentinel refused.
- *  Module-internal, same as `listBoardCards`. */
-async function readBoardCard(
-  call: CallBoard,
-  store: ConversationStore,
-  project: string,
-  slug: string,
-): Promise<ProjectTask | null> {
-  const res = await call(store, project, { op: 'get', slug })
-  if (!res.ok) return null
-  return (res.task as ProjectTask | null) ?? null
-}
 
 /**
  * Drop `#nightshift` from a card. THIS IS THE DEQUEUE.
