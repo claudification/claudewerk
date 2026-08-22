@@ -15,6 +15,7 @@ import { commitsForBranch } from './commit-ledger/branch'
 import {
   appendBaton,
   fetchBoardCards,
+  fetchBoardRead,
   fetchEpicRun,
   readProjectFile,
   sendEpicOp,
@@ -27,6 +28,9 @@ export interface EpicIo {
   sendEpicOp: typeof sendEpicOp
   fetchEpicRun: typeof fetchEpicRun
   fetchBoardCards: typeof fetchBoardCards
+  /** The same read, with its FAILURE intact -- what a surface that renders the
+   *  card graph must use, so a timed-out board never renders as an empty one. */
+  fetchBoardRead: typeof fetchBoardRead
   appendBaton: typeof appendBaton
   /** Raw card text, for the promise ledger's line surgery. */
   readProjectFile: typeof readProjectFile
@@ -45,6 +49,7 @@ const REAL_IO: EpicIo = {
   sendEpicOp,
   fetchEpicRun,
   fetchBoardCards,
+  fetchBoardRead,
   appendBaton,
   readProjectFile,
   writeProjectFile,

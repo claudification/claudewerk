@@ -249,6 +249,66 @@ describe('inspect after a FAILED read', () => {
     expect(out.split('\n')[0]).toContain('generation 7/40')
     expect(out).toContain('baton read partial')
   })
+
+  /**
+   * `NO_RUN`'s two disjuncts are "never armed" and "armed on a broker that has
+   * since restarted". `live.armed` rules out BOTH -- the arm is in THIS broker's
+   * registry right now -- so the generic line put `never armed` three lines above
+   * `armed yes` in one payload.
+   */
+  test('a clean absent run under a LIVE arm does not claim the epic was never armed', () => {
+    const out = renderEpic(inspect({ run: null }))
+    expect(out).toContain('armed yes')
+    expect(out).not.toContain('ARTIFACT -- never armed')
+    expect(out.split('\n')[0]).toContain('this broker has the epic ARMED')
+  })
+
+  test('with the arm genuinely gone, the original diagnosis is still printed', () => {
+    const l = inspect().inspect!.live
+    const out = renderEpic(inspect({ run: null, live: { ...l, armed: false } }))
+    expect(out).toContain('ARTIFACT -- never armed')
+  })
+})
+
+/**
+ * 2026-08-22, gen 12 of `epic-werk-agile-loop`: the run.md half of the read-failure
+ * fix had landed and rendered correctly -- and the SAME payload said `no epic ...
+ * on the board` and `## Plan (0 child card(s))` while 31 child cards sat on disk.
+ *
+ * `RUN ARTIFACT NOT READ` prompts a retry. "This epic has no children" prompts an
+ * ABORT, so the board's unknown is the more dangerous of the two to fake.
+ */
+describe('inspect after a failed BOARD read', () => {
+  const boardless = (over: Partial<EpicInspectResult> = {}) =>
+    inspect({ plan: null, boardError: 'sentinel timed out', ...over })
+
+  test('the section names the READ FAILURE instead of leaving the card graph silent', () => {
+    const out = renderEpic(boardless())
+    expect(out).toContain('BOARD NOT READ')
+    expect(out).toContain('sentinel timed out')
+  })
+
+  test('it never prints a child-card COUNT -- zero is the answer that justifies an abort', () => {
+    expect(renderEpic(boardless())).not.toContain('child card(s)')
+  })
+
+  test('it says out loud that the graph is unknown rather than empty', () => {
+    expect(renderEpic(boardless())).toContain('UNKNOWN, not empty')
+  })
+
+  test('and names the action it must not justify', () => {
+    expect(renderEpic(boardless())).toContain('do NOT abort')
+  })
+
+  test('a board that READ keeps the plan section exactly as it was', () => {
+    const out = renderEpic(inspect())
+    expect(out).toContain('4 child card(s)')
+    expect(out).not.toContain('BOARD NOT READ')
+  })
+
+  test('the run header is untouched -- one transport failing must not blank the other', () => {
+    expect(renderEpic(boardless()).split('\n')[0]).toContain('generation 7/40')
+  })
 })
 
 describe('the other shapes', () => {

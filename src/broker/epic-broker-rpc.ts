@@ -123,11 +123,44 @@ export function sendEpicOp(deps: SentinelRpcDeps, project: string, op: EpicOpInp
   return sendSentinelOp(EPIC_SPEC, deps, project, op)
 }
 
-/** The board, for `planEpic`. A read the epic engine cannot answer for itself:
- *  children declare their parent, so the whole card list is the cheapest question. */
-export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): Promise<ProjectTaskMeta[]> {
+/**
+ * THE BOARD READ, WITH ITS FAILURE INTACT.
+ *
+ * `ok: false` and `cards: []` are NOT the same fact, and collapsing them is what
+ * made an inspect announce `no epic on the board (no card carries it and no card
+ * claims it as a parent)` about an epic with 31 children on disk, in the same
+ * payload that said the sentinel had timed out. "No children" is a statement a
+ * werk-master can act on, and the action it justifies is aborting the run.
+ *
+ * `cards` is still `[]` on a failure so a caller that only wants the list keeps a
+ * safe shape -- but the failure is there to be read, and every caller that
+ * RENDERS absence has to read it.
+ */
+export interface EpicBoardRead {
+  ok: boolean
+  cards: ProjectTaskMeta[]
+  /** Set only when `ok` is false. The sentinel's own words. */
+  error?: string
+}
+
+export async function fetchBoardRead(deps: SentinelRpcDeps, project: string): Promise<EpicBoardRead> {
   const res = await sendSentinelOp<ProjectBoardResult>(BOARD_SPEC, deps, project, { op: 'list' })
-  return res.ok && res.tasks ? res.tasks : []
+  if (!res.ok) return { ok: false, cards: [], error: res.error ?? 'board list failed' }
+  return { ok: true, cards: res.tasks ?? [] }
+}
+
+/**
+ * The board, for `planEpic`. A read the epic engine cannot answer for itself:
+ * children declare their parent, so the whole card list is the cheapest question.
+ *
+ * SWALLOWS THE FAILURE, deliberately and only for the callers that already did.
+ * A beat acting on an empty board on a failed read is its own bug, filed as
+ * `werk-beat-acts-on-an-unread-board`; fixing it here would change what the
+ * engine DOES rather than what a debug read SAYS. Anything that renders the
+ * card graph must use `fetchBoardRead` instead.
+ */
+export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): Promise<ProjectTaskMeta[]> {
+  return (await fetchBoardRead(deps, project)).cards
 }
 
 export interface EpicRunView {

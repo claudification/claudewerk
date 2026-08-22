@@ -33,7 +33,22 @@ function CardLine({ card, glyph, tone, label }: { card: EpicInspectCard; glyph: 
   )
 }
 
-export function WerkMasterDag({ plan }: { plan: EpicInspectPlan | null }) {
+export function WerkMasterDag({ plan, boardError }: { plan: EpicInspectPlan | null; boardError?: string }) {
+  // A FAILED BOARD READ IS NOT AN EMPTY BOARD, and this pane is where the two
+  // used to collapse: `plan: null` printed "no card carries this epic" whether
+  // the sentinel had answered or timed out. Observed 2026-08-22 with 31 child
+  // cards on disk -- and "the epic has no children" is the sentence that
+  // justifies aborting a live run.
+  if (boardError) {
+    return (
+      <Block title="DAG">
+        <div className="text-[11px] text-warning">BOARD NOT READ -- {boardError}</div>
+        <div className="text-[11px] text-fg-dim italic mt-1">
+          The card graph is unknown, not empty. Refresh; do not act on this as if the epic had no cards.
+        </div>
+      </Block>
+    )
+  }
   if (!plan) {
     return (
       <Block title="DAG">

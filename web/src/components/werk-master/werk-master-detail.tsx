@@ -144,13 +144,18 @@ function RunHead({
 function Stats({ data }: { data: EpicInspectResult }) {
   const plan = data.plan
   const done = plan ? plan.children - (plan.dispatch.length + plan.heldBack.length + plan.waitingOnDeps.length) : 0
+  // THREE OF THESE SIX COME OFF THE BOARD, and a board that was never read has
+  // no count to give. `0 DONE . 0 READY . 0 BLOCKED` next to two live seats is a
+  // reading, and it is the reading that says the run has nothing left to do.
+  const unknown = Boolean(data.boardError)
+  const fromBoard = (n: number) => (unknown ? '-' : n)
 
   return (
     <div className="flex gap-6 px-3.5 py-2.5 border-b border-border shrink-0 flex-wrap">
-      <Stat value={Math.max(0, done)} label="DONE" tone="text-active" />
-      <Stat value={plan?.dispatch.length ?? 0} label="READY" tone="text-foreground" />
+      <Stat value={fromBoard(Math.max(0, done))} label="DONE" tone="text-active" />
+      <Stat value={fromBoard(plan?.dispatch.length ?? 0)} label="READY" tone="text-foreground" />
       <Stat value={data.live.inFlight.length} label="IN FLIGHT" tone="text-idle" />
-      <Stat value={plan?.waitingOnDeps.length ?? 0} label="BLOCKED" tone="text-fg-dim" />
+      <Stat value={fromBoard(plan?.waitingOnDeps.length ?? 0)} label="BLOCKED" tone="text-fg-dim" />
       <Stat value={data.live.unacknowledged.length} label="UNACKED" tone="text-event-prompt" />
       <Stat value={data.run?.dryGens ?? 0} label="DRY GENS" tone="text-fg-dim" />
     </div>
@@ -209,7 +214,7 @@ export function WerkMasterDetail({
             concurrency={data.run?.concurrency ?? 3}
             onOpenConversation={selectConversation}
           />
-          <WerkMasterDag plan={data.plan} />
+          <WerkMasterDag plan={data.plan} boardError={data.boardError} />
         </div>
         <div className="flex-1 min-w-0 flex flex-col">
           <WerkMasterTabStrip tab={tab} onTab={setTab} batonCount={data.baton.length} beatCount={data.beats.length} />

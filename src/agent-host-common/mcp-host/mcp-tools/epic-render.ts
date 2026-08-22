@@ -130,6 +130,31 @@ function planSection(p: EpicInspectPlan): string[] {
   ]
 }
 
+/**
+ * THE CARD GRAPH OF A READ THAT NEVER HAPPENED -- the board's half of
+ * `readFailureHeader`, in the same shape and for a strictly worse lie.
+ *
+ * `no epic on the board (no card carries it and no card claims it as a parent)`
+ * plus `0 child card(s)` is what `planEpic` says about an EMPTY board, and a
+ * board `list` that timed out used to arrive as one. Observed 2026-08-22 on
+ * `epic-werk-agile-loop`: that exact pair rendered while 31 child cards sat on
+ * disk and the beat header said `12/31 done (39%)`.
+ *
+ * `RUN ARTIFACT NOT READ` prompts a retry. "This epic has no children" prompts
+ * an ABORT -- there is nothing left to do -- so this section says out loud that
+ * the graph is unknown and names the one action it must not justify.
+ */
+function boardFailureSection(error: string): string[] {
+  return [
+    '',
+    '## Why it is or is not moving',
+    `BOARD NOT READ -- the read failed: ${error}`,
+    'the card graph is UNKNOWN, not empty: children, lanes, readiness and completion are all absent',
+    'rather than zero. This does NOT mean the epic has no cards. Retry the read; do NOT abort the',
+    'run on the strength of this.',
+  ]
+}
+
 /** What is actually running. `armed NO` on a run that says `armed` is the tell
  *  for a broker restart, and the mismatch warning is the tell for spawns racing
  *  the lease -- both were previously invisible outside the logs. */
@@ -171,6 +196,19 @@ function beatsSection(beats: EpicInspectResult['beats']): string[] {
 const NO_RUN = 'NO RUN ARTIFACT -- never armed, or armed on a broker that has since restarted'
 
 /**
+ * THE SAME ABSENCE, WHEN THIS BROKER STILL HOLDS THE ARM.
+ *
+ * `NO_RUN`'s two disjuncts are "never armed" and "armed on a broker that has
+ * since restarted", and `live.armed` rules BOTH of them out: the arm is in this
+ * broker's in-memory registry right now. Printing the generic line anyway put
+ * `never armed` three lines above `armed yes` in one payload, and a reader who
+ * believes the headline arms a run that is already armed.
+ */
+const NO_RUN_WHILE_ARMED =
+  'NO RUN ARTIFACT -- but this broker has the epic ARMED. Not "never armed": the artifact is missing ' +
+  'under a live arm (deleted, or written where this broker is not looking). Do NOT re-arm blindly.'
+
+/**
  * THE HEADLINE OF A READ THAT NEVER HAPPENED.
  *
  * `NO_RUN` is a DIAGNOSIS -- "never armed, or armed on a broker that has since
@@ -203,7 +241,10 @@ function renderInspect(i: EpicInspectResult): string {
       ? runHeader(i.run)
       : unread
         ? readFailureHeader(i.epicId, i.error ?? '')
-        : [`epic ${i.epicId}: ${NO_RUN}`]),
+        : // THE THREE SURFACES MAY NOT DISAGREE. `armed yes` in the Live section
+          // below and `never armed` in the headline are the same payload
+          // contradicting itself, so the headline defers to the registry.
+          [`epic ${i.epicId}: ${i.live.armed ? NO_RUN_WHILE_ARMED : NO_RUN}`]),
     // THE QUEUE, ABOVE THE PLAN. "Why is nothing dispatching" has a different
     // answer for a queued run than the DAG's, and printing the DAG's first would
     // send the reader hunting through card lanes for a reason that is not there.
@@ -212,7 +253,10 @@ function renderInspect(i: EpicInspectResult): string {
     // Folded into the headline when the read failed; still an aside when a run
     // DID come back and something secondary (a baton slice, say) errored.
     ...(i.error && !unread ? [`error: ${i.error}`] : []),
-    ...(i.plan ? planSection(i.plan) : []),
+    // THE BOARD IS ITS OWN TRANSPORT and gets its own unknown. A payload can
+    // carry a perfectly good run header and an unread board -- on 2026-08-22 it
+    // carried an unread BOTH, and only the run said so.
+    ...(i.boardError ? boardFailureSection(i.boardError) : i.plan ? planSection(i.plan) : []),
     ...liveSection(i.live, unread),
     ...beatsSection(i.beats),
     ...batonBlock(i.baton, '## Baton'),
