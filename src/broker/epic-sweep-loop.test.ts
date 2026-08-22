@@ -1,8 +1,9 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { BranchFabric, Conversation, EpicResult } from '../shared/protocol'
 import type { ConversationStore } from './conversation-store'
 import { configureEpicIo, resetEpicIo } from './epic-io'
-import { noteArmedEpic, resetArmedEpics } from './epic-registry'
+import { forgetArmedEpic, initArmedEpics, noteArmedEpic, resetArmedEpics } from './epic-registry'
 import {
   beatOneEpic,
   buildSweepDeps,
@@ -16,6 +17,8 @@ import {
   toGitDirt,
 } from './epic-sweep-loop'
 import { NO_REAPING, SEAT_SILENCE_MS, WERK_MASTER_SILENCE_MS } from './epic-vitality'
+import { createSqliteKVStore } from './store/sqlite/kv'
+import type { KVStore } from './store/types'
 
 let beats: string[]
 let log: string[]
@@ -418,6 +421,92 @@ describe('the restart quarantine', () => {
     await sweepEpics(at(1_000))
     await sweepEpics(at(RESTART_QUARANTINE_MS + 1))
     expect(beats).toEqual(['claude://s/e1'])
+  })
+
+  /**
+   * THE WHOLE RESTART, COMPOSED -- the assertion the card asks for and the one
+   * neither half makes on its own.
+   *
+   * `epic-registry.test.ts` proves the armed set survives a restart and reaches
+   * `epicsToWatch`. The block above proves the quarantine holds a beat. NEITHER
+   * says the thing that matters: that a run armed before the broker died is
+   * BEATEN AGAIN afterwards, with nobody typing anything.
+   *
+   * The mid-beat part is what makes it a real restart rather than a tidy one. A
+   * broker killed inside a beat leaves a live seat whose agent host has not
+   * reconnected, so the registry answer is EMPTY AND WRONG for two minutes -- and
+   * the armed set is then the only thing keeping the run in the engine's sight
+   * (`epic-the-wall`, 2026-08-19: restart 16:12:13Z, last seat 16:23:33Z, then
+   * nothing, ever). A REAL SQLite kv, not a Map-backed fake, for the reason
+   * `epic-registry.test.ts` states at length: the NUL-joined key does not
+   * round-trip through `bun:sqlite`, so a fake would pass on a set that
+   * rehydrates nothing.
+   */
+  describe('a broker killed mid-beat resumes the run with no human input', () => {
+    function freshKv(): KVStore {
+      const db = new Database(':memory:', { strict: true })
+      db.run('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+      return createSqliteKVStore(db)
+    }
+
+    /** Everything a restart does: the process dies with its Map and its boot
+     *  clock, comes back, and is handed the same store. */
+    function restart(kv: KVStore, bootAt: number): void {
+      resetArmedEpics()
+      resetSweepGuard()
+      initArmedEpics(kv)
+      markEngineBoot(bootAt)
+    }
+
+    test('the run is beaten again after the quarantine, and NOT during it', async () => {
+      const kv = freshKv()
+      initArmedEpics(kv)
+      noteArmedEpic('claude://s/e1', 'e1')
+      // Mid-beat: a seat is live but its agent host has not reconnected, so the
+      // registry is empty. This is the exact window that stranded `epic-the-wall`.
+      convs = []
+
+      restart(kv, 0)
+
+      await sweepEpics(at(30_000))
+      expect(beats).toHaveLength(0)
+      expect(log.join('\n')).toContain('restart quarantine')
+
+      await sweepEpics(at(RESTART_QUARANTINE_MS + 1))
+      expect(beats).toEqual(['claude://s/e1'])
+    })
+
+    /** The other half of the same window: a human pressing BEAT NOW inside it is
+     *  REFUSED rather than honoured, because honouring it re-dispatches a seat for
+     *  every card that already has one. A duplicate fleet, on every deploy. */
+    test('and a forced beat inside the window is refused rather than dispatching a duplicate fleet', async () => {
+      const kv = freshKv()
+      initArmedEpics(kv)
+      noteArmedEpic('claude://s/e1', 'e1')
+      convs = []
+
+      restart(kv, 0)
+
+      const res = await beatOneEpic(at(30_000), 'claude://s/e1', 'e1')
+      expect(res.ok).toBe(false)
+      expect(beats).toHaveLength(0)
+    })
+
+    /** A run somebody PARKED before the restart stays parked. The armed set is
+     *  durable in both directions, or a deploy would silently resurrect every run
+     *  the engine had deliberately stopped. */
+    test('a run parked before the restart is not resurrected by it', async () => {
+      const kv = freshKv()
+      initArmedEpics(kv)
+      noteArmedEpic('claude://s/e1', 'e1')
+      forgetArmedEpic('claude://s/e1', 'e1')
+      convs = []
+
+      restart(kv, 0)
+
+      await sweepEpics(at(RESTART_QUARANTINE_MS + 1))
+      expect(beats).toHaveLength(0)
+    })
   })
 })
 
