@@ -248,7 +248,7 @@ function entry(over: Partial<EpicActivityEntry> = {}): EpicActivityEntry {
     gen: 9,
     maxGens: 12,
     inFlight: 3,
-    overseerAlive: true,
+    werkMasterAlive: true,
     armed: true,
     lastBeatAt: new Date(NOW - 30_000).toISOString(),
     stale: false,
@@ -288,7 +288,7 @@ describe('A7 -- says what the PANE knows and refuses to invent the rest', () => 
 
   test('never prints DAG buckets or a lease -- the pane never fetched them', () => {
     const text = runsReport([epicRun()], 6, LIVE, NOW)
-    expect(text).not.toMatch(/in flight|awaiting verdict|overseer:/)
+    expect(text).not.toMatch(/in flight|awaiting verdict|werk-master:/)
   })
 
   test('a nightshift run pastes its live worker count', () => {

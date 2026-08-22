@@ -63,9 +63,9 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: PROJECT,
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -176,7 +176,7 @@ beforeEach(() => {
           op: 'lease',
           ok: true,
           lease: leaseGranted
-            ? { granted: true, convId: 'conv_overseer', gen: (op.lease?.expectGen ?? 0) + 1, at: '' }
+            ? { granted: true, convId: 'conv_werk_master', gen: (op.lease?.expectGen ?? 0) + 1, at: '' }
             : { granted: false, convId: 'conv_other', gen: 9, at: '', reason: 'stale wake' },
         } as EpicResult
       }
@@ -255,7 +255,7 @@ describe('runEpicBeat', () => {
   test('a settled card is ACKNOWLEDGED into the baton before anything else', async () => {
     const out = await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(baton[0]).toMatchObject({ kind: 'completion', cardId: 't1', convId: 'broker' })
-    expect(out.spawned).toHaveLength(1) // and the overseer was woken for it
+    expect(out.spawned).toHaveLength(1) // and the werk-master was woken for it
   })
 
   test('the acknowledgement is machine-authored, never an agent narrative', async () => {
@@ -273,7 +273,7 @@ describe('runEpicBeat', () => {
   test('waking takes the lease with the CURRENT generation', async () => {
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(ops.some(o => o.op === 'lease')).toBe(true)
-    expect(spawns[0].epic).toMatchObject({ role: 'overseer', gen: 4 })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-master', gen: 4 })
   })
 
   /**
@@ -293,42 +293,42 @@ describe('runEpicBeat', () => {
   })
 
   /**
-   * `overseerAlive` says SOME overseer lives, which reads true in exactly the
-   * case the CAS exists to refuse -- a second overseer already running beside a
+   * `werkMasterAlive` says SOME werk-master lives, which reads true in exactly the
+   * case the CAS exists to refuse -- a second werk-master already running beside a
    * stale holder. The CAS asks about THE HOLDER named on the board.
    *
    * NOTE ON REACH: `planBeat` holds the whole beat on the group-wide
-   * `overseerAlive` before the CAS is consulted, so today only the false case is
+   * `werkMasterAlive` before the CAS is consulted, so today only the false case is
    * reachable from here. That gate is the one that should become holder-specific
    * too; until it does, this pins the input so the CAS cannot silently go back
    * to answering the group-wide question.
    */
-  test('the CAS is told about THE HOLDER named on the board, not about any overseer', async () => {
+  test('the CAS is told about THE HOLDER named on the board, not about any werk-master', async () => {
     lease = { convId: 'conv_holder', gen: 4, at: '' }
-    await runEpicBeat(deps(), group({ settled: ['t1'], liveOverseers: ['conv_someone_else'] }))
+    await runEpicBeat(deps(), group({ settled: ['t1'], liveWerkMasters: ['conv_someone_else'] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
   })
 
   test('with no holder on the board it falls back to the conservative group-wide answer', async () => {
-    await runEpicBeat(deps(), group({ settled: ['t1'], overseerAlive: false, liveOverseers: [] }))
+    await runEpicBeat(deps(), group({ settled: ['t1'], werkMasterAlive: false, liveWerkMasters: [] }))
     expect(ops.find(o => o.op === 'lease')?.lease?.holderAlive).toBe(false)
   })
 
   /**
    * THE FROZEN RUN, END TO END.
    *
-   * An overseer whose agent host died without recording an end sits at `idle`
-   * forever, holds `overseerAlive`, and `guardBeat` writes `overseer alive at gen
+   * A werk-master whose agent host died without recording an end sits at `idle`
+   * forever, holds `werkMasterAlive`, and `guardBeat` writes `werk-master alive at gen
    * N; holding the beat` every 45 seconds for the life of the broker. The fold
    * reaps it (`epic-sweep.ts`); these are the consequences that reap must have.
    *
    * The group here is what `groupEpicConversations` produces AFTER a reap: the
-   * live lanes are empty and the corpse is named in `abandonedOverseers`. That
+   * live lanes are empty and the corpse is named in `abandonedWerkMasters`. That
    * split is the fix -- see `epic-sweep.test.ts` for the fold that makes it.
    */
-  describe('a reaped overseer is replaced, and the baton says which kind of generation this is', () => {
+  describe('a reaped werk-master is replaced, and the baton says which kind of generation this is', () => {
     const DEAD = {
-      convId: 'conv_dead_overseer',
+      convId: 'conv_dead_werk_master',
       gen: 3,
       lastActivity: NOW_0 - 20 * 60_000,
       silentForMs: 20 * 60_000,
@@ -340,9 +340,9 @@ describe('runEpicBeat', () => {
       lease = { ...held, at: '' }
     }
 
-    const reaped = () => group({ abandonedOverseers: [DEAD], overseerAlive: false, liveOverseers: [] })
+    const reaped = () => group({ abandonedWerkMasters: [DEAD], werkMasterAlive: false, liveWerkMasters: [] })
 
-    test('the beat WAKES rather than logging another `overseer alive` line', async () => {
+    test('the beat WAKES rather than logging another `werk-master alive` line', async () => {
       holdingTheLease()
       const out = await runEpicBeat(deps(), reaped())
       expect(out.spawned).toHaveLength(1)
@@ -351,7 +351,7 @@ describe('runEpicBeat', () => {
 
     /**
      * THE HALF THE CARD WAS FILED FOR. Unfreezing `guardBeat` without reaping
-     * `liveOverseers` in the same pass would hand the CAS `holderAlive: true` for
+     * `liveWerkMasters` in the same pass would hand the CAS `holderAlive: true` for
      * the corpse -- and `evaluateLease` refuses a wake whose holder is alive, so
      * the run would be frozen by a second mechanism instead of the first.
      */
@@ -375,28 +375,28 @@ describe('runEpicBeat', () => {
       expect(decision.grant).toBe(true)
     })
 
-    test('the generation is woken as `overseer-lost`, not as a settle or a fresh start', async () => {
+    test('the generation is woken as `werk-master-lost`, not as a settle or a fresh start', async () => {
       holdingTheLease()
       let prompt = ''
       configureEpicIo({
         dispatchSpawn: (async (req: { prompt: string }) => {
           prompt = req.prompt
-          return { ok: true, conversationId: 'conv_new_overseer', jobId: 'j' }
+          return { ok: true, conversationId: 'conv_new_werk_master', jobId: 'j' }
         }) as never,
       })
       await runEpicBeat(deps(), reaped())
-      expect(prompt).toContain('Woken by: overseer-lost')
+      expect(prompt).toContain('Woken by: werk-master-lost')
     })
 
     /**
      * THE BATON, NOT ONLY THE BROKER LOG. The baton is the only thing a fresh
-     * overseer reads about the past, so without an entry here generation N+1 is
+     * werk-master reads about the past, so without an entry here generation N+1 is
      * indistinguishable from one that followed a finished turn.
      */
     test('the reap reaches the baton with its evidence', async () => {
       holdingTheLease()
       await runEpicBeat(deps(), reaped())
-      const entry = baton.find(e => e.kind === 'overseer-lost')
+      const entry = baton.find(e => e.kind === 'werk-master-lost')
       expect(entry).toMatchObject({ convId: DEAD.convId })
       expect(entry?.body).toContain('generation 3')
       expect(entry?.body).toContain('`idle`')
@@ -407,40 +407,40 @@ describe('runEpicBeat', () => {
       holdingTheLease()
       await runEpicBeat(deps(), reaped())
       await runEpicBeat(deps(), reaped())
-      expect(baton.filter(e => e.kind === 'overseer-lost')).toHaveLength(1)
+      expect(baton.filter(e => e.kind === 'werk-master-lost')).toHaveLength(1)
     })
 
-    /** `overseer-lost` is a fact about a SEAT. Folding it into the acknowledged
+    /** `werk-master-lost` is a fact about a SEAT. Folding it into the acknowledged
      *  set would settle a card nobody has settled. */
     test('and it acknowledges nothing -- no cardId, and outside ACKNOWLEDGING_KINDS', async () => {
       holdingTheLease()
       await runEpicBeat(deps(), reaped())
-      expect(baton.find(e => e.kind === 'overseer-lost')?.cardId).toBeUndefined()
+      expect(baton.find(e => e.kind === 'werk-master-lost')?.cardId).toBeUndefined()
       expect(acknowledgedCardIds(baton)).toEqual([])
     })
 
-    test('every reaped overseer reaches the broker log, holder or not', async () => {
+    test('every reaped werk-master reaches the broker log, holder or not', async () => {
       holdingTheLease({ convId: 'conv_someone_current', gen: 3 })
       await runEpicBeat(deps(), reaped())
       expect(log.join('\n')).toContain('REAPED')
     })
 
     /**
-     * An ex-overseer from two generations ago is dead and stays dead in the
+     * An ex-werk-master from two generations ago is dead and stays dead in the
      * registry. It is not the reason THIS beat is stuck, and waking for it would
      * bill a generation every 45 seconds for the life of the broker.
      */
     test('a corpse that does NOT hold the lease writes no baton entry and wakes nobody for it', async () => {
       holdingTheLease({ convId: 'conv_live_holder', gen: 3 })
       await runEpicBeat(deps(), reaped())
-      expect(baton.filter(e => e.kind === 'overseer-lost')).toHaveLength(0)
+      expect(baton.filter(e => e.kind === 'werk-master-lost')).toHaveLength(0)
     })
 
     test('with no reap at all the beat is exactly what it always was', async () => {
       holdingTheLease()
-      const out = await runEpicBeat(deps(), group({ overseerAlive: true }))
+      const out = await runEpicBeat(deps(), group({ werkMasterAlive: true }))
       expect(out.spawned).toHaveLength(0)
-      expect(out.note).toContain('overseer alive')
+      expect(out.note).toContain('werk-master alive')
       expect(baton).toHaveLength(0)
     })
   })
@@ -553,11 +553,11 @@ describe('runEpicBeat', () => {
     expect(log.join('\n')).not.toContain('FAILED')
   })
 
-  test('ready cards dispatch implementers, each recorded in the baton', async () => {
+  test('ready cards dispatch werk-workers, each recorded in the baton', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
     const out = await runEpicBeat(deps(), group())
     expect(out.spawned).toHaveLength(1)
-    expect(spawns[0].epic).toMatchObject({ role: 'implementer', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-worker', cardId: 't1' })
     expect(baton.some(e => e.kind === 'dispatch' && e.cardId === 't1')).toBe(true)
   })
 
@@ -567,7 +567,7 @@ describe('runEpicBeat', () => {
    * appear in `EpicGroup.inFlight` on beat N+1, because the group is folded from
    * the conversation registry and a spawned conversation carries no epic tag
    * until its agent host connects. Live 2026-08-21 that sent a second
-   * implementer into the SAME worktree as a live one -- one working directory,
+   * werk-worker into the SAME worktree as a live one -- one working directory,
    * two writers, and whichever committed last buried the other's half.
    */
   test('a card whose seat was just dispatched is NOT dispatched again while the registry is behind', async () => {
@@ -578,7 +578,7 @@ describe('runEpicBeat', () => {
         kind: 'dispatch',
         convId: 'conv_just_spawned',
         cardId: 't1',
-        body: 'Implementer dispatched for `t1` at generation 3.',
+        body: 'WerkWorker dispatched for `t1` at generation 3.',
       },
     ]
     // The registry has NOT caught up: `conv_just_spawned` is in no lane at all.
@@ -586,7 +586,7 @@ describe('runEpicBeat', () => {
     expect(spawns).toHaveLength(0)
   })
 
-  test('and the SAME hold protects the verifier lane, which is how the pair on 2026-08-21 happened', async () => {
+  test('and the SAME hold protects the werk-verifier lane, which is how the pair on 2026-08-21 happened', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     baton = [
       {
@@ -594,7 +594,7 @@ describe('runEpicBeat', () => {
         kind: 'dispatch',
         convId: 'conv_verifier_arriving',
         cardId: 't1',
-        body: 'Verifier dispatched for `t1` at generation 3.',
+        body: 'WerkVerifier dispatched for `t1` at generation 3.',
       },
     ]
     await runEpicBeat(deps(), group())
@@ -609,12 +609,12 @@ describe('runEpicBeat', () => {
         kind: 'dispatch',
         convId: 'conv_dead_leg',
         cardId: 't1',
-        body: 'Verifier dispatched for `t1` at generation 2.',
+        body: 'WerkVerifier dispatched for `t1` at generation 2.',
       },
     ]
     // Seconds old, but the registry HAS it -- so its silence is a real answer.
     await runEpicBeat(deps(), group({ convIds: ['conv_dead_leg'] }))
-    expect(spawns[0].epic).toMatchObject({ role: 'verifier', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-verifier', cardId: 't1' })
   })
 
   test('a launch that never attaches stops holding its card once the grace is spent', async () => {
@@ -625,11 +625,11 @@ describe('runEpicBeat', () => {
         kind: 'dispatch',
         convId: 'conv_never_landed',
         cardId: 't1',
-        body: 'Implementer dispatched for `t1` at generation 1.',
+        body: 'WerkWorker dispatched for `t1` at generation 1.',
       },
     ]
     await runEpicBeat(deps(), group())
-    expect(spawns[0].epic).toMatchObject({ role: 'implementer', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-worker', cardId: 't1' })
   })
 
   test('a card whose dependency is unfinished is NOT dispatched', async () => {
@@ -642,10 +642,10 @@ describe('runEpicBeat', () => {
     expect(spawns.map(s => s.epic.cardId)).toEqual(['t1'])
   })
 
-  test('an in-review card gets a VERIFIER, not another implementer', async () => {
+  test('an in-review card gets a WERK-VERIFIER, not another werk-worker', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     await runEpicBeat(deps(), group())
-    expect(spawns[0].epic).toMatchObject({ role: 'verifier', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-verifier', cardId: 't1' })
   })
 
   test('a spawn failure is logged and does not abort the remaining actions', async () => {
@@ -686,9 +686,9 @@ describe('runEpicBeat', () => {
     expect(baton.some(e => e.kind === 'checkpoint' && e.body.includes('PARKED'))).toBe(true)
   })
 
-  test('a live overseer holds the beat -- nothing spawns underneath it', async () => {
+  test('a live werk-master holds the beat -- nothing spawns underneath it', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
-    const out = await runEpicBeat(deps(), group({ overseerAlive: true }))
+    const out = await runEpicBeat(deps(), group({ werkMasterAlive: true }))
     expect(out.spawned).toHaveLength(0)
     expect(ops.some(o => o.op === 'lease')).toBe(false)
   })
@@ -702,7 +702,7 @@ describe('runEpicBeat', () => {
     ]
     const d = { ...deps(), windowOpen: async () => false } as BeatDeps
     await runEpicBeat(d, group())
-    expect(spawns.map(s => s.epic.role)).toEqual(['verifier'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-verifier'])
   })
 
   test('every beat logs one summary line naming the epic and generation', async () => {
@@ -716,7 +716,7 @@ describe('runEpicBeat', () => {
  *
  * `planBeat` decides that a run is over budget; these are the tests that it
  * actually STOPS -- the bar `b766b75e` set after `dryGens` was read every beat,
- * reported in the overseer's briefing, promised by a comment, and never once
+ * reported in the werk-master's briefing, promised by a comment, and never once
  * written. A field that exists is not a brake.
  */
 describe('the run caps stop the run', () => {
@@ -755,8 +755,8 @@ describe('the run caps stop the run', () => {
   })
 
   test('the spend is folded over EVERY conversation the epic has had, not just the live ones', async () => {
-    await runEpicBeat(deps(), group({ convIds: ['conv_overseer', 'conv_dead', 'conv_live'] }))
-    expect(spendAskedFor).toEqual(['conv_overseer', 'conv_dead', 'conv_live'])
+    await runEpicBeat(deps(), group({ convIds: ['conv_werk_master', 'conv_dead', 'conv_live'] }))
+    expect(spendAskedFor).toEqual(['conv_werk_master', 'conv_dead', 'conv_live'])
   })
 
   /**
@@ -846,7 +846,7 @@ describe('runEpicBeat against the real sentinel seam', () => {
       'utf8',
     )
 
-    // A run mid-flight: planning done, no overseer holding it.
+    // A run mid-flight: planning done, no werk-master holding it.
     handleEpicOp(
       root,
       { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'start', epicId: 'e1', start: { plan: false } },
@@ -891,9 +891,9 @@ describe('runEpicBeat against the real sentinel seam', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  test('25 acknowledged settles do NOT re-wake the overseer -- the card gets its VERIFIER', async () => {
+  test('25 acknowledged settles do NOT re-wake the werk-master -- the card gets its WERK-VERIFIER', async () => {
     const out = await runEpicBeat(deps(), group({ settled: SETTLED }))
-    expect(spawns.map(s => s.epic.role)).toEqual(['verifier'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-verifier'])
     expect(spawns[0].epic).toMatchObject({ cardId: 't1' })
     expect(out.note).toContain('verifying 1')
   })
@@ -904,10 +904,10 @@ describe('runEpicBeat against the real sentinel seam', () => {
     expect(completions).toHaveLength(SETTLED.length)
   })
 
-  test('a genuinely new settle still wakes the overseer', async () => {
+  test('a genuinely new settle still wakes the werk-master', async () => {
     const out = await runEpicBeat(deps(), group({ settled: [...SETTLED, 'brand-new'] }))
     expect(out.note).toContain('1 unacknowledged settle(s): brand-new')
-    expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-master'])
   })
 })
 
@@ -921,7 +921,7 @@ describe('runEpicBeat against the real sentinel seam', () => {
  * computes.
  *
  * The board is the one generation 4 of `epic-scanner-fabric` woke to: a card the
- * verifier bounced back to `in-progress`, its seat dead, a free concurrency slot,
+ * werk-verifier bounced back to `in-progress`, its seat dead, a free concurrency slot,
  * and -- before this -- nothing that would ever pick it up again.
  */
 describe('a bounced card, against the real sentinel seam', () => {
@@ -946,7 +946,7 @@ describe('a bounced card, against the real sentinel seam', () => {
       const convId = `conv_${cardId}_${i}`
       convIds.push(convId)
       sentinel('log_append', {
-        logAppend: { kind: 'dispatch', convId, cardId, body: `Implementer dispatched.` },
+        logAppend: { kind: 'dispatch', convId, cardId, body: `WerkWorker dispatched.` },
       })
     }
     return convIds
@@ -973,8 +973,8 @@ describe('a bounced card, against the real sentinel seam', () => {
       { type: 'epic_op', requestId: 'r', projectRoot: root, op: 'patch', epicId: 'e1', patch: { status: 'running' } },
       NOW,
     )
-    // The bounce, as the engine actually leaves it: the implementer settled and
-    // was acknowledged, then the verifier sent the card back to `in-progress`.
+    // The bounce, as the engine actually leaves it: the werk-worker settled and
+    // was acknowledged, then the werk-verifier sent the card back to `in-progress`.
     sentinel('log_append', { logAppend: { kind: 'completion', convId: 'broker', cardId: 't1', body: 'settled' } })
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-progress', { epic: 'e1' })]
 
@@ -987,17 +987,17 @@ describe('a bounced card, against the real sentinel seam', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  test('gets a fresh IMPLEMENTER -- the generation this project lost to it', async () => {
+  test('gets a fresh WERK-WORKER -- the generation this project lost to it', async () => {
     const spent = recordDispatch('t1', 2)
     const out = await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
-    expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-worker'])
     expect(spawns[0].epic).toMatchObject({ cardId: 't1' })
     expect(out.note).toContain('dispatching 1')
   })
 
   test('is not woken about again -- its settle was acknowledged generations ago', async () => {
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
-    expect(spawns.some(s => s.epic.role === 'overseer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-master')).toBe(false)
   })
 
   test('with a live seat on it, nothing goes out', async () => {
@@ -1011,7 +1011,7 @@ describe('a bounced card, against the real sentinel seam', () => {
   test('stops at the seat ceiling rather than billing a seat every 45s', async () => {
     const spent = recordDispatch('t1', MAX_CARD_SEATS)
     await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
-    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-worker')).toBe(false)
   })
 
   test('and says so in the beat note, naming the card', async () => {
@@ -1027,22 +1027,22 @@ describe('a bounced card, against the real sentinel seam', () => {
   test('the seat it spends is counted immediately, without waiting for the conversation', async () => {
     const spent = recordDispatch('t1', MAX_CARD_SEATS - 1)
     await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
-    expect(spawns.map(s => s.epic.role)).toEqual(['implementer'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-worker'])
     // Second beat, same board, same dead seat -- and the registry still knows
     // nothing about the conversation the first beat spawned. The ceiling closes
     // anyway, because the seat went into the LOG the moment it was spent. What
-    // comes out instead is the overseer, woken once on a dry generation, which is
+    // comes out instead is the werk-master, woken once on a dry generation, which is
     // the visible-and-stopped shape `unspawnable` already has.
     spawns = []
     await runEpicBeat(deps(), group({ settled: ['t1'], convIds: spent }))
-    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-worker')).toBe(false)
   })
 })
 
 /**
  * THE OPEN LANE'S RUNAWAY, end to end.
  *
- * An implementer that ran, produced output and died without moving its own card
+ * A werk-worker that ran, produced output and died without moving its own card
  * leaves that card in `open`. The card is therefore still `notStarted`, its
  * conversation is dead so it is not `inFlight`, and it produced output so it is
  * `settled` rather than `unspawnable` -- which means `MAX_LAUNCH_ATTEMPTS` does
@@ -1084,10 +1084,10 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
     // The seat that went out, and the settle the beat already acknowledged -- so
     // what these tests observe is the DISPATCH decision and not a pending wake.
     sentinel('log_append', {
-      logAppend: { kind: 'dispatch', convId: 'conv_t1_0', cardId: 't1', body: 'Implementer dispatched.' },
+      logAppend: { kind: 'dispatch', convId: 'conv_t1_0', cardId: 't1', body: 'WerkWorker dispatched.' },
     })
     sentinel('log_append', { logAppend: { kind: 'completion', convId: 'broker', cardId: 't1', body: 'settled' } })
-    // The card the implementer never moved.
+    // The card the werk-worker never moved.
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
 
     configureEpicIo({
@@ -1099,9 +1099,9 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
 
   afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-  test('gets NO second implementer -- one settled seat is the bound, not six', async () => {
+  test('gets NO second werk-worker -- one settled seat is the bound, not six', async () => {
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
-    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-worker')).toBe(false)
   })
 
   test('and is NAMED in the beat note, with the moves that re-authorise it', async () => {
@@ -1114,7 +1114,7 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
   test('a card with no prior seat is still dispatched normally', async () => {
     cards = [...cards, card('t2', 'open', { epic: 'e1' })]
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
-    expect(spawns.filter(s => s.epic.role === 'implementer').map(s => s.epic.cardId)).toEqual(['t2'])
+    expect(spawns.filter(s => s.epic.role === 'werk-worker').map(s => s.epic.cardId)).toEqual(['t2'])
   })
 
   test('the run stops instead of billing forever: dry generation now, park on the next', async () => {
@@ -1131,23 +1131,23 @@ describe('an `open` card its seat already ran for, against the real sentinel sea
     )
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
     expect(statusPatch()).toMatchObject({ status: 'paused' })
-    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-worker')).toBe(false)
   })
 })
 
 /**
  * THE 2026-08-20 INCIDENT, end to end.
  *
- * A verifier for `t1` died at exit=1 in 1209ms without writing a transcript
+ * A werk-verifier for `t1` died at exit=1 in 1209ms without writing a transcript
  * entry. The sweep called that a settle; the beat wrote a `completion` and woke
  * a generation; the card sat at `in-review` with no verdict and no `## Guard
  * Findings`, and every sweep after did the same thing again.
  *
  * These pin the shape of the repair: the leg is recorded as a FAILED LAUNCH,
- * no overseer is woken for it, and the card gets a verifier that actually runs.
+ * no werk-master is woken for it, and the card gets a werk-verifier that actually runs.
  */
 describe('a leg that died without producing anything', () => {
-  const leg = { cardId: 't1', convId: 'conv_dead_verifier', role: 'verifier' as const, gen: 3 }
+  const leg = { cardId: 't1', convId: 'conv_dead_verifier', role: 'werk-verifier' as const, gen: 3 }
 
   test('is recorded in the baton as dispatch-failed, not as a completion', async () => {
     await runEpicBeat(deps(), group({ failedLegs: [leg] }))
@@ -1167,26 +1167,26 @@ describe('a leg that died without producing anything', () => {
 
   /**
    * The board is the same one the incident had: `t1` sitting at `in-review`
-   * with its verifier dead. Before the fix the leg settled, `unacknowledged`
+   * with its werk-verifier dead. Before the fix the leg settled, `unacknowledged`
    * was non-empty, and `guardBeat` returned a wake BEFORE `workBeat` ever got
    * to compute a verify action -- so the card was re-verified never and
    * re-considered forever.
    */
-  test('does NOT wake an overseer -- it re-verifies, which is the generation the bug used to burn', async () => {
+  test('does NOT wake a werk-master -- it re-verifies, which is the generation the bug used to burn', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     await runEpicBeat(deps(), group({ failedLegs: [leg] }))
-    expect(spawns.some(s => s.epic.role === 'overseer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-master')).toBe(false)
     expect(ops.some(o => o.op === 'lease')).toBe(false)
-    expect(spawns[0].epic).toMatchObject({ role: 'verifier', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-verifier', cardId: 't1' })
   })
 
   /** The same board, with the leg reported as a SETTLE instead: the old path,
    *  kept beside the new one so the difference is a diff and not a memory. */
-  test('a settle on the same board wakes the overseer and verifies nothing', async () => {
+  test('a settle on the same board wakes the werk-master and verifies nothing', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     await runEpicBeat(deps(), group({ settled: ['t1'] }))
-    expect(spawns[0].epic).toMatchObject({ role: 'overseer' })
-    expect(spawns.some(s => s.epic.role === 'verifier')).toBe(false)
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-master' })
+    expect(spawns.some(s => s.epic.role === 'werk-verifier')).toBe(false)
   })
 
   test('is written ONCE -- a baton that already names the conversation is left alone', async () => {
@@ -1203,12 +1203,12 @@ describe('a leg that died without producing anything', () => {
 
   test('is logged, naming card, role and conversation', async () => {
     await runEpicBeat(deps(), group({ failedLegs: [leg] }))
-    expect(log.join('\n')).toContain('1 failed launch(es): t1/verifier@conv_dea')
+    expect(log.join('\n')).toContain('1 failed launch(es): t1/werk-verifier@conv_dea')
   })
 })
 
 /**
- * THE CAPS SENTENCE THE OVERSEER IS WOKEN WITH, against the REAL sentinel seam.
+ * THE CAPS SENTENCE THE WERK-MASTER IS WOKEN WITH, against the REAL sentinel seam.
  *
  * Observed live on `epic-project-runner`, every generation from 3 to 11: the
  * prompt's budget line and `run.md` disagreed about spend at the same instant,
@@ -1219,7 +1219,7 @@ describe('a leg that died without producing anything', () => {
  *
  * The cause was ORDER: `runEpicBeat` patched the ledger and then handed
  * `performActions` the run object it had DECIDED from -- the copy read before the
- * write. So an overseer told to "plan inside what is left" was handed one whole
+ * write. So a werk-master told to "plan inside what is left" was handed one whole
  * beat more money than it had, in the one direction that cannot be recovered
  * from, and a human raising a ceiling woke the very generation that could not see
  * the new one.
@@ -1230,7 +1230,7 @@ describe('a leg that died without producing anything', () => {
 describe('the budget sentence is rendered from the run this beat WROTE', () => {
   const NOW = Date.parse('2026-08-21T15:12:38.257Z')
   let root = ''
-  /** The overseer prompt that actually went out. */
+  /** The werk-master prompt that actually went out. */
   let prompt = ''
 
   const sentinel = (op: 'get' | 'start' | 'patch' | 'log_append' | 'release', extra: Record<string, unknown> = {}) =>
@@ -1265,7 +1265,7 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
             requestId: 'r',
             op: 'lease',
             ok: true,
-            lease: { granted: true, convId: 'conv_overseer', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
+            lease: { granted: true, convId: 'conv_werk_master', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
           } as EpicResult
         }
         return sentinel(op.op as 'patch', { ...(op.patch ? { patch: op.patch } : {}) }) as EpicResult
@@ -1273,7 +1273,7 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
       dispatchSpawn: (async (req: { name: string; prompt: string; epic: Record<string, unknown> }) => {
         spawns.push({ name: req.name, epic: req.epic })
         prompt = req.prompt
-        return { ok: true, conversationId: 'conv_overseer', jobId: 'j' }
+        return { ok: true, conversationId: 'conv_werk_master', jobId: 'j' }
       }) as never,
     })
   })
@@ -1283,14 +1283,14 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
   test('the SPEND is the figure this beat banked, not the one it decided from', async () => {
     spendUsd = 110.954458
     await runEpicBeat(deps(), group({ settled: ['t1'], convIds: ['conv_worker'] }))
-    expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-master'])
     expect(prompt).toContain('spend $110.95/$500.00 ($389.05 left)')
     // The pre-patch figure, which is what every generation of the live run read.
     expect(prompt).not.toContain('$500.00 left')
   })
 
-  /** The same beat, asked the other way: an overseer that reads the sentence and
-   *  an overseer that opens `run.md` get the SAME number. That is the property
+  /** The same beat, asked the other way: a werk-master that reads the sentence and
+   *  a werk-master that opens `run.md` get the SAME number. That is the property
    *  every generation since gen 3 has had to work around by hand. */
   test('and it agrees with what `run.md` says at the instant the prompt goes out', async () => {
     spendUsd = 110.954458
@@ -1350,7 +1350,7 @@ describe('the budget sentence is rendered from the run this beat WROTE', () => {
  *
  * Generation 3 renamed `epic-verifier-spawn-failed-claude-launch` to
  * `epic-verifier-spawn-64char` at 02:46; at 03:15 the beat dispatched a SECOND
- * implementer onto it while the first was still writing to
+ * werk-worker onto it while the first was still writing to
  * `src/broker/epic-sweep.ts`. The launch tag stamps the card id at spawn time
  * and never revisits it, so the live conversation went on answering to a key
  * nothing asked about any more -- and a card with a live worker became
@@ -1365,27 +1365,27 @@ describe('a card renamed under a live seat', () => {
   const epic = () => card('e1', 'open', { tags: ['epic'] })
   const renamed = (status: TaskStatus) => card(NEW, status, { epic: 'e1', renamedFrom: [OLD] })
 
-  test('is STILL in flight -- no second implementer is sent onto work already being done', async () => {
+  test('is STILL in flight -- no second werk-worker is sent onto work already being done', async () => {
     cards = [epic(), renamed('open')]
     const out = await runEpicBeat(deps(), group({ inFlight: [OLD] }))
     expect(spawns).toHaveLength(0)
     expect(out.note).toContain('1 still in flight')
   })
 
-  test('in `in-review`, does not collect a SECOND verifier -- the same key, the same defect', async () => {
+  test('in `in-review`, does not collect a SECOND werk-verifier -- the same key, the same defect', async () => {
     cards = [epic(), renamed('in-review')]
     await runEpicBeat(deps(), group({ inFlight: [OLD], inVerify: [OLD] }))
-    expect(spawns.some(s => s.epic.role === 'verifier')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-verifier')).toBe(false)
   })
 
   /** A rename must not resurrect a settle either: the ack was written under the
    *  old id, and re-asking under the new one would wake a generation per sweep. */
-  test('a settle already acknowledged under the OLD id does not re-wake the overseer', async () => {
+  test('a settle already acknowledged under the OLD id does not re-wake the werk-master', async () => {
     baton = [{ ts: '', kind: 'completion', convId: 'broker', cardId: OLD, body: 'seen' }]
     cards = [epic(), renamed('done')]
     await runEpicBeat(deps(), group({ settled: [OLD] }))
     expect(baton.filter(e => e.kind === 'completion')).toHaveLength(1)
-    expect(spawns.some(s => s.epic.role === 'overseer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-master')).toBe(false)
   })
 
   /** An unacknowledged one still settles -- under the id the board actually has,
@@ -1414,7 +1414,7 @@ describe('a card renamed under a live seat', () => {
   test('a board with no renames at all behaves exactly as before', async () => {
     cards = [epic(), card('t1', 'open', { epic: 'e1' })]
     await runEpicBeat(deps(), group())
-    expect(spawns[0].epic).toMatchObject({ role: 'implementer', cardId: 't1' })
+    expect(spawns[0].epic).toMatchObject({ role: 'werk-worker', cardId: 't1' })
   })
 })
 
@@ -1423,19 +1423,24 @@ describe('a card renamed under a live seat', () => {
  * stopped the false settle would have spent them a beat apart instead.
  */
 describe('a card the engine has given up on', () => {
-  const legs = ['a', 'b', 'c'].map(s => ({ cardId: 't1', convId: `conv_dead_${s}`, role: 'verifier' as const, gen: 3 }))
+  const legs = ['a', 'b', 'c'].map(s => ({
+    cardId: 't1',
+    convId: `conv_dead_${s}`,
+    role: 'werk-verifier' as const,
+    gen: 3,
+  }))
   const gave_up = () => group({ failedLegs: legs, unspawnable: ['t1'] })
 
-  test('gets NO further verifier, however long it sits in in-review', async () => {
+  test('gets NO further werk-verifier, however long it sits in in-review', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'in-review', { epic: 'e1' })]
     await runEpicBeat(deps(), gave_up())
-    expect(spawns.some(s => s.epic.role === 'verifier')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-verifier')).toBe(false)
   })
 
-  test('gets NO further implementer either -- the launch is what fails, not the role', async () => {
+  test('gets NO further werk-worker either -- the launch is what fails, not the role', async () => {
     cards = [card('e1', 'open', { tags: ['epic'] }), card('t1', 'open', { epic: 'e1' })]
     await runEpicBeat(deps(), gave_up())
-    expect(spawns.some(s => s.epic.role === 'implementer')).toBe(false)
+    expect(spawns.some(s => s.epic.role === 'werk-worker')).toBe(false)
   })
 
   test('becomes VISIBLE: the baton entry that trips the bound says the engine has stopped', async () => {
@@ -1528,7 +1533,7 @@ describe('the beat writes `closes:` for a card it settled', () => {
     expect(entry).toMatchObject({ convId: 'broker', cardId: 't1' })
     expect(entry?.body).toContain(SHA.slice(0, 12))
     // `acknowledgedCardIds` folds `completion` and `verdict` only -- a record
-    // must never stand in for the settle the overseer is woken for.
+    // must never stand in for the settle the werk-master is woken for.
     expect(acknowledgedCardIds(baton)).toEqual(['t1'])
     expect(baton.filter(e => e.kind === 'completion')).toHaveLength(1)
   })
@@ -1547,7 +1552,7 @@ describe('the beat writes `closes:` for a card it settled', () => {
    * INVERTED, and deliberately kept in that shape. This asserted that a settled
    * card awaiting its verdict was left alone, because the verdict's board write
    * flattened the promise block. That is fixed on main (`2ba978d0`), so the card
-   * gets its `closes:` the beat its implementer ends -- the acknowledgement
+   * gets its `closes:` the beat its werk-worker ends -- the acknowledgement
    * moment the card specified all along.
    */
   test('a settled card still awaiting its verdict IS written, at acknowledgement', async () => {
@@ -1569,8 +1574,8 @@ describe('the beat writes `closes:` for a card it settled', () => {
 
     expect(out.error).toBeUndefined()
     expect(baton.find(e => e.kind === 'record')?.body).toContain('no work was blocked')
-    // The settle still reached the overseer: bookkeeping never costs a wake.
-    expect(spawns.map(s => s.epic.role)).toEqual(['overseer'])
+    // The settle still reached the werk-master: bookkeeping never costs a wake.
+    expect(spawns.map(s => s.epic.role)).toEqual(['werk-master'])
   })
 
   /**
@@ -1579,7 +1584,7 @@ describe('the beat writes `closes:` for a card it settled', () => {
    *
    * The race, which is not hypothetical: `planEpic` completes a run off card
    * LANES alone and does not wait for the conversations behind them. So on the
-   * beat where the last child first reads `done` while its verifier is still
+   * beat where the last child first reads `done` while its werk-verifier is still
    * alive, the card is NOT settled -- the per-beat pass skips it -- and the same
    * beat then flips the run to `complete`. Every later beat returns at
    * `isInertRun` before a card is read. There is no next beat, and the card's
@@ -1605,17 +1610,17 @@ describe('the beat writes `closes:` for a card it settled', () => {
               requestId: 'r',
               op: 'lease',
               ok: true,
-              lease: { granted: true, convId: 'conv_overseer', gen: 4, at: '' },
+              lease: { granted: true, convId: 'conv_werk_master', gen: 4, at: '' },
             } as EpicResult
           }
           return { type: 'epic_result', requestId: 'r', op: op.op, ok: true } as EpicResult
         },
       })
 
-    test('a card that is `done` while its verifier is still alive still gets its `closes:`', async () => {
+    test('a card that is `done` while its werk-verifier is still alive still gets its `closes:`', async () => {
       withLiveRunStatus()
 
-      // The card reads `done`, but its verifier has not exited, so it is in
+      // The card reads `done`, but its werk-verifier has not exited, so it is in
       // NOBODY's settled list. This beat is the last one that will ever run.
       await runEpicBeat(deps(), group({ settled: [], inFlight: ['t1'], inVerify: ['t1'] }))
 
@@ -1674,7 +1679,7 @@ describe('the beat writes `closes:` for a card it settled', () => {
       const legs = ['a', 'b', 'c'].map(s => ({
         cardId: 't2',
         convId: `conv_dead_${s}`,
-        role: 'verifier' as const,
+        role: 'werk-verifier' as const,
         gen: 3,
       }))
       await runEpicBeat(deps(), group({ failedLegs: legs, unspawnable: ['t2'] }))

@@ -1,5 +1,5 @@
 /**
- * THE OVERSEER WINDOW.
+ * THE WERK-MASTER WINDOW.
  *
  * A managed surface (detachable-surfaces covenant), so inline / docked /
  * detached and the whole window chrome come for free -- and detaching this one
@@ -9,12 +9,12 @@
 import { Radar } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useManagedModal } from '@/hooks/use-modal-manager'
-import { isLiveRun, selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { isLiveRun, selectAllRuns, useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 import { ModalSurface } from '../modal-surface'
-import { OverseerDetail } from './overseer-detail'
-import { OverseerRail } from './overseer-rail'
-import { OVERSEER_MODAL, runKey, useOverseerSelection } from './overseer-state'
-import { useOverseerInspect } from './use-overseer-inspect'
+import { useWerkMasterInspect } from './use-werk-master-inspect'
+import { WerkMasterDetail } from './werk-master-detail'
+import { WerkMasterRail } from './werk-master-rail'
+import { runKey, useWerkMasterSelection, WERK_MASTER_MODAL } from './werk-master-state'
 
 /** Re-render the relative timestamps on a slow tick. Every "12s ago" in the
  *  window would otherwise freeze at whatever it said when the data last landed,
@@ -36,10 +36,10 @@ function useNow(): number {
 // wiring, and a harness built to satisfy a metric rather than to catch a bug is
 // worse than the number it removes.
 // fallow-ignore-next-line complexity
-function OverseerBody() {
-  const runs = useOverseerActivityStore(selectAllRuns)
-  const selected = useOverseerSelection(s => s.selected)
-  const select = useOverseerSelection(s => s.select)
+function WerkMasterBody() {
+  const runs = useWerkMasterActivityStore(selectAllRuns)
+  const selected = useWerkMasterSelection(s => s.selected)
+  const select = useWerkMasterSelection(s => s.select)
   const nowMs = useNow()
 
   // Nothing chosen: fall to the first LIVE run, or the first run at all. Opening
@@ -53,15 +53,15 @@ function OverseerBody() {
   }, [selected, runs, select])
 
   const current = runs.find(r => runKey(r.project, r.epicId) === selected) ?? null
-  const { data, error, loading, refresh, fetchedAt, stale } = useOverseerInspect(
+  const { data, error, loading, refresh, fetchedAt, stale } = useWerkMasterInspect(
     current?.project ?? null,
     current?.epicId ?? null,
   )
 
   return (
     <div className="flex flex-1 min-h-0">
-      <OverseerRail />
-      <OverseerDetail
+      <WerkMasterRail />
+      <WerkMasterDetail
         data={data}
         error={error}
         loading={loading}
@@ -75,7 +75,7 @@ function OverseerBody() {
 }
 
 function Subtitle() {
-  const runs = useOverseerActivityStore(selectAllRuns)
+  const runs = useWerkMasterActivityStore(selectAllRuns)
   const live = runs.filter(isLiveRun)
   const seats = live.reduce((n, r) => n + r.inFlight, 0)
   return (
@@ -85,19 +85,19 @@ function Subtitle() {
   )
 }
 
-export function OverseerModal() {
-  const modal = useManagedModal(OVERSEER_MODAL)
+export function WerkMasterModal() {
+  const modal = useManagedModal(WERK_MASTER_MODAL)
   if (modal.presentation === 'closed') return null
 
   return (
     <ModalSurface
       modal={modal}
-      title="Overseer"
+      title="WerkMaster"
       icon={<Radar className="size-4 text-[color:var(--epic-badge)]" />}
       headerExtra={<Subtitle />}
       className="max-w-6xl w-[95vw] top-[5vh] translate-y-0 h-[86vh]"
     >
-      <OverseerBody />
+      <WerkMasterBody />
     </ModalSurface>
   )
 }

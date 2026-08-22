@@ -63,9 +63,9 @@ const WORK_ORDER_SKIPS = [
   { bucket: 'already-run', why: 'a seat already ran for it -- move it or drop the tag to re-authorise' },
   { bucket: 'held-back', why: 'the work-order concurrency ceiling is full this pass' },
   { bucket: 'waiting-on-deps', why: 'a card it depends on is not done' },
-  { bucket: 'needs-overseer', why: 'it is a question for the overseer, not a unit of work' },
+  { bucket: 'needs-werk-master', why: 'it is a question for the werk-master, not a unit of work' },
   { bucket: 'unspawnable', why: 'its seats keep dying before producing anything; not retried' },
-  { bucket: 'awaiting-verdict', why: 'it is in review -- this scanner dispatches implementers only' },
+  { bucket: 'awaiting-verdict', why: 'it is in review -- this scanner dispatches werk-workers only' },
   { bucket: 'not-actionable', why: 'it is tagged but sitting in a lane the readiness fold has no opinion about' },
   { bucket: DISPATCH_FAILED_BUCKET, why: 'the spawn itself was refused' },
 ] as const

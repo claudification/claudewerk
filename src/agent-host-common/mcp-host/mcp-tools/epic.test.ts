@@ -75,10 +75,10 @@ describe('toBody', () => {
   })
 
   test('break_lease carries force and reason -- the audit half is not optional', () => {
-    expect(toBody({ ...base, action: 'break_lease', force: true, reason: 'overseer died mid-turn' })).toMatchObject({
+    expect(toBody({ ...base, action: 'break_lease', force: true, reason: 'werk-master died mid-turn' })).toMatchObject({
       op: 'break_lease',
       force: true,
-      reason: 'overseer died mid-turn',
+      reason: 'werk-master died mid-turn',
     })
   })
 

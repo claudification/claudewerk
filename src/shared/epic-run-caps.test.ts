@@ -102,7 +102,7 @@ describe('formatEpicRunCaps', () => {
    * "why is this not moving, and how long until it is" -- so it belongs on the
    * same line rather than in a fourth place a reader has to know to look. Every
    * text surface that prints the caps (the `epic_run` tool's header, the
-   * overseer's briefing) gets it from here, so none of them can disagree with the
+   * werk-master's briefing) gets it from here, so none of them can disagree with the
    * beat that is holding the run.
    */
   test('carries the appointment a waiting run is held on, with its zone and a countdown', () => {

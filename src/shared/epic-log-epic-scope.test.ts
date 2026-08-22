@@ -70,7 +70,7 @@ describe('the readers that compare a card id stay card-scoped', () => {
   })
 
   /** THE WAKE-LOOP GUARD: a settle that reads as unacknowledged wakes the
-   *  overseer every beat, which is how epic-the-wall burned five generations. */
+   *  werk-master every beat, which is how epic-the-wall burned five generations. */
   test('acknowledgedCardIds still folds bare card ids, not composed tokens', () => {
     appendEpicLog(root, 'e1', { kind: 'completion', convId: 'broker', cardId: 't1', body: 'settled' }, T0)
     appendEpicLog(root, 'e1', { kind: 'verdict', convId: 'c1', cardId: 't2', body: 'APPROVED' }, T0 + 1000)

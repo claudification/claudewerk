@@ -132,7 +132,7 @@ export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): P
 
 export interface EpicRunView {
   run: EpicRunSnapshot | null
-  /** The PROMPT-SIZED tail. What a fresh overseer generation is handed, and the
+  /** The PROMPT-SIZED tail. What a fresh werk-master generation is handed, and the
    *  only thing it is for -- never ask it what has been acknowledged. */
   baton: EpicLogEntry[]
   /** Every card acknowledged anywhere in the log. The wake's standing question. */
@@ -140,7 +140,7 @@ export interface EpicRunView {
   /** cardId -> seats dispatched for it anywhere in the log. The ceiling on the
    *  redispatch path -- see `EpicResult.dispatchCounts` and `MAX_CARD_SEATS`. */
   dispatchCounts: Record<string, number>
-  /** Who holds the overseer seat, off the epic card. `null` = never run. */
+  /** Who holds the werk-master seat, off the epic card. `null` = never run. */
   lease: EpicLease | null
   error?: string
 }
@@ -181,7 +181,7 @@ const EMPTY_VIEW = (error: string): EpicRunView => ({
  * sentinel ship separately, so a new broker will meet an old sentinel that does
  * not send the field. Folding the tail then is the old behaviour -- wrong for
  * long runs, but it degrades to the bug we had rather than to "nothing has ever
- * been acknowledged", which would re-wake an overseer for every settled card in
+ * been acknowledged", which would re-wake a werk-master for every settled card in
  * the epic on every sweep.
  */
 export function toEpicRunView(res: EpicResult): EpicRunView {

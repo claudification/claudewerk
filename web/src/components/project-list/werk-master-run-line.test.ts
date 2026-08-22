@@ -4,8 +4,8 @@
 import type { RunVitality } from '@shared/epic-vitality'
 import type { EpicActivityEntry } from '@shared/protocol'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resetActivityCache, selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
-import { VITALITY_TONE } from './overseer-vitality-tone'
+import { resetActivityCache, selectAllRuns, useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
+import { VITALITY_TONE } from './werk-master-vitality-tone'
 
 const ALL_VITALITIES: RunVitality[] = ['working', 'idle', 'stalled', 'paused', 'done', 'aborted', 'unknown']
 
@@ -32,7 +32,7 @@ function entry(over: Partial<EpicActivityEntry>): EpicActivityEntry {
     gen: 11,
     maxGens: 40,
     inFlight: 3,
-    overseerAlive: true,
+    werkMasterAlive: true,
     armed: true,
     lastBeatAt: null,
     stale: false,
@@ -43,30 +43,30 @@ function entry(over: Partial<EpicActivityEntry>): EpicActivityEntry {
 describe('run lookup by epicId', () => {
   beforeEach(() => {
     resetActivityCache()
-    useOverseerActivityStore.setState({ byProject: {}, primed: false })
+    useWerkMasterActivityStore.setState({ byProject: {}, primed: false })
   })
 
   // The reason this matches on epicId rather than indexing by project: an
-  // overseer's own conversation can live in a WORKTREE URI, which is a different
+  // werk-master's own conversation can live in a WORKTREE URI, which is a different
   // project key to the one the broker filed the run under. Indexing by the
   // conversation's project would find nothing for exactly the rows that need it.
   it('finds a run whose project key differs from the seat conversation URI', () => {
-    useOverseerActivityStore.getState().applyProject('claude:///Users/j/p', [entry({})])
-    const found = selectAllRuns(useOverseerActivityStore.getState()).find(r => r.epicId === 'epic-the-wall')
+    useWerkMasterActivityStore.getState().applyProject('claude:///Users/j/p', [entry({})])
+    const found = selectAllRuns(useWerkMasterActivityStore.getState()).find(r => r.epicId === 'epic-the-wall')
     expect(found?.gen).toBe(11)
   })
 
   it('keeps two epics in one project distinguishable', () => {
-    useOverseerActivityStore
+    useWerkMasterActivityStore
       .getState()
       .applyProject('claude:///Users/j/p', [entry({}), entry({ epicId: 'epic-the-wall-ii', gen: 3 })])
-    const runs = selectAllRuns(useOverseerActivityStore.getState())
+    const runs = selectAllRuns(useWerkMasterActivityStore.getState())
     expect(runs.find(r => r.epicId === 'epic-the-wall-ii')?.gen).toBe(3)
     expect(runs.find(r => r.epicId === 'epic-the-wall')?.gen).toBe(11)
   })
 
   it('returns nothing for an epic with no run artifact, rather than inventing one', () => {
-    const runs = selectAllRuns(useOverseerActivityStore.getState())
+    const runs = selectAllRuns(useWerkMasterActivityStore.getState())
     expect(runs.find(r => r.epicId === 'epic-nope')).toBeUndefined()
   })
 })

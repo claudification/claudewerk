@@ -80,7 +80,7 @@ function fmt(pct: number | undefined): string {
   return pct === undefined ? '  --  ' : `${pct.toFixed(1).padStart(5)}%`
 }
 
-// PERMANENT suppression, and it says so on purpose (overseer ruling, gen 17).
+// PERMANENT suppression, and it says so on purpose (werk-master ruling, gen 17).
 // Cyclomatic 11 and cognitive 9 are both UNDER threshold; only CRAP trips, and
 // CRAP is complexity weighted by coverage. This is a hand-run probe that opens a
 // real hub socket and diffs the frame against `top` on a live box -- its coverage

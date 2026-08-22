@@ -9,7 +9,7 @@
  * Which makes the failure mode quiet and expensive. A card written with
  * `relates_to: [some-epic]` looks connected to a human reading the file, is
  * invisible in the epic view, and is never worked on. It happened twice on this
- * board while the overseer window was being built.
+ * board while the werk-master window was being built.
  *
  * So: surface the connection WITHOUT inventing a second kind of membership. This
  * is a suggestion list -- "these look like they belong to you" -- and the only

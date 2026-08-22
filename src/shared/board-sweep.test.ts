@@ -62,7 +62,7 @@ function conv(cardId: string, seat = '1'): Conversation {
     id: `conv_${cardId}_${seat}`,
     project: 'claude://s/p',
     status: 'running',
-    launchConfig: { epic: { epicId: 'e1', role: 'implementer', gen: 1, cardId } },
+    launchConfig: { epic: { epicId: 'e1', role: 'werk-worker', gen: 1, cardId } },
   } as unknown as Conversation
 }
 

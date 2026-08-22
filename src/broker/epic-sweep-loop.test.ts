@@ -14,7 +14,7 @@ import {
   type SweepDeps,
   sweepEpics,
 } from './epic-sweep-loop'
-import { NO_REAPING, OVERSEER_SILENCE_MS, SEAT_SILENCE_MS } from './epic-vitality'
+import { NO_REAPING, SEAT_SILENCE_MS, WERK_MASTER_SILENCE_MS } from './epic-vitality'
 
 let beats: string[]
 let log: string[]
@@ -85,13 +85,13 @@ describe('sweepEpics', () => {
   })
 
   test('one beat per epic, not per conversation', async () => {
-    convs = [conv('e1', 'implementer', 't1'), conv('e1', 'implementer', 't2'), conv('e2', 'implementer', 'x1')]
+    convs = [conv('e1', 'werk-worker', 't1'), conv('e1', 'werk-worker', 't2'), conv('e2', 'werk-worker', 'x1')]
     await sweepEpics(deps())
     expect(beats).toHaveLength(2)
   })
 
   test('a beat that throws does not stop the other epics', async () => {
-    convs = [conv('e1', 'implementer', 't1'), conv('e2', 'implementer', 'x1')]
+    convs = [conv('e1', 'werk-worker', 't1'), conv('e2', 'werk-worker', 'x1')]
     let first = true
     configureEpicIo({
       fetchEpicRun: async (_d, project) => {
@@ -109,7 +109,7 @@ describe('sweepEpics', () => {
   })
 
   test('two ticks NEVER overlap -- the second is skipped while the first is in flight', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     release = () => {}
     const d = deps()
     const first = sweepEpics(d)
@@ -124,14 +124,14 @@ describe('sweepEpics', () => {
   })
 
   test('the guard clears after a tick, so the next one runs', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(deps())
     await sweepEpics(deps())
     expect(beats).toHaveLength(2)
   })
 
   test('the guard clears even when a beat threw', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     configureEpicIo({
       fetchEpicRun: async () => {
         throw new Error('boom')
@@ -161,7 +161,7 @@ describe('an ARMED epic with no conversations yet', () => {
     expect(beats).toEqual(['claude://s/e1'])
   })
 
-  test('is beaten with an empty group -- nothing in flight, no overseer', async () => {
+  test('is beaten with an empty group -- nothing in flight, no werk-master', async () => {
     convs = []
     noteArmedEpic('claude://s/e1', 'e1')
     await sweepEpics(deps())
@@ -169,7 +169,7 @@ describe('an ARMED epic with no conversations yet', () => {
   })
 
   test('does NOT overwrite the conversation-derived group, which knows more', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     noteArmedEpic('claude://s/e1', 'e1')
     await sweepEpics(deps())
     // One beat, not two: the armed entry filled no gap.
@@ -188,14 +188,14 @@ describe('an ARMED epic with no conversations yet', () => {
 
 describe('beatOneEpic -- the forced beat', () => {
   test('beats the named epic immediately, without waiting for the 45s tick', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     const res = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
     expect(res.ok).toBe(true)
     expect(beats).toEqual(['claude://s/e1'])
   })
 
   test('beats ONLY that epic, even when others have conversations', async () => {
-    convs = [conv('e1', 'implementer', 't1'), conv('e2', 'implementer', 'x1')]
+    convs = [conv('e1', 'werk-worker', 't1'), conv('e2', 'werk-worker', 'x1')]
     await beatOneEpic(deps(), 'claude://s/e1', 'e1')
     expect(beats).toEqual(['claude://s/e1'])
   })
@@ -217,7 +217,7 @@ describe('beatOneEpic -- the forced beat', () => {
   })
 
   test('REFUSES while a scheduled sweep is mid-tick -- two beats would both dispatch the same ready card', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     release = () => {}
     const sweeping = sweepEpics(deps())
     const forced = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
@@ -229,7 +229,7 @@ describe('beatOneEpic -- the forced beat', () => {
   })
 
   test('releases the guard afterwards, so a second forced beat is not locked out', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await beatOneEpic(deps(), 'claude://s/e1', 'e1')
     const second = await beatOneEpic(deps(), 'claude://s/e1', 'e1')
     expect(second.ok).toBe(true)
@@ -251,7 +251,7 @@ describe('beatOneEpic -- the forced beat', () => {
         return { run: null, baton: [], acknowledgedCardIds: [], dispatchCounts: {}, lease: null }
       },
     })
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(deps())
     expect(beats).toEqual(['claude://s/e1'])
   })
@@ -263,7 +263,7 @@ describe('beatOneEpic -- the forced beat', () => {
  * `claude://default/path`. Raw string equality made the lookup MISS and the `??`
  * fall through to a synthetic empty group -- so every seat-ceiling check inside
  * the beat saw zero seats and a manual beat could re-dispatch a card that
- * already had a live implementer on it.
+ * already had a live werk-worker on it.
  */
 describe('beatOneEpic -- the project URI is matched by identity, not by spelling', () => {
   /** What the store holds. */
@@ -276,7 +276,7 @@ describe('beatOneEpic -- the project URI is matched by identity, not by spelling
       id: 'conv_live_t1',
       project: STORED,
       status: 'active',
-      launchConfig: { epic: { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 1 } },
+      launchConfig: { epic: { epicId: 'e1', role: 'werk-worker', cardId: 't1', gen: 1 } },
     }) as unknown as Conversation
 
   /** `inFlight` is the LIVE half of the card lanes, so the seat has to be live. */
@@ -300,7 +300,7 @@ describe('beatOneEpic -- the project URI is matched by identity, not by spelling
       epicId: 'ghost',
       project: TYPED,
       inFlight: [],
-      overseerAlive: false,
+      werkMasterAlive: false,
       maxGenSeen: 0,
     })
   })
@@ -322,7 +322,7 @@ describe('the restart quarantine', () => {
   const at = (nowMs: number): SweepDeps => ({ ...deps(), now: () => nowMs })
 
   test('holds every beat for the first two minutes after the engine boots', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     markEngineBoot(0)
     await sweepEpics(at(60_000))
     expect(beats).toHaveLength(0)
@@ -330,14 +330,14 @@ describe('the restart quarantine', () => {
   })
 
   test('says how much longer, so a held run is never mistaken for a stalled one', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     markEngineBoot(0)
     await sweepEpics(at(90_000))
     expect(log.join('\n')).toContain('30s more')
   })
 
   test('beats normally the moment the window closes', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     markEngineBoot(0)
     await sweepEpics(at(RESTART_QUARANTINE_MS))
     expect(beats).toEqual(['claude://s/e1'])
@@ -352,14 +352,14 @@ describe('the restart quarantine', () => {
   })
 
   test('an unmarked engine is not quarantined -- a direct call is not a restart', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(deps())
     expect(beats).toEqual(['claude://s/e1'])
     expect(quarantineRemainingMs(0)).toBe(0)
   })
 
   test('the guard is not consumed by a quarantined tick', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     markEngineBoot(0)
     await sweepEpics(at(1_000))
     await sweepEpics(at(RESTART_QUARANTINE_MS + 1))
@@ -388,26 +388,26 @@ describe('the "epics" opt-in gate', () => {
   }
 
   test('a project with the box unticked is swept by nothing', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(gated().deps)
     expect(beats).toHaveLength(0)
   })
 
   test('and says so, naming the project and where to tick it', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(gated().deps)
     expect(log.join('\n')).toContain('claude://s/e1')
     expect(log.join('\n')).toContain('Project Settings > Scanners')
   })
 
   test('a project with the box ticked is swept exactly as before', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(gated('claude://s/e1').deps)
     expect(beats).toEqual(['claude://s/e1'])
   })
 
   test('gates PER PROJECT -- one opted in, one not, in the same tick', async () => {
-    convs = [conv('e1', 'implementer', 't1'), conv('e2', 'implementer', 'x1')]
+    convs = [conv('e1', 'werk-worker', 't1'), conv('e2', 'werk-worker', 'x1')]
     await sweepEpics(gated('claude://s/e1').deps)
     expect(beats).toEqual(['claude://s/e1'])
   })
@@ -430,7 +430,7 @@ describe('the "epics" opt-in gate', () => {
   })
 
   test('absent gate means no gate -- the sweep runs everywhere', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     await sweepEpics(deps())
     expect(beats).toEqual(['claude://s/e1'])
   })
@@ -445,14 +445,14 @@ describe('the "epics" opt-in gate', () => {
   })
 
   test('stamps nothing when no project opted in -- the default state writes zero times', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     const g = gated()
     await sweepEpics(g.deps)
     expect(g.stamps).toEqual([])
   })
 
   test('a forced BEAT NOW is refused for an opted-out project, naming the box', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     const res = await beatOneEpic(gated().deps, 'claude://s/e1', 'e1')
     expect(res.ok).toBe(false)
     expect(res.ok === false && res.error).toContain('Project Settings > Scanners')
@@ -460,7 +460,7 @@ describe('the "epics" opt-in gate', () => {
   })
 
   test('a forced BEAT NOW still works for an opted-in project', async () => {
-    convs = [conv('e1', 'implementer', 't1')]
+    convs = [conv('e1', 'werk-worker', 't1')]
     const res = await beatOneEpic(gated('claude://s/e1').deps, 'claude://s/e1', 'e1')
     expect(res.ok).toBe(true)
     expect(beats).toEqual(['claude://s/e1'])
@@ -471,14 +471,14 @@ describe('the "epics" opt-in gate', () => {
  * THE ONE LINE THAT MAKES EITHER REAPER REAL.
  *
  * `buildSweepDeps` is the composition root, and until this suite existed nothing
- * guarded it: the `epic-dead-seat-never-settles` verifier proved the gap by
+ * guarded it: the `epic-dead-seat-never-settles` werk-verifier proved the gap by
  * replacing the assignment with `void buildSeatReaper` and running
  * `bun test src/broker/` -- 4654 pass, 0 fail. The entire feature could be
  * deleted from the composition root and not one broker test noticed, because
  * every other test in the repo builds `SweepDeps` by hand and supplies its own.
  *
  * That gap is now worse than it was: both lanes ride the SAME seam, so one bad
- * line silently disarms the card-seat reaper and the overseer reaper together.
+ * line silently disarms the card-seat reaper and the werk-master reaper together.
  *
  * These tests are behavioural on purpose. `expect(deps.reapers).toBeDefined()`
  * would pass against `NO_REAPING`, which is precisely the mutation that must
@@ -514,14 +514,14 @@ describe('buildSweepDeps wires REAL reapers, not the zero value', () => {
     expect(built()?.seat(silent(SEAT_SILENCE_MS + 1))).toEqual({ silentForMs: SEAT_SILENCE_MS + 1 })
   })
 
-  test('the OVERSEER reaper reaps, and at its OWN, longer grace', () => {
-    expect(built()?.overseer(silent(OVERSEER_SILENCE_MS))).toBeNull()
-    expect(built()?.overseer(silent(OVERSEER_SILENCE_MS + 1))).toEqual({ silentForMs: OVERSEER_SILENCE_MS + 1 })
+  test('the WERK-MASTER reaper reaps, and at its OWN, longer grace', () => {
+    expect(built()?.werkMaster(silent(WERK_MASTER_SILENCE_MS))).toBeNull()
+    expect(built()?.werkMaster(silent(WERK_MASTER_SILENCE_MS + 1))).toEqual({ silentForMs: WERK_MASTER_SILENCE_MS + 1 })
   })
 
   /**
    * THE ASSERTION THAT CATCHES A SWAP. The two reapers share a structural type,
-   * so wiring the seat's grace into the overseer's field typechecks silently --
+   * so wiring the seat's grace into the werk-master's field typechecks silently --
    * and costs a second supervisor five minutes early. Twelve minutes of silence
    * is past one grace and inside the other, which is the only window that can
    * tell the two fields apart.
@@ -529,19 +529,19 @@ describe('buildSweepDeps wires REAL reapers, not the zero value', () => {
   test('and the two fields carry DIFFERENT graces, in the right order', () => {
     const twelveMinutes = silent(12 * 60_000)
     expect(built()?.seat(twelveMinutes)).not.toBeNull()
-    expect(built()?.overseer(twelveMinutes)).toBeNull()
+    expect(built()?.werkMaster(twelveMinutes)).toBeNull()
   })
 
   test('both reapers read the FINAL clock, so a `now` override reaches them', () => {
-    const reapers = buildSweepDeps(store(), { now: () => NOW + OVERSEER_SILENCE_MS * 10 }).reapers
+    const reapers = buildSweepDeps(store(), { now: () => NOW + WERK_MASTER_SILENCE_MS * 10 }).reapers
     expect(reapers?.seat(silent(0))).not.toBeNull()
-    expect(reapers?.overseer(silent(0))).not.toBeNull()
+    expect(reapers?.werkMaster(silent(0))).not.toBeNull()
   })
 
   /** `??=`, not `=`: a caller that wants the old behaviour can still ask for it. */
   test('an explicit NO_REAPING override is honoured', () => {
     const reapers = buildSweepDeps(store(), { now: () => NOW, reapers: NO_REAPING }).reapers
-    expect(reapers?.seat(silent(OVERSEER_SILENCE_MS * 100))).toBeNull()
-    expect(reapers?.overseer(silent(OVERSEER_SILENCE_MS * 100))).toBeNull()
+    expect(reapers?.seat(silent(WERK_MASTER_SILENCE_MS * 100))).toBeNull()
+    expect(reapers?.werkMaster(silent(WERK_MASTER_SILENCE_MS * 100))).toBeNull()
   })
 })

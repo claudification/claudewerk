@@ -1,7 +1,7 @@
 /**
  * THE GUARD spawn prompt (Quest Engine §2).
  *
- * The Guard is the independent verifier leg. It runs as a SEPARATE conversation
+ * The Guard is the independent werk-verifier leg. It runs as a SEPARATE conversation
  * from the worker so the DONE-gate's Tier-1 check (board-gate.ts) passes only when
  * a different conversation approves the card -- the worker cannot approve itself.
  *
@@ -20,7 +20,7 @@
 import { SEAT_RELEASE_ORDER, seatClaimOrder } from './epic-seat-lease'
 import { cardRelPath } from './project-paths'
 
-export interface GuardPromptCtx {
+export interface WerkVerifierPromptCtx {
   /** Project URI for board tools / display. */
   projectUri: string
   /** Absolute path to the project root (main checkout) holding `.rclaude/project`. */
@@ -46,7 +46,7 @@ const DISTRUST =
   '"Works correctly" is not verification: you must SEE it pass with your own eyes.'
 
 /** Build the spawn prompt for a Guard leg reviewing one in-review card. */
-export function buildGuardPrompt(ctx: GuardPromptCtx): string {
+export function buildWerkVerifierPrompt(ctx: WerkVerifierPromptCtx): string {
   const questLine = ctx.quest ? `This card belongs to quest \`${ctx.quest}\`.` : ''
   return [
     `You are THE GUARD for project ${ctx.projectUri}.`,
@@ -56,7 +56,7 @@ export function buildGuardPrompt(ctx: GuardPromptCtx): string {
     // Joined into ONE entry: the whole array is `.filter(Boolean)`-ed below, so
     // a trailing '' separator would be swallowed and the block would run into
     // the next heading.
-    ctx.epicId ? `${seatClaimOrder('verifier', ctx.cardId)}\n` : '',
+    ctx.epicId ? `${seatClaimOrder('werk-verifier', ctx.cardId)}\n` : '',
     'THE CARD (source of truth is its YAML frontmatter):',
     `  ${ctx.projectRoot}/${cardRelPath(ctx.cardId)}`,
     "Read it FIRST. IF this board's gate was enabled when the worker moved the card to in-review, it",

@@ -1,9 +1,9 @@
 /**
- * DID THE PLANNER CHANGE THE BOARD? -- answered from the board, not from the
- * planner's own account of itself.
+ * DID THE WERK-PLANNER CHANGE THE BOARD? -- answered from the board, not from the
+ * werk-planner's own account of itself.
  *
  * The checkpoint rule is "stop and show me if gen 0 rewrote my work", and the
- * cheap implementation is to ask the planner whether it changed anything. That
+ * cheap implementation is to ask the werk-planner whether it changed anything. That
  * is exactly the question a model is worst at: it has every incentive to
  * summarise, it may have forgotten a card it touched forty tool calls ago, and a
  * run that silently skips its checkpoint is indistinguishable from one that had
@@ -14,7 +14,7 @@
  * lane they are in, and the ORDERING EDGES -- `depends_on` is the whole point of
  * the planning pass, so an edge added with no other change must still trip it.
  *
- * Deliberately NOT covered: title and body prose. The planner is expected to
+ * Deliberately NOT covered: title and body prose. The werk-planner is expected to
  * sharpen wording, and stopping the run to report a reworded card would train
  * you to click through the checkpoint, which is worse than not having one.
  */

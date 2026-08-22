@@ -189,15 +189,15 @@ describe('PulseBandsView', () => {
 
 describe('PulseRowItem — machine-run marking', () => {
   it('marks a managed row with its chip', () => {
-    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'implementer' }, managed: true })
+    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'werk-worker' }, managed: true })
     render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} />)
     expect(screen.getByText('OVER')).toBeTruthy()
   })
 
   it('names the run on hover so the chip is traceable', () => {
-    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'verifier' }, managed: true })
+    const r = row({ managedBy: { kind: 'epic', label: 'OVER', runId: 'ep_1', role: 'werk-verifier' }, managed: true })
     render(<PulseRowItem row={r} query={parsePulseQuery('')} onSelect={vi.fn()} />)
-    expect(screen.getByText('OVER').getAttribute('title')).toBe('epic ep_1 — verifier')
+    expect(screen.getByText('OVER').getAttribute('title')).toBe('epic ep_1 — werk-verifier')
   })
 
   it('leaves a human-started row unmarked', () => {

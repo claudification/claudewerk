@@ -8,7 +8,7 @@
  * without copying the prose, which is how two definitions of "refine" start.
  *
  * REFINE'S EPIC SOFT-LINK STEP IS IMPORTED (`epic-roster.ts`), not written out
- * here, and the same constant is step 6 of `REFINER_INSTRUCTIONS`. The two
+ * here, and the same constant is step 6 of `WERK_REFINER_INSTRUCTIONS`. The two
  * definitions of "refine" have drifted apart once already; a rule about when a
  * card may be parented is exactly the kind that must not do it twice.
  *

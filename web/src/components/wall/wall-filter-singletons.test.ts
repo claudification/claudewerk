@@ -13,7 +13,7 @@
  *
  * `wall-chip-capture.ts` exists BECAUSE this already happened once: P1 and P2
  * grew the identical chip handler on branches that were open at the same time,
- * so neither implementer could have seen the other's copy. The counts below are
+ * so neither werk-worker could have seen the other's copy. The counts below are
  * the check that would have caught it.
  *
  * A source scan is the right instrument here precisely because it does not run

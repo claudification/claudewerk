@@ -161,7 +161,7 @@ export const scheduledTaskSchema = z.object({
   profileId: z.string().optional(),
   spawn: scheduleSpawnSchema,
   /**
-   * The WORK ORDER this schedule spends -- `REFINER@1` and nothing else, today.
+   * The WORK ORDER this schedule spends -- `WERK-REFINER@1` and nothing else, today.
    *
    * The order supplies the seat's caps (model, effort, budget, deny rules) and
    * its share of the scheduler's concurrency pool. Absent is the ordinary case

@@ -1,25 +1,27 @@
 /**
  * WHO IS WORKING, and WHO IS PLANNING ABOVE THEM.
  *
- * The overseer block is separate from the seats block and always rendered, even
+ * The werk-master block is separate from the seats block and always rendered, even
  * -- especially -- when the lease is null. The first live run of this engine
- * dispatched two implementers and never woke an overseer, and the only way to
+ * dispatched two werk-workers and never woke a werk-master, and the only way to
  * find that out was to curl the API and notice `lease: null` in the JSON. A
- * missing planner has to be LOUD, so it gets its own block with its own
+ * missing werk-planner has to be LOUD, so it gets its own block with its own
  * explanation rather than being an absence you might not notice.
  */
 
 import type { EpicInspectConversation, EpicInspectLive } from '@shared/protocol'
 import { cn, haptic } from '@/lib/utils'
-import { Block } from './overseer-bits'
+import { Block } from './werk-master-bits'
 
 const ROLE_TONE: Record<string, string> = {
-  implementer: 'text-primary border-primary/50',
-  verifier: 'text-active border-[color:var(--active)]/50',
-  overseer: 'text-[color:var(--epic-badge)] border-[color:var(--epic-badge-edge)]',
+  'werk-worker': 'text-primary border-primary/50',
+  'werk-verifier': 'text-active border-[color:var(--active)]/50',
+  'werk-master': 'text-[color:var(--epic-badge)] border-[color:var(--epic-badge-edge)]',
 }
 
-const ROLE_LABEL: Record<string, string> = { implementer: 'IMPL', verifier: 'VERIF', overseer: 'OVER' }
+/** DISPLAY ONLY -- five characters of badge, so the identifier is not what goes
+ *  here. `OVER` was the last visible piece of `overseer`. */
+const ROLE_LABEL: Record<string, string> = { 'werk-worker': 'WORK', 'werk-verifier': 'VERIF', 'werk-master': 'MSTR' }
 
 function Seat({ conv, onOpen }: { conv: EpicInspectConversation; onOpen: (id: string) => void }) {
   return (
@@ -47,7 +49,7 @@ function Seat({ conv, onOpen }: { conv: EpicInspectConversation; onOpen: (id: st
   )
 }
 
-export function OverseerSeats({
+export function WerkMasterSeats({
   live,
   concurrency,
   onOpenConversation,
@@ -56,8 +58,8 @@ export function OverseerSeats({
   concurrency: number
   onOpenConversation: (id: string) => void
 }) {
-  const working = live.conversations.filter(c => c.role !== 'overseer' && c.live)
-  const overseer = live.conversations.find(c => c.role === 'overseer')
+  const working = live.conversations.filter(c => c.role !== 'werk-master' && c.live)
+  const werkMaster = live.conversations.find(c => c.role === 'werk-master')
 
   return (
     <>
@@ -69,15 +71,15 @@ export function OverseerSeats({
         )}
       </Block>
 
-      <Block title="Overseer">
-        {overseer ? (
-          <Seat conv={overseer} onOpen={onOpenConversation} />
+      <Block title="WerkMaster">
+        {werkMaster ? (
+          <Seat conv={werkMaster} onOpen={onOpenConversation} />
         ) : (
           <div className="px-1.5 py-1.5 border border-dashed border-destructive/40 text-[11px] text-destructive">
             never woken . lease null
           </div>
         )}
-        {!overseer && (
+        {!werkMaster && (
           <div className="text-meta text-fg-dim mt-1.5">
             Seats are working with nothing planning above them. BEAT NOW forces the engine to take the lease and wake
             one.

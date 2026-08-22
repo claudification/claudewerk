@@ -30,10 +30,10 @@ function refusalText(gate: GateOutcome, fromStatus: TaskStatus, targetStatus: Ta
 /**
  * A move into a GATED lane that was not in fact gated must say so.
  *
- * `off` is a legitimate configuration. Off while the implementer and guard
+ * `off` is a legitimate configuration. Off while the werk-worker and guard
  * prompts promise "that move machine-captures your evidence" is the defect: a
  * board ran 30 cards through in-review and done with zero `evidence_*` and zero
- * `verdict:` keys, and two overseer generations re-derived merge bases by hand
+ * `verdict:` keys, and two werk-master generations re-derived merge bases by hand
  * before anyone noticed the gate had never executed. So the success message now
  * tells the caller, at the moment of the move, that nothing was captured.
  */

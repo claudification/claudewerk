@@ -71,9 +71,9 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: PROJECT,
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -146,7 +146,7 @@ beforeEach(() => {
           requestId: 'r',
           op: 'lease',
           ok: true,
-          lease: { granted: true, convId: 'conv_overseer', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
+          lease: { granted: true, convId: 'conv_werk_master', gen: (op.lease?.expectGen ?? 0) + 1, at: '' },
         } as EpicResult
       }
       return { type: 'epic_result', requestId: 'r', op: op.op, ok: true } as EpicResult
@@ -217,7 +217,7 @@ describe('a run that COMPLETES stops being swept', () => {
  */
 describe('a plan CHECKPOINT stops being swept', () => {
   /** `planBaseline` set and DISAGREEING with the current fingerprint is exactly
-   *  what `planningBeat` reads as "the planner changed the board". */
+   *  what `planningBeat` reads as "the werk-planner changed the board". */
   const checkpointed = async () => {
     cards = [card(EPIC, 'open', { tags: ['epic'] }), card('t1', 'open', { epic: EPIC })]
     run = { ...RUN, plan: true, planned: false, planBaseline: 'a-board-that-no-longer-exists' }
@@ -248,7 +248,7 @@ describe('a plan CHECKPOINT stops being swept', () => {
 describe('a plan ACCEPT keeps the run armed', () => {
   const accepted = async () => {
     cards = [card(EPIC, 'open', { tags: ['epic'] }), card('t1', 'open', { epic: EPIC })]
-    // The baseline the planner recorded IS the board as it stands: unchanged.
+    // The baseline the werk-planner recorded IS the board as it stands: unchanged.
     run = { ...RUN, plan: true, planned: false, planBaseline: boardFingerprint(cards, EPIC) }
     await runEpicBeat(deps(), group())
   }

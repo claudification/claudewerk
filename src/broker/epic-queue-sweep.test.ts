@@ -57,14 +57,14 @@ function epicWithReadyCard(epicId: string): ProjectTaskMeta[] {
   return [card(epicId, { tags: ['epic'] }), card(`${epicId}-c1`, { epic: epicId })]
 }
 
-/** A LIVE implementer for `epicId`. What "another epic has work in flight" is,
+/** A LIVE werk-worker for `epicId`. What "another epic has work in flight" is,
  *  as the conversation registry sees it. */
 function liveSeat(epicId: string, cardId: string): Conversation {
   return {
     id: `conv_${epicId}_${cardId}`,
     project: PROJECT,
     status: 'active',
-    launchConfig: { epic: { epicId, role: 'implementer', cardId, gen: 1 } },
+    launchConfig: { epic: { epicId, role: 'werk-worker', cardId, gen: 1 } },
   } as unknown as Conversation
 }
 
@@ -110,7 +110,7 @@ beforeEach(() => {
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async () => ({ type: 'epic_result', requestId: 'r', op: 'patch', ok: true }) as EpicResult,
     dispatchSpawn: mock(async (req: { epic: { cardId?: string; epicId: string } }) => {
-      spawns.push(`${req.epic.epicId}/${req.epic.cardId ?? 'overseer'}`)
+      spawns.push(`${req.epic.epicId}/${req.epic.cardId ?? 'werk-master'}`)
       return { ok: true, conversationId: `conv_${spawns.length}`, jobId: 'j' }
     }) as never,
   })

@@ -2,8 +2,8 @@
  * The seat lease AT THE DISK -- the CAS as the sentinel actually performs it.
  *
  * `epic-seat-lease.test.ts` proves the decision; this proves the read-modify-
- * write it rides on: the right keys on the right card, an implementer and a
- * verifier coexisting in one frontmatter block, and a release that only the
+ * write it rides on: the right keys on the right card, a werk-worker and a
+ * werk-verifier coexisting in one frontmatter block, and a release that only the
  * holder may perform.
  */
 
@@ -29,7 +29,7 @@ function op(kind: EpicOpKind, seat: Partial<EpicSeatInput>, at = T0) {
     projectRoot: root,
     op: kind,
     epicId: EPIC,
-    seat: { cardId: CARD, role: 'implementer', ...seat } as EpicSeatInput,
+    seat: { cardId: CARD, role: 'werk-worker', ...seat } as EpicSeatInput,
   }
   return handleEpicOp(root, msg, at)
 }
@@ -39,7 +39,7 @@ const claim = (
   expectGen: number,
   holderAlive: boolean,
   at = T0,
-  role: EpicSeatInput['role'] = 'implementer',
+  role: EpicSeatInput['role'] = 'werk-worker',
 ) => op('seat_claim', { convId, expectGen, holderAlive, role }, at)
 
 function cardMeta(id = CARD) {
@@ -69,12 +69,12 @@ describe('seat_claim -- one writer per (card, role)', () => {
 
     expect(res.lease?.granted).toBe(true)
     expect(res.lease?.gen).toBe(1)
-    expect(cardMeta().seat_implementer).toBe('conv_first')
-    expect(String(cardMeta().seat_implementer_gen)).toBe('1')
+    expect(cardMeta()['seat_werk-worker']).toBe('conv_first')
+    expect(String(cardMeta()['seat_werk-worker_gen'])).toBe('1')
     expect(cardMeta().title).toBe('A card') // the rest of the card is untouched
   })
 
-  /** THE 2026-08-21 PAIR. Two implementers, one card, one worktree. */
+  /** THE 2026-08-21 PAIR. Two werk-workers, one card, one worktree. */
   test('the second claimant loses and is told who holds it', () => {
     claim('conv_first', 0, false)
 
@@ -82,7 +82,7 @@ describe('seat_claim -- one writer per (card, role)', () => {
 
     expect(second.lease?.granted).toBe(false)
     expect(second.lease?.convId).toBe('conv_first')
-    expect(cardMeta().seat_implementer).toBe('conv_first')
+    expect(cardMeta()['seat_werk-worker']).toBe('conv_first')
   })
 
   test("two seats that both read a FREE card: the second one's generation is already wrong", () => {
@@ -95,13 +95,13 @@ describe('seat_claim -- one writer per (card, role)', () => {
     expect(loser.lease?.reason).toContain('stale')
   })
 
-  test('an implementer and a verifier hold the SAME card at once', () => {
-    expect(claim('conv_impl', 0, false, T0, 'implementer').lease?.granted).toBe(true)
-    expect(claim('conv_verify', 0, true, T0 + 1000, 'verifier').lease?.granted).toBe(true)
+  test('a werk-worker and a werk-verifier hold the SAME card at once', () => {
+    expect(claim('conv_impl', 0, false, T0, 'werk-worker').lease?.granted).toBe(true)
+    expect(claim('conv_verify', 0, true, T0 + 1000, 'werk-verifier').lease?.granted).toBe(true)
 
     const meta = cardMeta()
-    expect(meta.seat_implementer).toBe('conv_impl')
-    expect(meta.seat_verifier).toBe('conv_verify')
+    expect(meta['seat_werk-worker']).toBe('conv_impl')
+    expect(meta['seat_werk-verifier']).toBe('conv_verify')
   })
 
   test('a DEAD holder is displaced and the grant reports what it replaced', () => {
@@ -111,14 +111,14 @@ describe('seat_claim -- one writer per (card, role)', () => {
 
     expect(next.lease?.granted).toBe(true)
     expect(next.lease?.replaced?.convId).toBe('conv_dead')
-    expect(cardMeta().seat_implementer).toBe('conv_next')
+    expect(cardMeta()['seat_werk-worker']).toBe('conv_next')
   })
 
   /**
    * THE WEDGE, at the disk. A holder blocked in Bash is alive and silent. The
    * claim path has no early return on liveness, so the CAS is reached and the
    * TTL decides -- which is precisely what `epic-beat.ts:251` prevents for the
-   * overseer lease (see epic-lease-has-no-timeout).
+   * werk-master lease (see epic-lease-has-no-timeout).
    */
   test('a holder that is ALIVE but past the stale window is displaced', () => {
     claim('conv_wedged', 0, false)
@@ -153,8 +153,8 @@ describe('seat_get -- who holds it', () => {
   })
 
   test('the two roles are read independently', () => {
-    claim('conv_impl', 0, false, T0, 'implementer')
-    expect(op('seat_get', { role: 'verifier' }).currentLease).toBeNull()
+    claim('conv_impl', 0, false, T0, 'werk-worker')
+    expect(op('seat_get', { role: 'werk-verifier' }).currentLease).toBeNull()
   })
 })
 
@@ -164,8 +164,8 @@ describe('seat_release -- and why only the holder may do it', () => {
 
     expect(op('seat_release', { convId: 'conv_first' }).ok).toBe(true)
 
-    expect(cardMeta().seat_implementer).toBe('')
-    expect(String(cardMeta().seat_implementer_gen)).toBe('1')
+    expect(cardMeta()['seat_werk-worker']).toBe('')
+    expect(String(cardMeta()['seat_werk-worker_gen'])).toBe('1')
   })
 
   test('a released seat is claimable again, at the next generation', () => {
@@ -187,7 +187,7 @@ describe('seat_release -- and why only the holder may do it', () => {
 
     expect(res.ok).toBe(false)
     expect(res.error).toContain('only the holder')
-    expect(cardMeta().seat_implementer).toBe('conv_first')
+    expect(cardMeta()['seat_werk-worker']).toBe('conv_first')
   })
 
   test('releasing a seat nobody holds succeeds -- an exit path must not fail', () => {
@@ -202,6 +202,6 @@ describe('seat_release -- and why only the holder may do it', () => {
     // silently stealing the card back from conv_second.
     const res = op('seat_release', { convId: 'conv_first' })
     expect(res.ok).toBe(false)
-    expect(cardMeta().seat_implementer).toBe('conv_second')
+    expect(cardMeta()['seat_werk-worker']).toBe('conv_second')
   })
 })

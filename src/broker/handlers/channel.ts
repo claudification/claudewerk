@@ -236,7 +236,7 @@ function wallUnsubscribe(ctx: HandlerContext): void {
   ctx.reply({ type: 'channel_ack', channel: WALL_CHANNEL, status: 'unsubscribed' })
 }
 
-// PERMANENT suppression, and it says so on purpose (overseer ruling, gen 15,
+// PERMANENT suppression, and it says so on purpose (werk-master ruling, gen 15,
 // ratified and recorded here by `wall-integration-fallow-debt`).
 // CRAP 31.6 against a threshold of 30, and the excess is the coverage ESTIMATE,
 // not the branching: cyclomatic and cognitive are both under threshold, and

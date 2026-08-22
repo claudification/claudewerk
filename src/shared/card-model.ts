@@ -1,7 +1,7 @@
 /**
  * `model:` ON A CARD -- reading it, reporting it, and clamping it to a seat.
  *
- * A refiner reads the card and the code it points at, which is exactly the
+ * A werk-refiner reads the card and the code it points at, which is exactly the
  * moment somebody knows whether this is a rename-three-symbols job or a design
  * job. That judgement used to be thrown away. This key is where it lands, and
  * this file is everything that is true about the key that a key table cannot
@@ -144,7 +144,7 @@ export interface CardModelSource {
  * key is how a prompt stops being read.
  *
  * WARNING, not error: the board renders perfectly, the seat simply runs on the
- * project default. Nothing is lost except the judgement the refiner made.
+ * project default. Nothing is lost except the judgement the werk-refiner made.
  */
 export function checkCardModel(source: CardModelSource): DoctorFinding[] {
   const value = source.meta[CARD_MODEL_KEY]

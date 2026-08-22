@@ -9,7 +9,7 @@ import type { Aspect } from './types'
  *    path is exact and a rename is a real failure worth reporting.
  *  - EVERYTHING ELSE is pinned by a CONTRACT SYMBOL named on the owning card.
  *    Where a name is otherwise free, the card names it and this file asserts it.
- *    Verification you can only do by guessing the implementer's naming is not
+ *    Verification you can only do by guessing the werk-worker's naming is not
  *    verification.
  */
 
@@ -65,7 +65,7 @@ export const ASPECTS: Aspect[] = [
     promise: 'Commit river: EVERY commit attributed to a project AND a conversation',
     artifacts: [
       { path: `${PANES}/p2-commit-river.tsx`, needle: 'project', as: 'per-commit project attribution' },
-      // The implementer split the row out of the pane (SPLIT DISCIPLINE), so the
+      // The werk-worker split the row out of the pane (SPLIT DISCIPLINE), so the
       // per-commit attribution renders here, not in the pane shell.
       { path: `${PANES}/commit-river-row.tsx`, needle: 'conversation', as: 'per-commit conversation attribution' },
     ],
@@ -111,7 +111,7 @@ export const ASPECTS: Aspect[] = [
     card: 'wall-host-vitals',
     promise: 'Host vitals per sentinel: cpu, ram, disk, load, live sparkline',
     artifacts: [{ path: `${PANES}/s1-host-vitals.tsx` }],
-    // The implementer named it `node-stats`, not the `report_node_stats` this
+    // The werk-worker named it `node-stats`, not the `report_node_stats` this
     // manifest first guessed -- and the contract-symbol table reached the epic
     // card AFTER that card was dispatched, so the guess was mine to lose. The
     // shipped name is the better one; the probe follows the code.
@@ -154,7 +154,7 @@ export const ASPECTS: Aspect[] = [
   {
     code: 'A7',
     card: 'wall-pane-unattended-runs',
-    promise: 'Unattended runs: epic DAG, overseer lease age, baton tail, nightshift',
+    promise: 'Unattended runs: epic DAG, werk-master lease age, baton tail, nightshift',
     // The stub registry pins this pane as `a7-unattended-runs.tsx`, and the
     // registry is what the epic says pane files are pinned BY. This manifest
     // guessed `a7-runs.tsx` and would have reported a delivered pane as missing

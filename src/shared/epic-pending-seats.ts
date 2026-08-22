@@ -14,7 +14,7 @@
  *
  * WHAT THAT COSTS, measured 2026-08-21 on `epic-project-runner` itself: four of
  * six live seats were duplicates, in BOTH lanes at once, six minutes apart. Two
- * implementers on one card get the SAME worktree, because the worktree name is
+ * werk-workers on one card get the SAME worktree, because the worktree name is
  * derived from the card (`cardBranch`). Git sees one working directory, so
  * whichever seat commits last stages the other's half-written files as its own.
  * No conflict, no failed merge, no signal -- the loser's work is buried inside a
@@ -47,9 +47,9 @@
  * (via `EpicGroup.unspawnable`) and `MAX_CARD_SEATS`.
  *
  * ROLE-BLIND, like `dispatchCountsByCard` and for the same reason: nothing in a
- * `dispatch` entry distinguishes an implementer from a verifier. The result is
+ * `dispatch` entry distinguishes a werk-worker from a werk-verifier. The result is
  * unioned into BOTH lanes, which is the conservative direction -- and the live
- * incident proves both lanes need it, since the verifier pair collided while
+ * incident proves both lanes need it, since the werk-verifier pair collided while
  * `inVerify` was working exactly as designed.
  */
 

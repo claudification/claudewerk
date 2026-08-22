@@ -174,7 +174,7 @@
 	--ended: oklch(0.6 0.05 274);
 
 	/* THE UNATTENDED-RUN AMBER. One fixed hue for "a machine is working on this
-	   without you", used by the header run badge and the overseer window chrome.
+	   without you", used by the header run badge and the werk-master window chrome.
 	   Deliberately NOT the per-epic --epic-solid: that hue is derived from the
 	   epic id so two epics look different, which is right on a board and wrong
 	   on a badge that must mean the same thing every time you glance at it. */

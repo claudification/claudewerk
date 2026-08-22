@@ -17,7 +17,7 @@ export const WALL_MODAL = { id: 'wall', kind: 'wall', title: 'The Wall' }
 /**
  * W3 AMBIENT: fullscreen, no chrome, readable across a room.
  *
- * Kept OUT of the modal record for the same reason the overseer's selection is:
+ * Kept OUT of the modal record for the same reason the werk-master's selection is:
  * it has to survive inline -> docked -> detached, and it is not the manager's
  * business what a surface does with its own pixels.
  */

@@ -42,7 +42,7 @@ function groupFor(convs: readonly Conversation[], deps: SweepDeps, project: stri
   // BOTH reapers ride along on every fold this file makes, and neither is
   // cosmetic: an inspect is the read a human takes when a run has gone quiet. One
   // that still showed a reaped seat in `inFlight` would contradict the beat
-  // running beside it, and one that reported OVERSEER ALIVE about the corpse the
+  // running beside it, and one that reported WERK-MASTER ALIVE about the corpse the
   // engine had already replaced would send that human looking for a conversation
   // nobody can open.
   return (
@@ -141,7 +141,7 @@ const NOT_BURIED: Burial = { cleared: null, clearedAt: null }
  * running -- that is the invisibility O2 exists to prevent, and the fact that
  * `startEpicRun` wipes the stamp makes this the second lock rather than the only
  * one. Vitality and not `status`: the field is an INTENT nothing writes back
- * down, so a run whose overseer died still reads `running` forever.
+ * down, so a run whose werk-master died still reads `running` forever.
  *
  * The rule itself is NOT re-derived here. `runCleared`/`clearedReason` own both
  * halves -- the explicit stamp and the seven-day age-out -- and a second copy of
@@ -158,7 +158,7 @@ function burialOf(
   const live = isVitallyLive({
     status: row.status,
     inFlight: row.inFlight,
-    overseerAlive: row.overseerAlive,
+    werkMasterAlive: row.werkMasterAlive,
     armed: row.armed,
     lastBeatAt: beatAt,
     stale: beatStale(beatAt, nowMs),
@@ -196,7 +196,7 @@ async function inspectQueue(
   if (!gatedBy(run?.cadence, 'queue')) return undefined
 
   // Reaped, for `groupFor`'s reason plus one specific to this fold:
-  // `toQueueScope` sets `busy` from `overseerAlive`, so a dead supervisor in one
+  // `toQueueScope` sets `busy` from `werkMasterAlive`, so a dead supervisor in one
   // epic reads as a project whose runner is occupied and blocks every OTHER
   // queued epic in it.
   const groups = groupEpicConversations(convs, deps.isLive, deps.producedOutput, deps.reapers)
@@ -308,7 +308,7 @@ export async function listEpicRuns(
         gen: view.run?.gen ?? group.maxGenSeen,
         armed: isArmed(project, epicId),
         inFlight: group.inFlight.length,
-        overseerAlive: group.overseerAlive,
+        werkMasterAlive: group.werkMasterAlive,
       }
       // THE RING'S OWN SPELLING of the project, not the caller's. The beat log is
       // keyed by the project string the sweep recorded, which is the store's form

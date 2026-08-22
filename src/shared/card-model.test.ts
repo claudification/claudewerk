@@ -7,7 +7,7 @@ import {
   modelFromTag,
   readCardModel,
 } from './card-model'
-import { REFINER_ORDER } from './refiner-order'
+import { WERK_REFINER_ORDER } from './werk-refiner-order'
 
 describe('readCardModel', () => {
   test('takes a slug the spawn layer accepts', () => {
@@ -77,10 +77,10 @@ describe('clampCardModel -- the order still wins', () => {
     expect(clampCardModel('claude-haiku-4-5', 'claude-haiku-4-5')).toEqual({ model: 'claude-haiku-4-5' })
   })
 
-  /** THE CARD'S OWN ACCEPTANCE TEST. `REFINER@1` caps at Haiku; a card asking
+  /** THE CARD'S OWN ACCEPTANCE TEST. `WERK-REFINER@1` caps at Haiku; a card asking
    *  for Opus must run on Haiku anyway, and must SAY it was clamped. */
-  test('a `model: opus` card dispatched by REFINER@1 still runs on Haiku, and logs why', () => {
-    const choice = clampCardModel('opus', REFINER_ORDER.caps.model)
+  test('a `model: opus` card dispatched by WERK-REFINER@1 still runs on Haiku, and logs why', () => {
+    const choice = clampCardModel('opus', WERK_REFINER_ORDER.caps.model)
     expect(choice.model).toBe('claude-haiku-4-5')
     expect(choice.note).toContain('opus')
     expect(choice.note).toContain('claude-haiku-4-5')

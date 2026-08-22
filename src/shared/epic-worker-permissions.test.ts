@@ -42,24 +42,24 @@ describe('buildEpicWorkerSettings', () => {
   const preToolUse = (s: Record<string, unknown>) =>
     (s.hooks as { PreToolUse: Array<{ hooks: Array<{ command: string }> }> }).PreToolUse
 
-  test('an implementer gets the deny-floor AND the mute', () => {
-    const hooks = preToolUse(buildEpicWorkerSettings('implementer'))
+  test('a werk-worker gets the deny-floor AND the mute', () => {
+    const hooks = preToolUse(buildEpicWorkerSettings('werk-worker'))
     expect(hooks).toHaveLength(2)
     expect(hooks.some(h => h.hooks[0].command.includes('tool_name'))).toBe(true)
   })
 
-  test('a verifier is muted too -- it judges, it does not escalate', () => {
-    expect(preToolUse(buildEpicWorkerSettings('verifier'))).toHaveLength(2)
+  test('a werk-verifier is muted too -- it judges, it does not escalate', () => {
+    expect(preToolUse(buildEpicWorkerSettings('werk-verifier'))).toHaveLength(2)
   })
 
-  test('the overseer keeps its voice but still gets the deny-floor', () => {
-    const hooks = preToolUse(buildEpicWorkerSettings('overseer'))
+  test('the werk-master keeps its voice but still gets the deny-floor', () => {
+    const hooks = preToolUse(buildEpicWorkerSettings('werk-master'))
     expect(hooks).toHaveLength(1)
     expect(hooks[0].hooks[0].command).toContain('git +push')
   })
 
   test('per-project allow rules still merge through', () => {
-    const s = buildEpicWorkerSettings('implementer', { allow: ['Bash(docker compose:*)'] })
+    const s = buildEpicWorkerSettings('werk-worker', { allow: ['Bash(docker compose:*)'] })
     expect((s.permissions as { allow: string[] }).allow).toContain('Bash(docker compose:*)')
   })
 })
@@ -71,7 +71,7 @@ describe('muteHookCommand', () => {
     // The verdict is JSON inside a shell double-quoted echo, so it is escaped twice.
     expect(cmd).toContain('decision')
     expect(cmd).toContain('block')
-    expect(MUTE_REASON).toContain('needs-overseer')
+    expect(MUTE_REASON).toContain('needs-werk-master')
     expect(MUTE_REASON).toContain('depends_on')
   })
 

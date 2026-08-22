@@ -25,7 +25,7 @@ import type { EpicActivityEntry, EpicInspectResult, EpicRunSnapshot } from '@sha
  * The answer comes from `runVitality` (src/shared/epic-vitality.ts) rather than
  * from `entry.status`. The status field is an intent nothing writes back down,
  * so `status === 'running'` rendered this pane's tag as ARMED on a run that had
- * spawned nothing for hours -- the same lie the header badge and the overseer
+ * spawned nothing for hours -- the same lie the header badge and the werk-master
  * window were telling at the same moment, which is why the derivation is shared.
  *
  * THERE WAS ALSO AN `isRunLive(entry)` HERE and it is gone on purpose. It said
@@ -117,7 +117,7 @@ export interface RunStall {
 
 /**
  * STALLED is now `runVitality`'s call, so this pane, the header badge and the
- * overseer window cannot disagree about when a run stopped moving.
+ * werk-master window cannot disagree about when a run stopped moving.
  *
  * ONE RULE CHANGED IN THE MOVE, deliberately. This used to call any live run
  * with no beat at all STALLED, to catch the 2026-08-18 shape -- an armed epic
@@ -135,7 +135,7 @@ export function runStall(entry: EpicActivityEntry, nowMs: number): RunStall {
   return { stalled: runVitality(entry).vitality === 'stalled', sinceMs }
 }
 
-// THE OVERSEER LEASE moved to `@/lib/epic-lease-view` -- the overseer window
+// THE WERK-MASTER LEASE moved to `@/lib/epic-lease-view` -- the werk-master window
 // needs the same sentence, and it could not import it from inside the wall.
 
 // THE TAILS -- baton and beat pulse -- moved to `run-tails.ts`. Presenting a log

@@ -22,7 +22,7 @@
  * is no copy of it anywhere.
  *
  * Named here rather than in `board-system-tags.ts` for the same reason
- * `EPIC_TAG` lives in `epic-cards.ts` and `NEEDS_OVERSEER_TAG` in
+ * `EPIC_TAG` lives in `epic-cards.ts` and `NEEDS_WERK_MASTER_TAG` in
  * `epic-run-types.ts`: the registry is a display list that IMPORTS the tags the
  * machinery reads, and a subsystem owns its own vocabulary. In `shared` because
  * both ends need it -- the broker scans for it and the board button writes it.

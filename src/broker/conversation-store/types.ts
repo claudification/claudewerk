@@ -73,7 +73,7 @@ export interface ControlPanelMessage {
     // send + target id via the sender's transcript, so this leaks nothing new.
     | 'inter_conversation_activity'
     // What the epic engine is running, one message per project after every
-    // sweep tick. Powers the header run badge and the overseer window's rail
+    // sweep tick. Powers the header run badge and the werk-master window's rail
     // without either of them polling (WS OVER HTTP).
     | 'epic_activity'
   conversationId?: string

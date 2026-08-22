@@ -1,8 +1,8 @@
 import type { EpicActivityEntry } from '@shared/protocol'
 import { describe, expect, it } from 'vitest'
-import { headFacts } from './overseer-detail'
-import { rowFacts } from './overseer-rail'
-import { resumeOptions } from './overseer-verbs'
+import { headFacts } from './werk-master-detail'
+import { rowFacts } from './werk-master-rail'
+import { resumeOptions } from './werk-master-verbs'
 
 function run(over: Partial<EpicActivityEntry> = {}): EpicActivityEntry {
   return {
@@ -12,7 +12,7 @@ function run(over: Partial<EpicActivityEntry> = {}): EpicActivityEntry {
     gen: 3,
     maxGens: 12,
     inFlight: 2,
-    overseerAlive: false,
+    werkMasterAlive: false,
     armed: true,
     lastBeatAt: null,
     stale: false,
@@ -72,7 +72,7 @@ describe('headFacts -- the heading survives a run with no artifact', () => {
     inFlight: [],
     settled: [],
     unacknowledged: [],
-    overseerAlive: false,
+    werkMasterAlive: false,
     maxGenSeen: 0,
     conversations: [],
   }

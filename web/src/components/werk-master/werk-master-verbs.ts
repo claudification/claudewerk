@@ -53,7 +53,7 @@ async function resume({ project, epicId, run }: VerbContext): Promise<string> {
 }
 
 async function abort({ project, epicId }: VerbContext): Promise<string> {
-  const r = await abortEpicRun(project, epicId, 'aborted from the overseer window')
+  const r = await abortEpicRun(project, epicId, 'aborted from the werk-master window')
   return r.ok ? 'aborted -- terminal' : r.error || 'abort failed'
 }
 
@@ -65,7 +65,7 @@ async function beat({ project, epicId }: VerbContext): Promise<string> {
 }
 
 async function unstick({ project, epicId }: VerbContext): Promise<string> {
-  const r = await breakLease(project, epicId, 'broken from the overseer window')
+  const r = await breakLease(project, epicId, 'broken from the werk-master window')
   return r.ok ? r.data : r.error
 }
 
@@ -79,7 +79,7 @@ async function unstick({ project, epicId }: VerbContext): Promise<string> {
  * facts a human will otherwise assume wrongly about a verb called "delete".
  */
 async function remove({ project, epicId }: VerbContext): Promise<string> {
-  const r = await deleteEpicRun(project, epicId, 'deleted from the overseer window')
+  const r = await deleteEpicRun(project, epicId, 'deleted from the werk-master window')
   return r.ok ? r.data : r.error
 }
 

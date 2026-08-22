@@ -11,7 +11,7 @@
  *
  * OPEN, LAUNCH and RUN are three verbs on purpose. OPEN reads. LAUNCH spawns ONE
  * conversation a human drives. RUN arms the engine over a whole epic: one
- * implementer per ready card, a verifier behind each, an overseer between beats.
+ * werk-worker per ready card, a werk-verifier behind each, a werk-master between beats.
  * Collapsing LAUNCH and RUN into "start" would hide that difference behind a
  * label you read in half a second -- see `epic-run-button.tsx`.
  */

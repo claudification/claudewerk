@@ -11,20 +11,20 @@
  *   selects  cards tagged `needs-refine`
  *   skips    anything with a live conversation
  *   refuses  into named buckets -- `REFINE_BUCKETS`, and nothing else
- *   does     dispatch a `REFINER@1` seat against the card
+ *   does     dispatch a `WERK-REFINER@1` seat against the card
  *   is       self-catching (via `runScan`), effects injected, no broker needed
  *
- * THE TAG IS THE QUEUE, AND DRAINING IT IS THE JOB. A refiner that improves a
+ * THE TAG IS THE QUEUE, AND DRAINING IT IS THE JOB. A werk-refiner that improves a
  * card and leaves the tag on refines that card again on every tick, forever.
- * The removal is an imperative in `REFINER_INSTRUCTIONS` (step 7), which is why
- * this file does not restate it: `refiner-order.ts` is the one definition of
- * what a refiner is, `task-modes.ts` exists because two definitions of "refine"
+ * The removal is an imperative in `WERK_REFINER_INSTRUCTIONS` (step 7), which is why
+ * this file does not restate it: `werk-refiner-order.ts` is the one definition of
+ * what a werk-refiner is, `task-modes.ts` exists because two definitions of "refine"
  * had already diverged once, and a third copy here is exactly that drift.
  *
  * WHAT STOPS AN UNDRAINED TAG BILLING FOREVER is the `already-run` bucket below,
- * not the instruction. A refiner that died before step 7 leaves the card tagged
+ * not the instruction. A werk-refiner that died before step 7 leaves the card tagged
  * and the seat settled, and from the next tick the card is refused rather than
- * re-dispatched -- so a killed refiner leaves a card tagged and undispatched,
+ * re-dispatched -- so a killed werk-refiner leaves a card tagged and undispatched,
  * never half-refined and never on a retry treadmill.
  *
  * THE OTHER HALF OF THIS CARD IS NOT HERE. "A rough card is not dispatchable by
@@ -50,11 +50,11 @@ import { NEEDS_REFINE_TAG } from '../../shared/epic-ready'
 import { openEpicRoster, wantsEpicRoster } from '../../shared/epic-roster'
 import { composeSeatPrompt } from '../../shared/order'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
-import { REFINER_ORDER } from '../../shared/refiner-order'
 import { REFINE_BUCKETS, type RefineBucket } from '../../shared/scanner-buckets'
 import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import type { SpawnRequest } from '../../shared/spawn-schema'
 import { buildUnattendedSettings, type UnattendedPermissionConfig } from '../../shared/unattended-permissions'
+import { WERK_REFINER_ORDER } from '../../shared/werk-refiner-order'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
 import { applyOrderToRequest } from '../scheduled-tasks/fire'
 import {
@@ -69,11 +69,11 @@ import {
 const CONTRACT = SCANNER_CONTRACTS.refine
 
 /**
- * THE EPIC ID EVERY REFINER SEAT IS TAGGED WITH -- a reserved lane, not a real
+ * THE EPIC ID EVERY WERK-REFINER SEAT IS TAGGED WITH -- a reserved lane, not a real
  * epic (`scanner-reserved-lane-phantom-epic`).
  *
  * `groupEpicConversations` is the liveness fold this scanner shares with the
- * epic sweep, and it groups by `launchConfig.epic.epicId` -- so a refiner needs
+ * epic sweep, and it groups by `launchConfig.epic.epicId` -- so a werk-refiner needs
  * an epic tag whether or not the card it refines belongs to an epic. It is the
  * scanner's own id and DELIBERATELY NOT any real epic's: a seat tagged with a
  * live epic's id would be absorbed into that epic's group, counted as one of its
@@ -87,7 +87,7 @@ export const REFINE_EPIC_ID = 'refine'
 const REFINE_TAG = '[refine]'
 
 /**
- * MAX REFINER SEATS IN FLIGHT, quoted from the ORDER rather than picked here.
+ * MAX WERK-REFINER SEATS IN FLIGHT, quoted from the ORDER rather than picked here.
  *
  * "A backlog of 40 tagged cards must not consume every seat" is the card's own
  * requirement, and `Order.reservation` is where a role's appetite already lives
@@ -103,20 +103,20 @@ const REFINE_TAG = '[refine]'
  * dispatch 40 seats in one pass. One seat is the conservative reading of a role
  * that never said.
  */
-export const DEFAULT_REFINE_CONCURRENCY = REFINER_ORDER.reservation ?? 1
+export const DEFAULT_REFINE_CONCURRENCY = WERK_REFINER_ORDER.reservation ?? 1
 
 /**
  * Every way this scanner can decline a `needs-refine` card. Closed, so a reason
  * it did not declare is a compile error, and countable, so a pane can render the
  * shape of a backlog instead of a log nobody greps.
  *
- * NO `waiting-on-deps` AND NO `needs-overseer` LANE, and both absences are
+ * NO `waiting-on-deps` AND NO `needs-werk-master` LANE, and both absences are
  * decisions. Refining is not implementing: rewriting a card's prose does not
  * touch its dependencies' work, so a rough card whose dependency is still open
  * is exactly the card most worth making buildable BEFORE that dependency lands.
- * A `needs-overseer` card carrying the tag is likewise still a card whose prose
+ * A `needs-werk-master` card carrying the tag is likewise still a card whose prose
  * can be improved, and the seat cannot answer the question or move the lane
- * (`REFINER@1` denies the status verb), so there is nothing for it to get wrong.
+ * (`WERK-REFINER@1` denies the status verb), so there is nothing for it to get wrong.
  *
  * DECLARED IN `src/shared/scanner-buckets.ts`, with the reason for each name
  * beside it, because the per-project opt-in panel renders this vocabulary and
@@ -164,11 +164,11 @@ function refuseLane(
  */
 const NAME_BUDGET = 60
 
-/** A refiner's conversation name: the order's prefix, the card, and the attempt.
+/** A werk-refiner's conversation name: the order's prefix, the card, and the attempt.
  *  The attempt goes at the END because truncation eats from the right, and it is
  *  the only part that makes a second attempt a second name. */
 function refinerName(cardId: string, gen: number): string {
-  const head = REFINER_ORDER.namePrefix ?? ''
+  const head = WERK_REFINER_ORDER.namePrefix ?? ''
   const suffix = ` g${gen}`
   const room = NAME_BUDGET - head.length - suffix.length
   return `${head}${cardId.slice(0, Math.max(1, room))}${suffix}`
@@ -179,20 +179,20 @@ function refinerName(cardId: string, gen: number): string {
  * order's own instructions verbatim.
  *
  * THIS FUNCTION BUILDS ONLY THE HALF IT OWNS -- the CONTEXT: the pointer, which
- * is the half `REFINER@1` deliberately does not carry ("there is deliberately no
+ * is the half `WERK-REFINER@1` deliberately does not carry ("there is deliberately no
  * dispatcher here"), and the roster, which is the only board context the seat
  * gets. The instruction half comes off the ORDER, through `composeSeatPrompt`,
  * which is the one function that turns an order's `instructions` into prompt
  * text -- the scheduler's `buildSpawnRequest` calls the same one.
  *
  * That seam is the point. This file used to join the two halves itself out of
- * the `REFINER_INSTRUCTIONS` constant, which is what `REFINER@1` is built from,
+ * the `WERK_REFINER_INSTRUCTIONS` constant, which is what `WERK-REFINER@1` is built from,
  * so the two compositions could not disagree TODAY -- but that was a fact about
  * one order, not a property. An order edited to carry a different block would
- * have changed what a scheduled refiner is told and not what a scanned one is.
+ * have changed what a scheduled werk-refiner is told and not what a scanned one is.
  *
  * THE ROSTER IS SKIPPED FOR A CARD THAT ALREADY HAS AN EPIC. Step 6 of the
- * instructions can only ever add a parent to a card that has none -- a refiner
+ * instructions can only ever add a parent to a card that has none -- a werk-refiner
  * does not re-parent somebody's card -- so on a card carrying `epic:` the whole
  * block is prompt weight that changes nothing, on the seat whose entire premise
  * is being cheap. `openEpicRoster` returns `''` for a board with no open epic
@@ -206,7 +206,7 @@ function buildRefinerPrompt(projectRoot: string, card: ProjectTaskMeta, cards: r
     `Card file: ${projectRoot}/${cardRelPath(card.slug)}`,
     ...(roster ? ['', roster] : []),
   ].join('\n')
-  return composeSeatPrompt(REFINER_ORDER, context)
+  return composeSeatPrompt(WERK_REFINER_ORDER, context)
 }
 
 /** One card's attempt number, used only for the seat NAME, so a re-tagged card
@@ -221,19 +221,19 @@ function attemptsFor(deps: RefineDeps, cardId: string): number {
 type SeatCompilation = { ok: true; request: SpawnRequest } | { ok: false; reason: string }
 
 /**
- * CARD + `REFINER@1` -> the seat, through the same function the scheduler uses.
+ * CARD + `WERK-REFINER@1` -> the seat, through the same function the scheduler uses.
  *
  * `applyOrderToRequest` is what spends an order onto a spawn request: it runs
  * the caps through `composeOrderCaps` (so an order can only ever narrow) and
  * unions the order's deny rules into the fragment. Calling it rather than
- * re-deriving the caps here is what makes a refiner dispatched by this scanner
+ * re-deriving the caps here is what makes a werk-refiner dispatched by this scanner
  * byte-identical to one dispatched by a schedule -- most importantly the deny on
  * `mcp__rclaude__project_set_status`, which is the mechanical half of "a card
  * that got clearer did not get done".
  *
  * The base fragment is `buildUnattendedSettings`, which carries the deny FLOOR
  * (force-push, push to mainline, sudo, kills, external sends) plus the project's
- * own rules. Nobody is watching a refiner, so it gets the floor for the same
+ * own rules. Nobody is watching a werk-refiner, so it gets the floor for the same
  * reason every scheduled fire does.
  */
 function compileSeat(deps: RefineDeps, card: ProjectTaskMeta, cards: readonly ProjectTaskMeta[]): SeatCompilation {
@@ -241,10 +241,10 @@ function compileSeat(deps: RefineDeps, card: ProjectTaskMeta, cards: readonly Pr
   // THE CARD'S HINT, CLAMPED BEFORE IT IS OFFERED. `composeOrderCaps` treats
   // `model` as a SELECTION field -- an explicit base wins outright -- which is
   // right for a human at a spawn dialog and wrong for a card: handing the raw
-  // hint in would let a card asking for `opus` buy a tier `REFINER@1` capped at
+  // hint in would let a card asking for `opus` buy a tier `WERK-REFINER@1` capped at
   // Haiku. What goes in below is already a narrowing, so the composition's rule
   // and this one agree instead of racing.
-  const model = clampCardModel(card.model, REFINER_ORDER.caps.model)
+  const model = clampCardModel(card.model, WERK_REFINER_ORDER.caps.model)
   if (model.note) deps.log(`[refine] ${card.slug}: ${model.note}`)
   const base: SpawnRequest = {
     ...(model.model ? { model: model.model as SpawnRequest['model'] } : {}),
@@ -258,13 +258,13 @@ function compileSeat(deps: RefineDeps, card: ProjectTaskMeta, cards: readonly Pr
     // A seat would rather be renamed than refused -- the generation covers the
     // normal retry, this covers two long card ids truncating onto one name.
     failOnNameCollision: false,
-    // NO WORKTREE, and `REFINER@1` declares none: the board lives in the main
+    // NO WORKTREE, and `WERK-REFINER@1` declares none: the board lives in the main
     // checkout, so a card refined inside an isolated worktree is a card nobody
     // else sees.
-    epic: { epicId: REFINE_EPIC_ID, role: 'implementer', gen, cardId: card.slug },
+    epic: { epicId: REFINE_EPIC_ID, role: 'werk-worker', gen, cardId: card.slug },
     settingsInline: buildUnattendedSettings(deps.permissions),
   }
-  const applied = applyOrderToRequest(base, REFINER_ORDER)
+  const applied = applyOrderToRequest(base, WERK_REFINER_ORDER)
   if (!applied.ok) return { ok: false, reason: applied.reason }
   return { ok: true, request: applied.request }
 }
@@ -306,41 +306,41 @@ const REFUSAL_RULES: ReadonlyArray<{
   detail: (card: ProjectTaskMeta) => string
 }> = [
   {
-    // A REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
+    // A WERK-REFINER REWRITES A CARD NOBODY IS BUILDING YET. `inbox` and `open` are
     // the only lanes where that is true; moving the spec out from under a live
-    // implementer, or rewriting a card whose work already shipped, is worse than
+    // werk-worker, or rewriting a card whose work already shipped, is worse than
     // leaving the tag on. Terminal cards land here too -- a tag left on a `done`
     // card is history, not a queue entry.
     claims: card => epicBucket(card.status) !== 'notStarted',
     bucket: 'not-actionable',
     detail: card =>
-      `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a refiner rewrites a card nobody is building yet`,
+      `tagged \`${NEEDS_REFINE_TAG}\` but sitting in \`${card.status}\` -- a werk-refiner rewrites a card nobody is building yet`,
   },
   {
     claims: (card, liveness) => liveness.live.has(card.slug),
     bucket: 'live-conversation',
-    detail: () => 'a refiner is already working it',
+    detail: () => 'a werk-refiner is already working it',
   },
   {
     claims: (card, liveness) => liveness.dead.has(card.slug),
     bucket: 'unspawnable',
-    detail: () => 'refiner seats keep dying before producing anything; not retried',
+    detail: () => 'werk-refiner seats keep dying before producing anything; not retried',
   },
   {
     // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
-    // forever. A refiner that ran and finished leaves the tag on only if it
+    // forever. A werk-refiner that ran and finished leaves the tag on only if it
     // failed to reach step 7 of its instructions -- and dispatching a second
     // one, and a third, every tick, is the treadmill. The card stays tagged and
     // visible with a reason instead; re-tagging it (or fixing whatever stopped
     // the drain) re-authorises it, by a decision somebody made, never the clock.
     claims: (card, liveness) => liveness.settled.has(card.slug),
     bucket: 'already-run',
-    detail: () => 'a refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
+    detail: () => 'a werk-refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',
   },
 ]
 
 /**
- * WHICH SELECTED CARDS A REFINER MAY BE SENT TO, and a named bucket for every
+ * WHICH SELECTED CARDS A WERK-REFINER MAY BE SENT TO, and a named bucket for every
  * one of the rest.
  *
  * The one place that walks {@link REFUSAL_RULES}. Everything a reader has to
@@ -366,7 +366,7 @@ function triageSelected(
  *
  * An order that asks for more privilege than this caller holds, or a fragment
  * its deny rules cannot be unioned into, is a REFUSAL and not a quiet downgrade
- * -- dispatching a refiner that regained the status verb looks exactly like a
+ * -- dispatching a werk-refiner that regained the status verb looks exactly like a
  * correct run until a card lands in the wrong lane.
  */
 function compileSeats(
@@ -409,7 +409,7 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
   })
   const refused = triaged.refused
 
-  // THE CEILING, counting every live refiner and not just the ones whose card is
+  // THE CEILING, counting every live werk-refiner and not just the ones whose card is
   // still in this pass's cohort: a seat mid-refine holds its slot even on the
   // tick after its card lost the tag.
   const slots = Math.max(0, deps.concurrency - group.inFlight.length)
@@ -417,7 +417,7 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
     ...refuseLane(
       triaged.candidates.slice(slots),
       'held-back',
-      () => `rough, but the refiner ceiling (${deps.concurrency}) is full`,
+      () => `rough, but the werk-refiner ceiling (${deps.concurrency}) is full`,
     ),
   )
 
@@ -441,11 +441,12 @@ async function scanRefine(deps: RefineDeps): Promise<ScanOutcome<RefineBucket>> 
 function idleReason(selectedCount: number, refused: readonly Refusal<RefineBucket>[]): string {
   const count = (bucket: RefineBucket): number => refused.filter(r => r.bucket === bucket).length
   const dead = count('unspawnable')
-  if (dead > 0) return `${dead} card(s) whose refiner seats keep dying before producing anything, no longer retried`
+  if (dead > 0)
+    return `${dead} card(s) whose werk-refiner seats keep dying before producing anything, no longer retried`
   const stale = count('already-run')
-  if (stale > 0) return `${stale} card(s) a refiner already ran for, still tagged -- re-tag to re-authorise`
+  if (stale > 0) return `${stale} card(s) a werk-refiner already ran for, still tagged -- re-tag to re-authorise`
   const held = count('held-back')
-  if (held > 0) return `${held} card(s) rough but held back by the refiner ceiling`
+  if (held > 0) return `${held} card(s) rough but held back by the werk-refiner ceiling`
   return `${selectedCount} card(s) carry \`${NEEDS_REFINE_TAG}\`, none of them refinable right now`
 }
 

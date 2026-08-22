@@ -23,7 +23,7 @@ const NOW_MS = Date.parse('2026-08-21T12:00:00.000Z')
 let n = 0
 function conv(project: string, epicId: string): Conversation {
   n += 1
-  const tag: EpicLaunchTag = { epicId, role: 'implementer', cardId: `c${n}`, gen: 1 } as EpicLaunchTag
+  const tag: EpicLaunchTag = { epicId, role: 'werk-worker', cardId: `c${n}`, gen: 1 } as EpicLaunchTag
   return { id: `conv_${n}`, project, launchConfig: { epic: tag } } as unknown as Conversation
 }
 

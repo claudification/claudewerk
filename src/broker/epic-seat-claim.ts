@@ -9,7 +9,7 @@
  *     would be a way to evict a live worker from its own card.
  *   - WHO holds the seat -- from `seat_get`.
  *   - WHETHER that holder is alive -- from the registry. The sentinel cannot
- *     know this and must not guess (same split as the overseer lease).
+ *     know this and must not guess (same split as the werk-master lease).
  *
  * THE ORDER OF THE THREE GATES MATTERS. A caller with no epic tag is refused
  * WITHOUT being told to exit: this is a mutex between seats, not a way to kill
@@ -109,7 +109,7 @@ function resolveSeat(
   }
   if (!tag.cardId) {
     return errorReply(
-      `this is the ${tag.role} seat for epic \`${tag.epicId}\` and holds no card. The overseer's singleton is the ` +
+      `this is the ${tag.role} seat for epic \`${tag.epicId}\` and holds no card. The werk-master's singleton is the ` +
         'epic lease, taken by the engine; there is no card seat to claim.',
       403,
     )
@@ -132,7 +132,7 @@ function resolveSeat(
  * Is the holder still working? The registry's answer, never the claimant's.
  *
  * A holder the registry has never heard of is NOT alive: an id no lookup can
- * resolve is exactly the `pending-` placeholder failure the overseer lease hit
+ * resolve is exactly the `pending-` placeholder failure the werk-master lease hit
  * on 2026-08-19, and treating it as alive would make the seat permanently
  * unclaimable.
  */
@@ -147,7 +147,7 @@ function holderIsAlive(deps: SeatClaimDeps, holder: EpicLease | null): boolean {
  * an uncontested grant.
  *
  * A line per successful connect would be one entry per dispatched seat, and the
- * baton tail an overseer generation is handed is twenty entries -- so the
+ * baton tail a werk-master generation is handed is twenty entries -- so the
  * routine case would push the interesting case out of every prompt. Both cases
  * written here are the interesting one: two seats existed for one card.
  *

@@ -38,8 +38,8 @@ const ACTION = {
       'schedule decides when the run is ARMED, `when` decides when the armed run may start dispatching.',
   },
   target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'epic-start: delivery rung.' },
-  concurrency: { type: 'number', description: 'epic-start: max implementers in flight (epic default 3).' },
-  max_gens: { type: 'number', description: 'epic-start: overseer generation ceiling (epic default 40).' },
+  concurrency: { type: 'number', description: 'epic-start: max werk-workers in flight (epic default 3).' },
+  max_gens: { type: 'number', description: 'epic-start: werk-master generation ceiling (epic default 40).' },
   max_usd: { type: 'number', description: 'epic-start: USD ceiling for the whole run (epic default 100).' },
   max_wall_clock_minutes: {
     type: 'number',

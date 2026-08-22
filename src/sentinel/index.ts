@@ -856,7 +856,7 @@ function spawnHeadlessDirect(
       const preflightHints = consumePreflightWarnings(conversationId)
 
       // Collected and PRINTED before the socket is consulted. On 2026-08-20 the
-      // whole explanation for a dead verifier was one line inside CC's
+      // whole explanation for a dead werk-verifier was one line inside CC's
       // `headless-<conv>.ndjsonl`, which this reads and nothing printed -- so
       // the sentinel's own log, the file a human tails first, said only "EARLY".
       const ctx = collectSpawnErrorContext(stderrSnapshot, cwd, conversationId, /*includeHeadlessLog*/ true)

@@ -61,7 +61,7 @@ export function beatRun(project: string, epicId: string) {
   return post({ op: 'beat', project, epicId }, j => j.beat as BeatReply, null)
 }
 
-/** Release a stuck overseer lease. Refuses a LIVE holder unless forced -- that
+/** Release a stuck werk-master lease. Refuses a LIVE holder unless forced -- that
  *  is the difference between an unstick and shooting a run mid-generation. */
 export function breakLease(project: string, epicId: string, reason: string, force = false) {
   return post({ op: 'break_lease', project, epicId, reason, force }, j => String(j.note ?? ''), '')

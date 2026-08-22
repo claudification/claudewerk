@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'bun:test'
-import { buildGuardPrompt, type GuardPromptCtx } from './guard-prompt'
+import { buildWerkVerifierPrompt, type WerkVerifierPromptCtx } from './epic-prompt-werk-verifier'
 
-const base: GuardPromptCtx = {
+const base: WerkVerifierPromptCtx = {
   projectUri: 'claude://sentinel/proj',
   projectRoot: '/Users/jonas/projects/proj',
   cardId: 'fix-the-thing',
 }
 
-describe('buildGuardPrompt', () => {
+describe('buildWerkVerifierPrompt', () => {
   it('injects the distrust stance and the card path', () => {
-    const p = buildGuardPrompt(base)
+    const p = buildWerkVerifierPrompt(base)
     expect(p).toContain('THE GUARD')
     expect(p).toContain('do NOT trust')
     // The canonical card path -- NOT the lane it happens to be sitting in.
@@ -17,20 +17,20 @@ describe('buildGuardPrompt', () => {
   })
 
   it('references the exact approve + bounce transitions for this card', () => {
-    const p = buildGuardPrompt(base)
+    const p = buildWerkVerifierPrompt(base)
     expect(p).toContain('project_set_status(id="fix-the-thing", status="done")')
     expect(p).toContain('project_set_status(id="fix-the-thing", status="in-progress")')
   })
 
   it('tells the Guard to re-run test_cmd and acceptance itself', () => {
-    const p = buildGuardPrompt(base)
+    const p = buildWerkVerifierPrompt(base)
     expect(p).toContain('Re-run `test_cmd`')
     expect(p).toContain('acceptance')
   })
 
   it('names the quest when provided, omits the line otherwise', () => {
-    expect(buildGuardPrompt({ ...base, quest: 'floppy-panda' })).toContain('floppy-panda')
-    expect(buildGuardPrompt(base)).not.toContain('belongs to quest')
+    expect(buildWerkVerifierPrompt({ ...base, quest: 'floppy-panda' })).toContain('floppy-panda')
+    expect(buildWerkVerifierPrompt(base)).not.toContain('belongs to quest')
   })
 })
 
@@ -41,20 +41,20 @@ describe('buildGuardPrompt', () => {
  * learns to ignore instructions.
  */
 describe('the seat-lease order rides on epicId', () => {
-  const epic = buildGuardPrompt({ ...base, epicId: 'epic-project-runner' })
+  const epic = buildWerkVerifierPrompt({ ...base, epicId: 'epic-project-runner' })
 
   it('a QUEST Guard is never told to claim a seat', () => {
-    const quest = buildGuardPrompt({ ...base, quest: 'floppy-panda' })
+    const quest = buildWerkVerifierPrompt({ ...base, quest: 'floppy-panda' })
     expect(quest).not.toContain('epic_seat')
   })
 
-  it('an EPIC Guard claims its VERIFIER seat, before it checks anything out', () => {
+  it('an EPIC Guard claims its WERK-VERIFIER seat, before it checks anything out', () => {
     expect(epic).toContain('epic_seat(action="claim")')
-    expect(epic).toContain('verifier seat')
+    expect(epic).toContain('werk-verifier seat')
     expect(epic.indexOf('CLAIM YOUR SEAT FIRST')).toBeLessThan(epic.indexOf('INDEPENDENT VERIFICATION'))
   })
 
-  it('and it is told the implementer on the same card is NOT a collision', () => {
+  it('and it is told the werk-worker on the same card is NOT a collision', () => {
     expect(epic).toContain('two DIFFERENT seats')
   })
 

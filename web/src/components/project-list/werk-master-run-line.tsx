@@ -1,15 +1,15 @@
 /**
- * THE RUN, on the overseer's row -- generation, load, beat age, epic progress.
+ * THE RUN, on the werk-master's row -- generation, load, beat age, epic progress.
  *
- * An overseer is the one row where "what is this conversation" is not the useful
+ * A werk-master is the one row where "what is this conversation" is not the useful
  * question. The useful question is what its RUN is doing, and that answer lived
  * only in a separate window.
  *
  * THE STATE WORD COMES FROM `runVitality()`, NEVER FROM `.status`. That field is
  * an INTENT the sentinel writes once and nothing writes back down: on
- * 2026-08-20 it read `running` for hours over a run whose overseer conversation
+ * 2026-08-20 it read `running` for hours over a run whose werk-master conversation
  * had ended, with `armed=false` and zero seats alive. `runVitality` is the one
- * derivation the header badge, the wall's A7 pane and the overseer window all
+ * derivation the header badge, the wall's A7 pane and the werk-master window all
  * share; feeding this row off the raw field would ship a fourth opinion about
  * what "running" means.
  */
@@ -21,7 +21,7 @@ import { projectBoardCardRef } from '@/lib/cards'
 import { formatAgeShort } from '@/lib/status-style'
 import type { Conversation } from '@/lib/types'
 import { cn, parseWorktreeUri } from '@/lib/utils'
-import { VITALITY_TONE } from './overseer-vitality-tone'
+import { VITALITY_TONE } from './werk-master-vitality-tone'
 
 /** Progress over an epic's child cards, straight off the board the panel already
  *  holds. Deliberately NOT a broker fold: `provider-project-board` already rolls
@@ -29,7 +29,7 @@ import { VITALITY_TONE } from './overseer-vitality-tone'
  *  free here and cannot disagree with what the board itself shows.
  *
  *  `deep` triggers a whole-board hydration, which a dense transcript could not
- *  afford -- but an overseer row is at most one or two per project, and the
+ *  afford -- but a werk-master row is at most one or two per project, and the
  *  board is usually already hydrated for the selected project. */
 function EpicProgress({ epicId, scope }: { epicId: string; scope: string }) {
   const lookup = useCardLookup(projectBoardCardRef(epicId, scope), true)
@@ -53,7 +53,7 @@ function EpicProgress({ epicId, scope }: { epicId: string; scope: string }) {
   )
 }
 
-export function OverseerRunLine({ conversation }: { conversation: Conversation }) {
+export function WerkMasterRunLine({ conversation }: { conversation: Conversation }) {
   const epicId = conversation.epic?.epicId
   const run = useEpicRun(epicId)
   if (!epicId || !run) return null
@@ -62,7 +62,7 @@ export function OverseerRunLine({ conversation }: { conversation: Conversation }
   const scope = parseWorktreeUri(conversation.project)?.parentUri ?? conversation.project
 
   // Every count is a fact about the run, dot-separated like the row's own meta
-  // footer so the overseer reads as a richer version of an ordinary row rather
+  // footer so the werk-master reads as a richer version of an ordinary row rather
   // than a different kind of object.
   const facts = [
     `gen ${run.gen}/${run.maxGens}`,

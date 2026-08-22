@@ -1,5 +1,5 @@
 /**
- * The overseer-headed subtrees, at the top of a project group.
+ * The werk-master-headed subtrees, at the top of a project group.
  *
  * Extracted rather than inlined into `project-node.tsx`, which was already 369
  * lines against a 150-line bar for a `.tsx` -- adding a third nested map to it
@@ -32,10 +32,10 @@ export function EpicSeatSection({ groups, RowComp, onOpenSettings, hasFollowingR
     <>
       {groups.map(group => (
         <div key={group.key} className="space-y-0.5">
-          {group.overseer && (
-            <ConversationContextMenu conversation={group.overseer} onOpenSettings={onOpenSettings}>
+          {group.werkMaster && (
+            <ConversationContextMenu conversation={group.werkMaster} onOpenSettings={onOpenSettings}>
               <div>
-                <RowComp conversation={group.overseer} />
+                <RowComp conversation={group.werkMaster} />
               </div>
             </ConversationContextMenu>
           )}
@@ -43,7 +43,7 @@ export function EpicSeatSection({ groups, RowComp, onOpenSettings, hasFollowingR
             <ConversationContextMenu key={seat.id} conversation={seat} onOpenSettings={onOpenSettings}>
               {/* Headless seats render FLAT. Indenting under a head that is not
                   on screen points at nothing and reads as a rendering bug. */}
-              <div className={group.overseer ? 'pl-3' : undefined}>
+              <div className={group.werkMaster ? 'pl-3' : undefined}>
                 <RowComp conversation={seat} />
               </div>
             </ConversationContextMenu>

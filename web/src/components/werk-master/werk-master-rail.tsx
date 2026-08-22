@@ -9,10 +9,10 @@
 
 import { runVitality } from '@shared/epic-vitality'
 import type { EpicActivityEntry } from '@shared/protocol'
-import { isLiveRun, selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { isLiveRun, selectAllRuns, useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 import { cn, haptic } from '@/lib/utils'
-import { projectTail } from './overseer-bits'
-import { runKey, useOverseerSelection } from './overseer-state'
+import { projectTail } from './werk-master-bits'
+import { runKey, useWerkMasterSelection } from './werk-master-state'
 
 /** What a rail row DISPLAYS, derived once. Same reasoning as `headFacts`: the
  *  row is not complicated, it just has a lot of optional numbers. */
@@ -64,10 +64,10 @@ function Row({ run, selected, onPick }: { run: EpicActivityEntry; selected: bool
   )
 }
 
-export function OverseerRail() {
-  const runs = useOverseerActivityStore(selectAllRuns)
-  const selected = useOverseerSelection(s => s.selected)
-  const select = useOverseerSelection(s => s.select)
+export function WerkMasterRail() {
+  const runs = useWerkMasterActivityStore(selectAllRuns)
+  const selected = useWerkMasterSelection(s => s.selected)
+  const select = useWerkMasterSelection(s => s.select)
 
   // Live first, then by name. A rail that mixed them by project alone would bury
   // the one thing actually happening under five finished runs.

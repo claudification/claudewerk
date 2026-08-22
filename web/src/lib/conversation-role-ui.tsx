@@ -35,28 +35,28 @@ const NORMAL: ConversationRolePresentation = {
 }
 
 /**
- * The registry. Overseer reads as authority (amber), implementer as work
- * (sky), verifier as judgement (emerald) -- three hues far enough apart to read
+ * The registry. WerkMaster reads as authority (amber), werk-worker as work
+ * (sky), werk-verifier as judgement (emerald) -- three hues far enough apart to read
  * at a glance in a dense list, which is the whole point of the glyph.
  */
 const ROLE_PRESENTATION: Record<ConversationRole, ConversationRolePresentation> = {
-  overseer: {
+  'werk-master': {
     Icon: Eye,
-    label: 'OVERSEER',
+    label: 'WERK-MASTER',
     tint: 'text-amber-400',
-    description: 'Overseer -- decides what happens next, and the only seat that may ask you anything',
+    description: 'WerkMaster -- decides what happens next, and the only seat that may ask you anything',
   },
-  implementer: {
+  'werk-worker': {
     Icon: Wrench,
     label: 'IMPL',
     tint: 'text-sky-400',
-    description: 'Implementer -- does the work on one card, and cannot ask a human',
+    description: 'WerkWorker -- does the work on one card, and cannot ask a human',
   },
-  verifier: {
+  'werk-verifier': {
     Icon: ShieldCheck,
     label: 'VERIFY',
     tint: 'text-emerald-400',
-    description: 'Verifier -- judges one card, with no shared context from the implementer',
+    description: 'WerkVerifier -- judges one card, with no shared context from the werk-worker',
   },
   normal: NORMAL,
 }

@@ -185,7 +185,7 @@ describe('the run artifact', () => {
    * this behaviour -- so the behaviour gets a test rather than a doc line alone.
    *
    * Two halves, and the second is the one with teeth: the ceiling moves, and the
-   * OVERSEER LEASE does not. The generation counter lives on the epic card as
+   * WERK-MASTER LEASE does not. The generation counter lives on the epic card as
    * `overseer_gen` and `startEpicRun` never opens the card, so the card's bytes
    * must come back byte-identical. Anything else is the deadlock this whole file
    * exists to prevent, arriving through the extend verb instead of the digest.
@@ -196,7 +196,10 @@ describe('the run artifact', () => {
       '---',
       'title: "the epic"',
       'status: in-progress',
-      'overseer: conv_overseer',
+      // The EPIC-CARD LEASE KEYS, untouched by the werk-* seat rename on purpose
+      // -- `werk-rename-lease-keys` owns them, and half-renaming a lease loses a
+      // live run's only generation counter.
+      'overseer: conv_werk_master',
       'overseer_gen: 7',
       'overseer_at: 2026-08-17T10:05:00.000Z',
       '---',
@@ -244,8 +247,8 @@ describe('the run artifact', () => {
   /**
    * THE DIGEST LIVES IN ITS OWN FILE, and this block is the whole reason:
    *
-   * `run.md` used to carry engine scalars in its frontmatter AND the overseer's
-   * prose in its body, and the overseer prompt ordered a rewrite of the second
+   * `run.md` used to carry engine scalars in its frontmatter AND the werk-master's
+   * prose in its body, and the werk-master prompt ordered a rewrite of the second
    * every generation. There is no verb for "rewrite only the body", so the only
    * mechanism available was writing the whole file -- and the whole file carries
    * `gen`. On 2026-08-20 `epic-the-wall-ii` did exactly that: the card said
@@ -314,7 +317,7 @@ describe('the run artifact', () => {
 
     /**
      * THE CLOBBER WINDOW, closed. The engine patches a run by read-merge-write,
-     * so an overseer that rewrote `digest.md` between the read and the write
+     * so a werk-master that rewrote `digest.md` between the read and the write
      * would have its prose written back stale -- the same collision in the other
      * direction. A patch that does not name `digest` therefore does not touch
      * the digest file at all.
@@ -332,14 +335,14 @@ describe('the run artifact', () => {
     test('a patch that does not name the digest does not WRITE the digest file', () => {
       startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
       const current = readEpicRun(root, 'e1')
-      const asWritten = 'written by the overseer mid-beat\n\n\n'
+      const asWritten = 'written by the werk-master mid-beat\n\n\n'
 
       writeFileSync(epicDigestFile(root, 'e1'), asWritten)
       patchEpicRun(root, 'e1', { dryGens: current!.dryGens + 1 }, T0 + 1)
 
       expect(readFileSync(epicDigestFile(root, 'e1'), 'utf8')).toBe(asWritten)
       // ...and the prose still reads back, so this is not "untouched because empty".
-      expect(readEpicRun(root, 'e1')?.digest).toBe('written by the overseer mid-beat')
+      expect(readEpicRun(root, 'e1')?.digest).toBe('written by the werk-master mid-beat')
     })
 
     /** A resume must not reset the prose either -- same argument as the dry
@@ -386,7 +389,7 @@ describe('the run artifact', () => {
   })
 
   /**
-   * THE OTHER TWO HANDBRAKES. `maxGens` bounds how often the OVERSEER THINKS and
+   * THE OTHER TWO HANDBRAKES. `maxGens` bounds how often the WERK-MASTER THINKS and
    * bounds nothing about what the seats underneath it burn -- on 2026-08-19 this
    * project billed $2,481 in a day with an unattended run going and nothing
    * stopped it.

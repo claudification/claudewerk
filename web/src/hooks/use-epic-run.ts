@@ -1,7 +1,7 @@
 /**
- * The RUN behind an overseer row.
+ * The RUN behind a werk-master row.
  *
- * `useOverseerActivityStore` is keyed by project, but a seat's own project can
+ * `useWerkMasterActivityStore` is keyed by project, but a seat's own project can
  * be a WORKTREE URI, which is a different key to the one the broker filed the
  * run under. So this matches on `epicId` across the flattened list rather than
  * indexing by project -- the epic id is the thing both ends agree on.
@@ -13,8 +13,8 @@
  */
 
 import type { EpicActivityEntry } from '@shared/protocol'
-import { selectAllRuns, useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { selectAllRuns, useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 
 export function useEpicRun(epicId: string | undefined): EpicActivityEntry | null {
-  return useOverseerActivityStore(s => (epicId ? (selectAllRuns(s).find(r => r.epicId === epicId) ?? null) : null))
+  return useWerkMasterActivityStore(s => (epicId ? (selectAllRuns(s).find(r => r.epicId === epicId) ?? null) : null))
 }

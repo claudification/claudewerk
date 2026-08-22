@@ -6,7 +6,7 @@
  * constraint is only real if the person ticking the box knows what they are
  * arming, and "Dispatch an authorised card as a work order" does not say that it
  * selects on `ready`, that it refuses a card an epic already owns, or that it
- * spends an implementer seat.
+ * spends a werk-worker seat.
  *
  * WHY HERE AND NOT ON THE `Scanner` RECORD. The records live in
  * `src/broker/scanners/`, and those modules pull in the spawn planner, the board
@@ -24,7 +24,7 @@
 import { EPIC_ORDERS } from './epic-orders'
 import { NEEDS_REFINE_TAG } from './epic-ready'
 import { NIGHTSHIFT_TAG } from './nightshift-types'
-import { REFINER_ORDER_ID } from './refiner-order'
+import { WERK_REFINER_ORDER_ID } from './werk-refiner-order'
 import { SCANNER_SKIPS, type ScannerSkip } from './scanner-buckets'
 import type { ScannerId } from './scanner-ids'
 
@@ -88,9 +88,9 @@ export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
     precondition: 'sitting in `inbox` or `open`',
     does: 'dispatch',
     skips: SCANNER_SKIPS.refine,
-    seat: REFINER_ORDER_ID,
-    dispatches: `a ${REFINER_ORDER_ID} seat that rewrites the card in place`,
-    cost: `one ${REFINER_ORDER_ID} seat per card, bounded by that order's own reservation`,
+    seat: WERK_REFINER_ORDER_ID,
+    dispatches: `a ${WERK_REFINER_ORDER_ID} seat that rewrites the card in place`,
+    cost: `one ${WERK_REFINER_ORDER_ID} seat per card, bounded by that order's own reservation`,
     verifierFollows: 'no verifier -- the rewritten card is the artifact, and a human reads it',
     built: true,
   },
@@ -118,10 +118,10 @@ export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
     precondition: 'sitting in `inbox` or `open`, and not owned by an epic',
     does: 'dispatch',
     skips: SCANNER_SKIPS['work-order'],
-    seat: EPIC_ORDERS.implementer.id,
-    dispatches: `a ${EPIC_ORDERS.implementer.id} seat in its own worktree and branch`,
-    cost: `one ${EPIC_ORDERS.implementer.id} seat per card, bounded by the work-order concurrency ceiling`,
-    verifierFollows: `no ${EPIC_ORDERS.verifier.id} follows -- a card left in review is refused \`awaiting-verdict\` and waits`,
+    seat: EPIC_ORDERS['werk-worker'].id,
+    dispatches: `a ${EPIC_ORDERS['werk-worker'].id} seat in its own worktree and branch`,
+    cost: `one ${EPIC_ORDERS['werk-worker'].id} seat per card, bounded by the work-order concurrency ceiling`,
+    verifierFollows: `no ${EPIC_ORDERS['werk-verifier'].id} follows -- a card left in review is refused \`awaiting-verdict\` and waits`,
     built: true,
   },
   epics: {
@@ -131,9 +131,9 @@ export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
     selects: 'conversations carrying an epic launch tag, plus every armed run',
     does: 'dispatch',
     skips: SCANNER_SKIPS.epics,
-    dispatches: `one beat per epic, spending ${EPIC_ORDERS.planner.id}, ${EPIC_ORDERS.implementer.id} and ${EPIC_ORDERS.verifier.id} seats as the run's graph allows`,
+    dispatches: `one beat per epic, spending ${EPIC_ORDERS['werk-planner'].id}, ${EPIC_ORDERS['werk-worker'].id} and ${EPIC_ORDERS['werk-verifier'].id} seats as the run's graph allows`,
     cost: "as many seats as the run's graph and its ceilings allow, per beat",
-    verifierFollows: `yes -- ${EPIC_ORDERS.verifier.id} judges every card an implementer moves to review`,
+    verifierFollows: `yes -- ${EPIC_ORDERS['werk-verifier'].id} judges every card a werk-worker moves to review`,
     cadence: `every ${Math.round(EPIC_SWEEP_INTERVAL_MS / 1000)}s`,
     built: true,
   },

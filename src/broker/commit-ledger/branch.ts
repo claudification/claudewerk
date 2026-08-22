@@ -20,8 +20,8 @@
  *               without anyone having to come back and rewrite the card.
  *
  * That second answer is what makes the feature reachable at all: the WERK engine
- * never merges (the IMPLEMENTER seat merges its dependencies into its own
- * worktree; the verifier integrates nothing), so a merge commit usually does not
+ * never merges (the WERK-WORKER seat merges its dependencies into its own
+ * worktree; the werk-verifier integrates nothing), so a merge commit usually does not
  * exist yet at the moment a card settles. Recording the branch's own commits is
  * not a weaker guess -- it is the same fact with a smaller claim attached.
  */

@@ -65,7 +65,7 @@ function runHeader(run: EpicRunSnapshot): string[] {
   ]
 }
 
-/** One line for the overseer singleton. `convId: ''` means it ran and released,
+/** One line for the werk-master singleton. `convId: ''` means it ran and released,
  *  which is a different fact from never having run -- and the difference is what
  *  tells you whether a wake is overdue or the epic has simply never started. */
 function leaseLine(lease: EpicRunPayload['lease']): string {
@@ -93,7 +93,7 @@ function batonBlock(baton: readonly EpicLogEntry[], heading: string): string[] {
  * header already answers the only question a reconfigure has.
  *
  * Not gated on "was it already armed", deliberately: a genuinely fresh arm has
- * no digest yet, only the placeholder the first overseer generation replaces, so
+ * no digest yet, only the placeholder the first werk-master generation replaces, so
  * the case the gate would exist to serve has nothing to show. `get` is the
  * digest's home and stays one call away.
  */
@@ -124,7 +124,7 @@ function planSection(p: EpicInspectPlan): string[] {
     `## Plan (${p.children} child card(s), complete: ${p.complete ? 'yes' : 'no'})`,
     ...lane('dispatch', p.dispatch),
     ...lane('verify', p.verify),
-    ...lane('questions for the overseer', p.questions),
+    ...lane('questions for the werk-master', p.questions),
     ...lane('held back by the concurrency ceiling', p.heldBack),
     ...lane('waiting on dependencies', p.waitingOnDeps),
   ]
@@ -140,7 +140,7 @@ function liveSection(l: EpicInspectLive, unread = false): string[] {
   return [
     '',
     '## Live',
-    `armed ${l.armed ? 'yes' : 'NO'} . overseer alive ${l.overseerAlive ? 'yes' : 'no'} . max gen seen ${l.maxGenSeen}`,
+    `armed ${l.armed ? 'yes' : 'NO'} . werk-master alive ${l.werkMasterAlive ? 'yes' : 'no'} . max gen seen ${l.maxGenSeen}`,
     `in flight: ${l.inFlight.join(', ') || NONE}`,
     `settled: ${l.settled.join(', ') || NONE}`,
     `settled but NOT acknowledged by the baton: ${l.unacknowledged.join(', ') || NONE}`,
@@ -240,7 +240,7 @@ function renderList(runs: readonly EpicRunListEntry[]): string {
     `${runs.length} epic run(s)${buried > 0 ? ` (${buried} cleared, listed last)` : ''}:`,
     ...runs.map(
       r =>
-        `- ${r.epicId}: ${r.status ?? 'no run artifact'} gen ${r.gen} . armed ${r.armed ? 'yes' : 'no'} . ${r.inFlight} in flight . overseer ${r.overseerAlive ? 'alive' : 'not running'}${clearedSuffix(r)}`,
+        `- ${r.epicId}: ${r.status ?? 'no run artifact'} gen ${r.gen} . armed ${r.armed ? 'yes' : 'no'} . ${r.inFlight} in flight . werk-master ${r.werkMasterAlive ? 'alive' : 'not running'}${clearedSuffix(r)}`,
     ),
   ].join('\n')
 }

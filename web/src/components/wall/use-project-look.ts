@@ -3,7 +3,7 @@
  *
  * Extracted at the P2 merge (R19): A7's runs feed and P2's river feed had grown
  * the identical sixteen-line memoised cache independently, and neither
- * implementer could have seen the other's copy -- the two branches were open at
+ * werk-worker could have seen the other's copy -- the two branches were open at
  * the same time. The cache is the point: `projectSettings` is a dictionary, so
  * resolving per ROW would re-derive the same label and icon for every commit in
  * a run of commits from one project.

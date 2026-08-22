@@ -8,7 +8,7 @@ const BRANCH = 'worktree-epic/e1/runner-run-delete-verb'
 const seat = (over: Partial<AbandonedSeat> = {}): AbandonedSeat => ({
   cardId: 'runner-run-delete-verb',
   convId: 'b00b2d28-2c07-4a53-a1a5-51e6af406134',
-  role: 'implementer',
+  role: 'werk-worker',
   gen: 6,
   lastActivity: Date.parse('2026-08-21T16:38:35.127Z'),
   silentForMs: 12 * 60_000,
@@ -21,8 +21,8 @@ const clean: GitDirt = { ok: true, dirty: new Set(), known: new Set([BRANCH]) }
 
 describe('a settle caused by a DEATH reads differently from a settle caused by a finish', () => {
   /**
-   * THE DONE-LIST ITEM THIS FILE EXISTS FOR. An overseer reading `log.md` alone
-   * has to be able to tell "the work finished" (send a verifier) from "the worker
+   * THE DONE-LIST ITEM THIS FILE EXISTS FOR. A werk-master reading `log.md` alone
+   * has to be able to tell "the work finished" (send a werk-verifier) from "the worker
    * died" (go and look at the worktree). They share the `completion` KIND by
    * necessity -- see the module docstring -- so the body has to carry it.
    */
@@ -44,7 +44,7 @@ describe('a settle caused by a DEATH reads differently from a settle caused by a
   test('it names the conversation, the role and the generation -- checkable by hand', () => {
     const body = deathBody({ seat: seat(), lane: 'open', branch: BRANCH, dirt: clean })
     expect(body).toContain('b00b2d28-2c07-4a53-a1a5-51e6af406134')
-    expect(body).toContain('implementer')
+    expect(body).toContain('werk-worker')
     expect(body).toContain('generation 6')
   })
 
@@ -105,7 +105,7 @@ describe('the dirty worktree is named, so the next generation need not go lookin
   })
 
   /** Explicitly out of scope on the card: deciding whether a corpse's work is
-   *  finished is a judgement, and a judgement belongs to the overseer. */
+   *  finished is a judgement, and a judgement belongs to the werk-master. */
   test('and the engine says plainly that it committed nothing on the seat behalf', () => {
     const body = deathBody({ seat: seat(), lane: 'open', branch: BRANCH, dirt: dirty })
     expect(body).toContain('nothing has been committed on its behalf')

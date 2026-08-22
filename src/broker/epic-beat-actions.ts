@@ -1,7 +1,7 @@
 /**
  * PERFORMING a beat's actions. `planBeat` decides, `epic-executor.ts` sequences,
  * and this file does the four things a beat can actually do: acknowledge a
- * settle, wake the overseer, dispatch or verify a card, and settle the run.
+ * settle, wake the werk-master, dispatch or verify a card, and settle the run.
  *
  * Split out of the executor so that file stays the ORDER of a beat -- which is
  * its entire contract -- rather than the order plus four spawn recipes.
@@ -21,17 +21,17 @@ import {
   cardBranch,
   type EpicSpawnCtx,
   type EpicSpawnPlan,
-  planImplementerSpawn,
-  planOverseerSpawn,
-  planPlannerSpawn,
-  planVerifierSpawn,
+  planWerkMasterSpawn,
+  planWerkPlannerSpawn,
+  planWerkVerifierSpawn,
+  planWerkWorkerSpawn,
 } from './epic-spawn-plan'
 import {
-  type AbandonedOverseer,
   type AbandonedSeat,
+  type AbandonedWerkMaster,
   type EpicGroup,
   type FailedLeg,
-  lostOverseer,
+  lostWerkMaster,
   MAX_LAUNCH_ATTEMPTS,
 } from './epic-sweep'
 import type { BeatDeps, GitDirt } from './epic-types'
@@ -55,7 +55,7 @@ export interface AcknowledgeContext {
 /**
  * Write a `completion` entry for every settled card the baton has not seen.
  *
- * Deliberately MACHINE-AUTHORED and terse: the implementer's own narrative went
+ * Deliberately MACHINE-AUTHORED and terse: the werk-worker's own narrative went
  * into its card, and the point of this entry is to record that the card reached
  * a terminal state at all. An agent-authored summary here would be the one thing
  * the whole design says not to trust.
@@ -109,8 +109,8 @@ export async function acknowledge(
  * THE POINT OF THE ENTRY: a reader of `log.md` alone must be able to tell
  * "verified" from "never started". Before this, a failed launch left the
  * `dispatch` entry standing and nothing else, so the log read as though a
- * verifier had run and simply declined to say anything -- which is how the
- * 2026-08-20 run burned a generation per sweep on a card no verifier had ever
+ * werk-verifier had run and simply declined to say anything -- which is how the
+ * 2026-08-20 run burned a generation per sweep on a card no werk-verifier had ever
  * looked at.
  *
  * Machine-authored and terse, same as `acknowledge`. The exit reason we can
@@ -152,37 +152,37 @@ export async function noteFailedLaunches(deps: BeatDeps, group: EpicGroup, legs:
  * cannot afford them.
  *
  * THE SPLIT BETWEEN THE TWO OUTPUTS is the whole design. The broker LOG gets
- * every corpse, because an ex-overseer that died three generations ago is a fact
+ * every corpse, because an ex-werk-master that died three generations ago is a fact
  * about the fleet somebody debugging wants. The BATON gets only the one holding
  * the lease, because the baton is the record of THIS RUN's generations and
  * because the lane it comes from is re-derived from a registry that never forgets
  * -- writing all of them would append the same entries every 45 seconds forever.
  */
-export async function reapOverseers(
+export async function reapWerkMasters(
   deps: BeatDeps,
   group: EpicGroup,
   gen: number,
   holder: EpicLease | null,
   baton: readonly EpicLogEntry[],
-): Promise<AbandonedOverseer | null> {
-  for (const dead of group.abandonedOverseers) {
+): Promise<AbandonedWerkMaster | null> {
+  for (const dead of group.abandonedWerkMasters) {
     deps.log(
-      `${tag(group.epicId, gen)} overseer ${dead.convId.slice(0, 8)} (gen ${dead.gen}) REAPED: status ` +
+      `${tag(group.epicId, gen)} werk-master ${dead.convId.slice(0, 8)} (gen ${dead.gen}) REAPED: status ` +
         `${dead.status} but no socket and silent for ${Math.round(dead.silentForMs / 1000)}s`,
     )
   }
-  const lost = lostOverseer(group, holder)
-  if (lost) await noteLostOverseer(deps, group, gen, lost, baton)
+  const lost = lostWerkMaster(group, holder)
+  if (lost) await noteLostWerkMaster(deps, group, gen, lost, baton)
   return lost
 }
 
 /**
- * Write an `overseer-lost` entry for a supervisor the engine has just reaped.
+ * Write a `werk-master-lost` entry for a supervisor the engine has just reaped.
  *
  * THE POINT OF THE ENTRY, which is the whole reason the card exists: a run whose
- * overseer's agent host died without recording an end used to write `overseer
+ * werk-master's agent host died without recording an end used to write `werk-master
  * alive at gen N; holding the beat` to the BROKER LOG every 45 seconds, forever,
- * and nothing at all to the baton. The baton is the only thing a fresh overseer
+ * and nothing at all to the baton. The baton is the only thing a fresh werk-master
  * generation reads about the past, so from inside the run the death was
  * invisible: generation N+1 looked exactly like a generation that followed a
  * finished turn. This is what makes those two tellable apart.
@@ -200,28 +200,28 @@ export async function reapOverseers(
  * it quotes the EVIDENCE rather than the verdict: a human who does not believe
  * the engine can check every number in it against the conversation registry.
  */
-async function noteLostOverseer(
+async function noteLostWerkMaster(
   deps: BeatDeps,
   group: EpicGroup,
   gen: number,
-  dead: AbandonedOverseer,
+  dead: AbandonedWerkMaster,
   baton: readonly EpicLogEntry[],
 ): Promise<void> {
-  if (baton.some(e => e.kind === 'overseer-lost' && e.convId === dead.convId)) return
+  if (baton.some(e => e.kind === 'werk-master-lost' && e.convId === dead.convId)) return
   const silentMin = Math.round(dead.silentForMs / 60_000)
   const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
-    kind: 'overseer-lost',
+    kind: 'werk-master-lost',
     convId: dead.convId,
     body:
-      `The OVERSEER of generation ${dead.gen} (conversation \`${dead.convId}\`) was REAPED: the conversation ` +
+      `The WERK-MASTER of generation ${dead.gen} (conversation \`${dead.convId}\`) was REAPED: the conversation ` +
       `registry still reported it as \`${dead.status}\`, but it has held no agent-host connection and produced ` +
       `nothing for ${silentMin} minute(s) (last sign of life ${new Date(dead.lastActivity).toISOString()}). ` +
       'Its end was never recorded, so the engine had been holding every beat for it. A replacement generation ' +
-      'is being woken. THIS GENERATION FOLLOWS A DEATH, NOT A FINISHED TURN -- whatever that overseer was ' +
+      'is being woken. THIS GENERATION FOLLOWS A DEATH, NOT A FINISHED TURN -- whatever that werk-master was ' +
       'part-way through (a merge, a card edit, an answer to a question) may be half-done, so trust the board ' +
       'and git over anything the baton implies was completed.',
   })
-  if (!res.ok) deps.log(`${tag(group.epicId, gen)} overseer-lost append FAILED for ${dead.convId}: ${res.error}`)
+  if (!res.ok) deps.log(`${tag(group.epicId, gen)} werk-master-lost append FAILED for ${dead.convId}: ${res.error}`)
 }
 
 function spawnCtx(group: EpicGroup, gen: number): EpicSpawnCtx {
@@ -229,7 +229,7 @@ function spawnCtx(group: EpicGroup, gen: number): EpicSpawnCtx {
 }
 
 /**
- * Take the overseer lease. Returns the granted generation, or null.
+ * Take the werk-master lease. Returns the granted generation, or null.
  *
  * A REFUSAL IS NORMAL, not an error: the CAS is what makes a double wake safe,
  * so two sweeps racing the same settle is the case this is built for rather than
@@ -247,7 +247,7 @@ async function takeLease(
   const res = await epicIo().sendEpicOp(deps, group.project, {
     op: 'lease',
     epicId: group.epicId,
-    // Is THE HOLDER alive -- not "is any overseer alive", which reads true in
+    // Is THE HOLDER alive -- not "is any werk-master alive", which reads true in
     // exactly the case this check exists to refuse.
     lease: { convId, expectGen, holderAlive: holderIsAlive(group, holder) },
   })
@@ -262,19 +262,19 @@ async function takeLease(
  * Does the conversation named on the lease still live?
  *
  * With no holder known -- the run artifact was unreadable, or nothing has ever
- * taken it -- fall back to "is any overseer alive", which is the conservative
- * answer: it refuses a wake rather than stacking a second overseer.
+ * taken it -- fall back to "is any werk-master alive", which is the conservative
+ * answer: it refuses a wake rather than stacking a second werk-master.
  */
 function holderIsAlive(group: EpicGroup, holder?: EpicLease | null): boolean {
-  if (!holder?.convId) return group.overseerAlive
-  return group.liveOverseers.includes(holder.convId)
+  if (!holder?.convId) return group.werkMasterAlive
+  return group.liveWerkMasters.includes(holder.convId)
 }
 
 /**
  * SWAP THE REAL CONVERSATION ID IN over the `pending-` placeholder the wake took
  * the lease under. Same generation, so this is not a second wake.
  *
- * A failure is logged and swallowed on purpose: the overseer is already running,
+ * A failure is logged and swallowed on purpose: the werk-master is already running,
  * and refusing to proceed because the bookkeeping write missed would trade a
  * wrong holder id for a lost generation. The log line is what makes the mismatch
  * findable (LOG EVERYTHING).
@@ -313,7 +313,7 @@ async function spawnSeat(
 }
 
 /**
- * Take the lease, then spawn the overseer.
+ * Take the lease, then spawn the werk-master.
  *
  * `action.expectGen` IS THE LEASE'S OWN GENERATION -- `runEpicBeat` reads it off
  * `view.lease` and hands it to `planBeat`, which puts it here. There is nothing
@@ -326,11 +326,11 @@ async function spawnSeat(
  * The race protection is unchanged: two beats reading the same lease still send
  * the same generation, and exactly one of them is granted.
  */
-async function wakeOverseer(
+async function wakeWerkMaster(
   deps: BeatDeps,
   group: EpicGroup,
   run: EpicRunSnapshot,
-  action: Extract<EpicAction, { kind: 'wake-overseer' }>,
+  action: Extract<EpicAction, { kind: 'wake-werk-master' }>,
   ctx: ActionContext,
 ): Promise<string | null> {
   const expectGen = action.expectGen
@@ -342,7 +342,7 @@ async function wakeOverseer(
     deps,
     group,
     gen,
-    planOverseerSpawn(spawnCtx(group, gen), {
+    planWerkMasterSpawn(spawnCtx(group, gen), {
       projectUri: group.project,
       projectRoot: group.project,
       run: { ...run, gen },
@@ -354,9 +354,9 @@ async function wakeOverseer(
       // measured at the instant every other number in it was.
       nowMs: deps.now(),
     }),
-    'overseer',
+    'werk-master',
   )
-  if (spawned) await adoptLease(deps, group, gen, spawned, 'overseer')
+  if (spawned) await adoptLease(deps, group, gen, spawned, 'werk-master')
   return spawned
 }
 
@@ -367,14 +367,14 @@ async function spawnForCard(
   gen: number,
   cardId: string,
   role: 'dispatch' | 'verify',
-  /** The card's `depends_on`, for the implementer's base check. Ignored for a
-   *  verifier, which reviews a diff and has no worktree to merge into. */
+  /** The card's `depends_on`, for the werk-worker's base check. Ignored for a
+   *  werk-verifier, which reviews a diff and has no worktree to merge into. */
   dependsOn: readonly string[] = [],
 ): Promise<string | null> {
   const io = epicIo()
   const ctx = spawnCtx(group, gen)
   const spawn =
-    role === 'dispatch' ? planImplementerSpawn(ctx, cardId, 'main', dependsOn) : planVerifierSpawn(ctx, cardId)
+    role === 'dispatch' ? planWerkWorkerSpawn(ctx, cardId, 'main', dependsOn) : planWerkVerifierSpawn(ctx, cardId)
   const out = await io.dispatchSpawn(spawn, deps.spawnContext)
   if (!out.ok) {
     deps.log(`${tag(group.epicId, gen)} ${role} FAILED for ${cardId}: ${out.error}`)
@@ -384,22 +384,22 @@ async function spawnForCard(
     kind: 'dispatch',
     convId: out.conversationId,
     cardId,
-    body: `${role === 'dispatch' ? 'Implementer' : 'Verifier'} dispatched for \`${cardId}\` at generation ${gen}.`,
+    body: `${role === 'dispatch' ? 'WerkWorker' : 'WerkVerifier'} dispatched for \`${cardId}\` at generation ${gen}.`,
   })
   deps.log(`${tag(group.epicId, gen)} ${role} ${cardId} -> ${out.conversationId}`)
   return out.conversationId
 }
 
 /**
- * GENERATION 0: take the lease and spawn the planner into the overseer seat,
+ * GENERATION 0: take the lease and spawn the werk-planner into the werk-master seat,
  * recording the board's fingerprint as the baseline in the SAME patch.
  *
- * The baseline is written before the planner can touch anything. Writing it
- * afterwards -- or letting the planner report it -- would compare the board
- * against a snapshot the planner had already influenced, which is the one thing
+ * The baseline is written before the werk-planner can touch anything. Writing it
+ * afterwards -- or letting the werk-planner report it -- would compare the board
+ * against a snapshot the werk-planner had already influenced, which is the one thing
  * this comparison exists to avoid.
  */
-async function spawnPlanner(
+async function spawnWerkPlanner(
   deps: BeatDeps,
   group: EpicGroup,
   run: EpicRunSnapshot,
@@ -413,9 +413,9 @@ async function spawnPlanner(
     deps,
     group,
     expectGen,
-    `pending-${group.epicId}-planner`,
+    `pending-${group.epicId}-werk-planner`,
     expectGen,
-    'planner',
+    'werk-planner',
     ctx.holder,
   )
   if (gen === null) return null
@@ -429,7 +429,7 @@ async function spawnPlanner(
     deps,
     group,
     gen,
-    planPlannerSpawn(spawnCtx(group, gen), {
+    planWerkPlannerSpawn(spawnCtx(group, gen), {
       projectUri: group.project,
       projectRoot: group.project,
       run: { ...run, gen },
@@ -437,10 +437,10 @@ async function spawnPlanner(
       cardLines: ctx.cardLines,
       epicBody: ctx.epicBody,
     }),
-    'planner',
+    'werk-planner',
   )
   if (!convId) return null
-  await adoptLease(deps, group, gen, convId, 'planner')
+  await adoptLease(deps, group, gen, convId, 'werk-planner')
 
   await io.appendBaton(deps, group.project, group.epicId, {
     kind: 'intent',
@@ -481,10 +481,10 @@ async function standDown(
 /**
  * The planning generation settled. Either the board is as it was -- proceed --
  * or it was rewritten, in which case the run stops and Jonas reads the plan
- * before a single implementer goes out.
+ * before a single werk-worker goes out.
  *
  * `planned` is set in BOTH branches. A checkpoint is not a retry: resuming after
- * one must go straight to beat 1, or approving a plan would re-run the planner
+ * one must go straight to beat 1, or approving a plan would re-run the werk-planner
  * that produced it, forever.
  */
 async function resolvePlanning(
@@ -514,7 +514,7 @@ async function resolvePlanning(
     gen,
     'CHECKPOINT -- the planning generation changed the board, so nothing has been dispatched. ' +
       `${added.length} card state(s) added or changed, ${removed.length} gone. ` +
-      "Read the planner's `intent` entry above for what it decided and why, then RUN again to accept the plan " +
+      "Read the werk-planner's `intent` entry above for what it decided and why, then RUN again to accept the plan " +
       'and start beat 1 -- resuming does NOT re-plan.',
     `plan CHECKPOINT: +${added.length}/-${removed.length}; awaiting Jonas`,
   )
@@ -536,7 +536,7 @@ async function settleRun(
 
 export interface ActionContext {
   /**
-   * The overseer generation this beat is acting AT, read off the lease on the
+   * The werk-master generation this beat is acting AT, read off the lease on the
    * epic card by `runEpicBeat`.
    *
    * Every seat this beat spawns is tagged with it and every log line quotes it,
@@ -555,7 +555,7 @@ export interface ActionContext {
   /**
    * The lease as it stands on the board, from the SAME read the run came from.
    * The CAS needs the holder's identity to ask whether that holder is alive; it
-   * was being fetched and thrown away, so the check ran on "is any overseer
+   * was being fetched and thrown away, so the check ran on "is any werk-master
    * alive" and could never refuse.
    */
   holder: EpicLease | null
@@ -583,9 +583,9 @@ interface Perform {
 type Performer = (p: Perform, action: never) => Promise<string | null>
 
 const PERFORMERS: Record<EpicAction['kind'], Performer> = {
-  'wake-overseer': (p, a: Extract<EpicAction, { kind: 'wake-overseer' }>) =>
-    wakeOverseer(p.deps, p.group, p.run, a, p.ctx),
-  plan: (p, a: Extract<EpicAction, { kind: 'plan' }>) => spawnPlanner(p.deps, p.group, p.run, a, p.ctx),
+  'wake-werk-master': (p, a: Extract<EpicAction, { kind: 'wake-werk-master' }>) =>
+    wakeWerkMaster(p.deps, p.group, p.run, a, p.ctx),
+  plan: (p, a: Extract<EpicAction, { kind: 'plan' }>) => spawnWerkPlanner(p.deps, p.group, p.run, a, p.ctx),
   'plan-accept': (p, a: Extract<EpicAction, { kind: 'plan-accept' }>) =>
     resolvePlanning(p.deps, p.group, p.ctx.gen, a).then(() => null),
   'plan-checkpoint': (p, a: Extract<EpicAction, { kind: 'plan-checkpoint' }>) =>
@@ -614,7 +614,7 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
  * before this beat's write, which is the exact defect that cost this epic nine
  * generations of wrong budget arithmetic.
  */
-const RUN_RENDERING_ACTIONS: readonly EpicAction['kind'][] = ['wake-overseer', 'plan']
+const RUN_RENDERING_ACTIONS: readonly EpicAction['kind'][] = ['wake-werk-master', 'plan']
 
 export function rendersRunState(beat: EpicBeat): boolean {
   return beat.actions.some(a => RUN_RENDERING_ACTIONS.includes(a.kind))

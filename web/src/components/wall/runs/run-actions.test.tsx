@@ -3,7 +3,7 @@
  * click", and a gate that is only asserted by reading the source is not a gate.
  *
  * The verbs themselves are stubbed: what is under test is whether they are
- * reached, never what they do -- they belong to the overseer window and have
+ * reached, never what they do -- they belong to the werk-master window and have
  * their own coverage there.
  */
 
@@ -12,7 +12,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const verbs = vi.hoisted(() => ({ calls: [] as string[] }))
-vi.mock('../../overseer/overseer-verbs', () => ({
+vi.mock('../../werk-master/werk-master-verbs', () => ({
   VERBS: {
     beat: async () => {
       verbs.calls.push('beat')

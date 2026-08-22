@@ -20,7 +20,7 @@ import { fetchActiveRuns } from '@/lib/epic-inspect-api'
  *  render and re-renders every subscriber (React #185's cheaper cousin). */
 const NO_RUNS: EpicActivityEntry[] = []
 
-interface OverseerActivityState {
+interface WerkMasterActivityState {
   /** project URI -> that project's rows, exactly as the broker last sent them. */
   byProject: Record<string, EpicActivityEntry[]>
   primed: boolean
@@ -36,7 +36,7 @@ interface OverseerActivityState {
   prime: (force?: boolean) => Promise<boolean>
 }
 
-export const useOverseerActivityStore = create<OverseerActivityState>((set, get) => ({
+export const useWerkMasterActivityStore = create<WerkMasterActivityState>((set, get) => ({
   byProject: {},
   primed: false,
 
@@ -76,7 +76,7 @@ export const useOverseerActivityStore = create<OverseerActivityState>((set, get)
 let flatCacheKey: Record<string, EpicActivityEntry[]> | null = null
 let flatCacheValue: EpicActivityEntry[] = NO_RUNS
 
-export function selectAllRuns(state: OverseerActivityState): EpicActivityEntry[] {
+export function selectAllRuns(state: WerkMasterActivityState): EpicActivityEntry[] {
   if (flatCacheKey === state.byProject) return flatCacheValue
   const rows = Object.values(state.byProject).flat()
   flatCacheKey = state.byProject
@@ -91,7 +91,7 @@ export function selectAllRuns(state: OverseerActivityState): EpicActivityEntry[]
  * A run the header should count.
  *
  * DERIVED, NOT READ. `status` is an intent the sentinel writes once and never
- * writes back down, so `status === 'running'` counted a run whose overseer had
+ * writes back down, so `status === 'running'` counted a run whose werk-master had
  * died and whose seats had all ended -- the 2026-08-20 lie. `runVitality` is the
  * single derivation every surface shares (`src/shared/epic-vitality.ts`).
  */
@@ -100,13 +100,13 @@ export function isLiveRun(run: EpicActivityEntry): boolean {
 }
 
 /** Runs with a seat actually working. What the pip is allowed to breathe for. */
-export function selectWorkingCount(state: OverseerActivityState): number {
+export function selectWorkingCount(state: WerkMasterActivityState): number {
   return selectAllRuns(state).filter(r => runVitality(r).breathing).length
 }
 
 /** The worst thing true of any live run, for the badge's one word. A stalled run
  *  among healthy ones is the one you need to be told about. */
-export function selectWorstLabel(state: OverseerActivityState): string {
+export function selectWorstLabel(state: WerkMasterActivityState): string {
   const live = selectAllRuns(state).filter(isLiveRun)
   if (live.length === 0) return ''
   const views = live.map(runVitality)
@@ -120,11 +120,11 @@ export function selectWorstLabel(state: OverseerActivityState): string {
 /** What the badge needs, as PRIMITIVES. Returning an object literal from a
  *  Zustand selector is the React #185 footgun this codebase has been bitten by
  *  before, so the badge subscribes to four scalars instead. */
-export function selectLiveCount(state: OverseerActivityState): number {
+export function selectLiveCount(state: WerkMasterActivityState): number {
   return selectAllRuns(state).filter(isLiveRun).length
 }
 
-export function selectSeatCount(state: OverseerActivityState): number {
+export function selectSeatCount(state: WerkMasterActivityState): number {
   return selectAllRuns(state)
     .filter(isLiveRun)
     .reduce((n, r) => n + r.inFlight, 0)
@@ -132,14 +132,14 @@ export function selectSeatCount(state: OverseerActivityState): number {
 
 /** The lowest generation among live runs -- what "gen N" in the badge means
  *  when several are going. The laggard is the informative one. */
-export function selectMinGen(state: OverseerActivityState): number {
+export function selectMinGen(state: WerkMasterActivityState): number {
   const live = selectAllRuns(state).filter(isLiveRun)
   return live.length === 0 ? 0 : Math.min(...live.map(r => r.gen))
 }
 
 /** Has EVERY live run gone quiet? The pip stops breathing only when nothing at
  *  all is beating -- one healthy run among three stalled ones is still motion. */
-export function selectAllStale(state: OverseerActivityState): boolean {
+export function selectAllStale(state: WerkMasterActivityState): boolean {
   const live = selectAllRuns(state).filter(isLiveRun)
   return live.length > 0 && live.every(r => r.stale)
 }

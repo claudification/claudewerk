@@ -24,7 +24,7 @@ import type { CardMove, EpicActivityEntry } from '@shared/protocol'
 import type { WallFrame } from '@shared/wall'
 import { vi } from 'vitest'
 import { useConversationsStore } from '@/hooks/use-conversations'
-import { useOverseerActivityStore } from '@/hooks/use-overseer-activity'
+import { useWerkMasterActivityStore } from '@/hooks/use-werk-master-activity'
 import { applyWallFrame } from '@/hooks/wall-frame-store'
 import type { Conversation } from '@/lib/types'
 import { activityMatrixFixture } from './activity-fixture'
@@ -280,7 +280,7 @@ function epicRun(project: string, epicId: string): EpicActivityEntry {
     gen: 3,
     maxGens: 40,
     inFlight: 1,
-    overseerAlive: true,
+    werkMasterAlive: true,
     armed: true,
     lastBeatAt: new Date(NOW - 20_000).toISOString(),
     stale: false,
@@ -343,7 +343,7 @@ export function seedTheWall(): void {
     connectSeq: 1,
   } as never)
 
-  useOverseerActivityStore.setState({
+  useWerkMasterActivityStore.setState({
     byProject: { [RC]: [epicRun(RC, 'epic-the-wall-ii')], [ANVIL]: [epicRun(ANVIL, 'epic-spec-site')] },
     primed: true,
   })

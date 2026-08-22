@@ -3,7 +3,7 @@
  *
  * A7 used to hold two of these -- `runVitality` for epic rows and
  * `conv.status !== 'ended'` for night ones -- and rendered the union, so a
- * paused epic with a live overseer conversation was indistinguishable from a
+ * paused epic with a live werk-master conversation was indistinguishable from a
  * working one. These cases are the contract that says they cannot drift apart
  * again: every row, of either kind, gets its verdict from `rowLiveness`, and
  * every verdict carries a reason.
@@ -34,7 +34,7 @@ function epic(epicId: string, over: Partial<EpicActivityEntry> = {}): Unattended
       gen: 3,
       maxGens: 40,
       inFlight: 2,
-      overseerAlive: true,
+      werkMasterAlive: true,
       armed: true,
       lastBeatAt: iso(20_000),
       stale: false,
@@ -56,7 +56,7 @@ function night(runId: string, liveWorkers: number): UnattendedRow {
 
 describe('rowLiveness -- one question, both feeds', () => {
   it('defers to the SHARED epic derivation rather than re-reading `status`', () => {
-    // `status: 'running'` with a dead overseer, no seats and a stale beat is the
+    // `status: 'running'` with a dead werk-master, no seats and a stale beat is the
     // 2026-08-20 lie. Liveness here must agree with `runVitality`, which calls
     // it STALLED -- still live, because the engine is still supposed to be
     // driving it, and that is exactly what makes it an alarm.

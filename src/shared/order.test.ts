@@ -26,8 +26,8 @@ const OK = {
   kind: ORDER_KIND,
   id: 'REVIEWER@1',
   title: 'A reviewer',
-  seat: 'verifier',
-  prompt: 'guard',
+  seat: 'werk-verifier',
+  prompt: 'werk-verifier',
   caps: {},
 }
 
@@ -46,7 +46,7 @@ describe('the shape', () => {
     const order = validateOrder(OK)
     expect(order.kind).toBe(ORDER_KIND)
     expect(order.id).toBe('REVIEWER@1')
-    expect(order.seat).toBe('verifier')
+    expect(order.seat).toBe('werk-verifier')
   })
 
   test('the version is part of the discriminator -- order@2 is not an order@1', () => {
@@ -84,30 +84,30 @@ describe('the shape', () => {
  *
  * "New seat types become cheap -- REVIEWER, MERGER, DOC-WRITER, TRIAGE" was
  * false while `seat` was a closed union over the epic engine's four and `prompt`
- * had to name one of the broker's four builders. `REFINER@1` is the receipt: it
- * shipped as `seat: 'implementer', prompt: 'implementer'` with its real
+ * had to name one of the broker's four builders. `WERK-REFINER@1` is the receipt: it
+ * shipped as `seat: 'werk-worker', prompt: 'werk-worker'` with its real
  * instruction block in a wrapper type beside the order, because there was
  * nowhere in `order@1` to put either fact.
  */
 describe('a seat outside the epic engine’s four', () => {
-  const REFINER = {
+  const WERK_REFINER = {
     ...OK,
-    id: 'REFINER@1',
-    title: 'Refiner -- drains #needs-refine',
-    seat: 'refiner',
+    id: 'WERK-REFINER@1',
+    title: 'WerkRefiner -- drains #needs-refine',
+    seat: 'werk-refiner',
     prompt: undefined,
     instructions: 'REFINE this card -- do not implement it.\n1. Read the card file\n2. Remove the `needs-refine` tag',
   }
 
-  test('validates, and keeps the seat it declared rather than being coerced to implementer', () => {
-    const order = validateOrder(REFINER)
-    expect(order.seat).toBe('refiner')
+  test('validates, and keeps the seat it declared rather than being coerced to werk-worker', () => {
+    const order = validateOrder(WERK_REFINER)
+    expect(order.seat).toBe('werk-refiner')
     expect(order.prompt).toBeUndefined()
     expect(order.instructions).toContain('needs-refine')
   })
 
-  test.each(['refiner', 'doc-writer', 'triage', 'merger', 'reviewer', 'a'])('%s is a legal seat name', seat => {
-    expect(validateOrder({ ...REFINER, seat }).seat).toBe(seat)
+  test.each(['werk-refiner', 'doc-writer', 'triage', 'merger', 'reviewer', 'a'])('%s is a legal seat name', seat => {
+    expect(validateOrder({ ...WERK_REFINER, seat }).seat).toBe(seat)
   })
 
   /**
@@ -115,21 +115,27 @@ describe('a seat outside the epic engine’s four', () => {
    * `EPIC_ORDERS`-style lookup misses on case and the engine silently does not
    * dispatch the seat somebody thought they declared.
    */
-  test.each(['Refiner', 'REFINER', 'refiner_2', '2refiner', '-refiner', 'refiner seat', 'refiner; id', ''])(
-    'a malformed seat name is refused: %j',
-    seat => {
-      expect(field({ ...REFINER, seat })).toBe('seat')
-    },
-  )
+  test.each([
+    'WerkRefiner',
+    'WERK_REFINER',
+    'refiner_2',
+    '2refiner',
+    '-werk-refiner',
+    'werk-refiner seat',
+    'werk-refiner; id',
+    '',
+  ])('a malformed seat name is refused: %j', seat => {
+    expect(field({ ...WERK_REFINER, seat })).toBe('seat')
+  })
 
   test('a seat name is bounded -- a label in a picker, not a sentence', () => {
-    expect(field({ ...REFINER, seat: 'a'.repeat(33) })).toBe('seat')
-    expect(validateOrder({ ...REFINER, seat: 'a'.repeat(32) }).seat).toHaveLength(32)
+    expect(field({ ...WERK_REFINER, seat: 'a'.repeat(33) })).toBe('seat')
+    expect(validateOrder({ ...WERK_REFINER, seat: 'a'.repeat(32) }).seat).toHaveLength(32)
   })
 })
 
 describe('an order says where its prompt comes from -- prompt XOR instructions', () => {
-  test('neither is refused rather than defaulted to implementer', () => {
+  test('neither is refused rather than defaulted to werk-worker', () => {
     expect(field({ ...OK, prompt: undefined })).toBe('prompt')
   })
 
@@ -175,7 +181,7 @@ describe('an order says where its prompt comes from -- prompt XOR instructions',
  * THE FIELD REACHING A PROMPT IS THE WHOLE POINT OF THE FIELD.
  *
  * An `instructions` block that validates and is delivered to nobody is the same
- * inertness `REFINER@1`'s wrapper type already shipped once, with a nicer type
+ * inertness `WERK-REFINER@1`'s wrapper type already shipped once, with a nicer type
  * on it. `composeSeatPrompt` is the seam; `fire.ts` is the caller that spends it
  * onto a real scheduled dispatch.
  */
@@ -206,7 +212,7 @@ describe('composeSeatPrompt', () => {
 /**
  * THE TWO CAPS THAT USED TO LIVE ON A WRAPPER.
  *
- * `REFINER@1` carried `maxTurns` and `reservation` in a `SeatOrder` type beside
+ * `WERK-REFINER@1` carried `maxTurns` and `reservation` in a `SeatOrder` type beside
  * the order, because `order@1` had nowhere to put either. Both are now on the
  * artifact, which means both go through this validator -- and both are COUNTS,
  * so the interesting refusals are the ones a `> 0` check would wave through.

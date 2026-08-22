@@ -3,7 +3,7 @@
  *
  * The sentinel captured the cause and put it on the wire. The broker logged
  * `stderrTail=1` -- the COUNT -- and dropped the line, so the only record of why
- * a verifier died in 1.2s was a file inside the project the broker never reads:
+ * a werk-verifier died in 1.2s was a file inside the project the broker never reads:
  *
  *   ERR Error creating worktree: Invalid worktree name: must be 64 characters
  *   or fewer (got 73)

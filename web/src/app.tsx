@@ -29,7 +29,6 @@ import { MediaLightbox } from '@/components/media-lightbox'
 import { useMermaidLightbox } from '@/components/mermaid-lightbox-bus'
 import { useMorningReportOpen } from '@/components/morning-report/morning-report-state'
 import { useOrganizeProjectsOpen } from '@/components/organize-projects/organize-state'
-import { useOverseerOpen } from '@/components/overseer/overseer-state'
 import { PanelBoundary } from '@/components/panel-boundary'
 import { PinnedSwitchStrip } from '@/components/pinned-switch-strip'
 import { quickTaskBus } from '@/components/quick-task-trigger'
@@ -61,6 +60,7 @@ import { VoiceKey } from '@/components/voice-key'
 import { voiceOrbBus } from '@/components/voice-orb/voice-orb-bus'
 import { useWallNavReceiver } from '@/components/wall/wall-nav-receiver'
 import { useWallOpen } from '@/components/wall/wall-state'
+import { useWerkMasterOpen } from '@/components/werk-master/werk-master-state'
 import { useBackdropBypass } from '@/hooks/use-backdrop-bypass'
 import { useBuildUpdate } from '@/hooks/use-build-update'
 import { useConversationsStore } from '@/hooks/use-conversations'
@@ -249,15 +249,15 @@ const MorningReportModal = lazyModule(
     })) as Promise<{ default: ComponentType }>,
   useMorningReportOpen,
 )
-// The overseer control plane. The BADGE that opens it is eager (it is header
+// The werk-master control plane. The BADGE that opens it is eager (it is header
 // chrome and must render the moment anything is running); the window itself is
 // not, so a session that never opens it never pays for the chunk.
-const OverseerModal = lazyModule(
+const WerkMasterModal = lazyModule(
   () =>
-    import('@/components/overseer/overseer-modal').then(m => ({
-      default: m.OverseerModal,
+    import('@/components/werk-master/werk-master-modal').then(m => ({
+      default: m.WerkMasterModal,
     })) as Promise<{ default: ComponentType }>,
-  useOverseerOpen,
+  useWerkMasterOpen,
 )
 // THE WALL -- the whole-fleet command panel. A big surface with eleven panes on
 // it; it must never touch the index bundle, and a session that never opens it
@@ -635,7 +635,7 @@ function Dashboard() {
       <ManageWorkspacesModal />
       <VacuumModal />
       <MorningReportModal />
-      <OverseerModal />
+      <WerkMasterModal />
       {canAdmin && <WallModal />}
       <LaunchProfileCommands />
       <LaunchToastContainer />

@@ -74,7 +74,7 @@ export function RunTaskDialog({
   /**
    * The open-epic roster, and ONLY when this run can act on it: a refine of a
    * card that has no `epic:` yet. A work run does not parent cards, and a card
-   * that already has a parent is not re-parented by a refiner -- in both cases
+   * that already has a parent is not re-parented by a werk-refiner -- in both cases
    * the block is prompt weight that changes nothing.
    */
   const epicRoster = useMemo(

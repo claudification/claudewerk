@@ -27,7 +27,7 @@ vi.mock('@/lib/epic-run-api', () => ({
   startEpicRun: vi.fn(),
 }))
 
-import { OverseerControls } from './overseer-controls'
+import { WerkMasterControls } from './werk-master-controls'
 
 const PROJECT = 'claude://default/p'
 
@@ -36,7 +36,7 @@ function run(status: EpicRunSnapshot['status']): EpicRunSnapshot {
 }
 
 function mount(snapshot: EpicRunSnapshot | null, onDone = () => {}) {
-  render(<OverseerControls project={PROJECT} epicId="e1" run={snapshot} leaseHeld={false} onDone={onDone} />)
+  render(<WerkMasterControls project={PROJECT} epicId="e1" run={snapshot} leaseHeld={false} onDone={onDone} />)
   return screen.getByRole('button', { name: /DELETE/ })
 }
 
@@ -56,7 +56,7 @@ afterEach(() => {
   cleanup()
 })
 
-describe('the overseer window can delete a run', () => {
+describe('the werk-master window can delete a run', () => {
   it('offers DELETE on an ended run', () => {
     expect(mount(run('aborted')).hasAttribute('disabled')).toBe(false)
   })

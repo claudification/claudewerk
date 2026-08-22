@@ -21,7 +21,7 @@
  */
 
 import { buildEpicIndex, type EpicChild } from './epic-cards'
-import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 
 /** Row markers, straight off the mockup. */
@@ -80,9 +80,9 @@ function isClosed(child: EpicChild): boolean {
   return child.bucket === 'done' || child.bucket === 'dropped'
 }
 
-/** A question an implementer parked for the overseer -- stopped, not waiting. */
+/** A question a werk-worker parked for the werk-master -- stopped, not waiting. */
 function isParked(child: EpicChild): boolean {
-  return child.card.tags.includes(NEEDS_OVERSEER_TAG)
+  return child.card.tags.includes(NEEDS_WERK_MASTER_TAG)
 }
 
 function childMarker(child: EpicChild): PinnedMarker {

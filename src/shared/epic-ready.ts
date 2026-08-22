@@ -4,25 +4,25 @@
  * This is the one piece deliberately kept away from the model. "Which cards are
  * ready" is a graph question with an exact answer, and an LLM asked to eyeball a
  * dependency list will occasionally dispatch a card whose dependency is still
- * open. The overseer decides the interesting things (is this card still the
+ * open. The werk-master decides the interesting things (is this card still the
  * right card, does the plan still hold, should we stop); it does not get to
  * decide arithmetic.
  *
  * TWO LANES come out of here:
  *   - `dispatch`  cards whose `depends_on` are all done and which have nobody
- *                 working them -> implementer. NOT-STARTED cards, and ALSO cards
+ *                 working them -> werk-worker. NOT-STARTED cards, and ALSO cards
  *                 sitting in `in-progress` with no live seat -- see THE BOUNCE
  *                 LANE below.
  *   - `verify`    cards sitting in `in-review` -> a Guard leg, which is the half
  *                 of the DONE-gate that was written and never wired (the existing
- *                 `buildGuardPrompt` had zero callers before epic mode).
+ *                 `buildWerkVerifierPrompt` had zero callers before epic mode).
  *
  * THE BOUNCE LANE. `dispatch` used to consider `notStarted` cards only, and
  * `verify` considers `in-review` only, while `epicBucket` maps BOTH `in-progress`
  * and `in-review` to `inProgress`. So a card at `in-progress` was in neither
  * lane: invisible to dispatch (wrong bucket) and invisible to verify (wrong
- * status). That is not a corner -- it is the DOCUMENTED bounce path. The overseer
- * prompt tells every overseer that a bounced card "is back in `in-progress` ...
+ * status). That is not a corner -- it is the DOCUMENTED bounce path. The werk-master
+ * prompt tells every werk-master that a bounced card "is back in `in-progress` ...
  * leave it, it redispatches". It did not redispatch. Generation 3 of
  * `epic-scanner-fabric` followed that instruction exactly and generation 4 woke
  * to a free slot, a dead seat and a card nobody would ever pick up; a human had
@@ -34,14 +34,14 @@
  * progress, and the rollup counts, the `complete` predicate and every board
  * surface read `epicBucket`'s mapping.
  *
- * `in-review` is deliberately NOT swept in. That lane belongs to the verifier,
- * and an in-review card with no live verifier is already handled by `verify`.
+ * `in-review` is deliberately NOT swept in. That lane belongs to the werk-verifier,
+ * and an in-review card with no live werk-verifier is already handled by `verify`.
  *
  * THE NOT-STARTED LANE HAS ITS OWN GUARD, `alreadyRun`, and it is STRICTER than
  * the bounce lane's ceiling on purpose.
  *
  * Dispatching a card does not move it out of `open` -- `spawnForCard` only
- * appends a baton entry -- so an implementer that ran, produced output and died
+ * appends a baton entry -- so a werk-worker that ran, produced output and died
  * without moving its own card leaves that card `open`, therefore `notStarted`,
  * therefore dispatchable again on the very next beat. Every 45 seconds, until a
  * spend cap parks the run. The work-order scanner hit exactly this and solved it
@@ -95,10 +95,10 @@
  * The obvious design for "refine before you build" is to run the refine scanner
  * first and the work scanner second. That requires both to run, in order,
  * without overlap: miss a run, crash halfway, or run them concurrently and a
- * rough card goes out to an implementer anyway. Stated here instead, as an
- * arithmetic fact about readiness, it needs none of that -- the refiner may run
+ * rough card goes out to a werk-worker anyway. Stated here instead, as an
+ * arithmetic fact about readiness, it needs none of that -- the werk-refiner may run
  * before, after, concurrently or never and a card carrying `needs-refine` is
- * still not dispatchable. It is also self-healing: a refiner killed mid-pass
+ * still not dispatchable. It is also self-healing: a werk-refiner killed mid-pass
  * leaves the tag on, so the card simply stays undispatched rather than going out
  * half-refined.
  *
@@ -118,7 +118,7 @@ import {
   toEpicChild,
 } from './epic-cards'
 import { orderReady } from './epic-ready-order'
-import { NEEDS_OVERSEER_TAG } from './epic-run-types'
+import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
 
 /**
@@ -126,7 +126,7 @@ import type { ProjectTaskMeta } from './project-task-types'
  * builds this yet".
  *
  * DECLARED HERE, beside the fold that refuses on it, for the same reason
- * `NEEDS_OVERSEER_TAG` is declared beside the engine that answers it:
+ * `NEEDS_WERK_MASTER_TAG` is declared beside the engine that answers it:
  * `board-system-tags.ts` is a REGISTRY of `{tag, detail}` rows for a picker, not
  * a constants module, and importing a display list to get a routing decision
  * would make every consumer of the tag depend on the picker. `refine-scanner.
@@ -140,18 +140,18 @@ export const NEEDS_REFINE_TAG = 'needs-refine'
  *
  * THE BOUND ON THE WHOLE DISPATCH LANE, and it is not optional. "A card at
  * `in-progress` is dispatchable again" is right once per bounce and ruinous
- * without a ceiling: an implementer that dies without moving its card leaves that
+ * without a ceiling: a werk-worker that dies without moving its card leaves that
  * card at `in-progress` forever, which is a fresh seat every 45s until a spend cap
  * notices. That is the same hazard `unspawnable` was written for after gen 2 of
  * `epic-the-wall-ii` spent thirteen seats on one card, in a new place.
  *
  * SIX, counted in SEATS rather than in bounces, because seats are what the baton
  * records and what the run is billed for (`dispatchCountsByCard` explains why the
- * count cannot distinguish an implementer from a verifier). A card that reaches
- * `done` the first time costs two -- one implementer, one verifier -- so six is
+ * count cannot distinguish a werk-worker from a werk-verifier). A card that reaches
+ * `done` the first time costs two -- one werk-worker, one werk-verifier -- so six is
  * three full rounds: the original attempt plus two bounces. A card that has been
- * through three implementers without converging is not one more implementer away
- * from converging; it is a card the overseer needs to look at.
+ * through three werk-workers without converging is not one more werk-worker away
+ * from converging; it is a card the werk-master needs to look at.
  *
  * ONE NUMBER FOR BOTH LANES. It bounds the bounce lane and, since
  * epic-open-lane-redispatches-forever, the not-started lane too. Six is arguably
@@ -168,32 +168,32 @@ export const MAX_CARD_SEATS = 6
 export interface PlanCohortInput {
   /** Every card on the board (the selector narrows it to the cohort). */
   cards: readonly ProjectTaskMeta[]
-  /** Max implementers in flight at once. */
+  /** Max werk-workers in flight at once. */
   concurrency: number
-  /** Card ids with a live implementer right now. */
+  /** Card ids with a live werk-worker right now. */
   inFlight: readonly string[]
   /**
-   * Card ids with a live VERIFIER right now -- a separate lane from `inFlight`
+   * Card ids with a live WERK-VERIFIER right now -- a separate lane from `inFlight`
    * on purpose.
    *
    * These are two different seats and only a same-role collision matters. A live
-   * implementer must NOT suppress the verdict its own card is owed, and a live
-   * verifier must not make the card look dispatchable. Folding both into one bit
+   * werk-worker must NOT suppress the verdict its own card is owed, and a live
+   * werk-verifier must not make the card look dispatchable. Folding both into one bit
    * is exactly the bug this field exists to end: `verify` had no liveness input
-   * at all, so a card sitting in `in-review` asked for a fresh verifier on every
+   * at all, so a card sitting in `in-review` asked for a fresh werk-verifier on every
    * beat and collected eight concurrent Opus reviewers on one card.
    */
   inVerify: readonly string[]
   /**
    * Cards whose seats keep dying before producing anything (`EpicGroup.
    * unspawnable`). Excluded from BOTH lanes -- the failure is in the launch,
-   * not in the role, so sending a verifier instead of an implementer would fail
+   * not in the role, so sending a werk-verifier instead of a werk-worker would fail
    * identically.
    *
    * THE BOUND ON THE RETRY PATH. Leaving a failed launch dispatchable is right
    * once per attempt and ruinous without a ceiling: gen 2 of `epic-the-wall-ii`
    * spent thirteen seats on one card. Excluded here, the card falls into
-   * `idleReason`, which drives a dry generation -> one overseer wake -> a park.
+   * `idleReason`, which drives a dry generation -> one werk-master wake -> a park.
    */
   unspawnable?: readonly string[]
   /**
@@ -224,7 +224,7 @@ export interface PlanCohortInput {
    * Card ids whose every backing conversation is dead AND at least one of them
    * produced something (`EpicGroup.settled`). THE BOUND ON THE NOT-STARTED LANE.
    *
-   * A seat that ran and finished leaves the card wherever the implementer put it.
+   * A seat that ran and finished leaves the card wherever the werk-worker put it.
    * If nobody moved it out of `open` the fold calls it not-started and dispatches
    * it again, and again, every beat -- `MAX_LAUNCH_ATTEMPTS` explicitly does not
    * apply, because that ceiling is for seats that produced NOTHING. This is the
@@ -238,7 +238,7 @@ export interface PlanCohortInput {
    * lands in `failedLegs`, and still gets its `MAX_LAUNCH_ATTEMPTS` tries.
    *
    * Applied to the NOT-STARTED lane only. A bounced card at `in-progress` is
-   * settled by construction -- its implementer and its verifier both ran and both
+   * settled by construction -- its werk-worker and its werk-verifier both ran and both
    * died -- so applying this there would delete the bounce lane. That one is
    * bounded by `MAX_CARD_SEATS` instead.
    *
@@ -285,32 +285,32 @@ export interface TaggedPlanInput extends PlanCohortInput {
 export interface EpicPlan {
   rollup: EpicRollup | null
   /**
-   * Cards to hand to an implementer, already slot-capped, ORDERED BY
+   * Cards to hand to a werk-worker, already slot-capped, ORDERED BY
    * {@link orderReady}: most transitive dependents first, then `priority:`, then
    * oldest `created:`, then slug.
    *
    * This sentence used to say "most important first" and mean nothing -- the
    * order was whatever order the board was enumerated in. Naming the key here is
    * the point: the field is read by the executor, the inspect RPC and the
-   * overseer pane, and a comment that describes an intention rather than a
+   * werk-master pane, and a comment that describes an intention rather than a
    * comparator is how the head of a six-card chain sat in `heldBack` for four
    * generations while leaves took the seats.
    */
   dispatch: ProjectTaskMeta[]
   /**
    * Cards awaiting an independent verdict, EXCLUDING any that already have a
-   * verifier alive.
+   * werk-verifier alive.
    *
    * Still not slot-capped, and that part is deliberate: a card stuck in
    * `in-review` is the worst place for work to sit, so a verdict should never
-   * queue behind implementers. The bound is one-per-card, not a ceiling -- which
-   * makes the worst case "one verifier per in-review card" instead of the
+   * queue behind werk-workers. The bound is one-per-card, not a ceiling -- which
+   * makes the worst case "one werk-verifier per in-review card" instead of the
    * unbounded-in-TIME flood this used to be.
    */
   verify: ProjectTaskMeta[]
-  /** Questions an implementer parked for the overseer (`needs-overseer` cards).
+  /** Questions a werk-worker parked for the werk-master (`needs-werk-master` cards).
    *  These are answered, never dispatched -- handing a question to another
-   *  implementer is how you get two agents guessing instead of one asking. */
+   *  werk-worker is how you get two agents guessing instead of one asking. */
   questions: ProjectTaskMeta[]
   /** Ready but over the concurrency ceiling. Named so the ceiling is VISIBLE
    *  rather than silently truncating -- "3 of 7 running" is the honest render.
@@ -330,15 +330,15 @@ export interface EpicPlan {
    * WITHHELD FROM `dispatch` AND NOT FROM `verify`, and that asymmetry is
    * deliberate. `dispatch` hands a card to somebody who has to build from it, so
    * roughness is disqualifying; `verify` judges a diff that already exists, and
-   * the refiner cannot rescue a card it blocked there -- `REFINER@1` is denied
+   * the werk-refiner cannot rescue a card it blocked there -- `WERK-REFINER@1` is denied
    * the status verb, so an `in-review` card withheld from the verify lane would
    * sit in `in-review` with nobody able to move it. A stall the machinery cannot
    * clear is worse than a verdict on a card whose prose could be better.
    *
    * A card that is BOTH a question and rough is reported as a question and not
    * here: the buckets are refusal reasons a scanner counts, so one card falling
-   * into two of them would double-count the same stall, and the overseer answers
-   * a question whereas the refiner only rewrites prose.
+   * into two of them would double-count the same stall, and the werk-master answers
+   * a question whereas the werk-refiner only rewrites prose.
    */
   needsRefine: ProjectTaskMeta[]
   /**
@@ -384,7 +384,7 @@ function isBounced(card: ProjectTaskMeta): boolean {
   return card.status === 'in-progress'
 }
 
-/** Is this card in a lane an implementer can be sent to at all? Liveness,
+/** Is this card in a lane a werk-worker can be sent to at all? Liveness,
  *  roughness, questions and the ceiling are separate refusals below. */
 function inDispatchLane(child: EpicChild, bounceLane: boolean): boolean {
   return child.bucket === 'notStarted' || (bounceLane && isBounced(child.card))
@@ -395,7 +395,7 @@ function inDispatchLane(child: EpicChild, bounceLane: boolean): boolean {
  *
  * It was the bounce lane's alone when it landed, on the reasoning that a
  * not-started card had never been dispatched. That is false of a card an
- * implementer left in `open`, and epic-open-lane-redispatches-forever widened it.
+ * werk-worker left in `open`, and epic-open-lane-redispatches-forever widened it.
  * Nothing about the predicate is lane-specific -- see `MAX_CARD_SEATS` for why it
  * stays one number, and `PlanCohortInput.settled` for why the not-started lane
  * still needs a second, earlier guard on top of it.
@@ -417,12 +417,12 @@ function alreadyRan(child: EpicChild, settled: ReadonlySet<string>): boolean {
   return child.bucket === 'notStarted' && settled.has(child.card.slug)
 }
 
-/** A question an implementer parked for the overseer, not a unit of work. */
+/** A question a werk-worker parked for the werk-master, not a unit of work. */
 function isQuestion(card: ProjectTaskMeta): boolean {
-  return card.tags.includes(NEEDS_OVERSEER_TAG)
+  return card.tags.includes(NEEDS_WERK_MASTER_TAG)
 }
 
-/** Filed rough. Nobody builds it until a refiner drains the tag. */
+/** Filed rough. Nobody builds it until a werk-refiner drains the tag. */
 function isRough(card: ProjectTaskMeta): boolean {
   return card.tags.includes(NEEDS_REFINE_TAG)
 }
@@ -438,8 +438,8 @@ interface Cohort {
    * Does this cohort get THE BOUNCE LANE -- `in-progress` cards with no live seat
    * treated as dispatchable? The epic selector's, and only that one.
    *
-   * A bounce is something a VERIFIER does, and an epic run is the only cohort
-   * with a verify lane: the work-order scanner dispatches implementers and
+   * A bounce is something a WERK-VERIFIER does, and an epic run is the only cohort
+   * with a verify lane: the work-order scanner dispatches werk-workers and
    * nothing else, so a `ready` card sitting in `in-progress` was never bounced --
    * it is a card somebody moved by hand, and that scanner deliberately names it
    * `not-actionable` rather than acting on it. Sweeping it in from the shared
@@ -611,7 +611,7 @@ const WITHHOLD_RULES: ReadonlyArray<{
     lane: null,
   },
   { claims: (child, gates) => !inDispatchLane(child, gates.bounceLane), lane: null },
-  // The overseer answers these; nobody implements them. Counted by `questions`.
+  // The werk-master answers these; nobody implements them. Counted by `questions`.
   { claims: child => isQuestion(child.card), lane: null },
   {
     // A rough card is not ready, and it is withheld BEFORE the dependency check
@@ -764,7 +764,7 @@ interface IdleInput {
  * The rules behind "why is this epic not moving", MOST ACTIONABLE FIRST. A table
  * rather than an if-chain because the ORDER is the whole design here -- an epic
  * with both an open question and a dependency stall should report the question,
- * since that is the one a human or an overseer can act on -- and a table makes
+ * since that is the one a human or a werk-master can act on -- and a table makes
  * that order something you can read, reorder and test.
  */
 const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: IdleInput) => string }> = [
@@ -798,21 +798,21 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
     say: i =>
       `${i.alreadyRun.length} card(s) a seat already ran and finished for without moving them, no longer ` +
       `re-dispatched: ${i.alreadyRun.map(c => c.slug).join(', ')} -- move each to \`in-review\` if the work ` +
-      'landed, or to `in-progress` to send another implementer',
+      'landed, or to `in-progress` to send another werk-worker',
   },
   {
     when: i => i.questions.length > 0,
-    say: i => `${i.questions.length} open question(s) for the overseer: ${i.questions.map(c => c.slug).join(', ')}`,
+    say: i => `${i.questions.length} open question(s) for the werk-master: ${i.questions.map(c => c.slug).join(', ')}`,
   },
   {
     // ABOVE the verify lane: an awaiting-verdict card has had its work done and
-    // resolves itself the moment a verifier runs, whereas a rough card blocks
+    // resolves itself the moment a werk-verifier runs, whereas a rough card blocks
     // its own work entirely and stays blocked until something drains the tag --
     // which, if the refine scanner is off for this project, is never.
     when: i => i.needsRefine.length > 0,
     say: i =>
       `${i.needsRefine.length} card(s) too rough to build, still tagged \`${NEEDS_REFINE_TAG}\`: ` +
-      `${i.needsRefine.map(c => c.slug).join(', ')} -- a refiner drains the tag`,
+      `${i.needsRefine.map(c => c.slug).join(', ')} -- a werk-refiner drains the tag`,
   },
   {
     when: i => i.verify.length > 0,

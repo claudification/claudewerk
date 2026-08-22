@@ -41,9 +41,9 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
     project: 'claude://s/p',
     inFlight: [],
     inVerify: [],
-    overseerAlive: false,
-    liveOverseers: [],
-    abandonedOverseers: [],
+    werkMasterAlive: false,
+    liveWerkMasters: [],
+    abandonedWerkMasters: [],
     settled: [],
     failedLegs: [],
     abandonedSeats: [],
@@ -98,18 +98,18 @@ describe('epicConversations', () => {
 
   test('only conversations tagged for THIS epic come back', () => {
     const convs = [
-      conv('a', { epicId: 'e1', role: 'overseer', gen: 3 }),
-      conv('b', { epicId: 'other', role: 'implementer', cardId: 't1', gen: 1 }),
+      conv('a', { epicId: 'e1', role: 'werk-master', gen: 3 }),
+      conv('b', { epicId: 'other', role: 'werk-worker', cardId: 't1', gen: 1 }),
       conv('c', undefined),
     ]
     expect(epicConversations(convs, isLive, 'e1').map(r => r.id)).toEqual(['a'])
   })
 
   test('role, card and generation survive; liveness is computed, not taken from status alone', () => {
-    const convs = [conv('a', { epicId: 'e1', role: 'implementer', cardId: 't5', gen: 6 }, 'ended')]
+    const convs = [conv('a', { epicId: 'e1', role: 'werk-worker', cardId: 't5', gen: 6 }, 'ended')]
     expect(epicConversations(convs, isLive, 'e1')[0]).toEqual({
       id: 'a',
-      role: 'implementer',
+      role: 'werk-worker',
       cardId: 't5',
       gen: 6,
       status: 'ended',
@@ -119,14 +119,14 @@ describe('epicConversations', () => {
 
   test('newest generation first -- a dead retry-predecessor must not head the list', () => {
     const convs = [
-      conv('old', { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 1 }, 'ended'),
-      conv('new', { epicId: 'e1', role: 'implementer', cardId: 't1', gen: 4 }),
+      conv('old', { epicId: 'e1', role: 'werk-worker', cardId: 't1', gen: 1 }, 'ended'),
+      conv('new', { epicId: 'e1', role: 'werk-worker', cardId: 't1', gen: 4 }),
     ]
     expect(epicConversations(convs, isLive, 'e1').map(r => r.id)).toEqual(['new', 'old'])
   })
 
-  test('an overseer carries no cardId, and the key is absent rather than undefined', () => {
-    const rows = epicConversations([conv('a', { epicId: 'e1', role: 'overseer', gen: 2 })], isLive, 'e1')
+  test('a werk-master carries no cardId, and the key is absent rather than undefined', () => {
+    const rows = epicConversations([conv('a', { epicId: 'e1', role: 'werk-master', gen: 2 })], isLive, 'e1')
     expect(rows[0]).not.toHaveProperty('cardId')
   })
 })
@@ -137,9 +137,9 @@ describe('toInspectLive', () => {
   test('the lanes and the armed flag come through', () => {
     const out = toInspectLive({
       ...base,
-      group: group({ inFlight: ['t1'], settled: ['t2'], overseerAlive: true, maxGenSeen: 5 }),
+      group: group({ inFlight: ['t1'], settled: ['t2'], werkMasterAlive: true, maxGenSeen: 5 }),
     })
-    expect(out).toMatchObject({ armed: true, inFlight: ['t1'], settled: ['t2'], overseerAlive: true, maxGenSeen: 5 })
+    expect(out).toMatchObject({ armed: true, inFlight: ['t1'], settled: ['t2'], werkMasterAlive: true, maxGenSeen: 5 })
   })
 
   test('a generation mismatch is PROMOTED to a field -- it used to be a log line nobody read', () => {

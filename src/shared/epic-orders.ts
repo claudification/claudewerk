@@ -1,15 +1,15 @@
 /**
  * THE FOUR SEATS, AS WORK ORDERS.
  *
- * `epic-spawn-plan.ts` used to hardcode what an OVERSEER, a PLANNER, an
- * IMPLEMENTER and a GUARD are: the name prefix, whether it gets a worktree,
+ * `epic-spawn-plan.ts` used to hardcode what an WERK-MASTER, a WERK-PLANNER, an
+ * WERK-WORKER and a GUARD are: the name prefix, whether it gets a worktree,
  * which prompt builder it uses, whether it may speak to a human. Four seats,
  * none of them a thing you could read without reading the broker, and a fifth
  * seat meant editing the broker.
  *
  * A FIFTH SEAT NO LONGER MEANS EDITING THE BROKER, and it no longer means
  * editing this file either. `order@1`'s `seat` is an open name and an order may
- * carry its own `instructions`, so a REFINER or a DOC-WRITER is a new order
+ * carry its own `instructions`, so a WERK-REFINER or a DOC-WRITER is a new order
  * file and nothing else. What stayed closed is THIS map -- the seats the epic
  * ENGINE dispatches -- because a scheduler seat has no meaning inside a
  * generation. `orderRole()` is where the two meet, and it refuses.
@@ -41,29 +41,29 @@ import { type Order, type OrderSeat, validateOrder } from './order'
  * THE FOUR SEATS THE EPIC ENGINE DISPATCHES. Closed, and closed HERE.
  *
  * `OrderSeat` is an open name -- any lowercase-kebab string is a legal seat for
- * an `order@1`, which is what makes a REFINER or a DOC-WRITER possible without
+ * an `order@1`, which is what makes a WERK-REFINER or a DOC-WRITER possible without
  * a schema edit. This union is the other half of that: the epic engine still
  * has exactly four seats, it still wants the compiler to tell it when one is
  * missing an order, and a seat outside these four still has no meaning to a
  * beat. Opening the schema did not open the ENGINE, and conflating the two is
  * how a scheduler-only seat would end up dispatched into a generation.
  */
-export type EpicOrderSeat = 'overseer' | 'planner' | 'implementer' | 'verifier'
+export type EpicOrderSeat = 'werk-master' | 'werk-planner' | 'werk-worker' | 'werk-verifier'
 
 /**
  * The seat -> launch-tag role map.
  *
- * PLANNER IS THE OVERSEER SEAT WITH A DIFFERENT PROMPT, and the shared tag is
- * not laziness: `overseerAlive` is what stops the engine dispatching underneath
+ * WERK-PLANNER IS THE WERK-MASTER SEAT WITH A DIFFERENT PROMPT, and the shared tag is
+ * not laziness: `werkMasterAlive` is what stops the engine dispatching underneath
  * a live supervisor, and a planning generation needs exactly that guard. A
- * `planner` role tag would make generation 0 invisible to the check whose whole
+ * `werk-planner` role tag would make generation 0 invisible to the check whose whole
  * job is to hold the beat.
  */
 const SEAT_ROLE: Record<EpicOrderSeat, EpicRole> = {
-  overseer: 'overseer',
-  planner: 'overseer',
-  implementer: 'implementer',
-  verifier: 'verifier',
+  'werk-master': 'werk-master',
+  'werk-planner': 'werk-master',
+  'werk-worker': 'werk-worker',
+  'werk-verifier': 'werk-verifier',
 }
 
 /** Is this seat one the epic engine knows how to dispatch? */
@@ -83,7 +83,7 @@ export function orderSeatRole(seat: OrderSeat): EpicRole | undefined {
  * Which `EpicRole` an order's seat reports as. Drives the mute and the tag.
  *
  * IT REFUSES A NON-EPIC SEAT RATHER THAN MAPPING ONE. `OrderSeat` is open, so
- * `SEAT_ROLE[order.seat]` would now hand back `undefined` for a `refiner` and
+ * `SEAT_ROLE[order.seat]` would now hand back `undefined` for a `werk-refiner` and
  * that `undefined` would travel: `buildEpicWorkerSettings(role, ...)` decides
  * the MUTE from the role, and `mayAskHuman(undefined)` is falsy -- so the seat
  * would be dispatched, silently muted, tagged with an epic role that is not a
@@ -146,35 +146,35 @@ const AUTO = { permissionMode: 'auto' } as const
  */
 
 /**
- * THE OVERSEER. No worktree: it reads the board, answers questions and merges
+ * THE WERK-MASTER. No worktree: it reads the board, answers questions and merges
  * on main, and an isolated checkout would hide the very state it exists to
  * judge. The only seat whose settings leave the human channels open.
  */
-export const OVERSEER_ORDER: Order = validateOrder({
+export const WERK_MASTER_ORDER: Order = validateOrder({
   kind: 'order@1',
-  id: 'OVERSEER@1',
-  title: 'Overseer -- decides what happens next, and the only seat that may ask a human',
-  seat: 'overseer',
-  prompt: 'overseer',
+  id: 'WERK-MASTER@1',
+  title: 'WerkMaster -- decides what happens next, and the only seat that may ask a human',
+  seat: 'werk-master',
+  prompt: 'werk-master',
   caps: AUTO,
   minTrust: 'benevolent',
   notes:
     'Singleton per epic, one generation per beat. Not muted: the mute exists so no worker BLOCKS on a human, ' +
-    'and the overseer is the seat the blocking is routed TO.',
+    'and the werk-master is the seat the blocking is routed TO.',
 })
 
 /**
- * THE PLANNER -- generation 0, in the overseer seat with a different prompt.
- * No worktree, for the overseer's reason: it edits the board, which lives on
+ * THE WERK-PLANNER -- generation 0, in the werk-master seat with a different prompt.
+ * No worktree, for the werk-master's reason: it edits the board, which lives on
  * main.
  */
-export const PLANNER_ORDER: Order = validateOrder({
+export const WERK_PLANNER_ORDER: Order = validateOrder({
   kind: 'order@1',
-  id: 'PLANNER@1',
-  title: 'Planner -- completes the dependency graph before anything dispatches',
-  seat: 'planner',
-  prompt: 'planner',
-  namePrefix: 'planner ',
+  id: 'WERK-PLANNER@1',
+  title: 'WerkPlanner -- completes the dependency graph before anything dispatches',
+  seat: 'werk-planner',
+  prompt: 'werk-planner',
+  namePrefix: 'werk-planner ',
   caps: AUTO,
   minTrust: 'benevolent',
   notes:
@@ -183,18 +183,18 @@ export const PLANNER_ORDER: Order = validateOrder({
 })
 
 /**
- * AN IMPLEMENTER. Own worktree named for the card, own branch, muted.
+ * AN WERK-WORKER. Own worktree named for the card, own branch, muted.
  *
  * The empty worktree prefix is the ordinary case and is written out rather than
  * left absent, because an ABSENT `worktree` means something else entirely here:
- * no worktree at all, which is what the overseer and the planner get.
+ * no worktree at all, which is what the werk-master and the werk-planner get.
  */
-export const IMPLEMENTER_ORDER: Order = validateOrder({
+export const WERK_WORKER_ORDER: Order = validateOrder({
   kind: 'order@1',
-  id: 'IMPLEMENTER@1',
-  title: 'Implementer -- one card, one worktree, no human',
-  seat: 'implementer',
-  prompt: 'implementer',
+  id: 'WERK-WORKER@1',
+  title: 'WerkWorker -- one card, one worktree, no human',
+  seat: 'werk-worker',
+  prompt: 'werk-worker',
   worktree: { prefix: '' },
   caps: AUTO,
   minTrust: 'benevolent',
@@ -204,24 +204,24 @@ export const IMPLEMENTER_ORDER: Order = validateOrder({
 })
 
 /**
- * A GUARD -- the verifier. Its scratch worktree is its OWN, separate from the
- * implementer's, and it is given the card plus the diff, never the
- * implementer's conversation: a reviewer that reads the coder's reasoning
+ * A GUARD -- the werk-verifier. Its scratch worktree is its OWN, separate from the
+ * werk-worker's, and it is given the card plus the diff, never the
+ * werk-worker's conversation: a reviewer that reads the coder's reasoning
  * inherits the coder's blind spots.
  */
-export const GUARD_ORDER: Order = validateOrder({
+export const WERK_VERIFIER_ORDER: Order = validateOrder({
   kind: 'order@1',
-  id: 'GUARD@1',
+  id: 'WERK-VERIFIER@1',
   title: 'Guard -- the quality gate, which does not trust the worker',
-  seat: 'verifier',
-  prompt: 'guard',
+  seat: 'werk-verifier',
+  prompt: 'werk-verifier',
   namePrefix: 'verify ',
   worktree: { prefix: 'verify-' },
   caps: AUTO,
   minTrust: 'benevolent',
   notes:
-    'Re-runs `test_cmd` and every acceptance step itself. Muted like an implementer: it judges, it does not ' +
-    'escalate -- a verifier that can reach a human turns every hard call into a question.',
+    'Re-runs `test_cmd` and every acceptance step itself. Muted like a werk-worker: it judges, it does not ' +
+    'escalate -- a werk-verifier that can reach a human turns every hard call into a question.',
 })
 
 /**
@@ -230,11 +230,11 @@ export const GUARD_ORDER: Order = validateOrder({
  * Keyed by {@link EpicOrderSeat}, NOT by `OrderSeat`: the schema's seat name is
  * open, and `Record<OrderSeat, Order>` after that opening would have degraded
  * to `Record<string, Order>` -- which type-checks a map that is missing the
- * verifier, and hands back `undefined` for every seat that is not here.
+ * werk-verifier, and hands back `undefined` for every seat that is not here.
  */
 export const EPIC_ORDERS: Record<EpicOrderSeat, Order> = {
-  overseer: OVERSEER_ORDER,
-  planner: PLANNER_ORDER,
-  implementer: IMPLEMENTER_ORDER,
-  verifier: GUARD_ORDER,
+  'werk-master': WERK_MASTER_ORDER,
+  'werk-planner': WERK_PLANNER_ORDER,
+  'werk-worker': WERK_WORKER_ORDER,
+  'werk-verifier': WERK_VERIFIER_ORDER,
 }

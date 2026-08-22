@@ -4,7 +4,7 @@
  * `MAX_CONCURRENT_SCHEDULED_SPAWNS` (policy.ts) is a GLOBAL ceiling: at most 3
  * scheduler-originated spawns in flight, whoever asks. That is enough to stop
  * the scheduler eating the machine and not enough to stop ONE role eating the
- * scheduler. Forty `#needs-refine` cards and a `REFINER@1` schedule will hold
+ * scheduler. Forty `#needs-refine` cards and a `WERK-REFINER@1` schedule will hold
  * all three slots for as long as the backlog lasts, and the nightly board sweep
  * -- which fires once, at a fixed minute, and does not retry -- simply never
  * runs. It does not fail; it is skipped, and the skip looks like every other
@@ -17,7 +17,7 @@
  * appetite is a property of the role, and putting it here would mean the broker
  * deciding again what each seat is, which is what `order@1` exists to stop.
  *
- * The decision is a pure function so the interesting case -- four refiners due
+ * The decision is a pure function so the interesting case -- four werk-refiners due
  * in the same minute -- is a table, not a race.
  */
 
@@ -36,8 +36,8 @@ import type { Order } from '../../shared/order'
  * count that included the asker -- three schedules due in one minute admitted
  * two and skipped the third with a slot sitting empty, while
  * `docs/scheduled-tasks.md` said 3 the whole time. Worse for a reservation:
- * every refiner refused BY the reservation stayed counted against it, so four
- * refiners produced one reservation refusal and two ceiling refusals blaming a
+ * every werk-refiner refused BY the reservation stayed counted against it, so four
+ * werk-refiners produced one reservation refusal and two ceiling refusals blaming a
  * pool that was never full.
  */
 export interface SeatCensus {

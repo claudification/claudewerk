@@ -4,8 +4,8 @@ import { type EpicSeatGroup, groupEpicSeats } from './epic-seat-group'
 
 /** Walks conversations once and splits them into mutually exclusive buckets.
  *
- *  EPIC SEATS COME OUT FIRST, before any other test. An overseer and its
- *  implementers/verifiers nest together whether or not they are ad-hoc and
+ *  EPIC SEATS COME OUT FIRST, before any other test. A werk-master and its
+ *  werk-workers/werk-verifiers nest together whether or not they are ad-hoc and
  *  whether or not they sit in a worktree -- so the seat test has to win over
  *  both, which it cannot do from inside the bucket table below.
  *
@@ -30,8 +30,8 @@ const BUCKETS: Array<{ name: FallthroughBucket; matches: (c: Conversation) => bo
 ]
 
 export interface ConversationPartition {
-  /** Overseer-headed subtrees, newest group first. Rendered ABOVE everything
-   *  else in the project -- an overseer heads its project group. */
+  /** WerkMaster-headed subtrees, newest group first. Rendered ABOVE everything
+   *  else in the project -- a werk-master heads its project group. */
   epicGroups: EpicSeatGroup[]
   worktrees: Conversation[]
   adhoc: Conversation[]
