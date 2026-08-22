@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -1317,6 +1318,83 @@ function runStoreTests(name: string, createDriver: () => StoreDriver) {
         expect(rowB?.turnCount).toBe(1)
       })
 
+      it('queryHourly keeps two profiles in one hour apart', () => {
+        // REGRESSION (hourly-stats-pk-collapses-sentinel-profile): the hour
+        // bucket keyed on (hour, account, model, project_uri) and carried
+        // sentinel_id/profile as passengers -- MIN()'d in sqlite, absent in
+        // memory. Two profiles billing the same hour+account+model+project
+        // merged into ONE row whose whole cost was stamped with whichever
+        // sentinel/profile sorted first. The `project_uri already encodes the
+        // profile` justification died with Phase 6's userinfo strip.
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+        twoHoursAgo.setMinutes(0, 0, 0)
+        const hourBase = twoHoursAgo.getTime()
+        const hourKey = new Date(hourBase).toISOString().replace(/\.\d{3}Z$/, 'Z')
+
+        // Same hour, same account, same model, same project. Only the
+        // sentinel/profile pair differs -- which is the normal shape of a box
+        // running two profiles against one account.
+        store.costs.recordTurn(baseTurn({ timestamp: hourBase, costUsd: 0.1, sentinelId: 'snt_one', profile: 'work' }))
+        store.costs.recordTurn(
+          baseTurn({ timestamp: hourBase + 60_000, costUsd: 0.2, sentinelId: 'snt_one', profile: 'work' }),
+        )
+        store.costs.recordTurn(
+          baseTurn({ timestamp: hourBase + 120_000, costUsd: 0.4, sentinelId: 'snt_two', profile: 'personal' }),
+        )
+
+        const rows = store.costs.queryHourly({}).filter(r => r.hour === hourKey)
+        expect(rows).toHaveLength(2)
+
+        const work = rows.find(r => r.profile === 'work')
+        const personal = rows.find(r => r.profile === 'personal')
+        expect(work?.sentinelId).toBe('snt_one')
+        expect(work?.costUsd).toBeCloseTo(0.3)
+        expect(work?.turnCount).toBe(2)
+        expect(personal?.sentinelId).toBe('snt_two')
+        expect(personal?.costUsd).toBeCloseTo(0.4)
+        expect(personal?.turnCount).toBe(1)
+      })
+
+      it('queryHourly profile filter returns that profile only, with its own cost', () => {
+        // The blast radius of the collapse: /api/stats/hourly?profile= reads
+        // these rows. A merged row drops one profile entirely and over-reports
+        // the other, so the filter has to be exercised, not just the split.
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+        twoHoursAgo.setMinutes(0, 0, 0)
+        const hourBase = twoHoursAgo.getTime()
+
+        store.costs.recordTurn(baseTurn({ timestamp: hourBase, costUsd: 0.1, sentinelId: 'snt_one', profile: 'work' }))
+        store.costs.recordTurn(
+          baseTurn({ timestamp: hourBase + 60_000, costUsd: 0.4, sentinelId: 'snt_two', profile: 'personal' }),
+        )
+
+        const personal = store.costs.queryHourly({ profile: 'personal' })
+        expect(personal).toHaveLength(1)
+        expect(personal[0].costUsd).toBeCloseTo(0.4)
+
+        const bySentinel = store.costs.queryHourly({ sentinelId: 'snt_one' })
+        expect(bySentinel).toHaveLength(1)
+        expect(bySentinel[0].costUsd).toBeCloseTo(0.1)
+      })
+
+      it('queryHourly buckets a turn with no profile under default', () => {
+        // baseTurn carries neither sentinelId nor profile, which is the shape of
+        // every pre-Phase-5 turn. It must land on ('', 'default') rather than
+        // splitting off its own '' bucket.
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+        twoHoursAgo.setMinutes(0, 0, 0)
+        const hourBase = twoHoursAgo.getTime()
+
+        store.costs.recordTurn(baseTurn({ timestamp: hourBase, costUsd: 0.1 }))
+        store.costs.recordTurn(baseTurn({ timestamp: hourBase + 60_000, costUsd: 0.2, profile: '' }))
+
+        const rows = store.costs.queryHourly({})
+        expect(rows).toHaveLength(1)
+        expect(rows[0].profile).toBe('default')
+        expect(rows[0].sentinelId).toBe('')
+        expect(rows[0].costUsd).toBeCloseTo(0.3)
+      })
+
       // -----------------------------------------------------------------
       // queryTurnActivity -- the narrow projection the day-bucketed activity
       // matrix folds. Unpaged, so a month never truncates at 1000 rows.
@@ -1564,9 +1642,10 @@ runStoreTests('SqliteDriver', () =>
 )
 
 // -----------------------------------------------------------------
-// queryHourly groupBy=day sentinel/profile attribution -- sqlite-only. The
-// memory driver's hour buckets carry no sentinel_id/profile columns at all
-// (they are absent, not wrong), so there is nothing to misattribute there.
+// queryHourly groupBy=day sentinel/profile attribution -- sqlite-only, because
+// it pins the SQL day rollup specifically. Both drivers now carry sentinelId /
+// profile on every hour bucket (hourly-stats-pk-collapses-sentinel-profile);
+// the driver-shared coverage of that lives in the `costs` describe above.
 // -----------------------------------------------------------------
 
 describe('queryHourly groupBy=day sentinel/profile attribution (sqlite)', () => {
@@ -1581,12 +1660,10 @@ describe('queryHourly groupBy=day sentinel/profile attribution (sqlite)', () => 
     const dayKey = new Date(day).toISOString().slice(0, 10)
     const hour = 60 * 60 * 1000
 
-    // Deliberately different HOURS: `hourly_stats` is keyed
-    // (hour, account, model, project_uri) and its materialisation MIN()s
-    // sentinel_id/profile inside that key, so two profiles billing the same
-    // hour+project already collapse one level down. That is a separate defect
-    // (see card hourly-stats-pk-collapses-sentinel-profile); this test covers
-    // the day rollup, which is what this card fixes.
+    // Different HOURS on purpose: this exercises the day rollup's merge across
+    // hour buckets, not the hour bucket itself. (The same-hour case -- two
+    // profiles inside ONE hour -- used to collapse one level down in
+    // `hourly_stats` and is covered by the driver-shared hourly tests above.)
     const base = {
       conversationId: 's1',
       projectUri: 'claude://default/proj-a',
@@ -1623,6 +1700,114 @@ describe('queryHourly groupBy=day sentinel/profile attribution (sqlite)', () => 
     expect(work?.costUsd).toBeCloseTo(0.1)
     expect(personal?.sentinelId).toBe('snt_two')
     expect(personal?.costUsd).toBeCloseTo(0.4)
+  })
+})
+
+// -----------------------------------------------------------------
+// hourly_stats PK widening -- sqlite-only, it is a schema migration. A store.db
+// written before this change keys hourly_stats on
+// (hour, account, model, project_uri) with sentinel_id/profile as passengers.
+// Changing a PK in SQLite is a table rebuild, and the existing rows cannot be
+// un-merged, so the migration drops them and lets materializeHourly() rebuild
+// the window from `turns`.
+// -----------------------------------------------------------------
+
+describe('hourly_stats PK widening migration (sqlite)', () => {
+  const LEGACY_HOURLY_DDL = `
+    CREATE TABLE hourly_stats (
+      hour TEXT NOT NULL,
+      account TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      project_uri TEXT NOT NULL DEFAULT '',
+      turn_count INTEGER NOT NULL DEFAULT 0,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (hour, account, model, project_uri)
+    )`
+
+  function pkColumns(dbPath: string): string[] {
+    const db = new Database(dbPath)
+    try {
+      return (db.prepare(`PRAGMA table_info('hourly_stats')`).all() as Array<{ name: string; pk: number }>)
+        .filter(r => r.pk > 0)
+        .sort((a, b) => a.pk - b.pk)
+        .map(r => r.name)
+    } finally {
+      db.close()
+    }
+  }
+
+  it('rebuilds a legacy narrow-PK table and drops its merged rows', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hourly-pk-migrate-'))
+    const dbPath = join(dir, 'store.db')
+
+    const legacy = new Database(dbPath)
+    legacy.run(LEGACY_HOURLY_DDL)
+    legacy.run(
+      `INSERT INTO hourly_stats (hour, account, model, project_uri, turn_count, cost_usd)
+       VALUES ('2020-01-01T00:00:00Z', 'alice@example.com', 'claude-opus-4', 'claude://default/p', 9, 99.0)`,
+    )
+    legacy.close()
+
+    expect(pkColumns(dbPath)).toEqual(['hour', 'account', 'model', 'project_uri'])
+
+    const store = createSqliteDriver({ type: 'sqlite', filename: dbPath })
+    store.init()
+    try {
+      expect(pkColumns(dbPath)).toEqual(['hour', 'account', 'model', 'project_uri', 'sentinel_id', 'profile'])
+      // The merged row is gone rather than carried forward with a MIN()-picked
+      // profile stamped on somebody else's spend.
+      expect(store.costs.queryHourly({})).toHaveLength(0)
+    } finally {
+      store.close?.()
+    }
+  })
+
+  it('is a no-op on a db already carrying the wide PK', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hourly-pk-noop-'))
+    const dbPath = join(dir, 'store.db')
+
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    twoHoursAgo.setMinutes(0, 0, 0)
+    const hourBase = twoHoursAgo.getTime()
+
+    const first = createSqliteDriver({ type: 'sqlite', filename: dbPath })
+    first.init()
+    first.costs.recordTurn({
+      timestamp: hourBase,
+      conversationId: 's1',
+      projectUri: 'claude://default/p',
+      account: 'alice@example.com',
+      orgId: 'org-1',
+      model: 'claude-opus-4',
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 0.25,
+      exactCost: true,
+      sentinelId: 'snt_one',
+      profile: 'work',
+    })
+    expect(first.costs.queryHourly({})).toHaveLength(1)
+    first.close?.()
+
+    // Second open re-runs createSchema. A rerun that dropped the table would
+    // wipe materialised rows on every single broker restart.
+    const second = createSqliteDriver({ type: 'sqlite', filename: dbPath })
+    second.init()
+    try {
+      expect(pkColumns(dbPath)).toEqual(['hour', 'account', 'model', 'project_uri', 'sentinel_id', 'profile'])
+      const rows = second.costs.queryHourly({})
+      expect(rows).toHaveLength(1)
+      expect(rows[0].profile).toBe('work')
+      expect(rows[0].costUsd).toBeCloseTo(0.25)
+    } finally {
+      second.close?.()
+    }
   })
 })
 

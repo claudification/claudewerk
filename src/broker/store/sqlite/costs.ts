@@ -162,11 +162,17 @@ export function createSqliteCostStore(db: Database): CostStore {
   const stmtDeleteOldTurns = db.prepare('DELETE FROM turns WHERE timestamp < $cutoff')
   const stmtDeleteOldHourly = db.prepare('DELETE FROM hourly_stats WHERE hour < $cutoffHour')
 
-  // The hourly_stats PK is (hour, account, model, project_uri). project_uri already
-  // encodes the profile via its userinfo slot, so adding sentinel_id/profile to
-  // the SELECT doesn't change the grouping -- they're denormalized convenience
-  // columns. INSERT OR REPLACE keeps PK semantics intact; MIN()/MAX() over a
-  // PK-deterministic group picks the single value present.
+  // Every attribution column is in the GROUP BY and in the hourly_stats PK
+  // (schema.ts `createHourlyStatsTable`). sentinel_id/profile used to sit outside
+  // both, MIN()'d into the row, on the theory that project_uri already encoded
+  // the profile in its userinfo slot -- Phase 6's `stripProfileFromCostTableUris`
+  // ended that, so two profiles billing the same hour+account+model+project
+  // merged into one row stamped with whichever value sorted first. The COALESCE
+  // expressions are repeated in the GROUP BY rather than referenced by output
+  // alias: `sentinel_id` and `profile` are also `turns` columns, and grouping on
+  // the raw column while writing the normalised one would let a NULL and an ''
+  // land on the same PK inside a single statement, where INSERT OR REPLACE would
+  // silently drop one of them.
   const stmtMaterializeHourly = db.prepare(
     `INSERT OR REPLACE INTO hourly_stats (hour, account, model, project_uri,
       turn_count, input_tokens, output_tokens, cache_read_tokens,
@@ -178,12 +184,13 @@ export function createSqliteCostStore(db: Database): CostStore {
       SUM(input_tokens), SUM(output_tokens),
       SUM(cache_read_tokens), SUM(cache_write_tokens),
       SUM(cost_usd),
-      COALESCE(MIN(sentinel_id), '') as sentinel_id,
-      COALESCE(MIN(profile), 'default') as profile
+      COALESCE(sentinel_id, '') as sentinel_id,
+      COALESCE(NULLIF(profile, ''), 'default') as profile
     FROM turns
     WHERE timestamp >= $start AND timestamp <= $end
       AND strftime('%Y-%m-%dT%H:00:00Z', timestamp / 1000, 'unixepoch') != $currentHour
-    GROUP BY hour, account, model, project_uri`,
+    GROUP BY hour, account, model, COALESCE(project_uri, ''),
+      COALESCE(sentinel_id, ''), COALESCE(NULLIF(profile, ''), 'default')`,
   )
 
   // Per-conversation cumulative snapshots live in memory -- cheap, reset on restart.
