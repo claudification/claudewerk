@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import type { Conversation, EpicResult } from '../shared/protocol'
+import type { BranchFabric, Conversation, EpicResult } from '../shared/protocol'
 import type { ConversationStore } from './conversation-store'
 import { configureEpicIo, resetEpicIo } from './epic-io'
 import { noteArmedEpic, resetArmedEpics } from './epic-registry'
@@ -13,6 +13,7 @@ import {
   resolveBeatGroup,
   type SweepDeps,
   sweepEpics,
+  toGitDirt,
 } from './epic-sweep-loop'
 import { NO_REAPING, SEAT_SILENCE_MS, WERK_MASTER_SILENCE_MS } from './epic-vitality'
 
@@ -543,5 +544,55 @@ describe('buildSweepDeps wires REAL reapers, not the zero value', () => {
     const reapers = buildSweepDeps(store(), { now: () => NOW, reapers: NO_REAPING }).reapers
     expect(reapers?.seat(silent(WERK_MASTER_SILENCE_MS * 100))).toBeNull()
     expect(reapers?.werkMaster(silent(WERK_MASTER_SILENCE_MS * 100))).toBeNull()
+  })
+})
+
+/**
+ * THE ONE LINE THE LANDING GATE STANDS ON.
+ *
+ * `merged` decides whether a run parks over an unmerged branch, and it is a
+ * filter over a field nothing else in this engine reads. `dryGens` spent a whole
+ * feature stuck at zero for exactly this shape -- a value everything consulted
+ * and nothing tested the writing of -- which is why the fold is exported and
+ * asserted here rather than left inside the RPC closure.
+ */
+describe('toGitDirt -- the git fabric, reduced to the sets the engine asks about', () => {
+  const branch = (over: Partial<BranchFabric> & { branch: string }): BranchFabric => ({
+    aheadOrigin: 0,
+    behindOrigin: 0,
+    aheadLocal: 0,
+    behindLocal: 0,
+    integration: 'integrated',
+    alerts: [],
+    ...over,
+  })
+
+  const fold = (branches: BranchFabric[]) => toGitDirt({ branches, scannedAt: 0 })
+
+  test('`merged` is measured against LOCAL main, never origin', () => {
+    // In this repo local main is the source of truth and origin is a push-only
+    // mirror that routinely sits tens of commits behind. Judging against the
+    // remote would call every delivered-but-unpushed card unmerged, in bulk.
+    const out = fold([branch({ branch: 'landed', aheadLocal: 0, aheadOrigin: 12 })])
+    expect(out.ok && [...out.merged]).toEqual(['landed'])
+  })
+
+  test('a branch with commits local main lacks is NOT merged, but IS known', () => {
+    // Known-and-not-merged is `ahead`; absent is `gone`. The pair is what tells
+    // "still standing" from "cleaned up".
+    const out = fold([branch({ branch: 'wip', aheadLocal: 3, integration: 'ff-clean' })])
+    expect(out.ok && out.merged.has('wip')).toBe(false)
+    expect(out.ok && out.known.has('wip')).toBe(true)
+  })
+
+  test('`integration` is deliberately NOT the source -- it is derived from aheadOrigin', () => {
+    const out = fold([branch({ branch: 'b', aheadLocal: 2, integration: 'integrated' })])
+    expect(out.ok && out.merged.has('b')).toBe(false)
+  })
+
+  test('`known` is every branch and `dirty` only the ones with uncommitted work', () => {
+    const out = fold([branch({ branch: 'a', dirty: true }), branch({ branch: 'b' })])
+    expect(out.ok && [...out.known].sort()).toEqual(['a', 'b'])
+    expect(out.ok && [...out.dirty]).toEqual(['a'])
   })
 })

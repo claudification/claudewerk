@@ -40,6 +40,11 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   // Bookkeeping, not an event: the engine writing a sha into a card's `closes:`
   // must never out-shout a dispatch or a bounce at four feet.
   record: 'var(--comment)',
+  // AMBER, beside `werk-master-lost` and for the same reason: nothing is broken
+  // and nothing is lost, but the run has just told you it had to do the same
+  // mechanical job by hand for the third time. That is a lesson somebody should
+  // read, not an alarm -- and at four feet it must not read as a failed dispatch.
+  friction: 'var(--warning)',
 }
 
 /** Bucket -> label + tone. A list rather than six ternaries in JSX, and in the

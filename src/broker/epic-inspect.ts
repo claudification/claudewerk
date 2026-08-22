@@ -16,6 +16,7 @@ import { planEpic } from '../shared/epic-ready'
 import { clearedReason, clearStamps } from '../shared/epic-run-cleared'
 import { beatStale, isVitallyLive } from '../shared/epic-vitality'
 import { gatedBy } from '../shared/epic-when'
+import type { ProjectTaskMeta } from '../shared/project-task-types'
 import { isSameProject } from '../shared/project-uri'
 import type {
   Conversation,
@@ -28,10 +29,12 @@ import type {
 import { lastBeatAt, recentBeats } from './epic-beat-log'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
 import { epicIo } from './epic-io'
+import { resolveLandings, wantsFabric } from './epic-landing'
 import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
 import { isArmed, isDeletedEpic, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
 import type { SweepDeps } from './epic-sweep-loop'
+import type { GitDirt } from './epic-types'
 
 /** The group for one epic, from a conversation list the caller already has.
  *  Takes the list rather than the deps so an inspect enumerates the registry
@@ -59,6 +62,29 @@ export interface InspectOptions {
 }
 
 /**
+ * The git-fabric scan, for the landing gate -- or `null` when there is nothing to
+ * ask about or nobody to ask.
+ *
+ * NEVER THROWS AND NEVER SKIPS THE INSPECT. A scan that fails reads `unscanned`,
+ * which withholds nothing and claims nothing; an inspect that died because a
+ * sentinel timed out would be worse than one missing a lane, since this call is
+ * what a human reaches for when a run has already gone wrong.
+ */
+async function inspectFabric(
+  deps: SweepDeps,
+  project: string,
+  cards: readonly ProjectTaskMeta[],
+  epicId: string,
+): Promise<GitDirt | null> {
+  if (!deps.gitDirt || !wantsFabric(cards, epicId)) return null
+  try {
+    return await deps.gitDirt(project)
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/**
  * Everything known about one run, in one call: the run artifact, the lease, the
  * DAG's verdict on what should happen next, what is actually running, the last
  * beats the sweep performed, and the baton.
@@ -78,6 +104,7 @@ export async function inspectEpic(
   const group = groupFor(convs, deps, project, epicId)
   const queue = await inspectQueue(deps, project, epicId, convs, view.run)
   const cards = await epicIo().fetchBoardCards(deps, project)
+  const fabric = await inspectFabric(deps, project, cards, epicId)
   const plan = planEpic({
     cards,
     epicId,
@@ -95,6 +122,14 @@ export async function inspectEpic(
     // unacknowledged` below is folded from the same set) and is left alone here
     // rather than widened: fixing it means giving `inspectEpic` a store handle.
     settled: group.settled,
+    // THE LANDING GATE, for the reason `dispatches` is here: an inspect that
+    // reported a run as `complete` while the beat was refusing it completion over
+    // an unmerged branch would be a debug read that lies about the engine. The
+    // SAME scan the beat uses, so the two cannot disagree -- and an inspect is a
+    // read a human is deliberately waiting on, which is the one caller that can
+    // afford it. A deps bag with no `gitDirt` wired reports `unscanned`, so the
+    // view withholds nothing and claims nothing.
+    landings: resolveLandings({ epicId, target: view.run?.target ?? 'merged', fabric }, cards),
   })
 
   return {

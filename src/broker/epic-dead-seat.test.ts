@@ -43,6 +43,7 @@ const RUN: EpicRunSnapshot = {
   gen: 6,
   target: 'merged',
   dryGens: 0,
+  unlandedWoken: '',
   maxGens: 40,
   maxUsd: 500,
   maxWallClockMinutes: 960,
@@ -125,7 +126,7 @@ beforeEach(() => {
   log = []
   dirtAsks = 0
   runOver = {}
-  dirt = { ok: true, dirty: new Set(), known: new Set([`worktree-epic/${EPIC}/${DEAD}`]) }
+  dirt = { ok: true, dirty: new Set(), known: new Set([`worktree-epic/${EPIC}/${DEAD}`]), merged: new Set() }
   resetPromiseMemory()
   resetArmedEpics()
   configureEpicIo({
@@ -299,6 +300,7 @@ describe("the dead seat's worktree", () => {
       ok: true,
       dirty: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
       known: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
+      merged: new Set(),
     }
     await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('HAS UNCOMMITTED CHANGES')
@@ -310,6 +312,7 @@ describe("the dead seat's worktree", () => {
       ok: true,
       dirty: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
       known: new Set([`worktree-epic/${EPIC}/${DEAD}`]),
+      merged: new Set(),
     }
     await runEpicBeat(deps(), fold([seat(DEAD, 'werk-worker', 'conv_dead')], REAPER))
     expect(completionFor(DEAD)?.body).toContain('nothing has been committed on its behalf')

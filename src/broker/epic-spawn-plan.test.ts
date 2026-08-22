@@ -34,6 +34,7 @@ const RUN: EpicRunSnapshot = {
   gen: 4,
   target: 'merged',
   dryGens: 0,
+  unlandedWoken: '',
   maxGens: 40,
   maxUsd: 100,
   maxWallClockMinutes: 480,
@@ -58,6 +59,7 @@ const PLAN: EpicPlan = {
   exhausted: [],
   alreadyRun: [],
   awaitingDeploy: [],
+  unlanded: [],
   complete: false,
 }
 

@@ -24,6 +24,7 @@
  */
 
 import { boardFingerprint } from '../shared/epic-board-fingerprint'
+import type { CardLanding } from '../shared/epic-landing'
 import { renderEpicLogTail } from '../shared/epic-log'
 import { pendingSeatCards, withPendingSeats } from '../shared/epic-pending-seats'
 import { planEpic } from '../shared/epic-ready'
@@ -51,6 +52,7 @@ import {
 } from './epic-card-rename'
 import type { HeadroomVerdict } from './epic-headroom'
 import { epicIo, tag } from './epic-io'
+import { resolveLandings, wantsFabric } from './epic-landing'
 import { recordFinalPromises, recordSettledPromises } from './epic-promise'
 import type { QueueVerdict } from './epic-queue'
 import { isArmed } from './epic-registry'
@@ -214,6 +216,44 @@ async function settleContext(
     return { lane, dirt: await deps.gitDirt(group.project) }
   } catch (err) {
     return { lane, dirt: { ok: false, error: err instanceof Error ? err.message : String(err) } }
+  }
+}
+
+/**
+ * WHERE EVERY `done` CARD'S WORK ACTUALLY IS -- derived from git, this beat,
+ * every beat.
+ *
+ * ONE SCAN, bought only when there is a `done` card to ask about (`wantsFabric`),
+ * which is what keeps the whole early life of a run free. After that it is a
+ * per-beat cost and a deliberate one -- `wantsFabric` says why the cheap
+ * prefilter everyone reaches for does not work here.
+ *
+ * NOTHING IS PERSISTED. The entire gate is recomputed from git and the board on
+ * every beat, which is what makes a failed `run.md` read cost it nothing: the
+ * next beat asks again. What IS persisted is the escalation
+ * (`EpicRunMeta.unlandedWoken`), a fact about who has already been asked, which
+ * exists nowhere else.
+ *
+ * A SCAN THAT THROWS IS UNKNOWN, never clean and never an accusation.
+ * `settleContext` takes the same care one region up for the same reason: "we
+ * could not look" and "there is nothing there" are the two answers it would be
+ * worst to conflate.
+ */
+async function landingsFor(
+  deps: BeatDeps,
+  group: EpicGroup,
+  run: EpicRunSnapshot,
+  cards: readonly ProjectTaskMeta[],
+): Promise<CardLanding[]> {
+  const scope = { epicId: group.epicId, target: run.target }
+  if (!deps.gitDirt || !wantsFabric(cards, group.epicId)) return resolveLandings({ ...scope, fabric: null }, cards)
+  try {
+    return resolveLandings({ ...scope, fabric: await deps.gitDirt(group.project) }, cards)
+  } catch (err) {
+    return resolveLandings(
+      { ...scope, fabric: { ok: false, error: err instanceof Error ? err.message : String(err) } },
+      cards,
+    )
   }
 }
 
@@ -424,6 +464,11 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
     // card by whatever id it had when the seat went out, so a renamed card would
     // otherwise start its seat count over at zero.
     dispatches: renameAwareCounts(view.dispatchCounts, renames),
+    // `done` IS A LANE, NOT A GIT FACT. Derived here rather than read back off
+    // the run, and handed to the plan so a dependent card is withheld from
+    // dispatch when the dependency it was sequenced behind never reached main --
+    // the failure that stranded 34 branches while every card read `done`.
+    landings: await landingsFor(deps, group, run, cards),
   })
 
   // ONE ROUND TRIP PER GATE THAT IS ACTUALLY CARRIED: a run whose `when` axis

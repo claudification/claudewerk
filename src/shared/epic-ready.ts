@@ -124,6 +124,14 @@
  * build EVALUATING THE FOLD provides that token (`deployed-capabilities.ts`). An
  * unrecognised token counts as missing -- the refusal fails closed, which is what
  * makes it work forwards rather than only for tokens already shipped.
+ *
+ * `done` IS A LANE, NOT A GIT FACT -- the landing gate, `PlanCohortInput.
+ * landings`. `depends_on` means "must reach `done` before this one is ready", and
+ * a `done` card whose branch never reached main dispatches its dependents onto a
+ * base missing the very work they were sequenced to build on. That fold is
+ * `epic-landing.ts`; what happens here is one rewrite (an unmerged dependency
+ * stays in `waitingOn`, per chain, never a whole-run freeze) and one refusal
+ * (`complete` is not granted while anything is unlanded).
  */
 
 import { DEPLOYED_CAPABILITIES, missingCapabilities } from './deployed-capabilities'
@@ -135,6 +143,7 @@ import {
   type EpicRollup,
   toEpicChild,
 } from './epic-cards'
+import { type CardLanding, describeLanding, holdsDependents, unresolvedLandings } from './epic-landing'
 import { orderReady } from './epic-ready-order'
 import { NEEDS_WERK_MASTER_TAG } from './epic-run-types'
 import type { ProjectTaskMeta } from './project-task-types'
@@ -282,6 +291,28 @@ export interface PlanCohortInput {
    * something does, instead of a second copy of the rule.
    */
   capabilities?: readonly string[]
+
+  /**
+   * WHERE EACH `done` CARD'S WORK ACTUALLY IS -- derived from git every beat by
+   * the caller (`epic-landing.ts`), never stored.
+   *
+   * THE ANSWER TO "`done` IS A LANE, NOT A GIT FACT". `depends_on` means "must
+   * reach `done` before this one is ready", and on 2026-08-22 that let a card
+   * dispatch onto a base MISSING the very work it was sequenced to build on --
+   * 34 branches from runs whose cards all read `done`, none of them merged. A
+   * card whose dependency is `done` but UNMERGED joins `waitingOnDeps` here,
+   * exactly as if the dependency were still open, because from a fresh worktree's
+   * point of view it is.
+   *
+   * PER-DEPENDENCY-CHAIN, NEVER A WHOLE-RUN FREEZE. Only the cards that actually
+   * name an unlanded card in their `depends_on` are held; everything on an
+   * unrelated branch of the DAG keeps dispatching.
+   *
+   * Omitted means NO GATE, the same convention `dispatches` and `settled` use: a
+   * caller with no git-fabric scan to ask dispatches as it did before rather than
+   * withholding work on evidence nobody supplied.
+   */
+  landings?: readonly CardLanding[]
 }
 
 /** Select the cohort by EPIC membership. */
@@ -411,7 +442,25 @@ export interface EpicPlan {
    * failure `requires_deploy` was written to stop happening to the DATA.
    */
   awaitingDeploy: Array<{ card: ProjectTaskMeta; missing: string[] }>
-  /** Every child terminal, and there was at least one. */
+  /**
+   * Cards the board calls `done` whose work is NOT delivered -- unmerged, or
+   * merged with its branch and worktree still standing (`epic-landing.ts`).
+   *
+   * NAMED rather than folded into the counts, for `exhausted`'s reason: this is
+   * the single most important thing on the pane when it is non-empty, and it is
+   * the only lane here that carries a BRANCH -- "go and merge it" is useless
+   * advice without one. It is what the werk-master's prompt lists and what the
+   * engine escalates then parks on.
+   */
+  unlanded: CardLanding[]
+  /**
+   * Every child terminal, and there was at least one -- AND every one of them
+   * actually delivered.
+   *
+   * "Complete" used to mean the board said done. A run that reaches `complete`
+   * with branches unmerged and worktrees standing has not completed, and saying
+   * it has is how 34 branches went quietly stranded while every card read `done`.
+   */
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. Goes straight into the baton. */
   idleReason?: string
@@ -574,8 +623,31 @@ function emptyPlan(): EpicPlan {
     exhausted: [],
     alreadyRun: [],
     awaitingDeploy: [],
+    unlanded: [],
     complete: false,
   }
+}
+
+/**
+ * A DEPENDENCY THAT IS `done` BUT NOT ON main IS STILL A DEPENDENCY.
+ *
+ * The rewrite happens on `waitingOn` rather than on `doneCardIds`, and the
+ * difference matters: `doneCardIds` is folded from the WHOLE board and feeds
+ * every board surface, so subtracting a card there would make an unmerged card
+ * read as not-done everywhere -- including in the rollup percentage, where it is
+ * done, and in `complete`, which has its own answer below. Here the effect is
+ * exactly the one intended: this cohort's dependents wait, and nothing else
+ * changes its mind about anything.
+ *
+ * Cards that name no unlanded dependency are returned untouched (same object), so
+ * the common case allocates nothing.
+ */
+function withUnlandedDeps(children: readonly EpicChild[], unlanded: ReadonlySet<string>): readonly EpicChild[] {
+  if (unlanded.size === 0) return children
+  return children.map(child => {
+    const extra = (child.card.dependsOn ?? []).filter(id => unlanded.has(id) && !child.waitingOn.includes(id))
+    return extra.length === 0 ? child : { ...child, waitingOn: [...child.waitingOn, ...extra] }
+  })
 }
 
 /** The four lanes that are pure SELECTION over the cohort -- nothing here looks
@@ -773,8 +845,16 @@ function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates
 function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
   const inFlight = new Set(input.inFlight)
   const dead = new Set(input.unspawnable ?? [])
-  const { verify, questions, unspawnable, needsRefine } = attentionLanes(cohort.children, new Set(input.inVerify), dead)
-  const triaged = triageDispatchLane(cohort.children, {
+  // THE LANDING GATE, applied to the COHORT before anything is triaged. Two
+  // different subsets fall out of the same fact and they are deliberately not the
+  // same one: `unmerged` withholds dependents (their base is missing the code),
+  // while `unlanded` -- unmerged OR merged-with-a-worktree-standing -- refuses the
+  // run its completion. Tidiness stops a run finishing; it does not stop it working.
+  const unlanded = unresolvedLandings(input.landings ?? [])
+  const holds = new Set(unlanded.filter(l => holdsDependents(l.verdict)).map(l => l.cardId))
+  const children = withUnlandedDeps(cohort.children, holds)
+  const { verify, questions, unspawnable, needsRefine } = attentionLanes(children, new Set(input.inVerify), dead)
+  const triaged = triageDispatchLane(children, {
     inFlight,
     dead,
     settled: new Set(input.settled ?? []),
@@ -793,7 +873,10 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
   const dispatch = ready.slice(0, slots)
   const heldBack = ready.slice(slots)
 
-  const complete = childrenComplete(cohort.children)
+  // COMPLETION IS REFUSED WHILE ANYTHING IS UNLANDED. Both halves have to hold:
+  // the board says every child is terminal, and git says every one of them was
+  // actually delivered.
+  const complete = childrenComplete(children) && unlanded.length === 0
   return {
     rollup: cohort.rollup,
     dispatch,
@@ -806,10 +889,12 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     exhausted,
     alreadyRun,
     awaitingDeploy,
+    unlanded,
     complete,
     idleReason: idleReason({
       complete,
-      cohortSize: cohort.children.length,
+      unlanded,
+      cohortSize: children.length,
       emptyDetail: cohort.emptyDetail,
       ready,
       slots,
@@ -829,7 +914,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
 }
 
 interface IdleInput {
-  /** Every member of the cohort terminal. `EpicRollup.complete`, for an epic. */
+  /** Every member of the cohort terminal AND delivered. */
   complete: boolean
   /** How many cards the selector found. Zero is its own story. */
   cohortSize: number
@@ -845,6 +930,10 @@ interface IdleInput {
   exhausted: ProjectTaskMeta[]
   alreadyRun: ProjectTaskMeta[]
   awaitingDeploy: EpicPlan['awaitingDeploy']
+  /** `done` cards whose work is not delivered. Reported ABOVE every other reason
+   *  because it is the only one where the board and git disagree, and a reader
+   *  looking at a board of green cards has nothing else to go on. */
+  unlanded: CardLanding[]
   /**
    * THE CARDS HOLDING THE SLOTS, not merely how many there are.
    *
@@ -867,6 +956,19 @@ interface IdleInput {
  * that order something you can read, reorder and test.
  */
 const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: IdleInput) => string }> = [
+  {
+    // ABOVE EVERYTHING, including the cards nothing can launch. Every other entry
+    // in this table is a disagreement the board can be read to discover; this one
+    // is the board being WRONG -- cards saying `done` over work that is not
+    // delivered -- and a reader with only the board in front of them has no way
+    // to find it. It is also the only reason here that silently corrupts the
+    // sequencing of cards that look fine.
+    when: i => i.unlanded.length > 0,
+    say: i =>
+      `${i.unlanded.length} card(s) the board calls \`done\` whose work is NOT delivered: ` +
+      `${i.unlanded.map(describeLanding).join('; ')} -- the run cannot complete and their dependents ` +
+      'cannot dispatch until it is',
+  },
   {
     // FIRST, above open questions: a card nothing can launch is the only entry
     // in this table that will not resolve itself with time, and the fix (rename

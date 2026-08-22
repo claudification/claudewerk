@@ -31,6 +31,7 @@ function plan(over: Partial<EpicPlan> = {}): EpicPlan {
     exhausted: [],
     alreadyRun: [],
     awaitingDeploy: [],
+    unlanded: [],
     complete: false,
     ...over,
   }

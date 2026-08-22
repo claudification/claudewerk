@@ -17,6 +17,7 @@
  * past any context horizon.
  */
 
+import { describeLanding } from './epic-landing'
 import type { EpicPlan } from './epic-ready'
 import { formatEpicRunCaps } from './epic-run-caps'
 import type { EpicRunReading, EpicWakeReason } from './epic-run-types'
@@ -101,11 +102,41 @@ function lane(title: string, cards: Array<{ slug: string; title: string }>, empt
   return [`${title}:`, ...cards.map(c => `  - ${c.slug} -- ${c.title}`)].join('\n')
 }
 
+/**
+ * WORK THE BOARD CALLS `done` THAT IS NOT DELIVERED -- named, with branches, at
+ * the TOP of the board state.
+ *
+ * FIRST, above the questions this generation is normally woken for, because it is
+ * the only block here the werk-master cannot discover by reading the board: every
+ * one of these cards is green. It is also the only one with a DEADLINE -- the
+ * engine parks the run if the next beat finds the same card still unlanded, so a
+ * generation that scrolls past this loses the run.
+ *
+ * THE BRANCH IS THE POINT. "Some work is unmerged" is a sentence that makes an
+ * agent go and look; the branch name is the thing it would have gone to look for.
+ */
+function unlandedBlock(ctx: WerkMasterPromptCtx): string {
+  const rows = ctx.plan.unlanded
+  if (rows.length === 0) return ''
+  return [
+    `WORK THAT IS NOT DELIVERED (${rows.length}) -- THE RUN PARKS IF THIS IS STILL TRUE NEXT BEAT:`,
+    ...rows.map(l => `  - ${describeLanding(l)}`),
+    '',
+    `  The run's target is \`${ctx.run.target}\`. The engine DERIVES this from GIT ANCESTRY every beat --`,
+    '  it is not a note anybody left, and it clears itself the moment the commits are on main. Merge these',
+    '  now, before anything else in your job list except answering questions. Then remove each worktree with',
+    '  `scripts/worktree-remove.sh`, which REFUSES while unmerged commits exist and is therefore the check --',
+    '  do not write a second one.',
+    '',
+  ].join('\n')
+}
+
 function boardState(ctx: WerkMasterPromptCtx): string {
   const p = ctx.plan
   return [
     rollupLine(ctx),
     '',
+    unlandedBlock(ctx),
     lane(`QUESTIONS FOR YOU (\`${NEEDS_WERK_MASTER_TAG}\`) -- answer these FIRST`, p.questions, 'none'),
     lane('AWAITING AN INDEPENDENT VERDICT (in-review)', p.verify, 'none'),
     lane('DISPATCHING THIS BEAT (the engine already picked these)', p.dispatch, 'nothing ready'),
@@ -141,7 +172,17 @@ function theJob(ctx: WerkMasterPromptCtx): string {
     `3. MERGE what has passed. A card at \`done\` with an approving verdict has earned its branch a merge:`,
     '   rebase onto main, `git merge --ff-only`, push, then run the integration tests. If main goes red, that',
     '   is a NEW high-priority card in this epic and the run keeps going -- never leave main broken and never',
-    '   force anything.',
+    '   force anything. Then REMOVE THE WORKTREE (`scripts/worktree-remove.sh`): a merged branch left standing',
+    '   is half a resolution, and the run is not allowed to complete while one is.',
+    '',
+    '   THIS IS NOT ADVICE. The engine scans git every beat -- `rev-list --count main..<branch> == 0`, i.e.',
+    '   is the branch already reachable from LOCAL main -- and knows exactly which card branches are not on',
+    '   main. Do NOT dispute it by looking for a `closes:` receipt in the commit ledger: a fast-forward',
+    '   creates no merge commit for the ledger to see, so the ledger is silent about correctly-merged work.',
+    '   It is the ONLY job in this list nothing else in the run performs -- a',
+    '   werk-worker merges its dependencies INTO its own worktree and integrates nothing, a werk-verifier',
+    '   integrates nothing. A card whose branch is still unmerged one generation after you were told about it',
+    '   PARKS THE RUN. Say so in the baton if you deliberately left one alone, and why.',
     '',
     '4. REPLAN if the board is now wrong. You have just learned something the plan did not know. Split a card',
     '   that turned out too big, add the card everyone forgot, drop the card that stopped making sense',
