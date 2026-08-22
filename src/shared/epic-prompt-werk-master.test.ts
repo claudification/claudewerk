@@ -50,6 +50,7 @@ const PLAN: EpicPlan = {
   needsRefine: [],
   exhausted: [],
   alreadyRun: [],
+  awaitingDeploy: [],
   complete: false,
 }
 

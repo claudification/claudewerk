@@ -107,8 +107,26 @@
  * yes. Being a named bucket rather than a filter is what makes the refusal
  * logged, counted and renderable by construction -- nobody has to remember to
  * log it, and "7 cards are too rough to build" is a number a pane can show.
+ *
+ * A CARD MAY ALSO BE WAITING ON A DEPLOY -- the `awaitingDeploy` bucket, and it
+ * is the same shape of precondition one layer out: not "is this card ready" but
+ * "is the process that will read the result of this card ready".
+ *
+ * `werk-rename-seats` moved a stored, hand-applied tag and kept no alias. The
+ * chore that rewrites the cards carrying the old word is only safe once the
+ * broker serving that board runs the code that folds over the NEW word -- run it
+ * first and eleven open questions silently stop matching the predicate the
+ * RUNNING engine evaluates, on a live board, with no error anywhere. `depends_on`
+ * cannot express that: it sequences cards, and both cards can be `done` while the
+ * process reading them is a month-old image.
+ *
+ * So a card says `requires_deploy: [<token>]` and the fold refuses it until the
+ * build EVALUATING THE FOLD provides that token (`deployed-capabilities.ts`). An
+ * unrecognised token counts as missing -- the refusal fails closed, which is what
+ * makes it work forwards rather than only for tokens already shipped.
  */
 
+import { DEPLOYED_CAPABILITIES, missingCapabilities } from './deployed-capabilities'
 import {
   buildEpicIndex,
   childrenComplete,
@@ -248,6 +266,22 @@ export interface PlanCohortInput {
    * same card into two buckets.
    */
   settled?: readonly string[]
+  /**
+   * Capability tokens the deployment reading this board provides, checked
+   * against each card's `requires_deploy`.
+   *
+   * Omitted means THIS BUILD'S OWN SET (`DEPLOYED_CAPABILITIES`), which is the
+   * honest default rather than a convenience: the process running this fold is
+   * the process that will fold over the migrated data, so its own compiled-in
+   * list is the one true answer it can give without a deploy handshake.
+   *
+   * It is a FIELD rather than a straight import so a caller that legitimately
+   * knows more can narrow it -- the broker and the sentinel ship as separate
+   * bundles, and a caller that could compute the intersection should pass the
+   * intersection. Nothing computes that today; the field is where it lands when
+   * something does, instead of a second copy of the rule.
+   */
+  capabilities?: readonly string[]
 }
 
 /** Select the cohort by EPIC membership. */
@@ -364,6 +398,19 @@ export interface EpicPlan {
    * -- look at whether the work actually landed".
    */
   alreadyRun: ProjectTaskMeta[]
+  /**
+   * Cards whose `requires_deploy:` names something the build reading this board
+   * does not provide, WITH the tokens that are missing -- the tokens and not
+   * just the cards, because the action a human takes is "deploy X", and a lane
+   * that named only the card would send them back to the file to find out what.
+   *
+   * NAMED rather than filtered for `exhausted`'s reason, one step further: this
+   * refusal is invisible in git, invisible on the card's lane and resolved by an
+   * act that happens outside the repo entirely. A silent version of it would be
+   * a card that never moves and a board that looks fine, which is the exact
+   * failure `requires_deploy` was written to stop happening to the DATA.
+   */
+  awaitingDeploy: Array<{ card: ProjectTaskMeta; missing: string[] }>
   /** Every child terminal, and there was at least one. */
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. Goes straight into the baton. */
@@ -425,6 +472,19 @@ function isQuestion(card: ProjectTaskMeta): boolean {
 /** Filed rough. Nobody builds it until a werk-refiner drains the tag. */
 function isRough(card: ProjectTaskMeta): boolean {
   return card.tags.includes(NEEDS_REFINE_TAG)
+}
+
+/**
+ * Capability tokens this card asked for that the deployment does not have. Empty
+ * for the overwhelming majority of cards, which name no preconditions at all.
+ *
+ * A FUNCTION OF THE CARD AND THE BUILD, with nothing in between -- no clock, no
+ * registry lookup by id, no manifest. That is what makes it testable and what
+ * makes it honest: the only thing it can report is what the process holding it
+ * actually compiled.
+ */
+function undeployed(card: ProjectTaskMeta, capabilities: ReadonlySet<string>): string[] {
+  return missingCapabilities(card.requiresDeploy, capabilities)
 }
 
 /** The cohort a selector produced, plus the two things only the selector knows:
@@ -513,6 +573,7 @@ function emptyPlan(): EpicPlan {
     needsRefine: [],
     exhausted: [],
     alreadyRun: [],
+    awaitingDeploy: [],
     complete: false,
   }
 }
@@ -569,6 +630,8 @@ interface DispatchGates {
   settled: ReadonlySet<string>
   dispatches: Readonly<Record<string, number>>
   bounceLane: boolean
+  /** What the deployment reading this board can do, for `requires_deploy:`. */
+  capabilities: ReadonlySet<string>
 }
 
 /** The dispatch lane, split four ways. `ready` is pre-ORDER and pre-ceiling:
@@ -580,6 +643,7 @@ interface DispatchTriage {
   waitingOnDeps: EpicPlan['waitingOnDeps']
   exhausted: ProjectTaskMeta[]
   alreadyRun: ProjectTaskMeta[]
+  awaitingDeploy: EpicPlan['awaitingDeploy']
 }
 
 /**
@@ -597,9 +661,11 @@ interface DispatchTriage {
  * names the card, so a second count of it would be double-counting the same
  * stall. `lane` otherwise names the `DispatchTriage` bucket the card lands in.
  */
+type WithholdLane = 'alreadyRun' | 'exhausted' | 'awaitingDeploy'
+
 const WITHHOLD_RULES: ReadonlyArray<{
   claims: (child: EpicChild, gates: DispatchGates) => boolean
-  lane: 'alreadyRun' | 'exhausted' | null
+  lane: WithholdLane | null
 }> = [
   {
     // LIVENESS FIRST, and it is the load-bearing half of the predicate rather
@@ -613,6 +679,19 @@ const WITHHOLD_RULES: ReadonlyArray<{
   { claims: (child, gates) => !inDispatchLane(child, gates.bounceLane), lane: null },
   // The werk-master answers these; nobody implements them. Counted by `questions`.
   { claims: child => isQuestion(child.card), lane: null },
+  {
+    // ABOVE every remaining rule, because it is the only one that says the work
+    // itself is not yet VALID rather than that this ATTEMPT at it went wrong.
+    // Reporting such a card as rough, as dead or as over its seat ceiling would
+    // send whoever reads the baton after a problem that is not there.
+    //
+    // It does NOT clear the `needsRefine` ATTENTION lane, and that asymmetry is
+    // deliberate: unlike a question, roughness is something a werk-refiner can
+    // act on today, and the prose may as well improve while the deploy is
+    // pending. `IDLE_RULES` decides which of the two the baton reports.
+    claims: (child, gates) => undeployed(child.card, gates.capabilities).length > 0,
+    lane: 'awaitingDeploy',
+  },
   {
     // A rough card is not ready, and it is withheld BEFORE the dependency check
     // so it never reaches `waitingOnDeps` -- being rough is the story, and a
@@ -643,6 +722,22 @@ const WITHHOLD_RULES: ReadonlyArray<{
 ]
 
 /**
+ * Put a withheld card in its lane. One function because ONE lane carries more
+ * than the card: `awaitingDeploy` records WHICH tokens are missing, since the
+ * action a reader takes is "deploy X" and a bare card id does not say what X is.
+ * Recomputing `undeployed` here rather than threading it out of `claims` keeps
+ * {@link WITHHOLD_RULES} a table of predicates -- it runs only for the card that
+ * was actually withheld, over a list that is one or two tokens long.
+ */
+function record(out: DispatchTriage, lane: WithholdLane, child: EpicChild, gates: DispatchGates): void {
+  if (lane === 'awaitingDeploy') {
+    out.awaitingDeploy.push({ card: child.card, missing: undeployed(child.card, gates.capabilities) })
+    return
+  }
+  out[lane].push(child.card)
+}
+
+/**
  * WHO CAN BE SENT WORK, and a named lane for every reason the rest cannot.
  *
  * Its own function because {@link WITHHOLD_RULES} is a table and a table needs
@@ -651,11 +746,11 @@ const WITHHOLD_RULES: ReadonlyArray<{
  * express -- a card nothing withheld is `ready` or it is waiting on a dependency.
  */
 function triageDispatchLane(children: readonly EpicChild[], gates: DispatchGates): DispatchTriage {
-  const out: DispatchTriage = { ready: [], waitingOnDeps: [], exhausted: [], alreadyRun: [] }
+  const out: DispatchTriage = { ready: [], waitingOnDeps: [], exhausted: [], alreadyRun: [], awaitingDeploy: [] }
   for (const child of children) {
     const withheld = WITHHOLD_RULES.find(rule => rule.claims(child, gates))
     if (withheld) {
-      if (withheld.lane) out[withheld.lane].push(child.card)
+      if (withheld.lane) record(out, withheld.lane, child, gates)
     } else if (child.waitingOn.length > 0) {
       out.waitingOnDeps.push({ card: child.card, waitingOn: child.waitingOn })
     } else {
@@ -685,8 +780,9 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     settled: new Set(input.settled ?? []),
     dispatches: input.dispatches ?? {},
     bounceLane: cohort.bounceLane,
+    capabilities: new Set(input.capabilities ?? DEPLOYED_CAPABILITIES),
   })
-  const { waitingOnDeps, exhausted, alreadyRun } = triaged
+  const { waitingOnDeps, exhausted, alreadyRun, awaitingDeploy } = triaged
 
   // THE SORT KEY, and it is applied HERE rather than inside the triage for the
   // ceiling's reason: `dispatch` and `heldBack` are one list cut in two, so the
@@ -709,6 +805,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
     needsRefine,
     exhausted,
     alreadyRun,
+    awaitingDeploy,
     complete,
     idleReason: idleReason({
       complete,
@@ -723,6 +820,7 @@ function foldCohort(cohort: Cohort, input: PlanCohortInput): EpicPlan {
       needsRefine,
       exhausted,
       alreadyRun,
+      awaitingDeploy,
       // The SAME set the ceiling was computed from, sorted so one beat's line
       // reads identically twice.
       inFlight: [...inFlight].sort(),
@@ -746,6 +844,7 @@ interface IdleInput {
   needsRefine: ProjectTaskMeta[]
   exhausted: ProjectTaskMeta[]
   alreadyRun: ProjectTaskMeta[]
+  awaitingDeploy: EpicPlan['awaitingDeploy']
   /**
    * THE CARDS HOLDING THE SLOTS, not merely how many there are.
    *
@@ -799,6 +898,18 @@ const IDLE_RULES: ReadonlyArray<{ when: (i: IdleInput) => boolean; say: (i: Idle
       `${i.alreadyRun.length} card(s) a seat already ran and finished for without moving them, no longer ` +
       `re-dispatched: ${i.alreadyRun.map(c => c.slug).join(', ')} -- move each to \`in-review\` if the work ` +
       'landed, or to `in-progress` to send another werk-worker',
+  },
+  {
+    // FOURTH of the "no beat resolves this" reasons, and it is the only one in
+    // the whole table whose fix is not in this repository: somebody has to ship
+    // a build. Above the questions lane because a werk-master can answer a
+    // question from where it sits and cannot deploy anything, so this is the one
+    // that has to travel furthest to reach the person who can act on it.
+    when: i => i.awaitingDeploy.length > 0,
+    say: i =>
+      `${i.awaitingDeploy.length} card(s) whose \`requires_deploy:\` this build does not satisfy: ` +
+      `${i.awaitingDeploy.map(a => `${a.card.slug} <- ${a.missing.join(', ')}`).join('; ')} -- ship and deploy ` +
+      'that code first, or drop the token from the card if it is retired',
   },
   {
     when: i => i.questions.length > 0,

@@ -287,6 +287,29 @@ const WALL_SPECS: readonly CardKeySpec[] = [
   },
 ]
 
+/**
+ * DISPATCH PRECONDITIONS -- what must be true of the WORLD, not of other cards,
+ * before a seat may be sent at this one.
+ *
+ * Outside `ORDER` for `WALL_SPECS`' reason: all but a handful of cards will ever
+ * carry one, and an ordered key would churn the frontmatter of the whole board
+ * to move a line nobody has.
+ */
+const PRECONDITION_SPECS: readonly CardKeySpec[] = [
+  {
+    key: 'requires_deploy',
+    type: 'string[]',
+    doc: 'capability tokens the running build must already provide before a seat is dispatched here (deployed-capabilities.ts)',
+    // Not "the key is ignored": what actually happens is the specific bad thing
+    // the key was written to stop, and naming it is the only way a reader learns
+    // that `depends_on:` is not a substitute.
+    consequence: 'a card whose work is only valid after a deploy goes out to a seat before that deploy',
+    // HUMAN: whoever writes the card knows it is code+data coupled. Nothing can
+    // infer that from the diff.
+    owner: 'human',
+  },
+]
+
 const ORDERED_SET = new Set<string>(ORDER)
 
 /** The ordered block, in ORDER, drawing each entry from whichever table owns it. */
@@ -313,5 +336,6 @@ export function buildCardKeys(): CardKeySpec[] {
     ...LINKAGE_VERBS.filter(v => !ORDERED_SET.has(v.key)).map(v => fromLinkageVerb(v, false)),
     ...GATE_SPECS,
     ...WALL_SPECS,
+    ...PRECONDITION_SPECS,
   ]
 }

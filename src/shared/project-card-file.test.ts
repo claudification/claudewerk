@@ -40,3 +40,38 @@ describe('renamed_from', () => {
     expect(serializeCard(raw?.meta ?? {}, raw?.body ?? '', raw?.raw ?? {})).toContain('renamed_from: old')
   })
 })
+
+/**
+ * The same seam one key over, and it matters more here: `epic-ready.ts` refuses
+ * to dispatch a card whose `requires_deploy:` the running build cannot satisfy,
+ * and a key that never made it off disk into the wire shape would turn that
+ * refusal into a silent no-op -- which is precisely the class of failure the key
+ * exists to prevent.
+ */
+describe('requires_deploy', () => {
+  test('a bare token reads as a one-entry precondition', () => {
+    expect(parse('title: A\nstatus: open\nrequires_deploy: needs-werk-master-tag\n').requiresDeploy).toEqual([
+      'needs-werk-master-tag',
+    ])
+  })
+
+  test('a list reads as every token in it', () => {
+    expect(parse('title: A\nstatus: open\nrequires_deploy: [one, two]\n').requiresDeploy).toEqual(['one', 'two'])
+  })
+
+  test('is absent when the key is, and when the key says nothing', () => {
+    expect(parse('title: A\nstatus: open\n').requiresDeploy).toBeUndefined()
+    expect(parse('title: A\nstatus: open\nrequires_deploy:\n').requiresDeploy).toBeUndefined()
+  })
+
+  test('an UNRECOGNISED token still projects -- dropping it would read as "no preconditions"', () => {
+    expect(parse('title: A\nstatus: open\nrequires_deploy: invented-next-year\n').requiresDeploy).toEqual([
+      'invented-next-year',
+    ])
+  })
+
+  test("survives a round trip -- a board write must not clear a card's own gate", () => {
+    const raw = readRawCard('/nonexistent/card.md', '---\ntitle: A\nstatus: open\nrequires_deploy: [tok]\n---\n\nB.\n')
+    expect(serializeCard(raw?.meta ?? {}, raw?.body ?? '', raw?.raw ?? {})).toContain('requires_deploy: [tok]')
+  })
+})
