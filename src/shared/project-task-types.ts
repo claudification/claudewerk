@@ -63,6 +63,13 @@ export interface ProjectTaskMeta {
   /** ISO 8601 date after which the card MAY be deleted. A MARKER a human acts
    *  on: nothing deletes on it (F18). Stored as `delete_at:`. */
   deleteAt?: string
+  /** Capability tokens the RUNNING build must already provide before this card
+   *  may be dispatched -- "do not start this until that code is deployed", which
+   *  `dependsOn` cannot say (it sequences cards, and a card can be `done` while
+   *  the process reading the board is a month old). Unknown tokens count as
+   *  MISSING, so the refusal fails closed. See `deployed-capabilities.ts` for
+   *  the registry and its limits. Stored as `requires_deploy:`. */
+  requiresDeploy?: string[]
   /** Model HINT for a seat dispatched against this card -- a werk-refiner's judgement
    *  about how hard the work is, or a slug typed at capture time. Always a slug
    *  the spawn layer accepts: an unrecognised value reads as absent (see

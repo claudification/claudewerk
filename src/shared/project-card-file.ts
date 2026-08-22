@@ -116,6 +116,13 @@ export function toProjectTask(raw: RawCard, id: string, fallbackStatus?: TaskSta
     archivedReason: undefinedIfBlank(raw.meta.archived_reason),
     archivedBy: undefinedIfBlank(raw.meta.archived_by),
     deleteAt: undefinedIfBlank(raw.meta.delete_at),
+    // Scalar or list, like `renamed_from` above: one token is the common case
+    // and a card naming two preconditions must keep both. NOT validated against
+    // `DEPLOYED_CAPABILITIES` here -- an unrecognised token is a REFUSAL the
+    // fold reports by name (epic-ready.ts), not a value to drop. Dropping it
+    // would turn "this build cannot run this card" into "this card has no
+    // preconditions", which is the failure the key exists to prevent.
+    requiresDeploy: undefinedIfEmpty(asCardValueList(raw.meta.requires_deploy)),
     // VALIDATED on the way out, unlike the lifecycle keys above, and for the
     // opposite reason: those keep a record a reader interprets, this one is
     // handed to CC as `--model <id>` hours later with nobody watching. An

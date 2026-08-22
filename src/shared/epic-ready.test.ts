@@ -753,3 +753,120 @@ describe('dispatch order', () => {
     expect(p.dispatch.map(c => c.slug)).toEqual(['head'])
   })
 })
+
+/**
+ * `requires_deploy:` -- the precondition that is about the WORLD rather than
+ * about another card.
+ *
+ * The failure being defended: `werk-rename-seats` moved a stored tag and kept no
+ * alias, so the chore that rewrites the cards carrying the old word is only safe
+ * once the process folding over them speaks the new one. `depends_on` cannot say
+ * that, because both cards can be `done` while the broker is a month-old image.
+ */
+describe('a card may be waiting on a DEPLOY, not on another card', () => {
+  const HAVE = ['shipped-thing']
+  const deployPlan = (cards: ProjectTaskMeta[], capabilities: readonly string[] = HAVE) =>
+    planEpic({ cards, epicId: 'e1', concurrency: 3, inFlight: [], inVerify: [], capabilities })
+
+  test('a card naming a token the build does not have is WITHHELD, with the token', () => {
+    const p = deployPlan([EPIC, card('migrate', 'open', { epic: 'e1', requiresDeploy: ['not-yet'] })])
+    expect(p.dispatch).toEqual([])
+    expect(p.awaitingDeploy.map(a => a.card.slug)).toEqual(['migrate'])
+    expect(p.awaitingDeploy[0].missing).toEqual(['not-yet'])
+  })
+
+  test('and the idle line names the card AND what has to ship -- not just "nothing ready"', () => {
+    const p = deployPlan([EPIC, card('migrate', 'open', { epic: 'e1', requiresDeploy: ['not-yet'] })])
+    expect(p.idleReason).toContain('migrate')
+    expect(p.idleReason).toContain('not-yet')
+    expect(p.idleReason).toContain('requires_deploy')
+  })
+
+  test('the same card dispatches once the build provides the token', () => {
+    const cards = [EPIC, card('migrate', 'open', { epic: 'e1', requiresDeploy: ['shipped-thing'] })]
+    expect(deployPlan(cards).dispatch.map(c => c.slug)).toEqual(['migrate'])
+    expect(deployPlan(cards).awaitingDeploy).toEqual([])
+  })
+
+  test('ONE unmet token out of several is enough, and only the unmet ones are reported', () => {
+    const p = deployPlan([EPIC, card('migrate', 'open', { epic: 'e1', requiresDeploy: ['shipped-thing', 'not-yet'] })])
+    expect(p.awaitingDeploy[0].missing).toEqual(['not-yet'])
+  })
+
+  test('a card naming nothing is untouched by any of this', () => {
+    const p = deployPlan([EPIC, card('ordinary', 'open', { epic: 'e1' })])
+    expect(p.dispatch.map(c => c.slug)).toEqual(['ordinary'])
+    expect(p.awaitingDeploy).toEqual([])
+  })
+
+  test('omitting `capabilities` falls back to THIS build, which does provide the seat-rename token', () => {
+    // Not a tautology: it pins that the default is the build's own compiled-in
+    // set rather than "empty", which would withhold every such card everywhere.
+    const p = planEpic({
+      cards: [EPIC, card('migrate', 'open', { epic: 'e1', requiresDeploy: ['needs-werk-master-tag'] })],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+    })
+    expect(p.dispatch.map(c => c.slug)).toEqual(['migrate'])
+  })
+
+  test('it outranks the seat ceiling in the withhold table -- the reported story is the real one', () => {
+    // A card that trips both must be reported as awaiting a deploy: "it has cost
+    // six seats" would be true and would send whoever reads the baton after a
+    // convergence problem that is not there.
+    const p = planEpic({
+      cards: [
+        EPIC,
+        card('migrate', 'in-progress', {
+          epic: 'e1',
+          tags: [NEEDS_REFINE_TAG],
+          requiresDeploy: ['not-yet'],
+        }),
+      ],
+      epicId: 'e1',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+      capabilities: HAVE,
+      dispatches: { migrate: MAX_CARD_SEATS },
+    })
+    expect(p.awaitingDeploy.map(a => a.card.slug)).toEqual(['migrate'])
+    expect(p.exhausted).toEqual([])
+    // STILL rough, deliberately. `needsRefine` is an attention lane, not a
+    // dispatch refusal, and unlike a question a werk-refiner CAN act on this one
+    // today -- the prose gets better while the deploy is pending. `IDLE_RULES`
+    // is what decides which of the two the baton reports, and it reports this.
+    expect(p.needsRefine.map(c => c.slug)).toEqual(['migrate'])
+    expect(p.idleReason).toContain('requires_deploy')
+  })
+
+  test('a QUESTION stays a question -- the werk-master lane is not a dispatch lane at all', () => {
+    const p = deployPlan([
+      EPIC,
+      card('q', 'open', { epic: 'e1', tags: [NEEDS_WERK_MASTER_TAG], requiresDeploy: ['not-yet'] }),
+    ])
+    expect(p.questions.map(c => c.slug)).toEqual(['q'])
+    expect(p.awaitingDeploy).toEqual([])
+  })
+
+  test('a terminal card carrying a stale token is history, never a stall', () => {
+    const p = deployPlan([EPIC, card('shipped', 'done', { epic: 'e1', requiresDeploy: ['not-yet'] })])
+    expect(p.awaitingDeploy).toEqual([])
+    expect(p.complete).toBe(true)
+  })
+
+  test('the tag cohort gets the identical refusal -- one fold, two selectors', () => {
+    const p = planTagged({
+      cards: [card('migrate', 'open', { tags: ['ready'], requiresDeploy: ['not-yet'] })],
+      tag: 'ready',
+      concurrency: 3,
+      inFlight: [],
+      inVerify: [],
+      capabilities: HAVE,
+    })
+    expect(p.dispatch).toEqual([])
+    expect(p.awaitingDeploy.map(a => a.card.slug)).toEqual(['migrate'])
+  })
+})
