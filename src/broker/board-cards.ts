@@ -9,9 +9,9 @@
  * IT USED TO LIVE IN `nightshift-board.ts`, module-private, because nightshift
  * was the only scanner with a caller. `scanner-clock.ts` gave `refine` and
  * `work-order` one, and both need the same list -- so the choice was a second
- * copy of `call(store, project, {op:'list'})` or a neutral door. The nightshift
- * dequeue (`untagBoardCard`) stays where it is: it WRITES, and no other scanner
- * has any business reaching it.
+ * copy of `call(store, project, {op:'list'})` or a neutral door. The WRITE made
+ * the same trip one card later and for the same reason: it is `clearCardTag` in
+ * `tag-clear.ts` now, because refine's clock drains a tag too.
  *
  * NOTHING HERE HOLDS STATE, and nothing here writes. That is what lets the
  * nightshift outlook use the identical deps as the run it previews and still be a

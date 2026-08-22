@@ -119,6 +119,62 @@ describe('runClockedScanner', () => {
     expect(h.lines.some(l => l.includes('pass FAILED') && l.includes(A))).toBe(true)
   })
 
+  /**
+   * THE DRAIN RUNS FIRST. A card whose seat landed its work must lose the tag
+   * BEFORE this tick's selection reads the board, or the scan spends a second
+   * seat on a card that is already done with.
+   */
+  test('a tick is drain THEN pass, per project', async () => {
+    const h = harness([A, B])
+    const order: string[] = []
+    await runClockedScanner(
+      {
+        id: 'refine',
+        intervalMs: 1,
+        pass: async (_s, project) => {
+          order.push(`pass:${project}`)
+        },
+        drain: async (_s, project) => {
+          order.push(`drain:${project}`)
+        },
+      },
+      STORE,
+      h.deps,
+    )
+    expect(order).toEqual([`drain:${A}`, `pass:${A}`, `drain:${B}`, `pass:${B}`])
+  })
+
+  /** A tick whose queue maintenance blew up did not complete, whatever the scan
+   *  afterwards managed -- and the scan does not run at all, because it would be
+   *  selecting from a queue nobody drained. */
+  test('a drain that THREW skips the pass, is not stamped, and says which half failed', async () => {
+    const h = harness([A])
+    await runClockedScanner(
+      {
+        id: 'refine',
+        intervalMs: 1,
+        pass: async (_s, project) => {
+          h.swept.push(project)
+        },
+        drain: async () => {
+          throw new Error('board refused the write')
+        },
+      },
+      STORE,
+      h.deps,
+    )
+    expect(h.swept).toEqual([])
+    expect(h.stamped).toEqual([])
+    expect(h.lines.some(l => l.includes('drain FAILED') && l.includes(A))).toBe(true)
+  })
+
+  test('a scanner with no drain still ticks', async () => {
+    const h = harness([A])
+    await runClockedScanner(recorder(h.swept), STORE, h.deps)
+    expect(h.swept).toEqual([A])
+    expect(h.stamped.map(s => s.project)).toEqual([A])
+  })
+
   test('the stamp is read from the injected clock, not the wall clock', async () => {
     const h = harness([A])
     await runClockedScanner(recorder(h.swept), STORE, h.deps)
@@ -155,6 +211,19 @@ describe('CLOCKED_SCANNERS', () => {
     for (const scanner of CLOCKED_SCANNERS) {
       expect(SCANNER_CONTRACTS[scanner.id].cadence).toBe(`every ${Math.round(scanner.intervalMs / 1000)}s`)
     }
+  })
+
+  /**
+   * `refine` DRAINS ITS TAG AND `work-order` DOES NOT, and the asymmetry is the
+   * design. `needs-refine` is a one-shot queue entry; `ready` is a STANDING
+   * authorisation ("unattended work, whenever"), so clearing it on settle would
+   * mean a bounced card could never be picked up again without a human re-tagging
+   * it by hand.
+   */
+  test('refine carries a drain and work-order deliberately does not', () => {
+    const byId = new Map(CLOCKED_SCANNERS.map(s => [s.id, s]))
+    expect(byId.get('refine')?.drain).toBeDefined()
+    expect(byId.get('work-order')?.drain).toBeUndefined()
   })
 
   test('a scanner with a clock no longer says "no caller yet"', () => {

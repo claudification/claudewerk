@@ -9,6 +9,11 @@
  * same reason `scheduled-tasks/wiring.ts` is kept apart from its engine: the
  * clock stays about cadence, this stays about plumbing.
  *
+ * THE DRAIN IS WIRED HERE TOO, and it is the one thing in this file that WRITES.
+ * `buildRefineDrain` is plumbing by the same definition as the builders beside it
+ * -- the rule lives in `tag-clear.ts`, the evidence in `refine-drain.ts`, and the
+ * cadence stays with the clock. What lands here is which board door and which tag.
+ *
  * IT WIRES NO GATE AND NO STAMP. Both are the CLOCK's, not a dep's -- see
  * `scanner-gate.ts`. By the time either builder below is called the project has
  * already passed the opt-in, which is what "skipped before any token is spent"
@@ -16,6 +21,7 @@
  * RPC either.
  */
 
+import { NEEDS_REFINE_TAG } from '../shared/epic-ready'
 import { WORK_ORDER_CONCURRENCY } from '../shared/scanner-contracts'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import { listBoardCards } from './board-cards'
@@ -23,9 +29,11 @@ import { callBoard } from './board-rpc'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
 import { getProjectSettings } from './project-settings'
+import { drainRefineTag } from './refine-drain'
 import { DEFAULT_REFINE_CONCURRENCY, type RefineDeps } from './scanners/refine-scanner'
 import type { WorkOrderDeps } from './scanners/work-order-scanner'
 import { dispatchSpawn, type SpawnDispatchDeps } from './spawn-dispatch'
+import { clearCardTag } from './tag-clear'
 import { werkLiveness } from './werk-liveness'
 
 /**
@@ -116,6 +124,33 @@ export function buildRefineDeps(store: ConversationStore, project: string): Refi
     project,
     projectRoot: project,
     dispatch: async request => (await dispatchSpawn(request, spawnDeps(store))).ok,
+  }
+}
+
+/**
+ * THE REFINE TAG'S DRAIN for one project -- the clock's step, not the scanner's.
+ *
+ * READS THE BOARD ITSELF rather than sharing the pass's list, and that second RPC
+ * is the point: the drain WRITES, and a scan that then selected from a pre-drain
+ * snapshot would dispatch a second werk-refiner at the card this very tick just
+ * cleared. Two reads a minute per opted-in project buys an ordering that cannot
+ * race itself.
+ *
+ * A BOARD NOBODY CAN READ IS AN EMPTY DRAIN, never a throw: `listBoardCards`
+ * answers `[]` when the sentinel is gone, and clearing nothing is the correct
+ * behaviour for an engine that cannot see the queue.
+ */
+export function buildRefineDrain(store: ConversationStore, project: string): () => Promise<void> {
+  return async () => {
+    const s = store as unknown as ScanStore
+    await drainRefineTag({
+      cards: await listBoardCards(callBoard, store, project),
+      getAllConversations: s.getAllConversations,
+      isLive: werkLiveness(s.getActiveConversationCount),
+      producedOutput: conv => s.hasAnyTranscript(conv.id),
+      untag: slug => clearCardTag(callBoard, store, project, slug, NEEDS_REFINE_TAG),
+      log: line => console.log(line),
+    })
   }
 }
 

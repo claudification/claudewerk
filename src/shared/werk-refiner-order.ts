@@ -1,11 +1,16 @@
 /**
- * `WERK-REFINER@1` -- the seat that drains `#needs-refine`, as a work order.
+ * `WERK-REFINER@1` -- the seat that serves `#needs-refine`, as a work order.
  *
  * `quick-task-needs-refine-keypress` puts `#needs-refine` on a card with one
  * keypress and nothing consumes it. This is the consumer's SEAT: the reusable
  * half of the dispatch -- who does it, what it may spend, what it may touch.
  * SELECTING the tagged cards and dispatching against them is `scanner-refine`'s
  * half, in the sibling epic, and there is deliberately no dispatcher here.
+ *
+ * DRAINING THE TAG IS NEITHER OF THOSE HALVES. It is the CLOCK's, on evidence the
+ * refine landed -- `tag-clear.ts` for the rule, `refine-drain.ts` for this tag's
+ * evidence. This seat used to be told to do it in step 7 of its own prompt, which
+ * is why a werk-refiner that died mid-run left the queue entry on the board forever.
  *
  * WHY AN ORDER AND NOT A FOURTH `TASK_MODES` ENTRY. `task-modes.ts` hardcodes
  * three roles with their persona baked into the source -- exactly the shape
@@ -42,33 +47,39 @@ export const WERK_REFINER_ORDER_ID = 'WERK-REFINER@1'
 /**
  * The instruction block the werk-refiner seat runs.
  *
- * TWO THINGS IT MUST GET RIGHT, and both are in here as imperatives rather than
- * left to the seat's judgement:
+ * IT EDITS THE BODY, NOT THE STATUS. A card that got clearer did not get done.
+ * The prose below says so and {@link WERK_REFINER_ORDER}'s deny rule makes it
+ * mechanical -- the seat cannot call the status verb at all.
  *
- *   1. IT REMOVES THE TAG. The tag IS the queue. A werk-refiner that improves a card
- *      and leaves `#needs-refine` on it refines that card again every cron tick,
- *      forever, and the queue never drains.
- *   2. IT EDITS THE BODY, NOT THE STATUS. A card that got clearer did not get
- *      done. The prose below says so and {@link WERK_REFINER_ORDER}'s deny rule makes
- *      it mechanical -- the seat cannot call the status verb at all.
+ * IT NO LONGER REMOVES THE TAG, and that deletion is the whole of
+ * `werk-tag-cleared-by-evidence`. The removal used to be step 7 here, an
+ * imperative in a PROMPT, which meant a seat that died at step 6 left
+ * `#needs-refine` on the card forever and the `already-run` bucket then refused
+ * it every tick: tagged, undispatched, unworked. The ENGINE drains it now, and it
+ * drains it on EVIDENCE the refine happened (`refine-drain.ts`: the card file
+ * changed after this seat started) rather than on the seat exiting -- because a
+ * tag cleared by a crashed seat is a card that is untagged, unworked and
+ * invisible, which is strictly worse than the stuck tag it replaces. Putting the
+ * instruction back would be a second mechanism racing the first.
  *
  * Derived from `TASK_MODES`' `refine.single` so the two do not drift while both
- * exist; the additions are the tag removal and the explicit no-status clause.
+ * exist; the one addition left is the explicit no-status clause.
  *
  * STEP 6 IS IMPORTED, not written here, for that same reason -- `epic-roster.ts`
  * owns both the roster block and the sentence that tells a seat what to do with
  * it, so the scanner seat and the panel's refine cannot disagree about when a
  * card may be parented.
  *
- * THE MODEL SUGGESTION (step 8) IS IN BOTH COPIES, and it has to be: a werk-refiner
+ * THE MODEL SUGGESTION (step 7) IS IN BOTH COPIES, and it has to be: a werk-refiner
  * reached from the LAUNCH modal runs `TASK_MODES.refine.single`, one reached
  * from this seat runs the block below, and a hint only one of them asks for is a
  * hint that appears or vanishes depending on which door the refine came through.
  *
- * IT WENT IN LAST, AFTER THE TAG DRAIN, NOT BEFORE IT. The drain's number is
- * quoted by `refine-scanner.ts`, its test and `seat-reservation.test.ts`; a new
- * step inserted above it silently invalidates all three. Append-only numbering
- * is the same rule the card schema's render order follows, for the same reason.
+ * IT MOVED UP A NUMBER when the drain left, and that is the only renumbering this
+ * block has ever taken. Append-only numbering exists so an INSERTION cannot
+ * silently invalidate a quoted step; nothing quotes a step number here any more,
+ * because the one thing that did -- `refine-scanner.ts` and its test -- pointed
+ * at the drain that is now gone.
  */
 export const WERK_REFINER_INSTRUCTIONS = `REFINE this card -- do not implement it.
 1. Read the card file for full context, and the code it points at
@@ -77,9 +88,7 @@ export const WERK_REFINER_INSTRUCTIONS = `REFINE this card -- do not implement i
 4. Break it into smaller, actionable sub-tasks if it is too large
 5. Note any dependencies on other cards
 6. ${EPIC_SOFT_LINK_STEP}
-7. REMOVE the \`needs-refine\` tag from the card's \`tags:\` line -- the tag is the
-   queue, and a card you refined but left tagged comes back to you forever
-8. Set \`model:\` to the model this work actually needs (\`haiku\`, \`sonnet\`,
+7. Set \`model:\` to the model this work actually needs (\`haiku\`, \`sonnet\`,
    \`opus\`, \`fable\`) and say WHY in one line in the body. You have just read the
    card and the code it points at, so you are the one who knows whether this is a
    rename-three-symbols job or a design job -- that judgement is thrown away
@@ -124,7 +133,7 @@ status verb is denied to this seat), and do NOT start implementing the work.`
 export const WERK_REFINER_ORDER: Order = validateOrder({
   kind: 'order@1',
   id: WERK_REFINER_ORDER_ID,
-  title: 'WerkRefiner -- makes a rough card buildable, and drains #needs-refine',
+  title: 'WerkRefiner -- makes a rough card buildable; the engine drains #needs-refine',
   seat: 'werk-refiner',
   instructions: WERK_REFINER_INSTRUCTIONS,
   namePrefix: 'refine ',
@@ -155,7 +164,8 @@ export const WERK_REFINER_ORDER: Order = validateOrder({
     deny: ['mcp__rclaude__project_set_status'],
   },
   notes:
-    'Spent by a scheduled task against #needs-refine cards. Removes the tag it drains and changes no statuses. ' +
+    'Spent by a scheduled task against #needs-refine cards. Changes no statuses, and does not clear the tag -- ' +
+    'the engine drains it on evidence the refine landed (tag-clear.ts). ' +
     'Must run BEFORE the nightly board sweep: refinement bumps card mtimes, and the sweep short-circuits on the ' +
     "board's max mtime -- refine after the snapshot and every night looks like movement.",
 })

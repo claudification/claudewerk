@@ -20,6 +20,12 @@
  * overwrites the running placeholder this orchestrator seeds). A worker that ends
  * WITHOUT reporting is patched to `errored` so every task lands terminal (failure
  * mode #4: no silent stalls).
+ *
+ * THE TAG COMES OFF ON THE VERDICT, NOT ON THE DISPATCH. Taking the card off
+ * tonight's list used to be the first thing a dispatch did, which meant a crashed
+ * worker left the card untagged and unworked -- gone from the queue with nothing
+ * on the board to say the work never happened. `drainSettledTask` clears it when
+ * the task reaches a terminal `done`, and leaves it on otherwise.
  */
 
 import {
@@ -40,7 +46,7 @@ import { CapacityLedger } from './capacity-ledger'
 import { DEFAULT_CAPACITY_CONFIG } from './capacity-types'
 import type { ConversationStore } from './conversation-store'
 import { getGlobalSettings } from './global-settings'
-import { buildNightshiftScanDeps, untagBoardCard } from './nightshift-board'
+import { buildNightshiftScanDeps } from './nightshift-board'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { settleWorkerFromStore } from './nightshift-guardians'
 import { computeWindowEndMs } from './nightshift-window'
@@ -49,6 +55,7 @@ import { buildScannerOptIn, type ScannerOptIn } from './scanner-gate'
 import { type NightshiftScanDeps, nightshiftScanner } from './scanners/nightshift-scanner'
 import { runScan } from './scanners/scanner'
 import { dispatchSpawn } from './spawn-dispatch'
+import { clearCardTag } from './tag-clear'
 
 /** How often the engine advances in-flight runs (reaps finished workers, dispatches next). */
 const ORCH_TICK_MS = 20_000
@@ -136,6 +143,11 @@ interface RunState {
   pending: NightshiftQueueItem[]
   /** taskId -> spawned conversationId, for the tasks currently running. */
   inflight: Map<string, string>
+  /** taskId -> the CARD it was built from, for tasks that have been dispatched.
+   *  Kept past the reap on purpose: it is what {@link drainSettledTask} needs
+   *  after the worker is gone, and the run's own artifacts carry the task id
+   *  rather than the card. Tasks with no `boardRef` are simply absent. */
+  boardRefs: Map<string, string>
   permissionMode: NightshiftConfig['permissionMode']
   /** Inline settings the sentinel materializes for every worker this run: the
    *  dontAsk allowlist + always-on deny-floor (§6a). Computed once at run open. */
@@ -210,23 +222,27 @@ function taskPrompt(item: NightshiftQueueItem, runId: string, project: string): 
     .join('\n\n')
 }
 
-/** Seed the running artifact, take the card off tonight's list, and spawn the
- *  guarded worker.
+/**
+ * Seed the running artifact, remember which card this task came from, and spawn
+ * the guarded worker.
  *
- *  THE UNTAG IS THE DEQUEUE. It used to be `op: 'dequeue'` against
- *  `.nightshift/queue/`; the run's input is now the `#nightshift` tag, so what
- *  stops a card being picked up again is removing that tag -- written on the
- *  card, where a human can see it, rather than in a store nobody opens. A card
- *  whose untag fails is logged and still dispatched: a duplicate next run beats
- *  losing tonight's work. */
+ * IT NO LONGER DROPS THE TAG HERE, and that is `werk-tag-cleared-by-evidence`.
+ * Dispatching used to be the dequeue -- `op: 'dequeue'` against
+ * `.nightshift/queue/` first, then removing `#nightshift` from the card. Both
+ * spellings cleared the queue entry the moment the work STARTED, so a worker that
+ * crashed left the card untagged, unworked and invisible: nothing on the board
+ * said the run had failed it, and no later run would pick it up. The tag comes
+ * off in {@link drainSettledTask} instead, on the task's own verdict.
+ *
+ * NOTHING CAN DOUBLE-DISPATCH IN THE MEANTIME. The scan runs ONCE, when the run
+ * opens, and `activeRuns` allows one run per project -- so the only reader of the
+ * tag between here and the verdict is the next night, by which time the run has
+ * finalized and every task is terminal.
+ */
 async function dispatchTask(store: ConversationStore, state: RunState, item: NightshiftQueueItem): Promise<void> {
   const { runId, project } = state
   await io.sendNightshiftOp(store, project, { op: 'report', runId, report: runningReport(item, project) })
-  if (item.boardRef && !(await untagBoardCard(io.callBoard, store, project, item.boardRef))) {
-    console.warn(
-      `[nightshift-orch] could not drop #${NIGHTSHIFT_TAG} from card=${item.boardRef} run=${runId} -- it may be picked up again`,
-    )
-  }
+  if (item.boardRef) state.boardRefs.set(item.id, item.boardRef)
 
   const res = await io.dispatchSpawn(
     {
@@ -328,8 +344,52 @@ async function ensureTerminalArtifact(
   })
 }
 
+/**
+ * The task statuses that mean THE WORK HAPPENED. Everything else -- `errored`,
+ * `blocked`, `skipped`, and a worker that ended without reporting at all --
+ * leaves the card tagged, which is what puts it back on the next night's list
+ * instead of losing it silently.
+ */
+const NIGHTSHIFT_WORK_LANDED: ReadonlySet<string> = new Set(['done', 'integrated'])
+
+/**
+ * THE NIGHT RUN'S DRAIN -- `#nightshift` comes off the card because its task
+ * reached a terminal DONE, never because its worker exited.
+ *
+ * Reads the run artifact FRESH rather than reusing the snapshot
+ * `ensureTerminalArtifact` just took: that call is what writes the terminal
+ * verdict for a worker that ended without reporting, and the whole question here
+ * is what the verdict ended up being.
+ *
+ * A CARD WHOSE TASK FAILED KEEPS ITS TAG AND RUNS AGAIN TOMORROW. That is a
+ * retry, and it is bounded by the thing that bounds every night run -- one run
+ * per project, a `totalTasks` cap, and a morning report that says `errored` next
+ * to the card's title. The alternative is the failure this card exists to end: a
+ * cleared tag on work nobody did.
+ */
+async function drainSettledTask(store: ConversationStore, state: RunState, taskId: string): Promise<void> {
+  const slug = state.boardRefs.get(taskId)
+  if (!slug) return
+  const snap = await io.sendNightshiftOp(store, state.project, { op: 'snapshot', runId: state.runId })
+  const status = snap.snapshot?.tasks.find(t => t.id === taskId)?.status
+  if (!status || !NIGHTSHIFT_WORK_LANDED.has(status)) {
+    console.log(
+      `[nightshift-orch] card=${slug} keeps #${NIGHTSHIFT_TAG} -- task=${taskId} ended \`${status ?? 'unreported'}\`, not done`,
+    )
+    return
+  }
+  if (await clearCardTag(io.callBoard, store, state.project, slug, NIGHTSHIFT_TAG)) {
+    console.log(`[nightshift-orch] card=${slug} dropped #${NIGHTSHIFT_TAG} -- task=${taskId} landed \`${status}\``)
+  } else {
+    console.warn(
+      `[nightshift-orch] could not drop #${NIGHTSHIFT_TAG} from card=${slug} run=${state.runId} -- it may be picked up again`,
+    )
+  }
+}
+
 /** Reap workers that have ended: drop them from inflight + ensure a terminal
- *  artifact + SETTLE their capacity reservation with the actual token spend. */
+ *  artifact + SETTLE their capacity reservation with the actual token spend +
+ *  drain the card's tag if, and only if, the task landed. */
 async function reapFinished(store: ConversationStore, state: RunState): Promise<void> {
   for (const [taskId, convId] of [...state.inflight]) {
     const conv = store.getConversation(convId)
@@ -341,6 +401,7 @@ async function reapFinished(store: ConversationStore, state: RunState): Promise<
     const actual = conv ? conv.stats.totalInputTokens + conv.stats.totalOutputTokens : undefined
     ledger.settle(taskRefOf(state.runId, taskId), actual)
     await ensureTerminalArtifact(store, state, taskId, conv)
+    await drainSettledTask(store, state, taskId)
     console.log(`[nightshift-orch] task=${taskId} settled run=${state.runId} inflight=${state.inflight.size}`)
   }
 }
@@ -488,6 +549,7 @@ async function runNightshiftImpl(
     runId,
     pending: [...tasks],
     inflight: new Map(),
+    boardRefs: new Map(),
     permissionMode: config.permissionMode,
     // Allowlist + deny-floor materialized per worker (§6a / plan-nightshift §10).
     // Applies in every mode -- the deny-floor bites even under bypass; the

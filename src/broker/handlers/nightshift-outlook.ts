@@ -104,7 +104,7 @@ export function resetNightshiftOutlookIo(): void {
  * The deps come from `buildNightshiftScanDeps`, the SAME builder
  * `scanBoardForTasks` uses, so the preview cannot be wired differently from the
  * run it previews. What keeps it a dry run is that the builder wires the two
- * READ ops and nothing else -- `untagBoardCard` is not in it, and the run
+ * READ ops and nothing else -- the drain (`clearCardTag`) is not in it, and the run
  * opening/spawning lives entirely in the orchestrator.
  */
 export async function outlookForProject(store: ConversationStore, project: string): Promise<NightshiftOutlook> {

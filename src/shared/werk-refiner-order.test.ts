@@ -40,12 +40,26 @@ describe('WERK-REFINER@1, the artifact', () => {
     expect(WERK_REFINER_ORDER.permissions?.deny).toContain('mcp__rclaude__project_set_status')
   })
 
-  test('its instructions tell the seat to drain the tag and leave the status alone', () => {
+  test('its instructions tell the seat to leave the status alone and not to implement', () => {
     const text = WERK_REFINER_ORDER.instructions ?? ''
-    expect(text).toContain('needs-refine')
-    expect(text.toLowerCase()).toContain('remove')
     expect(text).toContain("Do NOT change the card's status")
     expect(text).toContain('do NOT start implementing')
+  })
+
+  /**
+   * THE DRAIN IS THE ENGINE'S, AND THIS IS WHAT KEEPS IT THAT WAY.
+   *
+   * The block used to carry "REMOVE the `needs-refine` tag" as step 7, and a
+   * werk-refiner killed at step 6 therefore left the queue entry on the board
+   * forever. `tag-clear.ts` clears it now, on evidence the refine landed, and an
+   * instruction putting the seat back in charge of the same write would be a
+   * second mechanism -- one that fires on the seat's exit, which is precisely the
+   * timing `werk-tag-cleared-by-evidence` rejects.
+   */
+  test('its instructions do NOT ask the seat to drain the tag', () => {
+    const text = WERK_REFINER_ORDER.instructions ?? ''
+    expect(text).not.toContain('needs-refine')
+    expect(text.toLowerCase()).not.toContain('remove')
   })
 
   /**

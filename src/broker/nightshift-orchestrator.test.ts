@@ -6,9 +6,9 @@
  * retired) -- so we mock all three and drive the drain loop by hand via the
  * exported `advanceAllRuns`. Covers: nothing-tagged skip, the concurrency cap
  * (never more than N in flight), the totalTasks cap (never dispatch more than
- * the cap), finalize after everything settles, the untag that replaced the
- * dequeue, and the ensure-terminal patch for a worker that ends without
- * reporting.
+ * the cap), finalize after everything settles, the DRAIN that replaced the
+ * dequeue (the tag comes off on the task's verdict, never on the dispatch), and
+ * the ensure-terminal patch for a worker that ends without reporting.
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
@@ -278,17 +278,61 @@ describe('runNightshift', () => {
     await drainToFinalize('proj-ref')
   })
 
-  // ...and the untag is what `dequeue` used to be: the thing that stops the same
-  // card being picked up by tomorrow's run.
-  test('dispatch strips #nightshift from the card instead of dequeuing a copy', async () => {
+  /**
+   * DISPATCHING IS NOT THE DEQUEUE ANY MORE.
+   *
+   * It was, twice over: `op: 'dequeue'` against `.nightshift/queue/`, then
+   * stripping `#nightshift` the moment the worker was spawned. Both cleared the
+   * queue entry on the work STARTING, so a crashed worker left the card untagged
+   * and unworked with nothing on the board to say so. The tag now comes off on
+   * the task's verdict -- see the two cases below.
+   */
+  test('dispatch touches no tag, and never dequeues a copy', async () => {
     queueItems = makeQueue(1)
     await runNightshift(store, 'proj-untag', { trigger: 'manual' })
+
+    expect(boardCalls.some(c => c.op === 'update')).toBe(false)
+    expect(opCalls.some(o => o.op === 'dequeue')).toBe(false)
+    await drainToFinalize('proj-untag')
+  })
+
+  test('a task that reached `done` drops #nightshift from its card', async () => {
+    queueItems = makeQueue(1)
+    await runNightshift(store, 'proj-landed', { trigger: 'manual' })
+    await drainToFinalize('proj-landed')
 
     const update = boardCalls.find(c => c.op === 'update')
     expect(update?.slug).toBe('card-001')
     expect(update?.tags).toEqual([])
-    expect(opCalls.some(o => o.op === 'dequeue')).toBe(false)
-    await drainToFinalize('proj-untag')
+  })
+
+  /**
+   * THE CARD. A worker that crashed leaves `#nightshift` ON, so the card is still
+   * on the board, still visible, and on tomorrow night's list. Clearing it would
+   * be silent scope loss: the work never happened and nothing would say so.
+   */
+  test('a task that ERRORED leaves #nightshift on its card', async () => {
+    queueItems = makeQueue(1)
+    await runNightshift(store, 'proj-crashed', { trigger: 'manual' })
+    // The worker ends, and its artifact is terminal-but-failed.
+    for (const id of convStatus.keys()) convStatus.set(id, 'ended')
+    snapshotTasks = [{ id: '001', status: 'errored' }]
+    await advanceAllRuns(store)
+
+    expect(boardCalls.some(c => c.op === 'update')).toBe(false)
+  })
+
+  /** A worker that ended without reporting anything at all is the same answer:
+   *  `ensureTerminalArtifact` stamps it errored, and no evidence means no clear. */
+  test('a worker that never reported leaves #nightshift on its card', async () => {
+    queueItems = makeQueue(1)
+    await runNightshift(store, 'proj-silent', { trigger: 'manual' })
+    for (const id of convStatus.keys()) convStatus.set(id, 'ended')
+    snapshotTasks = []
+    await advanceAllRuns(store)
+
+    expect(opCalls.some(o => o.op === 'task_patch' && o.taskPatch?.status === 'errored')).toBe(true)
+    expect(boardCalls.some(c => c.op === 'update')).toBe(false)
   })
 
   test('scheduler trigger respects config.enabled=false', async () => {

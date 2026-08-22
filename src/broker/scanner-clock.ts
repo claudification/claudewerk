@@ -33,7 +33,7 @@ import { SCANNER_TICK_INTERVAL_MS } from '../shared/scanner-contracts'
 import type { ScannerId } from '../shared/scanner-ids'
 import type { ConversationStore } from './conversation-store'
 import { listProjects } from './project-store'
-import { buildRefineDeps, buildWorkOrderDeps } from './scanner-clock-deps'
+import { buildRefineDeps, buildRefineDrain, buildWorkOrderDeps } from './scanner-clock-deps'
 import { buildScannerOptIn, buildSkipLog, gateProjects, type ScannerOptIn, type SkipLog } from './scanner-gate'
 import { refineScanner } from './scanners/refine-scanner'
 import { runScan } from './scanners/scanner'
@@ -52,6 +52,20 @@ export interface ClockedScanner {
   id: ScannerId
   intervalMs: number
   pass: (store: ConversationStore, project: string) => Promise<void>
+  /**
+   * DRAIN THE TAG THIS SCANNER SELECTS BY, on evidence the work happened.
+   *
+   * Optional because not every scanner selects by a tag it owns -- `work-order`
+   * reads `ready`, which is a STANDING authorisation ("unattended work,
+   * whenever") and not a one-shot ticket. Clearing it on settle would mean a
+   * bounced card could never be picked up again without a human re-tagging by
+   * hand, so `work-order` has no drain and that absence is the design.
+   *
+   * ON THE CLOCK RATHER THAN IN THE SCANNER for the reason the whole contract
+   * exists: a scanner is INVOKED and holds no state, while the drain is a WRITE
+   * whose timing only the loop that owns the cadence can be responsible for.
+   */
+  drain?: (store: ConversationStore, project: string) => Promise<void>
 }
 
 /**
@@ -71,6 +85,7 @@ export const CLOCKED_SCANNERS: readonly ClockedScanner[] = [
     pass: async (store, project) => {
       await runScan(refineScanner, buildRefineDeps(store, project))
     },
+    drain: (store, project) => buildRefineDrain(store, project)(),
   },
   {
     id: 'work-order',
@@ -108,6 +123,11 @@ export interface ClockDeps {
  * it is what makes "enabled, last ran never" mean the loop is dead rather than
  * the board being quiet -- the distinction nightshift (0 runs since June) could
  * not make about itself.
+ *
+ * A TICK IS DRAIN THEN PASS, AND A THROW IN EITHER HALF COSTS THE STAMP. The
+ * drain is a WRITE against the board; a tick whose queue maintenance blew up did
+ * not complete, whatever the scan afterwards managed, and the stamp is the one
+ * column a human uses to decide the loop is alive.
  */
 export async function runClockedScanner(
   scanner: ClockedScanner,
@@ -116,19 +136,35 @@ export async function runClockedScanner(
 ): Promise<void> {
   const { run } = gateProjects(deps.knownProjects(), deps.optIn, deps.skipLog)
   for (const project of run) {
-    try {
-      await scanner.pass(store, project)
-    } catch (err) {
+    // THE DRAIN RUNS FIRST, and the order is the design. A card whose seat
+    // landed its work loses the tag BEFORE this tick's selection, so the scan
+    // never sees it and never spends a second seat on it. Draining afterwards
+    // would work too and would waste one dispatch-or-refusal per cleared card,
+    // every tick, on cards that are already done with.
+    const drain = scanner.drain
+    const drained = drain ? await runStep('drain', () => drain(store, project)) : null
+    const failure = drained ?? (await runStep('pass', () => scanner.pass(store, project)))
+    if (failure) {
       // A dep that rejects rather than resolving. Logged and NOT stamped: the
-      // pass did not complete, and a stamp for it would be the amber column
+      // tick did not complete, and a stamp for it would be the amber column
       // lying in the one direction nobody checks.
-      deps.log(
-        `[scanner:${scanner.id}] pass FAILED for ${project} -- not stamped: ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-      )
+      deps.log(`[scanner:${scanner.id}] ${failure.step} FAILED for ${project} -- not stamped: ${failure.message}`)
       continue
     }
     deps.optIn.stamp(project, deps.now())
+  }
+}
+
+/** Run one half of a tick and name it if it throws. `null` = it completed. */
+async function runStep(
+  step: 'drain' | 'pass',
+  body: () => Promise<void>,
+): Promise<{ step: string; message: string } | null> {
+  try {
+    await body()
+    return null
+  } catch (err) {
+    return { step, message: err instanceof Error ? err.message : String(err) }
   }
 }
 
