@@ -440,7 +440,7 @@ ceiling and the dry-generation park are per-run brakes. The fleet-wide governor
 | `planEpic` (DAG + ceiling + lanes) | **done**, tested |
 | `planBeat` (the decision) | **done**, tested |
 | Generation 0 -- werk-planner prompt, checkpoint gate, fingerprint | **done**, tested, default on |
-| Spend + wall-clock ceilings | **done**, tested -- needs `build:packages` to be live (see below) |
+| Spend + wall-clock ceilings | **done**, tested -- and **fail-closed** since 2026-08-22: a sentinel that cannot carry them refuses the arm (see below) |
 | Prompts for all three seats | **done**, tested |
 | The mute | **done**, tested |
 | `launchConfig.epic` tag | **done** |
@@ -466,15 +466,34 @@ importantly that the deterministic DONE-gate never runs for an epic card, so the
 werk-worker/werk-verifier separation currently holds by CONVENTION rather than by the
 mechanism built to enforce it.
 
-**A STALE SENTINEL BUNDLE SILENTLY DISARMS THE CEILINGS.** The sentinel owns
-`run.md`, so its `readEpicRun` is what populates the snapshot the broker's beat
-judges the caps against. A bundle built before the ceilings landed knows none of
-`maxUsd` / `maxWallClockMinutes` / `spentUsd`, returns them absent, and the
-broker's `run.maxUsd > 0` test is then false -- **the run is uncapped, and nothing
-anywhere says so.** Worse, `writeRun` serialises whatever it parsed, so an old
-bundle strips those fields from a `run.md` a newer one wrote. Verify with
-`grep -c maxUsd packages/sentinel/bin/sentinel` before trusting a ceiling; `0`
-means run `build:packages` and restart the sentinel.
+### A stale sentinel bundle can no longer disarm a ceiling
+
+The sentinel owns `run.md` and ships as a **frozen bundle** that deploys
+separately from the broker, so its `readEpicRun` is what populates the snapshot
+the beat judges the caps against. A bundle built before the ceilings landed knows
+none of `maxUsd` / `maxWallClockMinutes` / `spentUsd` and returns them absent --
+and `run.maxUsd > 0` is false for a field that was **asked for and lost in
+transit** exactly as it is for one nobody set. Until 2026-08-22 that meant the run
+dispatched uncapped with nothing anywhere saying so, and the documented remedy was
+`grep -c maxUsd packages/sentinel/bin/sentinel`. A safety mechanism whose failure
+detector is a human remembering to grep a 532 KB binary is not a safety mechanism.
+
+**A cap that cannot be enforced is an ERROR, never an absence.** Absent is not
+read as unlimited anywhere, and four mechanisms replace the grep:
+
+| Mechanism | Where | What it does |
+|---|---|---|
+| `readCeiling` | `src/shared/epic-run-caps.ts` | Three answers, not two: `capped`, `disarmed` (a typed `0`, and only a typed `0`), `unenforceable` (absent, non-numeric, negative). |
+| The arm refusal | `capCapabilityRefusal`, `src/broker/epic-arm.ts` | **The reply is the capability probe.** `start` sends the ceilings and the sentinel echoes the run back; an echo without them proves the bundle predates them. The arm is refused, the run the sentinel already wrote is **paused**, and the reason goes to `docker logs broker`, to the baton as a `checkpoint`, and to the caller. No version handshake to keep in step -- the check is a property of the data, so it keeps working for whatever the next lost field turns out to be. |
+| The beat park | `capBeat`, `src/broker/epic-beat.ts` | Checked **before** the ceilings themselves, because the arithmetic cannot ask the question. A live run whose sentinel is rolled back mid-flight parks with the reason on the baton rather than dispatching. It parks rather than holds: the condition is a deploy, so unlike headroom it does not fix itself in twenty minutes. |
+| Foreign-key passthrough | `EPIC_RUN_KEYS` + `foreignKeys`, `src/shared/epic-run-store.ts` | `writeRun` used to serialise the typed object and nothing else, so any build dropped every key it had not heard of. An unknown key is now assumed to belong to a **newer** writer and survives the round trip -- so an old bundle can no longer *delete* a new one's fields. (`gen` is exempt: this build owns it by having retired it.) |
+
+The passthrough is forward-looking only and cannot repair a bundle already frozen
+without it; that is what the arm refusal and the beat park are for. Every field
+added from here on is skew-proof by construction rather than by remembering.
+
+Both refusals name the fix: `bun run build:packages`, restart the sentinel, arm
+again.
 
 **Deploying the new verbs needs an explicit go, twice.** The executor, the sweep
 and the broker actions live in the BROKER, so they need the image rebuilt and the

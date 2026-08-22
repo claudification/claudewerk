@@ -57,6 +57,56 @@ import { type Frontmatter, parseFrontmatter, serializeFrontmatter } from './fron
 const STATUSES: readonly EpicRunStatus[] = ['armed', 'running', 'paused', 'complete', 'aborted']
 const TARGETS = ['pr', 'merged', 'shipped'] as const
 
+/**
+ * EVERY `run.md` FRONTMATTER KEY THIS BUILD OWNS -- and the list exists so that
+ * everything NOT on it can be carried through untouched.
+ *
+ * THE FAILURE IT ENDS: `writeRun` serialised the typed object and nothing else,
+ * so a build read a run, dropped every key it had not heard of, and wrote the
+ * remainder back. That is harmless while one build exists and lethal the moment
+ * two do -- the sentinel ships as a FROZEN BUNDLE and deploys separately from
+ * the broker, so a bundle predating the ceilings would open a `run.md` carrying
+ * `maxUsd`, `maxWallClockMinutes` and `spentUsd` and rewrite it without them.
+ * The ceilings did not lapse; they were DELETED, by a routine patch, silently.
+ *
+ * So an unknown key is now assumed to belong to a NEWER writer and survives the
+ * round trip. This cannot retro-fix a bundle already frozen without it -- that
+ * is what the broker's arm refusal and `capBeat` are for -- but every field
+ * added from here on is skew-proof by construction rather than by remembering.
+ *
+ * `gen` IS ON THE LIST, and it is the exception that proves the rule: this build
+ * owns it by having RETIRED it (see the file docstring). Leaving it off would
+ * make a stale `gen:` key immortal, which is exactly the second copy that
+ * deadlocked `epic-the-wall-ii`.
+ *
+ * FLAT SCALARS ONLY, like the rest of this artifact: a nested block in `run.md`
+ * is a hand edit of a machine-owned file and is dropped as it always was.
+ */
+export const EPIC_RUN_KEYS: readonly string[] = [
+  'epicId',
+  'project',
+  'cadence',
+  'status',
+  'target',
+  'dryGens',
+  'unlandedWoken',
+  'maxGens',
+  'maxUsd',
+  'maxWallClockMinutes',
+  'spentUsd',
+  'startedAt',
+  'plan',
+  'planned',
+  'planBaseline',
+  'concurrency',
+  'created',
+  'updated',
+  'abortReason',
+  'acknowledgedAt',
+  // RETIRED, not unknown. Dropping it is this build's decision, every write.
+  'gen',
+]
+
 const DEFAULT_DIGEST = '_No digest yet -- the first werk-master generation writes it._'
 
 /**
@@ -267,6 +317,33 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
 }
 
 /**
+ * KEYS IN THE `run.md` ON DISK THAT THIS BUILD DOES NOT OWN -- somebody else's
+ * fields, read back off the file so the write about to happen cannot delete them.
+ *
+ * A SECOND READ, deliberately, rather than threading the raw meta through
+ * `EpicRun`. That type crosses the wire and is spread into every patch; hanging
+ * a bag of unparsed keys off it would put them in reach of every caller that
+ * builds a run by hand, and the one thing this passthrough must never do is
+ * become writable. Reading the file again costs one `readFileSync` of a
+ * sub-kilobyte artifact on a path that is already doing an atomic write.
+ *
+ * NEVER THROWS. A torn or absent file has no foreign keys to preserve, and a
+ * write that failed because the OLD bytes were bad would turn a recoverable tear
+ * into a run that cannot be written at all.
+ */
+function foreignKeys(root: string, epicId: string): Record<string, unknown> {
+  const text = readIfPresent(epicRunFile(root, epicId))
+  if (text === null) return {}
+  try {
+    const { meta, hasFrontmatter } = parseFrontmatter(text)
+    if (!hasFrontmatter) return {}
+    return Object.fromEntries(Object.entries(meta).filter(([key]) => !EPIC_RUN_KEYS.includes(key)))
+  } catch {
+    return {}
+  }
+}
+
+/**
  * Write the run. `run.md` gets frontmatter and the banner, every time.
  *
  * `digest.md` is written only when this call MEANS to write prose -- when the
@@ -285,7 +362,9 @@ function writeRun(root: string, run: EpicRun, digest?: string): EpicRun {
   const { digest: _prose, ...meta } = run
   // The gate list goes back as a bare scalar when there is only one of it, so a
   // run that never touched this axis keeps the exact bytes it has always had.
-  const frontmatter = { ...meta, cadence: serializeWhen(run.cadence) }
+  // Keys this build does not own go back LAST, so the fields it does own keep
+  // the order they have always had and a diff of `run.md` stays readable.
+  const frontmatter = { ...meta, cadence: serializeWhen(run.cadence), ...foreignKeys(root, run.epicId) }
   // TMP-AND-RENAME, both files. A bare `writeFileSync` truncates before it
   // writes, so a sentinel killed mid-write left a `run.md` that still existed
   // and no longer said anything -- and `readEpicRun` read that as a fresh armed

@@ -505,6 +505,68 @@ describe('the run caps -- dollars and wall clock', () => {
 })
 
 /**
+ * A CEILING THAT CANNOT BE ENFORCED IS AN ERROR, NEVER AN ABSENCE.
+ *
+ * The sentinel owns `run.md` and ships as a FROZEN BUNDLE, so a bundle built
+ * before the ceilings landed answers every `get` with `maxUsd`,
+ * `maxWallClockMinutes` and `spentUsd` absent. `run.maxUsd > 0` is then false and
+ * the run dispatches UNCAPPED, with nothing anywhere saying so -- the documented
+ * remedy for which was a human remembering to run
+ * `grep -c maxUsd packages/sentinel/bin/sentinel`.
+ *
+ * These pin the replacement: absent is not unlimited, and the beat refuses.
+ */
+describe('a run whose ceilings were lost in transit does not dispatch', () => {
+  /** What a stale sentinel's reply looks like once it has crossed the wire: the
+   *  type says the fields are there and the bytes say otherwise. */
+  const capBlind = (over: Partial<Record<'maxUsd' | 'maxWallClockMinutes' | 'spentUsd', undefined>>) =>
+    ({ ...RUN, ...over }) as unknown as Partial<EpicRunSnapshot>
+
+  test('every cap field absent parks the run instead of dispatching', () => {
+    const b = beat(
+      {},
+      { dispatch: [card('t1')] },
+      capBlind({ maxUsd: undefined, maxWallClockMinutes: undefined, spentUsd: undefined }),
+    )
+    expect(kinds(b)).toEqual(['park'])
+    expect(b.note).toContain('UNENFORCEABLE')
+  })
+
+  test('ONE lost field is enough -- a run with half a budget has no budget', () => {
+    const b = beat({}, { dispatch: [card('t1')] }, capBlind({ maxUsd: undefined }))
+    expect(kinds(b)).toEqual(['park'])
+    expect(b.note).toContain('maxUsd')
+  })
+
+  test('a lost LEDGER parks too -- $0.00 spent against a real ceiling reads as room to burn', () => {
+    const b = beat({ spentUsd: 0 }, { dispatch: [card('t1')] }, capBlind({ spentUsd: undefined }))
+    expect(kinds(b)).toEqual(['park'])
+    expect(b.note).toContain('spentUsd')
+  })
+
+  test('the park names the mechanism and the fix, not a grep', () => {
+    const reason = (beat({}, {}, capBlind({ maxUsd: undefined })).actions[0] as { reason: string }).reason
+    expect(reason).toContain('build:packages')
+    expect(reason).toContain('absent is not unlimited')
+  })
+
+  test('it outranks the ceilings themselves -- a run that cannot be capped never reaches the arithmetic', () => {
+    const b = beat({ spentUsd: 9_999 }, {}, capBlind({ maxUsd: undefined }))
+    expect(b.note).toContain('UNENFORCEABLE')
+    expect(b.note).not.toContain('spend ceiling')
+  })
+
+  test('a DISARMED run is untouched -- a typed 0 is an answer, and this branch is about missing ones', () => {
+    const b = beat(
+      { spentUsd: 9_999, nowMs: at(10_000) },
+      { dispatch: [card('t1')] },
+      { maxUsd: 0, maxWallClockMinutes: 0, startedAt: '2026-08-21T00:00:00.000Z' },
+    )
+    expect(kinds(b)).toEqual(['dispatch'])
+  })
+})
+
+/**
  * THE LEDGER THE CAPS ARE READ FROM. Cumulative spend is folded by the executor
  * and carried here, so this file stays pure and the executor stays the only
  * writer -- the rule `b766b75e` established after `dryGens` was read every beat

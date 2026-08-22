@@ -19,7 +19,7 @@
 import { type CardLanding, describeLanding, formatEscalations, parseEscalations } from '../shared/epic-landing'
 import { LEASE_STALE_MS } from '../shared/epic-lease'
 import type { EpicPlan } from '../shared/epic-ready'
-import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
+import { elapsedRunMinutes, formatUsd, unenforceableCapLine } from '../shared/epic-run-caps'
 import type { EpicWakeReason } from '../shared/epic-run-types'
 import { gatedBy, whenWaitingLine } from '../shared/epic-when'
 import { formatDuration } from '../shared/format-duration'
@@ -406,9 +406,11 @@ function spentSoFar(input: EpicBeatInput): number {
  * project billed $2,481 in one calendar day with THE WALL II running unattended,
  * and no cap of any kind was involved in stopping it.
  *
- * Order is dollars, then wall clock, then generations -- most expensive unit
- * first, so a run that is over two ceilings at once reports the one that
- * actually cost something. A ceiling of `0` is a deliberate, typed disarm; the
+ * Order is UNENFORCEABLE first, then dollars, then wall clock, then generations
+ * -- "I do not know what the ceiling is" outranks every ceiling, and after that
+ * the most expensive unit wins, so a run that is over two ceilings at once
+ * reports the one that actually cost something. A ceiling of `0` is a
+ * deliberate, typed disarm; an ABSENT ceiling is not a disarm at all; the
  * defaults are in `EPIC_RUN_DEFAULTS` and none of them is infinity.
  *
  * Every branch PARKS, which is the same terminal shape as the dry-generation
@@ -417,6 +419,33 @@ function spentSoFar(input: EpicBeatInput): number {
  */
 function capBeat(input: EpicBeatInput): EpicBeat | null {
   const { run } = input
+
+  // A CEILING NOTHING CAN ENFORCE IS AN ERROR, NEVER AN ABSENCE, and it is
+  // checked BEFORE the ceilings themselves because the arithmetic below cannot
+  // ask the question: `run.maxUsd > 0` is false for a field that was asked for
+  // and lost in transit exactly as it is for one nobody set, and it picks the
+  // dangerous reading of the two. The sentinel owns `run.md` and ships as a
+  // frozen bundle, so a bundle built before the ceilings landed answers every
+  // `get` with all three scalars absent -- and until this branch existed the run
+  // was then uncapped with nothing anywhere saying so.
+  //
+  // IT PARKS, like every other branch here. The condition is a DEPLOY (rebuild
+  // the bundle, restart the sentinel), so unlike headroom it does not fix itself
+  // in twenty minutes, and a run that HELD on it would go quiet with its reason
+  // reaching only whoever happened to be tailing the broker.
+  const lost = unenforceableCapLine(run)
+  if (lost) {
+    return beat(`ceilings UNENFORCEABLE -- ${lost}`, [
+      {
+        kind: 'park',
+        reason:
+          `the spend and wall-clock ceilings CANNOT BE ENFORCED for this run: ${lost}. The sentinel that owns ` +
+          '`run.md` is answering without the cap fields, which means its bundle predates them -- run ' +
+          '`bun run build:packages` and restart the sentinel, then re-arm. A run that cannot be capped does ' +
+          'not dispatch: absent is not unlimited.',
+      },
+    ])
+  }
 
   const spent = spentSoFar(input)
   if (run.maxUsd > 0 && spent >= run.maxUsd) {

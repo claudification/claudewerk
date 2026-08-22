@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { elapsedRunMinutes, epicRunCaps, formatEpicRunCaps, formatUsd } from './epic-run-caps'
+import {
+  elapsedRunMinutes,
+  epicRunCaps,
+  formatEpicRunCaps,
+  formatUsd,
+  readCeiling,
+  unenforceableCapFields,
+  unenforceableCapLine,
+} from './epic-run-caps'
 import type { EpicRunReading } from './epic-run-types'
 
 const T0 = Date.parse('2026-08-21T00:00:00.000Z')
@@ -121,4 +129,103 @@ describe('formatEpicRunCaps', () => {
 test('formatUsd always shows cents', () => {
   expect(formatUsd(12.5)).toBe('$12.50')
   expect(formatUsd(0)).toBe('$0.00')
+})
+
+/**
+ * ABSENT, ZERO AND UNREADABLE ARE THREE ANSWERS.
+ *
+ * `run.maxUsd > 0` had two branches for three cases, and it folded the dangerous
+ * one into the permissive one: a ceiling asked for and lost in transit read as
+ * "no ceiling was asked for". These pin the third state existing at all, because
+ * every refusal downstream is built on being able to name it.
+ */
+describe('readCeiling -- absent is not zero and zero is not absent', () => {
+  test('a positive number is a live ceiling', () => {
+    expect(readCeiling(100)).toEqual({ kind: 'capped', limit: 100 })
+  })
+
+  test('a typed zero is a deliberate disarm', () => {
+    expect(readCeiling(0)).toEqual({ kind: 'disarmed' })
+  })
+
+  test('absent is UNENFORCEABLE, never unlimited -- this is the whole card', () => {
+    expect(readCeiling(undefined).kind).toBe('unenforceable')
+    expect(readCeiling(null).kind).toBe('unenforceable')
+  })
+
+  test('a negative ceiling does not get to be a second spelling of the disarm', () => {
+    expect(readCeiling(-1).kind).toBe('unenforceable')
+  })
+
+  test('a string that survived a YAML round trip is unenforceable rather than NaN', () => {
+    expect(readCeiling('100').kind).toBe('unenforceable')
+    expect(readCeiling(Number.NaN).kind).toBe('unenforceable')
+  })
+})
+
+/**
+ * THE CAPABILITY PROBE. A sentinel bundle built before the ceilings landed
+ * answers a `get` with all three scalars absent, and the run it sends back is
+ * the only place that fact is visible -- so the check is a property of the data
+ * and needs no version handshake to keep in step.
+ */
+describe('unenforceableCapFields -- the probe', () => {
+  test('a healthy run has nothing to report', () => {
+    expect(unenforceableCapFields(run())).toEqual([])
+    expect(unenforceableCapLine(run())).toBeNull()
+  })
+
+  test('a run with every cap DISARMED is still enforceable -- a typed 0 is an answer', () => {
+    expect(unenforceableCapFields(run({ maxUsd: 0, maxWallClockMinutes: 0 }))).toEqual([])
+  })
+
+  test('a reply from a bundle that predates the ceilings names all three', () => {
+    const stale = { ...run() } as Partial<EpicRunReading>
+    stale.maxUsd = undefined
+    stale.maxWallClockMinutes = undefined
+    stale.spentUsd = undefined
+    expect(unenforceableCapFields(stale)).toEqual(['maxUsd', 'maxWallClockMinutes', 'spentUsd'])
+    expect(unenforceableCapLine(stale)).toContain('maxUsd (absent')
+  })
+
+  test('one lost field is enough -- the line names it and says why', () => {
+    const partial = { ...run() } as Partial<EpicRunReading>
+    partial.spentUsd = undefined
+    expect(unenforceableCapFields(partial)).toEqual(['spentUsd'])
+    expect(unenforceableCapLine(partial)).toBe('spentUsd (absent -- the writer of run.md does not carry this field)')
+  })
+})
+
+/**
+ * WHAT A SURFACE PRINTS WHEN THE CEILING IS LOST. `$0.00/no cap` in this slot is
+ * the exact lie the card exists to stop telling, and `over: false` is deliberate
+ * -- the run has not reached its ceiling, it has lost it.
+ */
+describe('the readings render the third state instead of inventing a number', () => {
+  const blind = (over: Partial<Record<keyof EpicRunReading, undefined>>) =>
+    ({ ...run(), ...over }) as unknown as EpicRunReading
+
+  test('a lost maxUsd reads UNENFORCEABLE, not "no cap"', () => {
+    expect(byLabel(blind({ maxUsd: undefined }), T0, 'spend')).toMatchObject({
+      used: '?',
+      limit: 'UNENFORCEABLE',
+      remaining: null,
+      over: false,
+    })
+  })
+
+  test('a lost LEDGER is as unjudgeable as a lost ceiling -- $0.00 spent would read as room to burn', () => {
+    const reading = byLabel(blind({ spentUsd: undefined }), T0, 'spend')
+    expect(reading?.limit).toBe('UNENFORCEABLE')
+    expect(reading?.unenforceable).toContain('spentUsd')
+  })
+
+  test('a lost maxWallClockMinutes reads the same way', () => {
+    expect(byLabel(blind({ maxWallClockMinutes: undefined }), T0, 'wall clock')?.limit).toBe('UNENFORCEABLE')
+  })
+
+  test('the one-line format carries the reason, so an agent reading it knows which field went', () => {
+    const line = formatEpicRunCaps(blind({ maxUsd: undefined }), T0)
+    expect(line).toContain('spend ?/UNENFORCEABLE (maxUsd absent')
+  })
 })

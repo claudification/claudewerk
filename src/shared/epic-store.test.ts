@@ -5,7 +5,14 @@ import { join } from 'node:path'
 import { readLease } from './epic-lease'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
 import { epicDigestFile, epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
-import { EpicRunUnreadableError, patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
+import {
+  EPIC_RUN_KEYS,
+  EpicRunUnreadableError,
+  patchEpicRun,
+  RUN_FILE_BANNER,
+  readEpicRun,
+  startEpicRun,
+} from './epic-run-store'
 import { parseFrontmatter } from './frontmatter'
 import { cardPath } from './project-paths'
 
@@ -458,6 +465,111 @@ describe('the run artifact', () => {
       startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 12.75 }, T0)
       patchEpicRun(root, 'e1', { spentUsd: 0.07 }, T0 + 1)
       expect(readEpicRun(root, 'e1')).toMatchObject({ spentUsd: 0.07, maxUsd: 12.75 })
+    })
+  })
+
+  /**
+   * AN OLDER BUNDLE MUST NOT BE ABLE TO DELETE A NEWER ONE'S FIELDS.
+   *
+   * `writeRun` serialised the typed object and nothing else, so any build read a
+   * `run.md`, dropped every key it had not heard of, and wrote the remainder
+   * back. Harmless while one build exists; lethal the moment two do -- the
+   * sentinel ships as a FROZEN BUNDLE and deploys separately from the broker, so
+   * a bundle predating the ceilings would open a `run.md` carrying `maxUsd`,
+   * `maxWallClockMinutes` and `spentUsd` and rewrite it WITHOUT them. The
+   * ceilings did not lapse; a routine patch deleted them, silently.
+   *
+   * THE OLDER FIELD SET IS SIMULATED BY A NEWER ONE, and it is the same
+   * mechanism seen from the other end: a key this build has never heard of is
+   * exactly what `maxUsd` was to the bundle that stripped it. Testing it this way
+   * is the only honest option -- a test cannot import a parser that no longer
+   * exists, and it is the FORWARD direction that is now guaranteed.
+   *
+   * This cannot retro-fix a bundle already frozen without the passthrough. That
+   * is what the arm refusal (`capCapabilityRefusal`) and `capBeat`'s park are
+   * for; this is what stops the next field from repeating it.
+   */
+  describe('a field this build does not know survives the round trip', () => {
+    /** Add a key no reader here has ever heard of, exactly where a newer writer
+     *  would have put it. */
+    function plantForeignKey(epicId: string, line: string): void {
+      const file = epicRunFile(root, epicId)
+      writeFileSync(file, readFileSync(file, 'utf8').replace(/^---\n/, `---\n${line}\n`), 'utf8')
+    }
+
+    test('a patch does not strip it', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p', maxUsd: 25, maxWallClockMinutes: 60 }, T0)
+      plantForeignKey('e1', 'maxTokens: 999')
+
+      patchEpicRun(root, 'e1', { spentUsd: 3 }, T0 + 1)
+
+      const meta = parseFrontmatter(readFileSync(epicRunFile(root, 'e1'), 'utf8')).meta
+      expect(meta.maxTokens).toBe('999')
+      // And the fields this build DOES own are still exactly where they were.
+      expect(readEpicRun(root, 'e1')).toMatchObject({ maxUsd: 25, maxWallClockMinutes: 60, spentUsd: 3 })
+    })
+
+    test('a re-arm does not strip it either -- start is a merge, not a clobber', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      plantForeignKey('e1', 'maxTokens: 999')
+
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 1)
+
+      expect(parseFrontmatter(readFileSync(epicRunFile(root, 'e1'), 'utf8')).meta.maxTokens).toBe('999')
+    })
+
+    /**
+     * `gen` IS OWNED BY HAVING BEEN RETIRED. Carrying it through as a foreign key
+     * would make a stale generation immortal, which is the second copy that
+     * deadlocked `epic-the-wall-ii` on 2026-08-20 -- the wake quoted `run.md` and
+     * the CAS compared the card, and they could never agree again.
+     */
+    test('the RETIRED gen key is still dropped, not preserved as somebody else s field', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      plantForeignKey('e1', 'gen: 12')
+
+      patchEpicRun(root, 'e1', { dryGens: 1 }, T0 + 1)
+
+      expect(parseFrontmatter(readFileSync(epicRunFile(root, 'e1'), 'utf8')).meta.gen).toBeUndefined()
+    })
+
+    /**
+     * THE DRIFT GUARD, and it is the only thing keeping the list honest.
+     *
+     * `EPIC_RUN_KEYS` is hand-written, so a field added to `EpicRunMeta` and not
+     * added here would be written out and then read back as SOMEBODY ELSE'S key
+     * -- carried through forever, immune to the very clearing rules the field was
+     * given. This asserts every byte this build emits is a byte it claims.
+     */
+    test('EPIC_RUN_KEYS claims every key this build writes -- add a field, add it here', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(
+        root,
+        'e1',
+        {
+          startedAt: new Date(T0).toISOString(),
+          planBaseline: 'fingerprint',
+          abortReason: 'because',
+          acknowledgedAt: new Date(T0).toISOString(),
+          unlandedWoken: 'c1@3',
+        },
+        T0 + 1,
+      )
+
+      const written = Object.keys(parseFrontmatter(readFileSync(epicRunFile(root, 'e1'), 'utf8')).meta)
+      expect(written.filter(k => !EPIC_RUN_KEYS.includes(k))).toEqual([])
+    })
+
+    /** A cleared field must stay cleared. `startedAt` is owned, so the carry-over
+     *  may not resurrect the value the re-arm just deleted. */
+    test('carrying foreign keys does not resurrect an OWNED field a re-arm cleared', () => {
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0)
+      patchEpicRun(root, 'e1', { startedAt: new Date(T0).toISOString() }, T0 + 1)
+      plantForeignKey('e1', 'maxTokens: 999')
+
+      startEpicRun(root, { epicId: 'e1', project: 'p' }, T0 + 2)
+
+      expect(readEpicRun(root, 'e1')?.startedAt).toBeUndefined()
     })
   })
 
