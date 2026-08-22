@@ -1,9 +1,12 @@
 import { type GateOutcome, isGatedTarget } from '../../../shared/board-gate'
+import { type VerdictDecision, verdictDecisionFor } from '../../../shared/card-verdict'
 import { cardRelPath, getProjectTask, locateCard, setProjectTaskStatus } from '../../../shared/project-store'
 import { TASK_STATUSES, type TaskStatus } from '../../../shared/task-statuses'
 import { debug } from '../debug'
 import { gateTransition } from './board-gate-host'
+import { writeVerdictToCard } from './card-verdict-write'
 import type { McpToolContext } from './types'
+import { rememberVerdict } from './verdict-harvest'
 
 function formatStatus(s: string): string {
   return s
@@ -60,10 +63,54 @@ function gateRanNotice(gate: GateOutcome): string {
 }
 
 /**
+ * WHAT A SEAT IS TOLD WHEN IT TRIES TO CLOSE A REVIEW WITHOUT SAYING ANYTHING.
+ *
+ * Names the parameter and the shape of the answer, because a refusal that only
+ * says "no" gets retried verbatim. This is the loud half of "a verdict that is
+ * not on the card was not delivered": the review does not close at all until the
+ * judgement exists somewhere a reader will find it.
+ */
+function missingVerdictText(decision: VerdictDecision, cardId: string, targetStatus: TaskStatus): string {
+  const what =
+    decision === 'APPROVED'
+      ? 'what you ran, what you saw, and why that is enough'
+      : 'exactly what failed and the command output that proves it'
+  return (
+    `REFUSED: leaving in-review is a VERDICT, and this call carries none.\n` +
+    `Retry with the verdict as a parameter:\n` +
+    `  project_set_status(id="${cardId}", status="${targetStatus}", verdict="<${what}>")\n\n` +
+    'It is written into the card body under `## Verdict`, attributed to your conversation id and stamped ' +
+    'with the time -- both machine-supplied, neither yours to write. A verdict that lives only in this ' +
+    'transcript is one the next reader of this board cannot find, which is indistinguishable from a card ' +
+    'nobody reviewed.'
+  )
+}
+
+/**
+ * The verdict write FAILED. The lane does not move.
+ *
+ * This is the case the card exists for: a review that reports success while its
+ * judgement went nowhere. Better a verifier that has to retry than a `done` card
+ * whose approval nobody can produce.
+ */
+function verdictWriteFailedText(cardId: string, error: string): string {
+  return (
+    `REFUSED: the lane did NOT move -- your verdict could not be written to \`${cardId}\`.\n${error}\n\n` +
+    'The move is deliberately tied to the write: a card that reads settled with no verdict on it is the ' +
+    'exact failure this refusal exists to prevent. Fix the cause and retry the same call.'
+  )
+}
+
+/**
  * project_set_status handler -- change a card's lane, GATED for in-review/done
  * by the deterministic DONE-gate (board-gate.ts). The gate machine-captures git
  * evidence, refuses bad transitions with a precise reason, and enforces the
  * independent-verdict rule (a worker cannot approve itself).
+ *
+ * IT IS ALSO THE VERDICT VERB. A move OUT of `in-review` closes a review, so it
+ * carries `verdict` (plus optional `caveats`/`notes`) and writes it into the card
+ * body before the lane moves. No verdict, or a verdict that cannot be written,
+ * and the move is REFUSED -- see card-verdict.ts for the failure that bought this.
  *
  * The card's FILE does not move: `status` is frontmatter, the path is identity.
  * So there is no lane scan to find it, no destination collision to dedup, and
@@ -82,10 +129,19 @@ export async function handleProjectSetStatus(ctx: McpToolContext, params: Record
   const fromStatus = card.status
   if (fromStatus === targetStatus) return text(`"${taskId}" is already ${formatStatus(targetStatus)}`)
 
+  // A VERDICT THAT IS NOT ON THE CARD WAS NOT DELIVERED (card-verdict.ts).
+  // Checked BEFORE the gate on purpose: the gate may run this card's whole test
+  // suite for minutes, and refusing afterwards for a missing parameter would
+  // burn all of it on a call that was never going to be allowed.
+  const decision = verdictDecisionFor(fromStatus, targetStatus)
+  const summary = (params.verdict ?? '').trim()
+  if (decision && !summary) return text(missingVerdictText(decision, taskId, targetStatus), true)
+
   // DETERMINISTIC DONE-GATE (§2): earn the transition to in-review/done with
   // machine checks + independent verdict. Evidence is machine-captured here,
   // written into the card at its canonical path.
   const identity = ctx.getIdentity()
+  const cardAbs = locateCard(dialogCwd, taskId)?.abs ?? ''
   // Awaited, not blocking: the gate may run the card's `test_cmd` for minutes and
   // the host has to keep serving this conversation's other tool calls meanwhile.
   const {
@@ -95,7 +151,7 @@ export async function handleProjectSetStatus(ctx: McpToolContext, params: Record
   } = await gateTransition({
     dialogCwd,
     cardId: taskId,
-    cardPath: locateCard(dialogCwd, taskId)?.abs ?? '',
+    cardPath: cardAbs,
     fromStatus,
     targetStatus,
     actingConversationId: identity?.conversationId ?? '',
@@ -109,6 +165,29 @@ export async function handleProjectSetStatus(ctx: McpToolContext, params: Record
   )
   if (gate.decision === 'refuse') return text(refusalText(gate, fromStatus, targetStatus, card.title), true)
 
+  // THE VERDICT LANDS BEFORE THE LANE MOVES, and a failure to write it refuses
+  // the move outright. Written AFTER the gate because the gate has just stamped
+  // its evidence keys into this same file -- this write re-reads and carries
+  // them forward rather than racing them.
+  let verdictNote = ''
+  if (decision) {
+    const verdict = {
+      decision,
+      by: identity?.conversationId || 'unknown-conversation',
+      at: new Date().toISOString(),
+      summary,
+      ...(params.caveats?.trim() ? { caveats: params.caveats.trim() } : {}),
+      ...(params.notes?.trim() ? { notes: params.notes.trim() } : {}),
+    }
+    const written = writeVerdictToCard(cardAbs, verdict)
+    ctx.elog(`[verdict] ${taskId} ${decision} by ${verdict.by} -> ${written.ok ? 'written' : written.error}`)
+    if (!written.ok) return text(verdictWriteFailedText(taskId, written.error), true)
+    rememberVerdict(verdict.by, { cardId: taskId, cardPath: cardAbs, input: verdict })
+    verdictNote =
+      `\n\nVerdict written to the card body: **${decision}** by \`${verdict.by}\`. ` +
+      'Any `caveats`/`notes` you report with `set_status` from here on are folded into it automatically.'
+  }
+
   if (setProjectTaskStatus(dialogCwd, taskId, targetStatus, Date.now()) === null)
     return text('Failed to set task status', true)
   ctx.callbacks.onProjectChanged?.()
@@ -117,6 +196,7 @@ export async function handleProjectSetStatus(ctx: McpToolContext, params: Record
     `Moved "${card.title}" from ${formatStatus(fromStatus)} to ${formatStatus(targetStatus)}\n` +
       `The card is where it has always been: ${cardRelPath(taskId)}` +
       gateRanNotice(gate) +
+      verdictNote +
       gateOffNotice(gate, targetStatus),
   )
 }

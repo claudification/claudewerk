@@ -44,7 +44,10 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
         'Move a project task to a different status column on the board. Use the card id (its filename without .md) -- the file itself never moves, only its `status:` frontmatter changes. ' +
         'DONE-GATE: moving to in-review or done may be gated by deterministic checks (per-project gate.conf, or `full` for quest cards). ' +
         "When gated, the tool captures git evidence (branch/base/commits/diffstat, and runs the card's `test_cmd`) and REFUSES the move with a precise reason if the tree is dirty, nothing is committed, the diff is empty, or tests fail. " +
-        'Under `full`, in-review -> done additionally requires approval by a DIFFERENT conversation than the one that moved the card to in-review (the worker cannot approve itself). You cannot self-report these facts.',
+        'Under `full`, in-review -> done additionally requires approval by a DIFFERENT conversation than the one that moved the card to in-review (the worker cannot approve itself). You cannot self-report these facts. ' +
+        'VERDICT: a move OUT of in-review (to done = approve, to in-progress/open = bounce) closes a review, so it REQUIRES `verdict` -- your judgement in your own words. ' +
+        'It is written into the card body under `## Verdict`, attributed to your conversation id, BEFORE the lane moves; if it cannot be written the move is refused. ' +
+        'A verdict that lives only in your transcript is one no later reader of the board can find.',
       inputSchema: {
         type: 'object' as const,
         properties: {
@@ -56,6 +59,21 @@ export function registerProjectBoardTools(ctx: McpToolContext): Record<string, T
             type: 'string',
             enum: [...TASK_STATUSES],
             description: 'Target lane',
+          },
+          verdict: {
+            type: 'string',
+            description:
+              'REQUIRED when leaving in-review. Your judgement: on approve, what you ran and what you saw; ' +
+              'on bounce, exactly what failed and the output that proves it. Markdown. Ignored on other moves.',
+          },
+          caveats: {
+            type: 'string',
+            description: 'Optional, with `verdict`: it passes, but watch X. Lands under the verdict on the card.',
+          },
+          notes: {
+            type: 'string',
+            description:
+              'Optional, with `verdict`: FYI asides still true now the card is settled (e.g. "needs a deploy").',
           },
         },
         required: ['id', 'status'],

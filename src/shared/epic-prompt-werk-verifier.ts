@@ -8,10 +8,14 @@
  * The Guard reads the card + its machine-captured evidence, RE-RUNS the acceptance
  * command and `test_cmd` itself (never trusting the worker's narrative), inspects
  * the diff, then either:
- *   - APPROVES by moving the card in-review -> done (under an enabled gate that
- *     move stamps `verdict: APPROVED by <id>`; under `off` it stamps nothing and
- *     the prompt tells the Guard to write the verdict by hand), or
+ *   - APPROVES by moving the card in-review -> done, or
  *   - BOUNCES the card back to in-progress with concrete findings.
+ *
+ * EITHER WAY THE MOVE CARRIES THE VERDICT. `project_set_status` requires it on any
+ * move out of in-review and writes it into the card body itself (card-verdict.ts),
+ * refusing the move if it cannot -- so this prompt no longer asks the Guard to
+ * "write the verdict by hand", which is the instruction that produced an APPROVED
+ * migration whose approval existed only in a transcript.
  *
  * Sibling of nightshift-act-prompts.ts (an act agent Jonas triggered). The Guard
  * is spawned by the engine, distrusts by design, and integrates NOTHING itself.
@@ -85,16 +89,22 @@ export function buildWerkVerifierPrompt(ctx: WerkVerifierPromptCtx): string {
     '   no debug leftovers, no disabled tests? Skepticism is the job.',
     "5. Remove your scratch worktree when done. Touch neither main nor the worker's branch.",
     '',
-    'DECIDE:',
+    'DECIDE. YOUR VERDICT IS A PARAMETER OF THE MOVE, not something you write afterwards: leaving in-review',
+    'REQUIRES `verdict`, the tool writes it into the card body under `## Verdict` attributed to you, and it',
+    'REFUSES the move if it cannot. A verdict that exists only in this transcript has not been delivered --',
+    'a werk-verifier once approved a 224-file migration and the card settled `done` carrying no trace of it.',
     '- APPROVE (only if EVERY check above passed with your own eyes):',
-    `    project_set_status(id="${ctx.cardId}", status="done")`,
-    '  Under an enabled gate that move stamps `verdict: APPROVED by <you>`, and under `full` it also PROVES',
-    '  you are not the worker. If the gate refuses, its reason is ground truth -- do NOT route around it.',
-    '  If the gate is off the move stamps nothing, so write your verdict into the card body by hand.',
+    `    project_set_status(id="${ctx.cardId}", status="done",`,
+    '                       verdict="what you ran, what you saw, why that is enough")',
+    '  Under an enabled gate that move ALSO stamps `verdict: APPROVED by <you>` in the frontmatter, and under',
+    '  `full` it PROVES you are not the worker. If the gate refuses, its reason is ground truth -- do NOT',
+    '  route around it.',
     '- BOUNCE (any check failed, is unverifiable, or you have real doubt):',
-    `    project_set_status(id="${ctx.cardId}", status="in-progress")`,
-    '  Then append a `## Guard Findings` section to the card body listing EXACTLY what failed and the command',
-    '  output that proves it, so the next worker leg can act on it. Be specific; "looks wrong" is not findings.',
+    `    project_set_status(id="${ctx.cardId}", status="in-progress",`,
+    '                       verdict="EXACTLY what failed + the command output that proves it")',
+    '  Be specific; "looks wrong" is not findings. The next worker leg reads that section and nothing else.',
+    '- Both take optional `caveats` and `notes`. If you would rather report them with `set_status` at the end',
+    '  of your turn, do that instead -- they are folded into the verdict on the card automatically.',
     '',
     ctx.epicId ? `\nWHEN YOUR VERDICT IS WRITTEN: ${SEAT_RELEASE_ORDER}` : '',
     'Finish with a one-line verdict (APPROVED / BOUNCED + the single decisive reason), then stop.',
