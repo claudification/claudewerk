@@ -27,6 +27,7 @@ const RUN: EpicRunReading = {
   gen: 3,
   target: 'merged',
   dryGens: 0,
+  unlandedWoken: '',
   maxGens: 40,
   maxUsd: 500,
   maxWallClockMinutes: 960,
@@ -50,6 +51,7 @@ const PLAN: EpicPlan = {
   needsRefine: [],
   exhausted: [],
   alreadyRun: [],
+  unlanded: [],
   complete: false,
 }
 

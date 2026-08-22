@@ -12,6 +12,7 @@
  */
 
 import { commitsForBranch } from './commit-ledger/branch'
+import { isCommitLedgerReady } from './commit-ledger/store'
 import {
   appendBaton,
   fetchBoardCards,
@@ -38,6 +39,18 @@ export interface EpicIo {
    * beat would be a test about sqlite.
    */
   commitsForBranch: typeof commitsForBranch
+  /**
+   * IS THERE A COMMIT LEDGER TO ASK AT ALL?
+   *
+   * Its own effect rather than folded into `commitsForBranch`, because the two
+   * `null`s that resolver returns mean opposite things to the LANDING GATE:
+   * "the ledger is not open" and "the ledger looked and found nothing" are the
+   * same value and must never be the same decision. The first has to withhold
+   * NOTHING -- a broker with no `commits.db` would otherwise read every card in
+   * every run as unmerged and freeze every epic on the box. The second is a real
+   * answer about a card that probably never had a branch. See `landingVerdict`.
+   */
+  commitLedgerReady: typeof isCommitLedgerReady
 }
 
 const REAL_IO: EpicIo = {
@@ -49,6 +62,7 @@ const REAL_IO: EpicIo = {
   readProjectFile,
   writeProjectFile,
   commitsForBranch,
+  commitLedgerReady: isCommitLedgerReady,
 }
 let current: EpicIo = REAL_IO
 

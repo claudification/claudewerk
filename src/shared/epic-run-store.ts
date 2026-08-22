@@ -236,6 +236,11 @@ export function readEpicRun(root: string, epicId: string): EpicRun | null {
     // describes. The key disappears from disk on the next write.
     target: pick(meta.target, TARGETS, EPIC_RUN_DEFAULTS.target),
     dryGens: num(meta.dryGens, 0),
+    // A run armed before the landing gate existed has escalated nobody, which is
+    // exactly what an empty ledger says. No grandfathering to worry about: the
+    // gate fires off the DERIVED fact, and this only ever decides whether the
+    // next wake is the first or the last one.
+    unlandedWoken: typeof meta.unlandedWoken === 'string' ? meta.unlandedWoken : '',
     maxGens: num(meta.maxGens, EPIC_RUN_DEFAULTS.maxGens),
     // A run armed before the caps existed carries neither ceiling, and reads as
     // CAPPED AT THE DEFAULT rather than as uncapped. Falling back to 0 would
@@ -343,6 +348,7 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     status: 'armed',
     target: EPIC_RUN_DEFAULTS.target,
     dryGens: 0,
+    unlandedWoken: '',
     maxGens: EPIC_RUN_DEFAULTS.maxGens,
     maxUsd: EPIC_RUN_DEFAULTS.maxUsd,
     maxWallClockMinutes: EPIC_RUN_DEFAULTS.maxWallClockMinutes,
@@ -365,6 +371,12 @@ export function startEpicRun(root: string, input: StartEpicRunInput, nowMs: numb
     maxWallClockMinutes: input.maxWallClockMinutes ?? base.maxWallClockMinutes,
     status: 'armed',
     dryGens: 0,
+    // A RESUME IS A FRESH ASK. The escalation ledger records that somebody was
+    // already told about a branch and did not merge it -- which parks the run on
+    // the second sighting. A human re-arming a parked run is that human saying
+    // "try again", and carrying the old ledger across would park it on the very
+    // first beat for a card the resume exists to give another go.
+    unlandedWoken: '',
     // THE CLOCK RESTARTS, THE LEDGER DOES NOT. They are different kinds of fact:
     // wall clock measures the current unattended stretch, so a human resuming a
     // parked run is starting a new one and gets a fresh budget of minutes. Spend

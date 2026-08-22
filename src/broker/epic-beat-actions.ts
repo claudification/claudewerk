@@ -534,6 +534,42 @@ async function settleRun(
   await standDown(deps, group, gen, body, `${status}: ${body}`)
 }
 
+/**
+ * REPEATED MECHANICAL WORK IS A LESSON, NOT A CHORE -- written down where
+ * something can read it back.
+ *
+ * THE BATON AND NOT `deps.log`, which is the entire requirement: a broker log
+ * line is a lesson nobody greps, and by the time anyone wonders why an epic cost
+ * what it cost the container has been restarted. The baton is append-only,
+ * per-epic, durable, already carries the run's whole history, and is already the
+ * one file a fresh werk-master reads about the past.
+ *
+ * THE LEDGER WRITE IS NOT HERE, and that is a boundary rather than a shortcut.
+ * Folding lessons into the durable per-project ledger is `werk-retrospect-hook`'s
+ * mechanism -- it exists, it is LLM-free, and it is emphatic that nobody should
+ * build a third lessons system. This entry is the INPUT that card was waiting
+ * for: structured, typed (`kind: 'friction'`), attributed to the engine, and
+ * keyed by an operation string so a fold can group by it without a model.
+ *
+ * NO `cardId`. Friction is a fact about the RUN -- the same operation repeated
+ * across several cards is precisely what makes it friction -- and hanging it on
+ * whichever card happened to be third would make it look like that card's
+ * problem.
+ */
+async function recordFriction(
+  deps: BeatDeps,
+  group: EpicGroup,
+  gen: number,
+  action: Extract<EpicAction, { kind: 'friction' }>,
+): Promise<void> {
+  const res = await epicIo().appendBaton(deps, group.project, group.epicId, {
+    kind: 'friction',
+    convId: 'broker',
+    body: `FRICTION x${action.count} -- ${action.operation}. ${action.detail}`,
+  })
+  if (!res.ok) deps.log(`${tag(group.epicId, gen)} friction append FAILED: ${res.error}`)
+}
+
 export interface ActionContext {
   /**
    * The werk-master generation this beat is acting AT, read off the lease on the
@@ -597,6 +633,8 @@ const PERFORMERS: Record<EpicAction['kind'], Performer> = {
   park: (p, a: Extract<EpicAction, { kind: 'park' }>) => settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
   complete: (p, a: Extract<EpicAction, { kind: 'complete' }>) =>
     settleRun(p.deps, p.group, p.ctx.gen, a).then(() => null),
+  friction: (p, a: Extract<EpicAction, { kind: 'friction' }>) =>
+    recordFriction(p.deps, p.group, p.ctx.gen, a).then(() => null),
 } as Record<EpicAction['kind'], Performer>
 
 /**

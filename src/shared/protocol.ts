@@ -5119,6 +5119,10 @@ export interface EpicRunPatchInput {
    *  granted CAS (`op: 'lease'`); a patchable copy is the mirror this engine
    *  deadlocked on -- see `EpicRunMeta`. */
   dryGens?: number
+  /** Cards the werk-master has been woken about for unlanded work, and at which
+   *  generation (`card-a@3,card-b@7`). The one thing the landing gate persists;
+   *  merged-ness itself is derived every beat. See `EpicRunMeta.unlandedWoken`. */
+  unlandedWoken?: string
   /** Cumulative USD, folded by the executor each beat. STICKY -- see
    *  `EpicRunMeta.spentUsd`; nothing may lower it. */
   spentUsd?: number
@@ -5279,9 +5283,26 @@ export interface EpicInspectPlan {
   questions: EpicInspectCard[]
   heldBack: EpicInspectCard[]
   waitingOnDeps: EpicInspectCard[]
+  /**
+   * Cards the board calls `done` whose work is not delivered -- the branch is not
+   * on main, or it is and the worktree is still standing (`epic-landing.ts`).
+   *
+   * Absent when there are none, so an inspect of a healthy run is unchanged. When
+   * present it is the FIRST thing to read: every other lane here can be
+   * reconstructed from the board, and this one is the board being wrong.
+   */
+  unlanded?: EpicInspectUnlanded[]
   complete: boolean
   /** Why nothing is dispatchable, when nothing is. THE line to read first. */
   idleReason?: string
+}
+
+/** One `done` card whose work is not where the run's `target` says it should be.
+ *  The BRANCH rides along because "go and merge it" is useless without one. */
+export interface EpicInspectUnlanded {
+  id: string
+  branch: string
+  verdict: 'unmerged' | 'standing'
 }
 
 /** One epic-tagged conversation, as the broker's registry sees it. */

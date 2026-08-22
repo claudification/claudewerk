@@ -16,6 +16,7 @@
  * and a duplicate is refused by the lease CAS. Self-healing beats bookkeeping.
  */
 
+import { type CardLanding, describeLanding, formatEscalations, parseEscalations } from '../shared/epic-landing'
 import { LEASE_STALE_MS } from '../shared/epic-lease'
 import type { EpicPlan } from '../shared/epic-ready'
 import { elapsedRunMinutes, formatUsd } from '../shared/epic-run-caps'
@@ -46,6 +47,17 @@ export type EpicAction =
   | { kind: 'plan-accept' }
   /** The planning generation rewrote the board. Stop and show Jonas. */
   | { kind: 'plan-checkpoint'; before: string; after: string }
+  /**
+   * THE SAME MECHANICAL OPERATION, DONE BY HAND ENOUGH TIMES THAT IT SHOULD NOT
+   * HAVE BEEN. A durable `friction` entry in the baton, for the retrospect to
+   * fold into the lessons ledger.
+   *
+   * AN ACTION RATHER THAN A LOG LINE, and that is the whole point of the
+   * requirement: repeated mechanical work is a LESSON, and a `deps.log` is where
+   * lessons go to be greppable by nobody. It is also why the decision is made
+   * here, in the pure beat, beside the counter it is derived from.
+   */
+  | { kind: 'friction'; operation: string; count: number; detail: string }
 
 export interface EpicBeatInput {
   run: EpicRunSnapshot
@@ -193,11 +205,22 @@ export interface EpicBeatPatch {
   dryGens?: number
   spentUsd?: number
   startedAt?: string
+  /**
+   * WHICH CARDS THE WERK-MASTER HAS BEEN WOKEN ABOUT FOR UNLANDED WORK, AND AT
+   * WHICH GENERATION -- the arrangement this type's docstring predicted, taken up
+   * exactly as written: a field here plus an entry in `LEDGER_KEYS`, not a second
+   * one-off `if` block bolted beside the first.
+   *
+   * A STRING because `pruned` below compares by `!==`. An array or a map would
+   * compare unequal to itself every beat and write `run.md` every 45 seconds
+   * forever; `formatEscalations` sorts, so equal sets serialise to equal bytes.
+   */
+  unlandedWoken?: string
 }
 
 /** Every field a beat may write. The prune below walks THIS, so adding a field
  *  to `EpicBeatPatch` without adding it here makes it silently un-writable. */
-const LEDGER_KEYS = ['dryGens', 'spentUsd', 'startedAt'] as const
+const LEDGER_KEYS = ['dryGens', 'spentUsd', 'startedAt', 'unlandedWoken'] as const
 
 export interface EpicBeat {
   actions: EpicAction[]
@@ -536,6 +559,110 @@ function decide(input: EpicBeatInput): EpicBeat {
 }
 
 /**
+ * HOW MANY HAND-MERGES IN ONE RUN STOP BEING A CHORE AND START BEING A LESSON.
+ *
+ * THREE, and it is the card's own number: "the same mechanical operation
+ * performed 3+ times in one run". Twice is bad luck; a third time is the engine
+ * telling you it should have done this itself, and nothing in the system
+ * currently remembers that it happened -- on 2026-08-22 one conversation resolved
+ * roughly 120 conflict hunks by hand across 34 branches and the only record is a
+ * human's memory.
+ */
+const FRICTION_AT = 3
+
+/** The operation key a `friction` entry is filed under. A STABLE STRING, because
+ *  the retrospect groups by it and a reworded label would split one lesson in
+ *  two. */
+const HAND_MERGE = 'werk-master merges a card branch by hand'
+
+/**
+ * HOLD, ESCALATE, THEN PARK -- the three steps, in that order, for work the board
+ * calls `done` and git cannot find on main.
+ *
+ * THE HOLD ALREADY HAPPENED and is not here: it is arithmetic in `epic-ready.ts`,
+ * where an unmerged dependency keeps its dependents in `waitingOn`. That is
+ * per-dependency-chain by construction, so cards on unrelated branches of the DAG
+ * keep dispatching throughout -- the whole run is never frozen by a hold.
+ *
+ * THIS IS THE OTHER TWO STEPS, and which one fires is decided by the escalation
+ * ledger and nothing else:
+ *
+ *   PARK when a blocking card was already escalated at an EARLIER generation. A
+ *   generation has come and gone with the one seat whose job this is looking
+ *   straight at the branch name, and it is still not merged. The party whose job
+ *   it was has now failed at it, which is precisely the condition that needs a
+ *   human; the baton entry names the branch.
+ *
+ *   WAKE, once per card, under a wake reason of its own. `unmerged-work` exists
+ *   so a stalled run is explicable from the baton alone: a generation that was
+ *   sent to merge is not the same event as one that followed a settle, and the
+ *   difference decides whether the NEXT beat parks.
+ *
+ * A card already escalated at THIS generation does nothing at all -- neither
+ * park nor wake -- which is what stops the standing question from becoming a
+ * 45-second loop when a CAS refuses the wake.
+ */
+function unlandedBeat(input: EpicBeatInput): EpicBeat | null {
+  // `plan.unlanded` AND NOT A SECOND INPUT OF ITS OWN. The plan already withheld
+  // this card's dependents from the exact same list, and two routes to the same
+  // fact is how a hold and an escalation end up disagreeing about which cards
+  // they are talking about. Empty for any caller with no commit ledger to ask,
+  // which is the "absent means no gate" convention `queue` and `headroom` use.
+  const blocking = input.plan.unlanded
+  if (blocking.length === 0) return null
+
+  const woken = parseEscalations(input.run.unlandedWoken)
+  const stale = blocking.filter(l => {
+    const at = woken.get(l.cardId)
+    return at !== undefined && at < input.gen
+  })
+  if (stale.length > 0) return unlandedPark(stale, input.gen)
+
+  const fresh = blocking.filter(l => !woken.has(l.cardId))
+  if (fresh.length === 0) return null
+
+  const ledger = new Map(woken)
+  for (const l of fresh) ledger.set(l.cardId, input.gen)
+  const actions: EpicAction[] = [{ kind: 'wake-werk-master', expectGen: input.gen, reason: 'unmerged-work' }]
+  // THE CROSSING, not the state: `ledger` only ever grows, so `>= FRICTION_AT`
+  // becomes true on exactly one beat and the entry is filed exactly once without
+  // a second counter to persist. Everything after it is louder, not repeated.
+  if (woken.size < FRICTION_AT && ledger.size >= FRICTION_AT) actions.push(handMergeFriction(ledger.size))
+  return beat(
+    `${fresh.length} card(s) done on the board but NOT on main: ${fresh.map(describeLanding).join('; ')}; ` +
+      `waking the werk-master to integrate (generation ${input.gen})`,
+    actions,
+    { unlandedWoken: formatEscalations(ledger) },
+  )
+}
+
+/** The park, with the branch in it. A reason that says "unmerged work" and not
+ *  WHICH branch is a reason a human has to go and re-derive. */
+function unlandedPark(stale: readonly CardLanding[], gen: number): EpicBeat {
+  const reason =
+    `work is still not delivered after the werk-master ran for it: ${stale.map(describeLanding).join('; ')}. ` +
+    'The seat whose job this is has had a whole generation with the branch name in front of it. Merge it by ' +
+    'hand (or drop the branch and reopen the card), then re-arm the run -- re-arming clears the escalation ' +
+    'ledger, so the werk-master gets a fresh ask rather than an immediate second park.'
+  return beat(`${stale.length} card(s) STILL unlanded at generation ${gen}; parking`, [{ kind: 'park', reason }])
+}
+
+/** The lesson, in the shape the retrospect folds. */
+function handMergeFriction(count: number): EpicAction {
+  return {
+    kind: 'friction',
+    operation: HAND_MERGE,
+    count,
+    detail:
+      'The engine has now had to send a werk-master to merge a card branch by hand ' +
+      `${count} times in this run. The merge is mechanical and the engine already knows, every beat, exactly ` +
+      'which branch and which card -- what is missing is a party allowed to perform it (the broker may not: ' +
+      'the sentinel owns the filesystem and git). Automate the merge behind the sentinel, or make the ' +
+      "werk-worker's own finish step land its branch, and this whole escalation path stops existing.",
+  }
+}
+
+/**
  * Reasons a beat does something OTHER than move work, most urgent first. Order
  * is the design: an epic that is simultaneously owed a plan and holding an
  * unacknowledged settle must do exactly one of those, and which one is not
@@ -582,6 +709,19 @@ function guardBeat(input: EpicBeatInput): EpicBeat | null {
       { kind: 'wake-werk-master', expectGen: input.gen, reason: 'card-settled' },
     ])
   }
+
+  // WORK THAT NEVER REACHED main. BELOW THE SETTLE BRANCH, and that ordering is
+  // the difference between a gate and a hair trigger: a card is unmerged the
+  // instant its werk-worker commits, so escalating on the beat it settles would
+  // fire on every healthy card in every run, before the werk-master has been given
+  // a single generation to merge it. The settle wake IS that chance. Only a card
+  // that survived it unmerged reaches here.
+  //
+  // ABOVE questions and above all dispatch, because this is the one condition
+  // where the board and git disagree, and everything sequenced off it is being
+  // sequenced off a lie.
+  const unlanded = unlandedBeat(input)
+  if (unlanded) return unlanded
 
   // A question only the werk-master can answer, and no werk-master running.
   if (plan.questions.length > 0) {

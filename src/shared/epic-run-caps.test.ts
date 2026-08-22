@@ -13,6 +13,7 @@ const RUN: EpicRunReading = {
   gen: 3,
   target: 'merged',
   dryGens: 0,
+  unlandedWoken: '',
   maxGens: 40,
   maxUsd: 100,
   maxWallClockMinutes: 480,

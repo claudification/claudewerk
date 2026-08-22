@@ -28,6 +28,7 @@ import type {
 import { lastBeatAt, recentBeats } from './epic-beat-log'
 import { epicConversations, toInspectLive, toInspectPlan } from './epic-inspect-view'
 import { epicIo } from './epic-io'
+import { resolveLandings } from './epic-landing'
 import { planProjectQueues, toQueueReading, toQueueScope } from './epic-queue'
 import { isArmed, isDeletedEpic, listArmedEpics } from './epic-registry'
 import { type EpicGroup, emptyGroup, groupEpicConversations, unacknowledgedCards } from './epic-sweep'
@@ -95,6 +96,15 @@ export async function inspectEpic(
     // unacknowledged` below is folded from the same set) and is left alone here
     // rather than widened: fixing it means giving `inspectEpic` a store handle.
     settled: group.settled,
+    // THE LANDING GATE, for the reason `dispatches` is here: an inspect that
+    // reported a run as `complete` while the beat was refusing it completion over
+    // an unmerged branch would be a debug read that lies about the engine. NO
+    // FABRIC -- the git scan is a 15-second sentinel round trip the BEAT only buys
+    // at completion time, and an inspect is a read somebody is waiting on, so a
+    // merged branch whose worktree still stands reads `landed` here. That is the
+    // honest trade: this view answers the question that strands branches, and
+    // never claims the cleanup half it did not look at.
+    landings: resolveLandings({ epicId, project, target: view.run?.target ?? 'merged', fabric: null }, cards),
   })
 
   return {

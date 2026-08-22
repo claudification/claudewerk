@@ -55,6 +55,21 @@ export type EpicCadence = 'now' | 'window' | 'queue' | EpicWhenInstant
 export type EpicRunStatus = 'armed' | 'running' | 'paused' | 'complete' | 'aborted'
 
 /**
+ * THE DELIVERY RUNG, same ladder as a quest -- and, since
+ * `werk-unmerged-work-stops-the-beat`, A KNOB THE ENGINE ACTUALLY READS.
+ *
+ * It reached exactly two prompt builders and nothing else for the life of the
+ * feature, which is how a knob becomes decoration: a run armed `target=merged`
+ * was a run that told a model it would like things merged. `epic-landing.ts` is
+ * where it now decides something -- `pr` accepts committed work on the branch,
+ * `merged` requires the commit on main.
+ *
+ * Named rather than inlined on `EpicRunMeta.target` because the landing rules,
+ * the store's allowlist and the arm verb all have to mean the same three words.
+ */
+export type EpicRunTarget = 'pr' | 'merged' | 'shipped'
+
+/**
  * Which seat a conversation occupies in an epic run.
  *
  * Derived from `ConversationRole` rather than re-listed, because the panel needs
@@ -71,6 +86,18 @@ export type EpicWakeReason =
   | 'verdict' // a werk-verifier approved or bounced
   | 'steering' // Jonas answered a question or redirected
   | 'resumed' // pause lifted / window opened
+  /**
+   * A CARD THE BOARD CALLS `done` WHOSE WORK IS NOT ON main -- or is on main with
+   * its worktree still standing (`epic-landing.ts`).
+   *
+   * Its own reason rather than `card-settled`, for `werk-master-lost`'s reason:
+   * the two produce the same spawn and are not the same event. A settle is the
+   * engine working; unmerged work is the ONE job the werk-master seat has that
+   * nothing else in the engine performs, not done -- and a generation woken for
+   * it must be identifiable in the baton without reading a transcript, because
+   * the run PARKS if the next generation does not fix it.
+   */
+  | 'unmerged-work'
   /**
    * THE PREVIOUS SUPERVISOR DIED WITHOUT SAYING SO and this generation replaced
    * it -- no recorded end, no socket, silent past `WERK_MASTER_SILENCE_MS`
@@ -123,6 +150,28 @@ export type EpicLogKind =
    * werk-master of the one wake it exists for. A record acknowledges NOTHING.
    */
   | 'record'
+  /**
+   * THE SAME MECHANICAL OPERATION, PERFORMED ENOUGH TIMES IN ONE RUN THAT IT
+   * SHOULD HAVE BEEN AUTOMATED.
+   *
+   * REPEATED MECHANICAL WORK IS A LESSON, NOT A CHORE. If the werk-master merges
+   * branch after branch by hand, that is the engine telling you something it
+   * cannot act on itself -- and today it disappears into a broker log nobody
+   * greps. The 34-branch backlog of 2026-08-22 is the worked example: one
+   * conversation resolved roughly 120 conflict hunks by hand and nothing in the
+   * system remembers it happened.
+   *
+   * ITS OWN KIND so the retrospect ([werk-retrospect-hook]) can fold these into
+   * the lessons ledger WITHOUT a model and without scraping a transcript -- the
+   * entry is already structured, already attributed and already durable. This
+   * card produces the fact; folding it into the ledger is that card's mechanism,
+   * and inventing a second one here would be the third lessons system it
+   * explicitly forbids.
+   *
+   * Acknowledges NOTHING (`ACKNOWLEDGING_KINDS`): it is a fact about the RUN, not
+   * a verdict about a card.
+   */
+  | 'friction'
 
 export interface EpicLogEntry {
   ts: string
@@ -190,9 +239,34 @@ export interface EpicRunMeta {
    * from the lease for the surfaces that render one; nothing persists it.
    */
   /** Delivery rung, same ladder as a quest: pr | merged | shipped. */
-  target: 'pr' | 'merged' | 'shipped'
+  target: EpicRunTarget
   /** Consecutive generations that found nothing to dispatch. Two = park. */
   dryGens: number
+  /**
+   * WHICH CARDS THE WERK-MASTER HAS BEEN WOKEN ABOUT FOR UNLANDED WORK, AND AT
+   * WHICH GENERATION -- `card-a@3,card-b@7`, sorted (`epic-landing.ts`).
+   *
+   * THE ONE THING THIS FEATURE PERSISTS, and it is persisted precisely because it
+   * is NOT derivable. Whether a card's work is on main is a question git answers
+   * every beat for free; whether anybody has already been ASKED to fix it is a
+   * fact about the past that exists nowhere else. Without it the engine either
+   * wakes a fresh werk-master every 45 seconds forever, or can never decide that
+   * "still unmerged after the werk-master ran for it" has happened.
+   *
+   * CUMULATIVE AND NEVER PRUNED. A card that lands stops blocking anything, so
+   * its entry goes inert on its own -- the gate only ever fires on a card the
+   * DERIVED fact currently calls unlanded, which is why a stale entry cannot
+   * freeze a run the way a stored `unmerged:` mark would. A card that appears
+   * here TWICE (bounced, reworked, still not merged) parks the run on sight, and
+   * that is deliberate: the seat whose job it was has now failed at it twice.
+   *
+   * It is also the run's own tally of hand-merges, which is what makes the
+   * FRICTION entry countable without a second counter.
+   *
+   * A STRING because `EpicBeatPatch` is pruned by scalar inequality; see
+   * `parseEscalations`.
+   */
+  unlandedWoken: string
   /** Hard ceiling on generations, so a thrashing epic cannot bill forever. */
   maxGens: number
   /**

@@ -42,6 +42,20 @@ export function toInspectPlan(plan: EpicPlan): EpicInspectPlan {
     questions: plan.questions.map(c => card(c)),
     heldBack: plan.heldBack.map(c => card(c)),
     waitingOnDeps: plan.waitingOnDeps.map(w => card(w.card, w.waitingOn)),
+    // Omitted when empty rather than sent as `[]`, matching `idleReason` below:
+    // an inspect of a healthy run has exactly the shape it always had, and a
+    // present key means something is genuinely wrong.
+    ...(plan.unlanded.length > 0
+      ? {
+          unlanded: plan.unlanded.map(l => ({
+            id: l.cardId,
+            branch: l.branch,
+            // `landed` and `unknown` never reach `plan.unlanded` -- it is
+            // `unresolvedLandings`, which is the blocking pair by definition.
+            verdict: l.verdict as 'unmerged' | 'standing',
+          })),
+        }
+      : {}),
     complete: plan.complete,
     ...(plan.idleReason ? { idleReason: plan.idleReason } : {}),
   }
