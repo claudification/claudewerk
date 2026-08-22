@@ -1021,8 +1021,11 @@ function worktreeToParentUris(cacheDir: string): WorktreeStripResult {
  *      bearing column. A worktree is the same project on a branch -- carrying
  *      the worktree path in the URI split the project bucket and broke
  *      spawn-lineage grouping (children sat in a phantom sibling project).
+ * - 8: rewrite the epic seat role stored on every dispatched conversation
+ *      (`meta.launchConfig.epic.role`) to the werk-* vocabulary. `overseer` is
+ *      DROPPED, not aliased -- see `renameEpicSeatRoles`.
  */
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 const SCHEMA_VERSION_KEY = 'schema-version'
 
@@ -1036,6 +1039,7 @@ export interface StartupMigrationResult {
   sharesBackfilled?: number
   daemonStripped?: DaemonStripResult
   worktreeStripped?: WorktreeStripResult
+  epicRolesRenamed?: EpicRoleRenameResult
   skipped: boolean
 }
 
@@ -1105,8 +1109,102 @@ export function runStartupMigration(store: StoreDriver, cacheDir: string): Start
     out.worktreeStripped = worktreeToParentUris(cacheDir)
   }
 
+  // v8: the werk-* seat rename. There is deliberately NO belt-and-suspenders
+  // read alias beside this one -- see `renameEpicSeatRoles`.
+  if (current < 8) {
+    out.epicRolesRenamed = renameEpicSeatRoles(store)
+  }
+
   store.kv.set(SCHEMA_VERSION_KEY, SCHEMA_VERSION)
   return out
+}
+
+/**
+ * THE ONE PLACE THE OLD SEAT WORDS STILL EXIST, and it dies with the migration
+ * window rather than outliving it.
+ *
+ * `EpicLaunchTag.role` is persisted on every conversation the epic engine has
+ * ever dispatched, and it is what liveness, the concurrency ceiling and the
+ * reserved-lane rule all fold over. The rename therefore needs a read path that
+ * accepts the old spelling -- but ONLY for as long as it takes to rewrite the
+ * rows. A one-way alias left standing in `conversation-role.ts` afterwards would
+ * be the permanent alias this rename explicitly decided against: it makes two
+ * spellings legal forever, and the second one never dies because nothing ever
+ * has to stop writing it.
+ *
+ * So the map is a local const in the migration that consumes it. Nothing
+ * imports it, nothing else may read an old role, and a row that somehow arrives
+ * with `overseer` after this pass reads as `normal` in the panel -- visible,
+ * rather than quietly correct.
+ *
+ * WHY A JS PASS AND NOT A SQL `REPLACE`. The role sits inside the `meta` JSON
+ * blob, three keys deep. A blind text substitution over the blob would also
+ * rewrite the word inside a stored prompt, a resultText or a conversation
+ * title, which is a different kind of edit entirely.
+ */
+const LEGACY_EPIC_ROLES: Readonly<Record<string, string>> = {
+  overseer: 'werk-master',
+  implementer: 'werk-worker',
+  verifier: 'werk-verifier',
+}
+
+export interface EpicRoleRenameResult {
+  /** Rows carrying an epic launch tag at all. */
+  tagged: number
+  /** Rows whose role was rewritten, by the OLD spelling. */
+  rewritten: Record<string, number>
+  /**
+   * Rows still carrying an old spelling after the pass. The card asked for a
+   * count query before AND after, and this is the after: it is 0 or the
+   * migration did not do its job, and an inferred zero is not an answer.
+   */
+  remaining: number
+}
+
+/** The stored role for one conversation's meta blob, or `undefined` if the row
+ *  carries no epic launch tag. Structural: `meta` is `Record<string, unknown>`
+ *  off the store and typing it as a `LaunchConfig` here would drag the whole
+ *  protocol into the migration module. */
+function storedEpicRole(meta: Record<string, unknown>): string | undefined {
+  const launch = meta.launchConfig as { epic?: { role?: unknown } } | undefined
+  const role = launch?.epic?.role
+  return typeof role === 'string' ? role : undefined
+}
+
+function renameEpicSeatRoles(store: StoreDriver): EpicRoleRenameResult {
+  const result: EpicRoleRenameResult = { tagged: 0, rewritten: {}, remaining: 0 }
+
+  for (const summary of store.conversations.list()) {
+    const meta = (store.conversations.get(summary.id)?.meta || {}) as Record<string, unknown>
+    const role = storedEpicRole(meta)
+    if (role === undefined) continue
+    result.tagged++
+
+    const next = LEGACY_EPIC_ROLES[role]
+    if (!next) continue
+
+    // Rebuild the branch rather than mutating in place: the record handed back
+    // by `get` is the store's, and a mutation that then failed to persist would
+    // leave the in-memory copy disagreeing with the row.
+    const launch = meta.launchConfig as Record<string, unknown>
+    const epic = launch.epic as Record<string, unknown>
+    const patched = { ...meta, launchConfig: { ...launch, epic: { ...epic, role: next } } }
+    try {
+      store.conversations.update(summary.id, { meta: patched })
+      result.rewritten[role] = (result.rewritten[role] ?? 0) + 1
+    } catch {
+      // A row that will not take the patch is counted by the `remaining` pass
+      // below rather than swallowed -- the number is the report.
+    }
+  }
+
+  for (const summary of store.conversations.list()) {
+    const meta = (store.conversations.get(summary.id)?.meta || {}) as Record<string, unknown>
+    const role = storedEpicRole(meta)
+    if (role !== undefined && LEGACY_EPIC_ROLES[role]) result.remaining++
+  }
+
+  return result
 }
 
 interface LegacyTaskShape {

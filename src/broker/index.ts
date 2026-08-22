@@ -521,6 +521,22 @@ async function main() {
           summary.push(`backfilled tasks: ${t.tasks} active, ${t.archived} archived (${t.conversations} conversations)`)
         }
       }
+      if (result.epicRolesRenamed) {
+        // The count BEFORE (how many rows carried a tag), what moved, and the
+        // count AFTER -- `remaining` is the one that must be 0, so it is logged
+        // even when it is, rather than left to be inferred from silence.
+        const r = result.epicRolesRenamed
+        const moved = Object.entries(r.rewritten)
+          .map(([from, n]) => `${n} ${from}`)
+          .join(', ')
+        summary.push(`werk seat roles: ${r.tagged} tagged, rewrote ${moved || 'nothing'}, ${r.remaining} left on old`)
+        if (r.remaining > 0) {
+          console.warn(
+            `[store] ${r.remaining} conversation(s) still carry a pre-werk epic role. They will read as \`normal\` ` +
+              `in the panel and hold no seat -- there is no read alias by design (see migrate.ts v8).`,
+          )
+        }
+      }
       console.log(
         `[store] Migrated schema v${result.fromVersion} -> v${result.toVersion}` +
           (summary.length ? ` (${summary.join('; ')})` : ''),
