@@ -13,8 +13,9 @@ import { describe, expect, test } from 'bun:test'
 import { NIGHTSHIFT_TAG } from '../shared/nightshift-types'
 import type { ProjectTask, ProjectTaskMeta } from '../shared/project-task-types'
 import type { Conversation } from '../shared/protocol'
+import type { CallBoard } from './board-cards'
 import type { ConversationStore } from './conversation-store'
-import { buildNightshiftScanDeps, type CallBoard } from './nightshift-board'
+import { buildNightshiftScanDeps } from './nightshift-board'
 
 function card(slug: string, over: Partial<ProjectTaskMeta> = {}): ProjectTaskMeta {
   return {

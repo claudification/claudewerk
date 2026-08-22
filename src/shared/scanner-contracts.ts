@@ -36,6 +36,35 @@ export const READY_TAG = 'ready'
  *  side inventing the number. `epic-sweep-loop.ts` reads it. */
 export const EPIC_SWEEP_INTERVAL_MS = 45_000
 
+/**
+ * THE PER-PROJECT SCANNER TICK -- how often `refine` and `work-order` sweep every
+ * project that ticked their box. `scanner-clock.ts` reads it.
+ *
+ * Slower than the epic beat on purpose, and the two are not the same kind of
+ * clock. The epic sweep drives a RUN that is already in flight: a beat it misses
+ * is a generation somebody is waiting on, so 45s is latency against work that has
+ * already been authorised. These two POLL for work nobody has started -- a card
+ * somebody tagged `ready` an hour ago does not get worse for waiting another
+ * fifteen seconds, and each pass costs a board RPC per opted-in project whether
+ * or not anything is tagged.
+ */
+export const SCANNER_TICK_INTERVAL_MS = 60_000
+
+/**
+ * MAX WORK-ORDER SEATS IN FLIGHT PER PROJECT.
+ *
+ * ONE, deliberately, and it is the number the panel quotes below. Unlike the
+ * refine ceiling -- which is quoted off `WERK_REFINER_ORDER.reservation`, because
+ * an order that declares its own appetite is the one place that appetite belongs
+ * -- `WERK-WORKER@1` declares no reservation, so a number had to be picked. It is
+ * picked LOW: this scanner dispatches a full implementation seat, in its own
+ * worktree, against any card carrying a tag, on every project that opted in, with
+ * nobody watching. One at a time is the conservative reading of a role that never
+ * said, it is the concurrency the werk agile loop settled on for its own legs, and
+ * being wrong in this direction costs latency rather than money.
+ */
+export const WORK_ORDER_CONCURRENCY = 1
+
 /** The complete contract for one scanner -- the five facts a human needs before
  *  arming it, plus whether it exists and whether anything calls it. */
 export interface ScannerContract {
@@ -72,11 +101,14 @@ export interface ScannerContract {
 /**
  * THE CONTRACTS, keyed by id.
  *
- * Two different kinds of "never" are stated rather than smoothed over, because
- * they are two different bugs: `morning-report` has no implementation at all,
- * while `refine` and `work-order` are built and tested but nothing calls them
- * yet -- an armed checkbox behind either one would never fire, and only one of
- * those is fixed by writing a scanner.
+ * `morning-report` is the one row that still says "never", and it says it in the
+ * honest direction: it has no implementation at all, so its `cadence` is absent
+ * and the panel prints "no caller yet" rather than an interval nothing keeps.
+ *
+ * `refine` and `work-order` used to say the same thing for a DIFFERENT reason --
+ * both were built and tested and invoked by nothing, so an armed checkbox behind
+ * either one would never fire. `scanner-clock.ts` is the caller they were missing
+ * (`werk-scanner-clock`), which is why both now quote a cadence.
  */
 export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
   refine: {
@@ -92,6 +124,7 @@ export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
     dispatches: `a ${WERK_REFINER_ORDER_ID} seat that rewrites the card in place`,
     cost: `one ${WERK_REFINER_ORDER_ID} seat per card, bounded by that order's own reservation`,
     verifierFollows: 'no verifier -- the rewritten card is the artifact, and a human reads it',
+    cadence: `every ${Math.round(SCANNER_TICK_INTERVAL_MS / 1000)}s`,
     built: true,
   },
   nightshift: {
@@ -120,8 +153,9 @@ export const SCANNER_CONTRACTS: Record<ScannerId, ScannerContract> = {
     skips: SCANNER_SKIPS['work-order'],
     seat: EPIC_ORDERS['werk-worker'].id,
     dispatches: `a ${EPIC_ORDERS['werk-worker'].id} seat in its own worktree and branch`,
-    cost: `one ${EPIC_ORDERS['werk-worker'].id} seat per card, bounded by the work-order concurrency ceiling`,
+    cost: `one ${EPIC_ORDERS['werk-worker'].id} seat per card, at most ${WORK_ORDER_CONCURRENCY} in flight per project`,
     verifierFollows: `no ${EPIC_ORDERS['werk-verifier'].id} follows -- a card left in review is refused \`awaiting-verdict\` and waits`,
+    cadence: `every ${Math.round(SCANNER_TICK_INTERVAL_MS / 1000)}s`,
     built: true,
   },
   epics: {

@@ -33,9 +33,10 @@ import {
   type NightshiftQueueItem,
 } from '../../shared/nightshift-types'
 import type { NightshiftOutlook } from '../../shared/protocol'
+import type { CallBoard } from '../board-cards'
 import { callBoard } from '../board-rpc'
 import type { ConversationStore } from '../conversation-store'
-import { buildNightshiftScanDeps, type CallBoard } from '../nightshift-board'
+import { buildNightshiftScanDeps } from '../nightshift-board'
 import { sendNightshiftOp } from '../nightshift-broker-rpc'
 import { type NightshiftScanDeps, nightshiftScanner } from '../scanners/nightshift-scanner'
 import { runScan } from '../scanners/scanner'

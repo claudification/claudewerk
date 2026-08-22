@@ -12,7 +12,6 @@
 import { isSameProject } from '../shared/project-uri'
 import type { Conversation, GitFabric, ProfileUsageSnapshot } from '../shared/protocol'
 import { EPIC_SWEEP_INTERVAL_MS } from '../shared/scanner-contracts'
-import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
 import { type ActivityBroadcaster, publishEpicActivity } from './epic-activity-publish'
@@ -25,12 +24,8 @@ import { buildSeatReaper, buildWerkMasterReaper, type EpicReapers } from './epic
 import { getGlobalSettings } from './global-settings'
 import { sendNightshiftOp } from './nightshift-broker-rpc'
 import { withinWindow } from './nightshift-window'
-import {
-  getAllProjectSettings,
-  getProjectSettings,
-  scannerEnabledForProject,
-  stampScannerRun,
-} from './project-settings'
+import { getProjectSettings } from './project-settings'
+import { buildScannerOptIn, type ScannerOptIn } from './scanner-gate'
 import { epicScanner, epicsToBeat, planBeatContexts } from './scanners/epic-scanner'
 import { runScan } from './scanners/scanner'
 import { type GitFabricTransport, gatherGitFabric } from './sotu/git-fabric-gather'
@@ -53,29 +48,6 @@ const SWEEP_MS = EPIC_SWEEP_INTERVAL_MS
 // (plan-quest-engine.md:189). Re-exported so this module's callers and tests keep
 // one import, but the clock and the rule live in ONE place for both sweeps.
 export { markEngineBoot, quarantineRemainingMs, RESTART_QUARANTINE_MS } from './werk-engine-boot'
-
-/**
- * THE PER-PROJECT OPT-IN, as three injected effects.
- *
- * The gate is the CALLER'S, which is why it is here and not in
- * `scanners/epic-scanner.ts`: a scanner asked to run on a project runs, and a
- * scanner that consults settings can no longer be tested without them.
- *
- * `enabled` and `projects` are not the same question and neither derives from the
- * other. `enabled` takes whatever project string a conversation happens to carry
- * and normalizes it (`projectIdentityKey`) before looking it up; `projects`
- * enumerates the already-canonical keys of every project that ticked the box,
- * including the ones with no epic conversations at all -- which is precisely the
- * project whose "last ran" stamp is worth having.
- */
-export interface ScannerOptIn {
-  /** Canonical URIs of every project with this scanner switched on. */
-  projects: () => string[]
-  /** May this (possibly non-canonical) project be swept? Default off. */
-  enabled: (project: string) => boolean
-  /** A pass just finished for this project. Epoch ms. */
-  stamp: (project: string, at: number) => void
-}
 
 export interface SweepDeps extends BeatDeps {
   getAllConversations: () => Conversation[]
@@ -160,15 +132,13 @@ const EPIC_CALLER: SpawnCallerContext = {
  * A module-level constant rather than a per-call closure because it holds no
  * state -- every method reads the settings store at the moment it is asked, which
  * is what makes a toggle take effect on the next tick without a restart.
+ *
+ * BUILT rather than written out, since `refine` and `work-order` got clocks of
+ * their own: the three effects were identical for every scanner and only the id
+ * differed, so a per-scanner copy was five chances to spell the default wrong.
+ * `scanner-gate.ts` holds the one copy.
  */
-const EPIC_OPT_IN: ScannerOptIn = {
-  projects: () =>
-    Object.entries(getAllProjectSettings())
-      .filter(([, s]) => scannerEnabled(s, 'epics'))
-      .map(([project]) => project),
-  enabled: project => scannerEnabledForProject(project, 'epics'),
-  stamp: (project, at) => stampScannerRun(project, 'epics', at),
-}
+const EPIC_OPT_IN: ScannerOptIn = buildScannerOptIn('epics')
 
 /** The store shape the sweep needs. Structural, so tests pass a plain object. */
 interface SweepStore {
