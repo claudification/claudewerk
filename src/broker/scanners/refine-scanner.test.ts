@@ -147,15 +147,24 @@ describe('the seat it dispatches is WERK-REFINER@1, not a second definition of o
     expect(deny).toContain('mcp__rclaude__project_set_status')
   })
 
-  /** The tag removal is step 7 of `WERK_REFINER_INSTRUCTIONS`, imported rather than
-   *  restated -- the drain is the whole point and a second copy of the prose is
-   *  the drift this epic exists to end. */
-  test('the prompt orders the tag removed, and names the card file', async () => {
+  test('the prompt names the card file the seat is to edit', async () => {
+    await runScan(refineScanner, deps({ getCards: async () => [card('rough-card')] }))
+    expect(dispatched[0]?.request.prompt ?? '').toContain('/p/.rclaude/project/cards/rough-card.md')
+  })
+
+  /**
+   * ONE MECHANISM, NOT TWO. The tag removal used to be step 7 of the seat's own
+   * prompt, and this test used to assert it was there. It asserts the opposite
+   * now, deliberately: the ENGINE drains the tag on evidence the refine landed
+   * (`refine-drain.ts`), and an instruction telling the seat to do it as well
+   * would be a second clear racing the first -- on the seat's exit, which is the
+   * timing the whole card exists to reject.
+   */
+  test('the prompt does NOT ask the seat to drain the tag', async () => {
     await runScan(refineScanner, deps({ getCards: async () => [card('rough-card')] }))
     const prompt = dispatched[0]?.request.prompt ?? ''
-    expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
-    expect(prompt).toContain(NEEDS_REFINE_TAG)
-    expect(prompt).toContain('REMOVE')
+    expect(prompt).not.toContain(`REMOVE the \`${NEEDS_REFINE_TAG}\``)
+    expect(prompt.toLowerCase()).not.toContain('remove the tag')
   })
 
   /**
@@ -491,7 +500,9 @@ describe('the roster of epics the seat may soft-link the card to', () => {
     const prompt = dispatched[0]?.request.prompt ?? ''
     expect(prompt).toContain('REFINE the board card `rough-card`')
     expect(prompt).toContain('/p/.rclaude/project/cards/rough-card.md')
-    expect(prompt).toContain('REMOVE')
+    // The instruction half is still there, whole -- the roster is inserted into
+    // the CONTEXT half and must not have displaced any of it.
+    expect(prompt).toContain('REFINE this card -- do not implement it.')
   })
 
   /** The roster is CONTEXT, so it rides in the half this scanner owns and lands

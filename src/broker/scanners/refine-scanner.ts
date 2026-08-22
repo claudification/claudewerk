@@ -14,18 +14,23 @@
  *   does     dispatch a `WERK-REFINER@1` seat against the card
  *   is       self-catching (via `runScan`), effects injected, no broker needed
  *
- * THE TAG IS THE QUEUE, AND DRAINING IT IS THE JOB. A werk-refiner that improves a
- * card and leaves the tag on refines that card again on every tick, forever.
- * The removal is an imperative in `WERK_REFINER_INSTRUCTIONS` (step 7), which is why
- * this file does not restate it: `werk-refiner-order.ts` is the one definition of
- * what a werk-refiner is, `task-modes.ts` exists because two definitions of "refine"
- * had already diverged once, and a third copy here is exactly that drift.
+ * THE TAG IS THE QUEUE, AND THIS SCANNER DOES NOT DRAIN IT. The drain is the
+ * CLOCK's, on EVIDENCE the refine landed -- `tag-clear.ts` holds the rule and
+ * `refine-drain.ts` holds what evidence means for this tag. It used to be step 7
+ * of the werk-refiner's own PROMPT, so a seat that died at step 6 left the card
+ * tagged forever; a prompt is an instruction, not a guarantee.
  *
- * WHAT STOPS AN UNDRAINED TAG BILLING FOREVER is the `already-run` bucket below,
- * not the instruction. A werk-refiner that died before step 7 leaves the card tagged
- * and the seat settled, and from the next tick the card is refused rather than
- * re-dispatched -- so a killed werk-refiner leaves a card tagged and undispatched,
- * never half-refined and never on a retry treadmill.
+ * A SCANNER MUST NOT WRITE, which is the other half of why it is not here. This
+ * file is invoked, holds no state and reads two things; the drain mutates
+ * somebody's card, and the loop that owns the cadence, the opt-in and the
+ * last-run stamp is the only thing that can be responsible for when that happens.
+ *
+ * WHAT STOPS AN UNDRAINED TAG BILLING FOREVER is the `already-run` bucket below.
+ * A werk-refiner that ran and landed nothing leaves the card tagged and the seat
+ * settled -- the engine will not clear a tag with no evidence behind it -- and
+ * from the next tick the card is refused rather than re-dispatched. So a killed
+ * werk-refiner leaves a card tagged and undispatched, never half-refined, never on
+ * a retry treadmill, and never silently untagged.
  *
  * THE OTHER HALF OF THIS CARD IS NOT HERE. "A rough card is not dispatchable by
  * any other scanner" is a PRECONDITION in the readiness fold
@@ -328,11 +333,12 @@ const REFUSAL_RULES: ReadonlyArray<{
   },
   {
     // THE BOUND ON THE RETRY PATH, and the reason an undrained tag cannot bill
-    // forever. A werk-refiner that ran and finished leaves the tag on only if it
-    // failed to reach step 7 of its instructions -- and dispatching a second
-    // one, and a third, every tick, is the treadmill. The card stays tagged and
-    // visible with a reason instead; re-tagging it (or fixing whatever stopped
-    // the drain) re-authorises it, by a decision somebody made, never the clock.
+    // forever. A werk-refiner that ran and finished leaves the tag on only if the
+    // clock's drain found no evidence it refined anything -- and dispatching a
+    // second one, and a third, every tick, is the treadmill. The card stays
+    // tagged and visible with a reason instead; re-tagging it (or fixing whatever
+    // killed the seat) re-authorises it, by a decision somebody made, never the
+    // clock.
     claims: (card, liveness) => liveness.settled.has(card.slug),
     bucket: 'already-run',
     detail: () => 'a werk-refiner already ran for this card and the tag is still on -- re-tag it to re-authorise',

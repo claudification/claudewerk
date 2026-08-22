@@ -403,10 +403,15 @@ describe('an order that carries its own instructions', () => {
     const prompt = requests[0]?.prompt ?? ''
     // The schedule's own prompt survives -- the order appends, never replaces.
     expect(prompt.startsWith('REFINE the card `foo`.')).toBe(true)
-    // And the seat's definition arrives with it, tag removal included: step 6 is
-    // what drains the queue, and a werk-refiner that never read it refines forever.
+    // And the seat's definition arrives with it, whole -- caps without a
+    // definition is a werk-refiner spending a werk-refiner's budget having never
+    // been told what refining is.
     expect(prompt).toContain(WERK_REFINER_INSTRUCTIONS)
-    expect(prompt).toContain('REMOVE the `needs-refine` tag')
+    // THE TAG REMOVAL IS NOT IN IT, and that is the assertion now. It used to be
+    // step 7 of the block, so a seat killed at step 6 left the queue entry on the
+    // board forever; the engine drains it on evidence instead (`tag-clear.ts`),
+    // and a scheduled werk-refiner must not be handed a second, earlier mechanism.
+    expect(prompt).not.toContain('REMOVE the `needs-refine` tag')
 
     for (const resolve of release) resolve()
     await tick
