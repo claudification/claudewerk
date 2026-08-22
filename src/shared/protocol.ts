@@ -6019,6 +6019,20 @@ export interface ProfileUsageSnapshot {
    *  a "usage Nm old" warning instead of pretending the data is fresh (or
    *  blanking the profile out). Absent/false on a fresh successful poll. */
   stale?: boolean
+  /**
+   * ms epoch at which this profile's LOGIN expires -- the point past which no
+   * token refresh can succeed and only `/login` restores it. Read by the
+   * sentinel from the credential blob's `refreshTokenExpiresAt` (the same field
+   * Claude Code's own "Your login expires in N days" notice reads).
+   *
+   * This is NOT the access token's expiry, which rotates every few hours and
+   * carries no signal. Absent when the credential records no deadline (legacy
+   * blobs) or when the blob failed the sanity rails in `auth-expiry.ts`.
+   *
+   * Present on authed snapshots even when the usage fetch FAILED -- a lapsed
+   * login is the likeliest explanation for the 401 sitting next to it.
+   */
+  authExpiresAt?: number
 }
 
 /**
@@ -6071,6 +6085,41 @@ export interface ProfileAuthTrouble {
   /** ms epoch of the poll cycle that surfaced the failure. */
   polledAt: number
   /** Human recovery hint, e.g. "Run: CLAUDE_CONFIG_DIR=<your dir> claude auth login". */
+  recoveryHint: string
+}
+
+/**
+ * Broker -> control-panel: a profile's login is about to expire (or just has).
+ *
+ * The FORWARD-LOOKING sibling of {@link ProfileAuthTrouble}. Auth-trouble fires
+ * once a probe has already failed; this fires while everything still works, off
+ * the `authExpiresAt` deadline the sentinel reads out of the credential itself.
+ * The distinction matters most for idle profiles: a refresh token's life is
+ * extended by USE, so the profile nobody touches is the one that quietly dies,
+ * and it dies for every spawn at once.
+ *
+ * Debounced broker-side per `sentinelId:profile` on a long window (a login
+ * deadline moves once a week, not once a minute), and re-armed when the
+ * deadline jumps forward -- i.e. when someone actually ran `/login`.
+ *
+ * PROFILE-ENV BOUNDARY: names the profile and the generic recovery command
+ * only; the broker has no configDir to offer.
+ */
+export interface ProfileAuthExpiring {
+  type: 'profile_auth_expiring'
+  /** Sentinel that owns the profile -- stamped by the broker from the authed
+   *  connection. Part of the debounce key. */
+  sentinelId: string
+  /** Profile name, e.g. "work". */
+  profile: string
+  /** ms epoch the login expires. Already past when `daysLeft` is 0 and the
+   *  deadline has elapsed. */
+  expiresAt: number
+  /** Whole days remaining, rounded UP; 0 means expired or gone within 24h. */
+  daysLeft: number
+  /** ms epoch of the poll cycle that surfaced it. */
+  polledAt: number
+  /** Human recovery hint. */
   recoveryHint: string
 }
 

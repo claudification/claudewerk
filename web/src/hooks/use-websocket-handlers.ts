@@ -892,6 +892,34 @@ function handleSentinelUsageReport(msg: DashboardMessage) {
   useConversationsStore.getState().setSentinelProfileUsage(msg.sentinelId, msg.profileUsage, polledAt)
 }
 
+/**
+ * A profile's LOGIN is about to expire (`profile_auth_expiring`). The broker
+ * already debounces this to about one per profile per day, so the toast just
+ * needs a stable `toastId` to collapse a reconnect storm onto a single card
+ * rather than stacking one per socket.
+ *
+ * Persistent on purpose: an expiry you have to catch inside an 8-second
+ * auto-dismiss is an expiry you will miss.
+ */
+function handleProfileAuthExpiring(msg: DashboardMessage) {
+  const profile = typeof msg.profile === 'string' ? msg.profile : undefined
+  const daysLeft = typeof msg.daysLeft === 'number' ? msg.daysLeft : undefined
+  if (!profile || daysLeft === undefined) return
+  const when = daysLeft <= 0 ? 'has expired' : `expires in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`
+  window.dispatchEvent(
+    new CustomEvent('rclaude-toast', {
+      detail: {
+        title: 'Login expiring',
+        meta: profile,
+        body: `The \`${profile}\` login ${when}. Run /login on that profile to renew it.`,
+        toastId: `auth-expiry-${msg.sentinelId ?? ''}-${profile}`,
+        variant: 'warning',
+        persistent: true,
+      },
+    }),
+  )
+}
+
 function handleClaudeHealthUpdate(msg: DashboardMessage) {
   useConversationsStore.getState().setClaudeHealth(msg as unknown as ClaudeHealthUpdate)
 }
@@ -1865,6 +1893,7 @@ export const handlers: Record<string, MessageHandler> = {
   debug_trace_event: handleDebugTraceEvent,
   debug_control_result: handleDebugControlResult,
   conversation_auth_needed: handleConversationAuthNeeded,
+  profile_auth_expiring: handleProfileAuthExpiring,
   claude_health_update: handleClaudeHealthUpdate,
   claude_efficiency_update: handleClaudeEfficiencyUpdate,
   rate_limit_status: handleRateLimitStatus,

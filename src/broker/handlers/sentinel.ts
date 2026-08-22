@@ -19,6 +19,7 @@ import type { HandlerContext, MessageHandler } from '../handler-context'
 import { ANY_ROLE, registerHandlers, SENTINEL_ONLY } from '../message-router'
 import { DEFAULT_NOTIFY_WINDOW_MS, NotificationDebouncer } from '../notification-debounce'
 import { rearmProjectWatches } from '../project-watch-registry'
+import { notifyAuthExpiring } from './sentinel-auth-expiry'
 
 /**
  * Auth-trouble notifications: one push per `${sentinelId}:${profile}` per window
@@ -607,6 +608,9 @@ function sanitizeProfileUsageSnapshot(raw: unknown): ProfileUsageSnapshot | null
   if (rec.extraUsage && typeof rec.extraUsage === 'object')
     snap.extraUsage = rec.extraUsage as ProfileUsageSnapshot['extraUsage']
   if (rec.error && typeof rec.error === 'object') snap.error = rec.error as ProfileUsageSnapshot['error']
+  // A login deadline is a plain timestamp -- no configDir can hide in a number.
+  if (typeof rec.authExpiresAt === 'number' && Number.isFinite(rec.authExpiresAt) && rec.authExpiresAt > 0)
+    snap.authExpiresAt = rec.authExpiresAt
   return snap
 }
 
@@ -628,6 +632,7 @@ const sentinelUsageReport: MessageHandler = (ctx, data) => {
       profiles.map(p => `${p.profile}=${p.error ? `err:${p.error.kind}` : `${p.sevenDay?.usedPercent}%`}`).join(' '),
   )
   notifyAuthTrouble(ctx, profiles, polledAt)
+  notifyAuthExpiring(ctx, profiles, polledAt)
 }
 
 /**

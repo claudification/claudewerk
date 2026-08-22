@@ -79,3 +79,53 @@ test('a profile with no label gets no chip', () => {
 
   expect(screen.queryByTitle(/^Profile: /)).toBeNull()
 })
+
+// ─── login-expiry countdown ────────────────────────────────────────
+//
+// The deadline past which only `/login` restores the profile. Deliberately
+// silent while the login is healthy: a countdown on every row would be chrome
+// nobody reads, which is exactly how the one row that matters gets missed.
+
+const DAY = 86_400_000
+
+test('says nothing about a login that is weeks away', () => {
+  profiles = [profile({ name: 'work' })]
+  render(<ProfileRow snap={snapshot({ profile: 'work', authExpiresAt: Date.now() + 27 * DAY })} alias="default" />)
+
+  expect(screen.queryByText(/login/)).toBeNull()
+})
+
+test('says nothing when the sentinel reported no deadline at all', () => {
+  profiles = [profile({ name: 'work' })]
+  render(<ProfileRow snap={snapshot({ profile: 'work' })} alias="default" />)
+
+  expect(screen.queryByText(/login/)).toBeNull()
+})
+
+test('counts down once the login enters the warning horizon', () => {
+  profiles = [profile({ name: 'work' })]
+  render(<ProfileRow snap={snapshot({ profile: 'work', authExpiresAt: Date.now() + 2 * DAY })} alias="default" />)
+
+  expect(screen.getByText('login 2d')).toBeTruthy()
+})
+
+test('an errored row shows the expired login that explains the error', () => {
+  // The whole point of carrying the deadline through the error path: "not
+  // authed" alone leaves you guessing, "login expired" tells you what to do.
+  profiles = [profile({ name: 'work' })]
+  render(
+    <ProfileRow
+      snap={snapshot({
+        profile: 'work',
+        authed: true,
+        fiveHour: undefined,
+        sevenDay: undefined,
+        error: { kind: 'http', status: 401 },
+        authExpiresAt: Date.now() - DAY,
+      })}
+      alias="default"
+    />,
+  )
+
+  expect(screen.getByText('login expired')).toBeTruthy()
+})

@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSyn
 import { hostname as osHostname } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { Subprocess } from 'bun'
+import { authExpiryFromDeadline } from '../shared/auth-expiry'
 import { dispatch, has, ping } from '../shared/cc-daemon/ops'
 import { resolveControlSocket } from '../shared/cc-daemon/socket-path'
 import type { DispatchSpec } from '../shared/cc-daemon/types'
@@ -72,6 +73,7 @@ import { transcriptSlug } from '../shared/transcript-path'
 import { BUILD_VERSION } from '../shared/version'
 import { getAcpRecipe, listAcpRecipes } from './acp-recipes'
 import { BUILTIN_ARTIFACT_PATTERNS, handleFetchArtifact } from './artifact-handlers'
+import { takeAuthExpiryWarning } from './auth-expiry-warn'
 import { type CcVersionWatcher, createCcVersionWatcher, type LastSeenCcVersion } from './cc-version-watcher'
 import {
   applyPatchInPlace,
@@ -2571,8 +2573,24 @@ export function getLastGoodProfileUsage(): ReadonlyMap<string, ProfileUsageSnaps
   return lastGoodProfileUsage
 }
 
+/** Shout when a profile's LOGIN (not its access token) is running out. Fires on
+ *  every countdown tick inside the horizon, once each -- see
+ *  `auth-expiry-warn.ts`. Runs for errored snapshots too: a lapsed login is the
+ *  likeliest reason a profile just started 401ing. */
+function warnIfAuthExpiring(snap: ProfileUsageSnapshot, now: number): void {
+  const warning = takeAuthExpiryWarning(snap.profile, authExpiryFromDeadline(snap.authExpiresAt, now), now)
+  if (!warning) return
+  log(`WARNING: ${warning.message}`)
+  diag('usage', `[${snap.profile}] login expiring`, {
+    daysLeft: warning.daysLeft,
+    expiresAt: warning.expiresAt,
+    expiresAtIso: new Date(warning.expiresAt).toISOString(),
+  })
+}
+
 /** LOG-EVERYTHING covenant: one structured line per profile per cycle. */
 function logProfilePollResult(snap: ProfileUsageSnapshot): void {
+  warnIfAuthExpiring(snap, snap.polledAt)
   if (snap.error) {
     diag('usage', `[${snap.profile}] error`, {
       kind: snap.error.kind,

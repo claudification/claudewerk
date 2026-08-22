@@ -60,25 +60,40 @@ export interface OAuthTokenDeps {
   fs?: { existsSync: typeof existsSyncReal; readFileSync: typeof readFileSyncReal }
 }
 
-/** A discovered token plus its stored expiry (epoch ms; 0 when the source
- *  records none). */
-interface TokenCandidate {
+/**
+ * A discovered credential: the bearer, the ACCESS token's stored expiry, and
+ * the REFRESH token's stored expiry (both epoch ms; 0 when the source records
+ * none).
+ *
+ * The two expiries answer different questions and must not be confused:
+ *  - `expiresAt` is the access token's, measured in HOURS. It rotates
+ *    constantly and says nothing about your login's health -- it is used here
+ *    only as the freshest-wins tiebreak between credential stores.
+ *  - `refreshExpiresAt` is the login's HARD DEADLINE, measured in weeks. When
+ *    it passes, no refresh can succeed and `/login` is the only way back. This
+ *    is what CC's own "Your login expires in N days" notice reads, and what
+ *    `auth-expiry.ts` turns into a warning.
+ */
+export interface OAuthCredential {
   token: string
   expiresAt: number
+  refreshExpiresAt: number
 }
 
 /** Parse a credentials blob (keychain or `.credentials.json` share the same
- *  `claudeAiOauth` / flat shapes) into a token + its stored expiry. Returns
- *  null when there's no usable token or the blob isn't JSON. */
+ *  `claudeAiOauth` / flat shapes) into a credential. Returns null when there's
+ *  no usable token or the blob isn't JSON. */
 // fallow-ignore-next-line complexity
-function parseTokenBlob(raw: string): TokenCandidate | null {
+function parseTokenBlob(raw: string): OAuthCredential | null {
   try {
     const data = JSON.parse(raw) as Record<string, unknown> | null
     const oauth = data?.claudeAiOauth as Record<string, unknown> | undefined
     const token = (oauth?.accessToken ?? data?.accessToken ?? data?.access_token) as unknown
     if (typeof token !== 'string' || token.length === 0) return null
-    const expiresAt = Number(oauth?.expiresAt ?? (data as Record<string, unknown>)?.expiresAt ?? 0) || 0
-    return { token, expiresAt }
+    const flat = (data ?? {}) as Record<string, unknown>
+    const expiresAt = Number(oauth?.expiresAt ?? flat.expiresAt ?? 0) || 0
+    const refreshExpiresAt = Number(oauth?.refreshTokenExpiresAt ?? flat.refreshTokenExpiresAt ?? 0) || 0
+    return { token, expiresAt, refreshExpiresAt }
   } catch {
     // Non-JSON / unparsable blob -- treat as no token.
     return null
@@ -101,13 +116,20 @@ function parseTokenBlob(raw: string): TokenCandidate | null {
  * the one with the latest stored `expiresAt` -- whichever store CC most recently
  * refreshed. Ties (e.g. blobs without an expiry) keep the priority order above.
  */
-// fallow-ignore-next-line complexity
 export function getOAuthToken(configDir: string, deps: OAuthTokenDeps = {}): string | null {
+  return getOAuthCredential(configDir, deps)?.token ?? null
+}
+
+/** Full-credential variant of {@link getOAuthToken} -- same discovery and same
+ *  freshest-wins selection, but returns the stored expiries alongside the
+ *  bearer so callers can reason about the login's remaining life. */
+// fallow-ignore-next-line complexity
+export function getOAuthCredential(configDir: string, deps: OAuthTokenDeps = {}): OAuthCredential | null {
   const home = deps.home ?? process.env.HOME ?? '/root'
   const platform = deps.platform ?? process.platform
   const fs = deps.fs ?? { existsSync: existsSyncReal, readFileSync: readFileSyncReal }
   const isDefaultProfile = configDir === join(home, '.claude')
-  const candidates: TokenCandidate[] = []
+  const candidates: OAuthCredential[] = []
 
   if (platform === 'darwin') {
     const probe = deps.keychain ?? defaultKeychainProbe
@@ -137,7 +159,7 @@ export function getOAuthToken(configDir: string, deps: OAuthTokenDeps = {}): str
         const data = JSON.parse(fs.readFileSync(legacyPath, 'utf8'))
         const token = data?.oauthAccount?.accessToken || data?.primaryApiKey
         // Legacy file records no usable expiry -> expiresAt 0 (lowest priority).
-        if (typeof token === 'string' && token.length > 0) candidates.push({ token, expiresAt: 0 })
+        if (typeof token === 'string' && token.length > 0) candidates.push({ token, expiresAt: 0, refreshExpiresAt: 0 })
       }
     } catch {
       // Best-effort discovery.
@@ -151,7 +173,7 @@ export function getOAuthToken(configDir: string, deps: OAuthTokenDeps = {}): str
   for (let i = 1; i < candidates.length; i++) {
     if (candidates[i].expiresAt > best.expiresAt) best = candidates[i]
   }
-  return best.token
+  return best
 }
 
 function defaultKeychainProbe(service: string): string | null {

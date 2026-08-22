@@ -59,6 +59,7 @@ export interface ControlPanelMessage {
     | 'usage_update'
     | 'sentinel_usage_report'
     | 'profile_auth_trouble'
+    | 'profile_auth_expiring'
     | 'claude_health_update'
     | 'claude_efficiency_update'
     | 'launch_profiles_updated'

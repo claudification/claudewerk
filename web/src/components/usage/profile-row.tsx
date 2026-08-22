@@ -7,6 +7,7 @@
  *  rows apart is the entire job of this panel, so an operator who hides the
  *  ambient profile's badge on every conversation row still gets it here. */
 
+import { AUTH_EXPIRY_WARN_MS, authExpiryFromDeadline } from '@shared/auth-expiry'
 import { ProfileChip } from '@/components/profile-chip'
 import { useConversationsStore } from '@/hooks/use-conversations'
 import { findProfileMeta } from '@/lib/profile-display'
@@ -33,6 +34,23 @@ function ProfileHeading({ alias, profile }: { alias: string; profile: string }) 
   )
 }
 
+/** Countdown to this profile's LOGIN expiring -- the deadline past which only
+ *  `/login` restores it. Silent until the deadline is inside the warning
+ *  horizon, so a healthy profile carries no extra chrome. */
+function AuthExpiryNote({ authExpiresAt }: { authExpiresAt?: number }) {
+  const expiry = authExpiryFromDeadline(authExpiresAt, Date.now())
+  if (!expiry || expiry.expiresAt - Date.now() > AUTH_EXPIRY_WARN_MS) return null
+  const expired = expiry.daysLeft <= 0
+  return (
+    <span
+      className={`text-[9px] ${expired ? 'text-red-400' : 'text-amber-400/90'}`}
+      title={`Login expires ${new Date(expiry.expiresAt).toLocaleString()} - run /login on this profile to renew`}
+    >
+      {expired ? 'login expired' : `login ${expiry.daysLeft}d`}
+    </span>
+  )
+}
+
 // fallow-ignore-next-line complexity
 export function ProfileRow({ snap, alias }: { snap: ProfileUsageSnapshot; alias: string }) {
   const fiveHour = snap.fiveHour
@@ -43,6 +61,7 @@ export function ProfileRow({ snap, alias }: { snap: ProfileUsageSnapshot; alias:
       <div className="flex items-center gap-2 text-[10px] text-fg-dim">
         <ProfileHeading alias={alias} profile={snap.profile} />
         <span className="italic">{label}</span>
+        <AuthExpiryNote authExpiresAt={snap.authExpiresAt} />
       </div>
     )
   }
@@ -52,6 +71,7 @@ export function ProfileRow({ snap, alias }: { snap: ProfileUsageSnapshot; alias:
       <div className="flex items-center gap-2">
         <ProfileHeading alias={alias} profile={snap.profile} />
         <span className={`text-[10px] tabular-nums ${usageTextColor(pct)}`}>worst {Math.round(pct)}%</span>
+        <AuthExpiryNote authExpiresAt={snap.authExpiresAt} />
         {snap.stale && (
           <span
             className="text-[9px] text-amber-400/80 italic"

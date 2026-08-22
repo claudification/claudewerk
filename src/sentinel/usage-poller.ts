@@ -14,8 +14,9 @@
  * See `.claude/docs/plan-sentinel-profile-usage.md` (Phase 1).
  */
 
+import { readAuthExpiry } from '../shared/auth-expiry'
 import type { ExtraUsage, ProfileUsageSnapshot, SentinelUsageReport, UsageWindow } from '../shared/protocol'
-import { getOAuthToken } from './oauth-token'
+import { getOAuthCredential, type OAuthCredential } from './oauth-token'
 import type { ResolvedProfile } from './sentinel-config'
 
 const USAGE_API_URL = 'https://api.anthropic.com/api/oauth/usage'
@@ -125,8 +126,10 @@ async function defaultUsageFetcher(token: string): Promise<UsageFetchResult> {
 // ─── Per-profile poll ──────────────────────────────────────────────
 
 export interface PollProfileDeps {
-  /** Token reader. Defaults to `getOAuthToken` with default deps. */
-  readToken?: (configDir: string) => string | null
+  /** Credential reader. Defaults to `getOAuthCredential` with default deps.
+   *  Reads the bearer AND the login deadline in one pass -- they come from the
+   *  same blob, and the keychain shell-out is too expensive to do twice. */
+  readCredential?: (configDir: string) => OAuthCredential | null
   /** HTTP fetcher. Defaults to `defaultUsageFetcher`. */
   fetcher?: UsageFetcher
   /** Clock seam. Defaults to `Date.now`. */
@@ -143,7 +146,7 @@ export async function pollProfileUsage(
   deps: PollProfileDeps = {},
 ): Promise<ProfileUsageSnapshot> {
   const now = (deps.now ?? Date.now)()
-  const readToken = deps.readToken ?? (cfgDir => getOAuthToken(cfgDir))
+  const readCredential = deps.readCredential ?? (cfgDir => getOAuthCredential(cfgDir))
   const fetcher = deps.fetcher ?? defaultUsageFetcher
 
   // Usage polling uses the configDir's `/login` token (keychain /
@@ -152,32 +155,33 @@ export async function pollProfileUsage(
   // subscription token has but `claude setup-token` long-lived tokens do NOT
   // (they are inference-only -> 403 "does not meet scope requirement
   // user:profile"). The configured token is for spawn inference only.
-  let token = readToken(profile.configDir)
-  if (!token) {
-    return {
-      profile: profile.name,
-      authed: false,
-      polledAt: now,
-      error: { kind: 'no_token' },
-    }
+  let cred = readCredential(profile.configDir)
+  if (!cred) {
+    return { profile: profile.name, authed: false, polledAt: now, error: { kind: 'no_token' } }
   }
 
-  let res = await fetcher(token)
+  let res = await fetcher(cred.token)
 
   // OAuth bearers rotate mid-process. On 401, re-read once and retry.
   if (res.ok === false && res.kind === 'http' && res.status === 401) {
-    const fresh = readToken(profile.configDir)
-    if (fresh && fresh !== token) {
-      token = fresh
-      res = await fetcher(token)
+    const fresh = readCredential(profile.configDir)
+    if (fresh && fresh.token !== cred.token) {
+      cred = fresh
+      res = await fetcher(cred.token)
     }
   }
 
+  // Every authed outcome below carries the login deadline: it is read from the
+  // credential itself, so it stays reportable even when the usage FETCH fails.
+  // A profile that is 401ing BECAUSE its login lapsed is exactly the case where
+  // the panel most needs to say so.
+  const base: ProfileUsageSnapshot = { profile: profile.name, authed: true, polledAt: now }
+  const expiry = readAuthExpiry(cred, now)
+  if (expiry) base.authExpiresAt = expiry.expiresAt
+
   if (res.ok === false) {
     return {
-      profile: profile.name,
-      authed: true,
-      polledAt: now,
+      ...base,
       error:
         res.kind === 'http'
           ? { kind: 'http', status: res.status, detail: res.body, retryAfterMs: res.retryAfterMs }
@@ -187,20 +191,10 @@ export async function pollProfileUsage(
 
   const parsed = parseUsageWindows(res.data)
   if (!parsed) {
-    return {
-      profile: profile.name,
-      authed: true,
-      polledAt: now,
-      error: { kind: 'parse', detail: 'missing five_hour or seven_day in response' },
-    }
+    return { ...base, error: { kind: 'parse', detail: 'missing five_hour or seven_day in response' } }
   }
 
-  return {
-    profile: profile.name,
-    authed: true,
-    polledAt: now,
-    ...parsed,
-  }
+  return { ...base, ...parsed }
 }
 
 // ─── Batched cycle ─────────────────────────────────────────────────

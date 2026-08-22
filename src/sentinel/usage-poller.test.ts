@@ -96,12 +96,20 @@ describe('parseUsageWindows', () => {
 // ─── pollProfileUsage ──────────────────────────────────────────────
 
 const profile = { name: 'work', configDir: '/tmp/work' }
+const FIXED_NOW_REF = 1716240000000
+/** Credential fixture: a live bearer whose login is nowhere near expiring, so
+ *  tests that care about usage windows stay silent about auth expiry. */
+const cred = (token: string, refreshExpiresAt = FIXED_NOW_REF + 90 * 86_400_000) => ({
+  token,
+  expiresAt: FIXED_NOW_REF + 3_600_000,
+  refreshExpiresAt,
+})
 const FIXED_NOW = 1716240000000
 
 describe('pollProfileUsage', () => {
   test('no token -> unauthed snapshot with no_token error', async () => {
     const snap = await pollProfileUsage(profile, {
-      readToken: () => null,
+      readCredential: () => null,
       now: () => FIXED_NOW,
     })
     expect(snap).toEqual({
@@ -115,7 +123,7 @@ describe('pollProfileUsage', () => {
   test('200 response yields a full snapshot', async () => {
     const fetcher: UsageFetcher = async () => ({ ok: true, data: makeRaw() })
     const snap = await pollProfileUsage(profile, {
-      readToken: () => 'sk-token',
+      readCredential: () => cred('sk-token'),
       fetcher,
       now: () => FIXED_NOW,
     })
@@ -129,7 +137,7 @@ describe('pollProfileUsage', () => {
   test('5xx response yields an authed snapshot with http error', async () => {
     const fetcher: UsageFetcher = async () => ({ ok: false, kind: 'http', status: 503, body: 'gateway' })
     const snap = await pollProfileUsage(profile, {
-      readToken: () => 'sk-token',
+      readCredential: () => cred('sk-token'),
       fetcher,
       now: () => FIXED_NOW,
     })
@@ -147,7 +155,7 @@ describe('pollProfileUsage', () => {
       retryAfterMs: 346_000,
     })
     const snap = await pollProfileUsage(profile, {
-      readToken: () => 'sk-token',
+      readCredential: () => cred('sk-token'),
       fetcher,
       now: () => FIXED_NOW,
     })
@@ -160,7 +168,7 @@ describe('pollProfileUsage', () => {
   test('network error yields an authed snapshot with network error', async () => {
     const fetcher: UsageFetcher = async () => ({ ok: false, kind: 'network', detail: 'ETIMEDOUT' })
     const snap = await pollProfileUsage(profile, {
-      readToken: () => 'sk-token',
+      readCredential: () => cred('sk-token'),
       fetcher,
       now: () => FIXED_NOW,
     })
@@ -174,7 +182,7 @@ describe('pollProfileUsage', () => {
       data: { extra_usage: null, seven_day_opus: null, seven_day_sonnet: null } as unknown as RawUsageResponse,
     })
     const snap = await pollProfileUsage(profile, {
-      readToken: () => 'sk-token',
+      readCredential: () => cred('sk-token'),
       fetcher,
       now: () => FIXED_NOW,
     })
@@ -184,30 +192,65 @@ describe('pollProfileUsage', () => {
   test('401 triggers one token re-read + retry; success yields full snapshot', async () => {
     const tokens = ['stale-token', 'fresh-token']
     let readCount = 0
-    const readToken = () => tokens[Math.min(readCount++, 1)]
+    const readCredential = () => cred(tokens[Math.min(readCount++, 1)])
     const fetched: string[] = []
     const fetcher: UsageFetcher = async token => {
       fetched.push(token)
       if (token === 'stale-token') return { ok: false, kind: 'http', status: 401 }
       return { ok: true, data: makeRaw() }
     }
-    const snap = await pollProfileUsage(profile, { readToken, fetcher, now: () => FIXED_NOW })
+    const snap = await pollProfileUsage(profile, { readCredential, fetcher, now: () => FIXED_NOW })
     expect(fetched).toEqual(['stale-token', 'fresh-token'])
     expect(snap.error).toBeUndefined()
     expect(snap.authed).toBe(true)
   })
 
   test('401 with no rotated token surfaces the 401 (does not retry forever)', async () => {
-    const readToken = () => 'same-token'
+    const readCredential = () => cred('same-token')
     let calls = 0
     const fetcher: UsageFetcher = async () => {
       calls++
       return { ok: false, kind: 'http', status: 401 }
     }
-    const snap = await pollProfileUsage(profile, { readToken, fetcher, now: () => FIXED_NOW })
+    const snap = await pollProfileUsage(profile, { readCredential, fetcher, now: () => FIXED_NOW })
     expect(calls).toBe(1) // no retry when re-read returned the same token
     expect(snap.error?.kind).toBe('http')
     expect(snap.error?.status).toBe(401)
+  })
+
+  test('reports the login deadline read from the credential', async () => {
+    const fetcher: UsageFetcher = async () => ({ ok: true, data: makeRaw() })
+    const deadline = FIXED_NOW + 12 * 86_400_000
+    const snap = await pollProfileUsage(profile, {
+      readCredential: () => cred('sk-token', deadline),
+      fetcher,
+      now: () => FIXED_NOW,
+    })
+    expect(snap.authExpiresAt).toBe(deadline)
+  })
+
+  test('reports the login deadline even when the usage FETCH fails', async () => {
+    // A lapsed login is the likeliest reason a profile just started 401ing, so
+    // the deadline must survive the error path rather than being dropped with it.
+    const fetcher: UsageFetcher = async () => ({ ok: false, kind: 'http', status: 401 })
+    const deadline = FIXED_NOW - 86_400_000
+    const snap = await pollProfileUsage(profile, {
+      readCredential: () => cred('same-token', deadline),
+      fetcher,
+      now: () => FIXED_NOW,
+    })
+    expect(snap.error?.status).toBe(401)
+    expect(snap.authExpiresAt).toBe(deadline)
+  })
+
+  test('omits the deadline when the credential records none', async () => {
+    const fetcher: UsageFetcher = async () => ({ ok: true, data: makeRaw() })
+    const snap = await pollProfileUsage(profile, {
+      readCredential: () => ({ token: 'sk-token', expiresAt: FIXED_NOW + 3_600_000, refreshExpiresAt: 0 }),
+      fetcher,
+      now: () => FIXED_NOW,
+    })
+    expect(snap.authExpiresAt).toBeUndefined()
   })
 
   test('usage polling uses disk discovery, NOT a profile-configured oauthToken', async () => {
@@ -221,7 +264,7 @@ describe('pollProfileUsage', () => {
     }
     const snap = await pollProfileUsage(
       { name: 'work', configDir: '/tmp/work' },
-      { readToken: () => 'keychain-login-token', fetcher, now: () => FIXED_NOW },
+      { readCredential: () => cred('keychain-login-token'), fetcher, now: () => FIXED_NOW },
     )
     expect(fetched).toEqual(['keychain-login-token'])
     expect(snap.authed).toBe(true)

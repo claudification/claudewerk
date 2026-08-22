@@ -11,7 +11,13 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getOAuthToken, type KeychainProbe, keychainServiceFor, keychainServicesFor } from './oauth-token'
+import {
+  getOAuthCredential,
+  getOAuthToken,
+  type KeychainProbe,
+  keychainServiceFor,
+  keychainServicesFor,
+} from './oauth-token'
 
 const hash8 = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 8)
 
@@ -209,5 +215,68 @@ describe('getOAuthToken (linux / no keychain)', () => {
 
   test('returns null and never throws when everything is missing', () => {
     expect(getOAuthToken('/nonexistent', { home, platform: 'linux' })).toBeNull()
+  })
+})
+
+// ─── getOAuthCredential (login deadline) ───────────────────────────
+
+describe('getOAuthCredential', () => {
+  test('surfaces refreshTokenExpiresAt -- the field the expiry warning reads', () => {
+    // Shape verified against a real `security find-generic-password` blob:
+    // accessToken / refreshToken / expiresAt / refreshTokenExpiresAt / scopes.
+    const configDir = join(home, '.claude-work')
+    const keychain: KeychainProbe = s =>
+      s === keychainServiceFor(configDir, home)
+        ? JSON.stringify({
+            claudeAiOauth: {
+              accessToken: 'sk-ant-oat01-live',
+              refreshToken: 'sk-ant-ort01-live',
+              expiresAt: 2_000,
+              refreshTokenExpiresAt: 9_000_000,
+            },
+          })
+        : null
+    const cred = getOAuthCredential(configDir, { home, platform: 'darwin', keychain })
+    expect(cred).toEqual({ token: 'sk-ant-oat01-live', expiresAt: 2_000, refreshExpiresAt: 9_000_000 })
+  })
+
+  test('reports refreshExpiresAt 0 for a blob that records no deadline', () => {
+    const configDir = join(home, '.claude-work')
+    const keychain: KeychainProbe = () => JSON.stringify({ claudeAiOauth: { accessToken: 'sk-old', expiresAt: 2_000 } })
+    expect(getOAuthCredential(configDir, { home, platform: 'darwin', keychain })?.refreshExpiresAt).toBe(0)
+  })
+
+  test('reads a flat (non-claudeAiOauth) blob too', () => {
+    const configDir = join(home, '.claude-work')
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(
+      join(configDir, '.credentials.json'),
+      JSON.stringify({ accessToken: 'sk-flat', expiresAt: 500, refreshTokenExpiresAt: 7_000 }),
+    )
+    const cred = getOAuthCredential(configDir, { home, platform: 'linux' })
+    expect(cred).toEqual({ token: 'sk-flat', expiresAt: 500, refreshExpiresAt: 7_000 })
+  })
+
+  test("freshest-wins carries the WINNER deadline, not the loser's", () => {
+    // The stale keychain entry claims a far-future login; the file that CC
+    // actually refreshed is the one whose deadline must be reported.
+    const configDir = join(home, '.claude-work')
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(
+      join(configDir, '.credentials.json'),
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-fresh', expiresAt: 2_000, refreshTokenExpiresAt: 5_000 } }),
+    )
+    const keychain: KeychainProbe = () =>
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-stale', expiresAt: 1_000, refreshTokenExpiresAt: 999_999 } })
+    const cred = getOAuthCredential(configDir, { home, platform: 'darwin', keychain })
+    expect(cred?.token).toBe('sk-fresh')
+    expect(cred?.refreshExpiresAt).toBe(5_000)
+  })
+
+  test('getOAuthToken still returns just the bearer', () => {
+    const configDir = join(home, '.claude-work')
+    const keychain: KeychainProbe = () =>
+      JSON.stringify({ claudeAiOauth: { accessToken: 'sk-live', expiresAt: 2_000, refreshTokenExpiresAt: 9_000 } })
+    expect(getOAuthToken(configDir, { home, platform: 'darwin', keychain })).toBe('sk-live')
   })
 })
