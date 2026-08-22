@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { readLease } from './epic-lease'
 import { appendEpicLog, readEpicLog, readEpicLogForCard, readEpicLogTail, renderEpicLogTail } from './epic-log'
 import { epicDigestFile, epicLogFile, epicRunFile, isValidEpicId, safeEpicId } from './epic-paths'
 import { EpicRunUnreadableError, patchEpicRun, RUN_FILE_BANNER, readEpicRun, startEpicRun } from './epic-run-store'
+import { parseFrontmatter } from './frontmatter'
+import { cardPath } from './project-paths'
 
 const T0 = Date.parse('2026-08-17T10:00:00.000Z')
 let root = ''
@@ -173,6 +176,51 @@ describe('the run artifact', () => {
     expect(run?.status).toBe('armed')
     expect(run?.dryGens).toBe(0)
     expect(readFileSync(epicRunFile(root, 'e1'), 'utf8')).not.toContain('gen:')
+  })
+
+  /**
+   * THE EXTEND PATH, pinned. `epic_run action=start max_gens=60` at a run that is
+   * mid-flight is the ONLY way to raise a ceiling, and the card that named it
+   * (`epic-extend-verb-named-start`) is a documentation job resting entirely on
+   * this behaviour -- so the behaviour gets a test rather than a doc line alone.
+   *
+   * Two halves, and the second is the one with teeth: the ceiling moves, and the
+   * OVERSEER LEASE does not. The generation counter lives on the epic card as
+   * `overseer_gen` and `startEpicRun` never opens the card, so the card's bytes
+   * must come back byte-identical. Anything else is the deadlock this whole file
+   * exists to prevent, arriving through the extend verb instead of the digest.
+   */
+  test('start with maxGens EXTENDS a live run -- ceiling up, lease generation untouched', () => {
+    const card = cardPath(root, 'e1')
+    const cardBytes = [
+      '---',
+      'title: "the epic"',
+      'status: in-progress',
+      'overseer: conv_overseer',
+      'overseer_gen: 7',
+      'overseer_at: 2026-08-17T10:05:00.000Z',
+      '---',
+      '',
+      'body prose',
+      '',
+    ].join('\n')
+    writeFileSync(card, cardBytes, 'utf8')
+
+    startEpicRun(root, { epicId: 'e1', project: 'p', maxGens: 40 }, T0)
+    // Mid-flight: running, and one dry generation already on the brake.
+    patchEpicRun(root, 'e1', { status: 'running', dryGens: 1, spentUsd: 12.5 }, T0 + 1)
+
+    startEpicRun(root, { epicId: 'e1', project: 'p', maxGens: 60 }, T0 + 2)
+
+    const run = readEpicRun(root, 'e1')
+    expect(run?.maxGens).toBe(60)
+    // Spend is cumulative across a re-arm; the dry brake and the status are not.
+    expect(run?.spentUsd).toBe(12.5)
+    expect(run?.status).toBe('armed')
+    expect(run?.dryGens).toBe(0)
+    // The card is the generation's only home, and start did not go near it.
+    expect(readFileSync(card, 'utf8')).toBe(cardBytes)
+    expect(readLease(parseFrontmatter(readFileSync(card, 'utf8')).meta)?.gen).toBe(7)
   })
 
   test('a patch merges and leaves absent fields alone', () => {

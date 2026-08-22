@@ -19,7 +19,16 @@ import { debug } from '../debug'
 import { type EpicRunPayload, renderEpic } from './epic-render'
 import type { McpToolContext, ToolDef, ToolResult } from './types'
 
-const DESCRIPTION = [
+/**
+ * Exported so a test can pin the ONE sentence this block is not allowed to lose:
+ * `start` is also the EXTEND verb. The extend path has existed since the first
+ * version of `startEpicRun` and nobody could find it, because the description
+ * called `start` "arm (or resume)" and mentioned `max_gens` only as a default --
+ * so a reader looking for a way to raise a live run's ceiling concluded there
+ * was none and reached for `run.md` by hand. The words below ARE the fix, which
+ * makes them the thing a later rewrite of this block can silently delete.
+ */
+export const DESCRIPTION = [
   'Drive / inspect / debug an EPIC RUN: the engine plans AND executes a whole epic unattended.',
   'It dispatches one implementer per ready card (ordered by depends_on), sends an independent VERIFIER',
   'over every finished card, and wakes a single OVERSEER between beats -- the only seat that may ask a human.',
@@ -38,6 +47,13 @@ const DESCRIPTION = [
   '                    THINKS, `max_usd` (100) bounds what the whole run SPENDS, `max_wall_clock_minutes` (480)',
   '                    bounds how long it runs unattended. Whichever trips first PARKS the run and says so in',
   '                    the baton. A parked run resumes by starting it again with the ceiling raised.',
+  '                    START IS ALSO THE EXTEND VERB -- there is no other one, and it works on a LIVE run:',
+  '                    `action=start epic_id=<id> max_gens=60` against a run that is mid-flight RAISES the',
+  '                    ceiling in place and does NOT reset the generation counter. It cannot: the counter is the',
+  '                    overseer lease on the epic CARD (`overseer_gen`), and start never opens the card. Same for',
+  '                    `max_usd` and `max_wall_clock_minutes`. The one side effect worth knowing is that start',
+  '                    also clears the dry-generation brake and re-arms -- which is what recovers a run that',
+  '                    parked ON the ceiling, and the reason you do not need a separate verb to do it.',
   '                    CHEAP BY DESIGN: it merges rather than clobbers, so sending one knob changes one knob, and',
   '                    it answers with the STATUS BLOCK ONLY (state, when, target, concurrency, caps, lease).',
   '                    Raising a ceiling therefore costs about what `list` costs. Use get for the digest.',
@@ -192,7 +208,14 @@ export function registerEpicTools(ctx: McpToolContext): Record<string, ToolDef> 
           },
           target: { type: 'string', enum: ['pr', 'merged', 'shipped'], description: 'start: delivery rung.' },
           concurrency: { type: 'number', description: 'start: max implementers in flight (default 3).' },
-          max_gens: { type: 'number', description: 'start: overseer generation ceiling (default 40).' },
+          max_gens: {
+            type: 'number',
+            description:
+              'start: overseer generation ceiling (default 40). THIS IS THE EXTEND KNOB -- send it at a run that ' +
+              'is already RUNNING or parked on the ceiling and it raises the ceiling in place, leaving the ' +
+              'generation counter alone (that lives on the epic card as `overseer_gen`; start never touches the ' +
+              'card). Raising it also clears the dry-generation brake and re-arms the run.',
+          },
           max_usd: {
             type: 'number',
             description:
