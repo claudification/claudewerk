@@ -7,6 +7,13 @@
  * tool handler (project-board.ts).
  */
 
+import {
+  DEFAULT_SUITE_RULES,
+  parseChangedPaths,
+  runDerivedSuites,
+  type SuiteRule,
+  suiteEntry,
+} from './board-gate-suites'
 import type { TaskStatus } from './task-statuses'
 
 export interface GitResult {
@@ -47,6 +54,13 @@ export interface GateInput {
   runCmd: CmdRunner
   nowMs: number
   testTimeoutMs?: number
+  /**
+   * Suite table for DERIVING what the diff owes (board-gate-suites.ts). Injected
+   * because only the host can tell which of these scripts the checkout actually
+   * has -- a rule whose script is missing from package.json would refuse a card
+   * for a suite that does not exist in that project.
+   */
+  suiteRules?: readonly SuiteRule[]
 }
 
 const DEFAULT_BASE = 'main'
@@ -101,6 +115,43 @@ function diffCheck(g: GitRunner, base: string, ev: Ev): GateCheck {
   return { name: 'diffstat', ok: diffstat.length > 0, detail: diffstat.length > 0 ? diffstat : `zero diff vs ${base}` }
 }
 
+/**
+ * MERGE FRESHNESS -- the branch must already CONTAIN the base it is measured
+ * against.
+ *
+ * A suite run in the worker's worktree tests the BRANCH TIP. The gen-10
+ * regression on this board was a property of the MERGE and of nothing else: the
+ * branch was green against its own base, `main` had meanwhile grown a test that
+ * the branch's diff broke, and both halves of the gate said green because
+ * nothing ever ran a suite against the two of them together. An independent
+ * verifier that green-lights a branch has said nothing about main.
+ *
+ * Rather than build a speculative merge in a scratch checkout, require the merge
+ * to have ALREADY HAPPENED: once `main` is an ancestor of HEAD, the branch tip IS
+ * the merge result, so every other check in this file is measuring the thing
+ * that will land. The fix is one command and the refusal names it.
+ */
+function baseMergedCheck(g: GitRunner, base: string): GateCheck {
+  if (g(['merge-base', '--is-ancestor', base, 'HEAD']).exitCode === 0) {
+    return { name: 'base-merged', ok: true, detail: `${base} is contained in HEAD -- the tip is the merge` }
+  }
+  const behind = Number.parseInt(g(['rev-list', '--count', `HEAD..${base}`]).stdout.trim(), 10) || 0
+  return {
+    name: 'base-merged',
+    ok: false,
+    detail:
+      `${base} has ${behind || 'unmerged'} commit(s) not in this branch -- a suite run here tests the branch tip, ` +
+      `not the merge, and green against a stale base has said nothing about ${base}. ` +
+      `Run \`git merge ${base}\` in this worktree, fix what breaks, commit, then retry.`,
+  }
+}
+
+/** The paths the gate derives suites from: `git diff --name-only base...HEAD`. */
+function changedPaths(g: GitRunner, base: string): string[] {
+  const r = g(['diff', '--name-only', `${base}...HEAD`])
+  return r.exitCode === 0 ? parseChangedPaths(r.stdout) : []
+}
+
 function testDetail(r: CmdResult, timeoutMs: number): string {
   if (r.timedOut) return `test_cmd timed out after ${timeoutMs}ms`
   return r.exitCode === 0 ? 'test_cmd exit 0' : `test_cmd exit ${r.exitCode}: ${lastLines(r.output, 200)}`
@@ -132,12 +183,36 @@ export async function runTier2(input: GateInput): Promise<{ ok: boolean; checks:
     return { ok: false, checks: [{ name: 'base-ref', ok: false, detail }], evidence }
   }
 
+  const testCmd = str(input.meta.test_cmd)
   const checks = [
     cleanTreeCheck(g),
     commitsCheck(g, base, evidence),
     diffCheck(g, base, evidence),
+    baseMergedCheck(g, base),
     await testCheck(input, evidence),
   ]
+  const entries = [
+    testCmd
+      ? suiteEntry('test_cmd', testCmd, evidence.evidence_tests === 'pass' ? 'pass' : 'fail')
+      : 'test_cmd: (none on card)',
+  ]
+
+  // The DERIVED suites are the expensive half -- minutes each. Run them only once
+  // the cheap checks agree there is something worth testing; a dirty tree or a
+  // stale base is already a refusal and does not need a suite to prove it.
+  if (checks.every(c => c.ok)) {
+    const suites = await runDerivedSuites({
+      changed: changedPaths(g, base),
+      rules: input.suiteRules ?? DEFAULT_SUITE_RULES,
+      testCmd,
+      runCmd: input.runCmd,
+      timeoutMs: input.testTimeoutMs ?? DEFAULT_TEST_TIMEOUT_MS,
+    })
+    checks.push(...suites.checks)
+    entries.push(...suites.entries)
+  }
+  // Names the commands, so "tests passed" can never imply a suite that never ran.
+  evidence.evidence_suites = entries
 
   const acc = input.meta.acceptance_verified
   if (Array.isArray(acc) && acc.length) evidence.evidence_acceptance_verified = acc.map(String)

@@ -252,6 +252,12 @@ const GATE_SPECS: readonly CardKeySpec[] = [
   },
   { key: 'evidence_tests_tail', type: 'string', doc: 'tail of the test output, for a failed gate', owner: 'machine' },
   {
+    key: 'evidence_suites',
+    type: 'string[]',
+    doc: 'every command the gate ran, named, with its result -- test_cmd plus the suites the diff obliged',
+    owner: 'machine',
+  },
+  {
     key: 'evidence_acceptance_verified',
     type: 'string[]',
     doc: 'acceptance_verified as captured at gate time',

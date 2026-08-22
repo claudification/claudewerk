@@ -23,6 +23,7 @@ import {
   isGateMode,
   resolveGateMode,
 } from '../../../shared/board-gate'
+import { DEFAULT_SUITE_RULES, type SuiteRule } from '../../../shared/board-gate-suites'
 import { type GateCwd, parseWorktreeList, resolveGateCwd } from '../../../shared/board-gate-worktree'
 import { parseCardFrontmatter } from '../../../shared/card-frontmatter'
 import type { Frontmatter } from '../../../shared/frontmatter'
@@ -112,6 +113,24 @@ function readProjectGateMode(dialogCwd: string): GateMode | undefined {
   }
 }
 
+/**
+ * The suite rules THIS checkout can actually run.
+ *
+ * The table in board-gate-suites.ts is a repo-shape heuristic; a project without
+ * a `test:web` script must not be refused for failing to run one. So the rules
+ * are filtered against the checkout's own package.json scripts, and a project
+ * with no readable package.json derives nothing (its `test_cmd` is all it has).
+ */
+export function suiteRulesFor(cwd: string): SuiteRule[] {
+  try {
+    const pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf-8')) as { scripts?: Record<string, unknown> }
+    const scripts = pkg.scripts ?? {}
+    return DEFAULT_SUITE_RULES.filter(r => typeof scripts[r.script] === 'string')
+  } catch {
+    return []
+  }
+}
+
 export interface GateTransition {
   /** The conversation's cwd -- the PROJECT ROOT, never the worker's worktree. */
   dialogCwd: string
@@ -181,6 +200,7 @@ export async function gateTransition(t: GateTransition): Promise<GateTransitionR
       git: gitRunner(cwd),
       runCmd: cmdRunner(cwd),
       nowMs: t.nowMs,
+      suiteRules: willRun ? suiteRulesFor(cwd) : [],
     },
     mode,
   )

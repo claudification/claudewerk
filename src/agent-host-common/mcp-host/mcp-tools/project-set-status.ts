@@ -48,6 +48,18 @@ function gateOffNotice(gate: GateOutcome, targetStatus: TaskStatus): string {
 }
 
 /**
+ * NAME WHAT RAN. "tests passed" on a card used to mean "the string in `test_cmd`
+ * exited 0", which on three cards here meant the web suite never ran at all. The
+ * gate now derives suites from the diff, so the move reports the commands it
+ * actually executed rather than letting the reader assume all of them.
+ */
+function gateRanNotice(gate: GateOutcome): string {
+  const suites = gate.evidence.evidence_suites
+  if (gate.decision !== 'allow' || !Array.isArray(suites) || suites.length === 0) return ''
+  return `\n\nGate ran:\n${suites.map(s => `  - ${s}`).join('\n')}`
+}
+
+/**
  * project_set_status handler -- change a card's lane, GATED for in-review/done
  * by the deterministic DONE-gate (board-gate.ts). The gate machine-captures git
  * evidence, refuses bad transitions with a precise reason, and enforces the
@@ -104,6 +116,7 @@ export async function handleProjectSetStatus(ctx: McpToolContext, params: Record
   return text(
     `Moved "${card.title}" from ${formatStatus(fromStatus)} to ${formatStatus(targetStatus)}\n` +
       `The card is where it has always been: ${cardRelPath(taskId)}` +
+      gateRanNotice(gate) +
       gateOffNotice(gate, targetStatus),
   )
 }

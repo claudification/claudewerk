@@ -17,6 +17,11 @@ interface FakeGitOpts {
   dirty?: string[]
   commits?: number
   diffstat?: string
+  /** `git diff --name-only base...HEAD` -- what the gate derives suites from. */
+  changed?: string[]
+  /** false = base has moved on and the branch has not merged it (stale tip). */
+  baseMerged?: boolean
+  behind?: number
 }
 
 function makeGit(o: FakeGitOpts): GitRunner {
@@ -24,8 +29,14 @@ function makeGit(o: FakeGitOpts): GitRunner {
     ['rev-parse --abbrev-ref', () => ok(o.branch ?? 'feat/x')],
     ['rev-parse --verify', () => (o.baseExists === false ? fail() : ok('abc123'))],
     ['status --porcelain', () => ok((o.dirty ?? []).join('\n'))],
+    ['merge-base --is-ancestor', () => (o.baseMerged === false ? fail() : ok(''))],
+    // Ordered before the generic count route: `HEAD..base` is how far BEHIND the
+    // branch is, `base..HEAD` is how many commits it added. Same command, opposite
+    // question.
+    ['rev-list --count HEAD..', () => ok(String(o.behind ?? 0))],
     ['rev-list --count', () => ok(String(o.commits ?? 3))],
     ['diff --shortstat', () => ok(o.diffstat ?? ' 2 files changed, 10 insertions(+)')],
+    ['diff --name-only', () => ok((o.changed ?? []).join('\n'))],
   ]
   return (args: string[]): GitResult => {
     const key = args.join(' ')
@@ -142,6 +153,154 @@ describe('evaluateGate — Tier-2 truth table', () => {
     const out = await evaluateGate(input({ meta: { base: 'develop' } }), 'tier2')
     expect(out.decision).toBe('allow')
     expect(out.evidence.evidence_base).toBe('develop')
+  })
+})
+
+describe('evaluateGate — the gate derives suites from the diff, not from test_cmd', () => {
+  /** A runner that answers per command, so a suite can fail while test_cmd passes. */
+  const cmdBy =
+    (byCmd: Record<string, number>): CmdRunner =>
+    async cmd => ({ exitCode: byCmd[cmd] ?? 0, output: `output of ${cmd}`, timedOut: false })
+
+  it('THE GEN-10 REPLAY: a src/shared-only diff with a narrow test_cmd is refused by the web suite', async () => {
+    // b9b12b4c: only src/shared/epic-run-caps.ts changed, test_cmd was
+    // `bun run test src/broker src/shared && bun run typecheck`, and
+    // web/.../run-model.test.ts went red on the merge. Both halves said green.
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        meta: { test_cmd: 'bun run test src/broker src/shared && bun run typecheck' },
+        git: makeGit({ changed: ['src/shared/epic-run-caps.ts'] }),
+        runCmd: cmdBy({ 'bun run test:web': 1 }),
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('refuse')
+    expect(out.reason).toContain('bun run test:web exit 1')
+    expect(out.reason).toContain('the diff obliges this suite')
+  })
+
+  it('the reverse: a web-only diff that breaks the ROOT suite is refused', async () => {
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        meta: { test_cmd: 'cd web && bun run test:run' },
+        git: makeGit({ changed: ['web/src/components/wall/werk-master-detail.tsx'] }),
+        runCmd: cmdBy({ 'bun run test': 1 }),
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('refuse')
+    expect(out.reason).toContain('bun run test exit 1')
+  })
+
+  it('records every command it ran, so "tests passed" names them', async () => {
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        meta: { test_cmd: 'bun run typecheck' },
+        git: makeGit({ changed: ['src/shared/epic-run-caps.ts'] }),
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.evidence_suites).toEqual([
+      'test_cmd: bun run typecheck -> pass',
+      'root: bun run test -> pass',
+      'web: bun run test:web -> pass',
+    ])
+  })
+
+  it('a card with no test_cmd still owes the suites its diff touched', async () => {
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        git: makeGit({ changed: ['src/broker/epic-ready.ts'] }),
+        runCmd: cmdBy({ 'bun run test': 1 }),
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('refuse')
+    expect(out.reason).toContain('bun run test exit 1')
+  })
+
+  it('an empty rule set (project without those scripts) derives nothing and still allows', async () => {
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        git: makeGit({ changed: ['src/shared/x.ts'] }),
+        suiteRules: [],
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('allow')
+    expect(out.evidence.evidence_suites).toEqual([
+      'test_cmd: (none on card)',
+      'derived: (none -- 1 changed path(s) match no suite trigger)',
+    ])
+  })
+
+  it('a failing test_cmd short-circuits the expensive suites', async () => {
+    const seen: string[] = []
+    const runCmd: CmdRunner = async cmd => {
+      seen.push(cmd)
+      return { exitCode: 1, output: 'boom', timedOut: false }
+    }
+    const out = await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        meta: { test_cmd: 'bun run typecheck' },
+        git: makeGit({ changed: ['src/shared/x.ts'] }),
+        runCmd,
+      }),
+      'tier2',
+    )
+    expect(out.decision).toBe('refuse')
+    expect(seen).toEqual(['bun run typecheck'])
+  })
+})
+
+describe('evaluateGate — the suite must run against the MERGE, not the branch tip', () => {
+  it('base moved on and the branch never merged it -> refuse, naming the command', async () => {
+    const out = await evaluateGate(
+      input({ targetStatus: 'in-review', git: makeGit({ baseMerged: false, behind: 4 }) }),
+      'tier2',
+    )
+    expect(out.decision).toBe('refuse')
+    expect(out.reason).toContain('main has 4 commit(s) not in this branch')
+    expect(out.reason).toContain('git merge main')
+  })
+
+  it('a stale base is refused BEFORE any suite runs', async () => {
+    const seen: string[] = []
+    const runCmd: CmdRunner = async cmd => {
+      seen.push(cmd)
+      return { exitCode: 0, output: '', timedOut: false }
+    }
+    await evaluateGate(
+      input({
+        targetStatus: 'in-review',
+        meta: { test_cmd: 'bun run typecheck' },
+        git: makeGit({ baseMerged: false, behind: 1, changed: ['src/shared/x.ts'] }),
+        runCmd,
+      }),
+      'tier2',
+    )
+    expect(seen).toEqual(['bun run typecheck'])
+  })
+
+  it('the check honors a custom base', async () => {
+    const out = await evaluateGate(
+      input({ targetStatus: 'in-review', meta: { base: 'develop' }, git: makeGit({ baseMerged: false, behind: 2 }) }),
+      'tier2',
+    )
+    expect(out.reason).toContain('develop has 2 commit(s) not in this branch')
+    expect(out.reason).toContain('git merge develop')
+  })
+
+  it('base contained in HEAD -> the tip IS the merge, allow', async () => {
+    const out = await evaluateGate(input({ targetStatus: 'in-review', git: makeGit({ baseMerged: true }) }), 'tier2')
+    expect(out.decision).toBe('allow')
   })
 })
 
