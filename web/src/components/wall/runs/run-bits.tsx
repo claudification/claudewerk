@@ -50,6 +50,11 @@ const BATON_TONE: Record<EpicLogKind, string> = {
   // NORMAL thing on this pane -- a model has just reshaped the board and the run
   // carried on -- and at four feet it should read as an event, not an alarm.
   leg: 'var(--event-prompt)',
+  // AMBER, with the two "somebody should look" kinds. Nothing is broken and
+  // nothing is lost -- the beat skipped a tick rather than acting blind -- but a
+  // run that cannot read its own board is not making progress either, and at
+  // four feet that must not read as a healthy idle sweep.
+  'board-unread': 'var(--warning)',
 }
 
 /** Bucket -> label + tone. A list rather than six ternaries in JSX, and in the

@@ -83,7 +83,7 @@ beforeEach(() => {
       lease,
       ...(getError ? { error: getError } : {}),
     }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     sendEpicOp: async (_d, _p, op) => {
       sentOps.push(op.op)
       if (op.op === 'release') released++

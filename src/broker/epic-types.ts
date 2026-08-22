@@ -94,4 +94,17 @@ export interface BeatOutcome {
   actions: number
   spawned: string[]
   error?: string
+  /**
+   * THIS BEAT NEVER SAW THE BOARD, so it decided nothing.
+   *
+   * A FLAG RATHER THAN A SUBSTRING TEST ON `note`, because the next beat reads it
+   * back: the baton entry is filed once per OUTAGE (`board-unread`,
+   * epic-run-types.ts), and "was the previous beat also blind" is the question
+   * that makes once-per-outage mean anything. Asking it of a sentence would tie
+   * the flood guard to the wording of a log line.
+   *
+   * Absent means the board was read. Optional so every other exit from a beat --
+   * and every test that builds an outcome by hand -- keeps its shape.
+   */
+  boardUnread?: true
 }

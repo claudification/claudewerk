@@ -67,6 +67,20 @@ export function lastBeatAt(project: string, epicId: string): string | null {
 }
 
 /**
+ * THE BEAT BEFORE THIS ONE, or null if this epic has never beaten.
+ *
+ * Not a debugging read like the two above -- the executor consults it to decide
+ * whether an unread board is a NEW outage or the continuation of one it has
+ * already written down (`BeatOutcome.boardUnread`). In memory and lost on a
+ * broker restart, which is the right direction of error for that use: a restart
+ * mid-outage files one extra baton entry rather than swallowing the first.
+ */
+export function lastBeat(project: string, epicId: string): BeatRecord | null {
+  const ring = beats.get(key(project, epicId))
+  return ring && ring.length > 0 ? (ring[ring.length - 1] ?? null) : null
+}
+
+/**
  * Deliberately NO `forget` twin to `forgetArmedEpic`. A run that just parked or
  * completed is precisely the one somebody comes to inspect, and dropping its
  * beats the instant it went terminal would delete the post-mortem at the moment

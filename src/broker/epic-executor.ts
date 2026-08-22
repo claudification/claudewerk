@@ -6,7 +6,9 @@
  * plumbing can still get wrong, which is ORDER.
  *
  * Order is the whole contract here:
- *   1. read the run + baton + board,
+ *   1. read the run + baton + board -- and END THE BEAT if either read FAILED,
+ *      before any of the steps below, because every one of them is computed from
+ *      what those reads returned (`skipUnreadBoard`),
  *   2. acknowledge every settled card into the baton BEFORE anything else, and
  *      record its `closes:` in the same pass,
  *   3. if this beat is going to park or complete, take the promise ledger's LAST
@@ -40,7 +42,7 @@ import {
   reapWerkMasters,
   rendersRunState,
 } from './epic-beat-actions'
-import { recordBeat } from './epic-beat-log'
+import { lastBeat, recordBeat } from './epic-beat-log'
 import { type EpicRunView, normalizeWhen } from './epic-broker-rpc'
 import {
   applyCardRenames,
@@ -325,6 +327,54 @@ function clockSkew(deps: BeatDeps, view: EpicRunView): Pick<EpicBeatInput, 'cloc
 }
 
 /**
+ * END THE BEAT, because the board could not be read.
+ *
+ * NOTHING IS DECIDED AND NOTHING IS WRITTEN -- no acknowledgement, no promise
+ * record, no ledger patch, no dispatch, no wake, no park. A beat that skips a
+ * tick because the sentinel was unreachable costs the run nothing: the next tick
+ * asks again in 45 seconds. A beat that plans against a board it never read can
+ * end the run.
+ *
+ * IT IS NOT SILENT, which is the other half of the fix. `finish` puts the reason
+ * in the broker log and in the beat ring, and the flag it carries is what the
+ * NEXT beat reads to decide whether this outage has already been written down.
+ *
+ * THE BATON ENTRY IS ONCE PER OUTAGE. The prompt tail a fresh werk-master reads
+ * is twenty entries deep, so a sentinel down for a quarter of an hour would
+ * otherwise hand the next generation twenty copies of the same sentence and
+ * nothing else. The streak is read off the beat ring rather than off the baton,
+ * because the baton write goes through the SAME sentinel that just failed -- on
+ * the commonest outage it fails too, and a guard that trusted it would file an
+ * entry every tick for as long as nothing could be written.
+ */
+async function skipUnreadBoard(deps: BeatDeps, seats: EpicGroup, gen: number, error: string): Promise<BeatOutcome> {
+  const already = lastBeat(seats.project, seats.epicId)?.boardUnread === true
+  if (!already) {
+    const res = await epicIo().appendBaton(deps, seats.project, seats.epicId, {
+      kind: 'board-unread',
+      convId: 'broker',
+      body:
+        `The engine could not read the project board at generation ${gen}: ${error}. ` +
+        'Beats are being SKIPPED -- nothing is dispatched, acknowledged, completed or parked ' +
+        'while the board is unreadable, and the run resumes by itself on the first read that ' +
+        'succeeds. Nothing here was decided against an empty board.',
+    })
+    // Logged, never thrown, and deliberately not retried: the append failing is
+    // the ordinary case when the sentinel is the thing that is down, and the
+    // broker log plus the beat ring already carry the skip.
+    if (!res.ok) deps.log(`${tag(seats.epicId, gen)} board-unread baton append FAILED: ${res.error}`)
+  }
+  return finish(deps, seats, gen, {
+    epicId: seats.epicId,
+    note: `the project board could NOT be read (${error}); skipping this beat rather than planning against an empty board`,
+    actions: 0,
+    spawned: [],
+    error,
+    boardUnread: true,
+  })
+}
+
+/**
  * Run ONE beat for one epic. Returns what it did, so the sweep can log a single
  * line per epic per tick rather than a scatter of unrelated messages.
  */
@@ -418,7 +468,18 @@ export async function runEpicBeat(deps: BeatDeps, seats: EpicGroup, ctx: BeatCon
   // ids have been renamed. A seat's `cardId` is frozen at spawn (epic-spawn-plan)
   // and a rename leaves it answering to a name nobody asks about: on 2026-08-20
   // that put a second werk-worker onto a card whose first was still typing.
-  const cards = await io.fetchBoardCards(deps, seats.project)
+  //
+  // WITH ITS FAILURE INTACT (`fetchBoardRead`, never a bare card list). A `list`
+  // that timed out used to arrive here as a board with no cards on it, and
+  // EVERYTHING below is computed from that: `orphanedCardIds` returns every live
+  // seat, `cardRenames` misses a rename that did happen, and `planEpic` finds no
+  // epic at all -- which is a dry generation, which bills a fresh werk-master to
+  // replan, and which PARKS the run on the second one. A live run ended by a
+  // sentinel timeout, with an idle reason quoting a board nobody read.
+  const board = await io.fetchBoardRead(deps, seats.project)
+  if (!board.ok) return skipUnreadBoard(deps, seats, gen, board.error ?? 'board list failed')
+  const cards = board.cards
+
   const renames = cardRenames(cards)
   const group = applyCardRenames(seats, renames)
 

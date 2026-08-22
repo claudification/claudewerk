@@ -192,6 +192,27 @@ export type EpicLogKind =
    * for.
    */
   | 'leg'
+  /**
+   * THE ENGINE COULD NOT READ THE BOARD, so it skipped the beat rather than
+   * planning against a card graph it never saw.
+   *
+   * ITS OWN KIND for `werk-master-lost`'s reason -- no existing kind says it, and
+   * the thing a reader of `log.md` most needs to be able to tell apart is "this
+   * run had nothing to do" from "this run could not find out whether it had
+   * anything to do". Before the gate that writes this, they were the same
+   * sentence: a timed-out `list` came back as an empty board, which is a dry
+   * generation, which parks a live run on the second one.
+   *
+   * ONE PER OUTAGE, not one per tick (`epic-executor.ts`). The baton is the
+   * werk-master's whole memory and its prompt tail is twenty entries deep, so a
+   * sentinel down for fifteen minutes would otherwise evict every real fact from
+   * the file a fresh generation reads.
+   *
+   * Acknowledges NOTHING (`ACKNOWLEDGING_KINDS`, epic-log.ts): it is a fact about
+   * a READ, not a verdict about a card -- and a beat that acknowledged anything
+   * off an unread board is the bug this kind exists to record.
+   */
+  | 'board-unread'
 
 export interface EpicLogEntry {
   ts: string

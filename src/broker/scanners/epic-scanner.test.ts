@@ -50,7 +50,7 @@ beforeEach(() => {
       // The beat now says something different when the read itself failed, and
       // a stub that reports both at once could no longer say which it meant.
     }),
-    fetchBoardCards: async () => [],
+    fetchBoardRead: async () => ({ ok: true, cards: [] }),
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async () => ({ type: 'epic_result', requestId: 'r', op: 'get', ok: true }) as EpicResult,
   })

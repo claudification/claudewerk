@@ -133,8 +133,14 @@ export function sendEpicOp(deps: SentinelRpcDeps, project: string, op: EpicOpInp
  * werk-master can act on, and the action it justifies is aborting the run.
  *
  * `cards` is still `[]` on a failure so a caller that only wants the list keeps a
- * safe shape -- but the failure is there to be read, and every caller that
- * RENDERS absence has to read it.
+ * safe shape -- but the failure is there to be read, and EVERY caller reads it.
+ *
+ * THERE IS NO LONGER A SPELLING THAT SWALLOWS IT. `fetchBoardCards` returned the
+ * list alone and existed for the two callers that already did; the second of them
+ * turned out to be the epic executor, where a swallowed failure was not a
+ * rendering bug but a run PARKED by a sentinel timeout
+ * (`werk-beat-acts-on-an-unread-board`). Both callers now read the failure, so the
+ * convenience wrapper is gone rather than left as a trap for the third.
  */
 export interface EpicBoardRead {
   ok: boolean
@@ -147,20 +153,6 @@ export async function fetchBoardRead(deps: SentinelRpcDeps, project: string): Pr
   const res = await sendSentinelOp<ProjectBoardResult>(BOARD_SPEC, deps, project, { op: 'list' })
   if (!res.ok) return { ok: false, cards: [], error: res.error ?? 'board list failed' }
   return { ok: true, cards: res.tasks ?? [] }
-}
-
-/**
- * The board, for `planEpic`. A read the epic engine cannot answer for itself:
- * children declare their parent, so the whole card list is the cheapest question.
- *
- * SWALLOWS THE FAILURE, deliberately and only for the callers that already did.
- * A beat acting on an empty board on a failed read is its own bug, filed as
- * `werk-beat-acts-on-an-unread-board`; fixing it here would change what the
- * engine DOES rather than what a debug read SAYS. Anything that renders the
- * card graph must use `fetchBoardRead` instead.
- */
-export async function fetchBoardCards(deps: SentinelRpcDeps, project: string): Promise<ProjectTaskMeta[]> {
-  return (await fetchBoardRead(deps, project)).cards
 }
 
 export interface EpicRunView {

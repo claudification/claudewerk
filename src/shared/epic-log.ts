@@ -36,6 +36,7 @@ const KINDS: readonly EpicLogKind[] = [
   'record',
   'friction',
   'leg',
+  'board-unread',
 ]
 
 /**

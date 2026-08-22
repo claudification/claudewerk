@@ -139,7 +139,7 @@ beforeEach(() => {
   configureEpicIo({
     fetchEpicRun: async (_d, _p, epicId, baton?: EpicBatonQuery) =>
       toEpicRunView(sentinel('get', { ...(baton ? { baton } : {}) }) as EpicResult & { epicId: typeof epicId }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     appendBaton: async (_d, _p, _e, entry) => sentinel('log_append', { logAppend: entry }) as EpicResult,
     sendEpicOp: async (_d, _p, op) => ({ type: 'epic_result', requestId: 'r', op: op.op, ok: true }) as EpicResult,
     dispatchSpawn: mock(async (req: { name: string }) => {

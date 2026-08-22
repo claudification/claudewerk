@@ -69,7 +69,7 @@ beforeEach(() => {
         error: 'no run in this test',
       }
     },
-    fetchBoardCards: async () => [],
+    fetchBoardRead: async () => ({ ok: true, cards: [] }),
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async () => ({ type: 'epic_result', requestId: 'r', op: 'get', ok: true }) as EpicResult,
   })

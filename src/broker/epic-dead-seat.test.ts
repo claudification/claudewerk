@@ -140,7 +140,7 @@ beforeEach(() => {
       dispatchCounts: dispatchCountsByCard(baton),
       lease: null,
     }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     appendBaton: async (_d, _p, _e, entry) => {
       baton.push({
         ts: new Date(NOW).toISOString(),

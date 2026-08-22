@@ -14,7 +14,6 @@
 import { commitsForBranch } from './commit-ledger/branch'
 import {
   appendBaton,
-  fetchBoardCards,
   fetchBoardRead,
   fetchEpicRun,
   readProjectFile,
@@ -27,9 +26,9 @@ export interface EpicIo {
   dispatchSpawn: typeof dispatchSpawn
   sendEpicOp: typeof sendEpicOp
   fetchEpicRun: typeof fetchEpicRun
-  fetchBoardCards: typeof fetchBoardCards
-  /** The same read, with its FAILURE intact -- what a surface that renders the
-   *  card graph must use, so a timed-out board never renders as an empty one. */
+  /** THE ONLY BOARD READ. With its failure intact, because a timed-out `list`
+   *  must never render as an empty board (`epic-inspect.ts`) nor be planned
+   *  against as one (`epic-executor.ts`). */
   fetchBoardRead: typeof fetchBoardRead
   appendBaton: typeof appendBaton
   /** Raw card text, for the promise ledger's line surgery. */
@@ -48,7 +47,6 @@ const REAL_IO: EpicIo = {
   dispatchSpawn,
   sendEpicOp,
   fetchEpicRun,
-  fetchBoardCards,
   fetchBoardRead,
   appendBaton,
   readProjectFile,

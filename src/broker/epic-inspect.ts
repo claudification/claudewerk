@@ -104,7 +104,7 @@ export async function inspectEpic(
   const convs = deps.getAllConversations()
   const group = groupFor(convs, deps, project, epicId)
   const queue = await inspectQueue(deps, project, epicId, convs, view.run)
-  // WITH ITS FAILURE INTACT (`fetchBoardRead`, not `fetchBoardCards`). A board
+  // WITH ITS FAILURE INTACT (the only board read there is). A board
   // read that timed out used to arrive here as `[]`, and `planEpic` answers an
   // empty board with `no epic ... on the board (no card carries it and no card
   // claims it as a parent)` plus `0 child card(s)` -- a confident assertion of

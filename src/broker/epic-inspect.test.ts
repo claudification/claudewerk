@@ -358,7 +358,7 @@ describe('inspectEpic after a failed read', () => {
  * carries it and no card claims it as a parent)` and `## Plan (0 child card(s))`
  * -- while 31 child cards sat on disk and the beat header said `12/31 done`.
  *
- * The board read had failed too. `fetchBoardCards` collapsed that failure into
+ * The board read had failed too. The card-list-only spelling collapsed that failure into
  * `[]`, `planEpic` answered the empty board honestly, and the renderer published
  * the answer as a fact about the board.
  *

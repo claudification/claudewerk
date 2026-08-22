@@ -16,7 +16,7 @@
 import { buildEpicIndex } from '../../shared/epic-cards'
 import type { EpicLogEntry } from '../../shared/epic-run-types'
 import type { EpicBatonQuery, EpicInspectResult, EpicRunListEntry } from '../../shared/protocol'
-import { appendBaton, fetchBoardCards, fetchEpicRun, sendEpicOp } from '../epic-broker-rpc'
+import { appendBaton, fetchBoardRead, fetchEpicRun, sendEpicOp } from '../epic-broker-rpc'
 import { inspectEpic, listEpicRuns } from '../epic-inspect'
 import { epicConversations } from '../epic-inspect-view'
 import { forgetArmedEpic, noteDeletedEpic } from '../epic-registry'
@@ -30,7 +30,7 @@ import { beatOneEpic, type SweepDeps } from '../epic-sweep-loop'
  */
 export interface ActionIo {
   fetchEpicRun: typeof fetchEpicRun
-  fetchBoardCards: typeof fetchBoardCards
+  fetchBoardRead: typeof fetchBoardRead
   sendEpicOp: typeof sendEpicOp
   appendBaton: typeof appendBaton
   inspectEpic: typeof inspectEpic
@@ -40,7 +40,7 @@ export interface ActionIo {
 
 const REAL_IO: ActionIo = {
   fetchEpicRun,
-  fetchBoardCards,
+  fetchBoardRead,
   sendEpicOp,
   appendBaton,
   inspectEpic,
@@ -162,9 +162,23 @@ export async function actionBreakLease(deps: SweepDeps, input: ActionInput): Pro
  * cards that already existed -- so a run is the record of an ATTEMPT and the
  * cards are the work. A human deleting a run will assume the opposite unless
  * told, so the reply says it in words rather than leaving it to be discovered.
+ *
+ * AND IT DISTINGUISHES "NO CARDS" FROM "WE COULD NOT LOOK". A board `list` that
+ * timed out used to arrive here as an empty board, which reads back as the
+ * no-rollup sentence below -- a confident claim about cards nobody counted, in
+ * the reply to the one verb a human runs when they are already unsure what they
+ * are about to lose. The delete itself is unaffected either way: this is a note,
+ * and refusing a delete because the board was slow would be the worse answer.
  */
 async function orphanNote(deps: SweepDeps, project: string, epicId: string): Promise<string> {
-  const rollup = buildEpicIndex(await io.fetchBoardCards(deps, project)).get(epicId)
+  const board = await io.fetchBoardRead(deps, project)
+  if (!board.ok) {
+    return (
+      `Its cards could NOT be counted -- the board read failed (${board.error ?? 'unknown error'}) -- ` +
+      'but nothing touched them: deleting a run never deletes cards.'
+    )
+  }
+  const rollup = buildEpicIndex(board.cards).get(epicId)
   const open = rollup ? rollup.notStarted + rollup.inProgress : 0
   if (!rollup) return 'Its cards were NOT touched -- deleting a run never deletes cards.'
   return (

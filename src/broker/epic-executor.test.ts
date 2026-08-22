@@ -160,7 +160,7 @@ beforeEach(() => {
       // armed is not a failure, and the stub that pretended otherwise is the
       // same conflation the beat note used to make.
     }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     appendBaton: async (_d, _p, _e, entry) => {
       baton.push({
         ts: '',

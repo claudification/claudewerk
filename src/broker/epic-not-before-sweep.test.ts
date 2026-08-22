@@ -101,7 +101,7 @@ beforeEach(() => {
       dispatchCounts: {},
       lease: null,
     }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async (_d, _p, op) => {
       if (op.op === 'patch' && op.patch) patches.push({ ...op.patch })

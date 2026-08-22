@@ -110,7 +110,7 @@ beforeEach(() => {
       dispatchCounts: {},
       lease: null,
     }),
-    fetchBoardCards: async () => cards,
+    fetchBoardRead: async () => ({ ok: true, cards }),
     appendBaton: async () => ({ type: 'epic_result', requestId: 'r', op: 'log_append', ok: true }) as EpicResult,
     sendEpicOp: async () => ({ type: 'epic_result', requestId: 'r', op: 'patch', ok: true }) as EpicResult,
     dispatchSpawn: mock(async (req: { epic: { cardId?: string; epicId: string } }) => {
