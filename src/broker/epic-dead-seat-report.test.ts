@@ -16,8 +16,8 @@ const seat = (over: Partial<AbandonedSeat> = {}): AbandonedSeat => ({
   ...over,
 })
 
-const dirty: GitDirt = { ok: true, dirty: new Set([BRANCH]), known: new Set([BRANCH]) }
-const clean: GitDirt = { ok: true, dirty: new Set(), known: new Set([BRANCH]) }
+const dirty: GitDirt = { ok: true, dirty: new Set([BRANCH]), known: new Set([BRANCH]), merged: new Set() }
+const clean: GitDirt = { ok: true, dirty: new Set(), known: new Set([BRANCH]), merged: new Set() }
 
 describe('a settle caused by a DEATH reads differently from a settle caused by a finish', () => {
   /**
@@ -129,7 +129,7 @@ describe('the dirty worktree is named, so the next generation need not go lookin
   /** A branch the scan never saw is not a branch the scan cleared. Reporting it
    *  as clean would be the engine certifying a directory nothing opened. */
   test('a branch the scan never saw is neither dirty nor clean', () => {
-    const said = dirtSentence(BRANCH, { ok: true, dirty: new Set(), known: new Set(['main']) })
+    const said = dirtSentence(BRANCH, { ok: true, dirty: new Set(), known: new Set(['main']), merged: new Set() })
     expect(said).toContain('saw no branch')
     expect(said).toContain('not the same as clean')
   })

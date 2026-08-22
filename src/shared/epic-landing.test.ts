@@ -11,73 +11,52 @@ import {
   unresolvedLandings,
 } from './epic-landing'
 
-const FACTS: LandingFacts = {
-  ledgerReady: true,
-  evidence: 'committed',
-  branchStanding: false,
-  target: 'merged',
-}
+const FACTS: LandingFacts = { evidence: 'ahead', target: 'merged' }
 
 const verdict = (over: Partial<LandingFacts> = {}) => landingVerdict({ ...FACTS, ...over })
 
 describe('landingVerdict', () => {
-  test('commits on a branch with nothing on the trunk is UNMERGED at target=merged', () => {
+  test('a branch local main does not contain is UNMERGED', () => {
     expect(verdict()).toBe('unmerged')
   })
 
-  test('a merge commit on the trunk with the worktree gone is LANDED', () => {
-    expect(verdict({ evidence: 'merged' })).toBe('landed')
-  })
-
-  test('merged but the branch is still a local ref is STANDING, not landed', () => {
+  test('a branch main already contains, still a ref, is STANDING -- merged is only half of it', () => {
     // RESOLVED MEANS MERGED **AND** CLEANED UP. A branch merged and left behind
     // is half a resolution, and a run that "completes" over one has not.
-    expect(verdict({ evidence: 'merged', branchStanding: true })).toBe('standing')
+    expect(verdict({ evidence: 'merged' })).toBe('standing')
   })
 
-  test('a NULL worktree answer is not a clean one -- nobody looked, so nothing is claimed', () => {
-    // The opposite reading would let a beat that skipped the 15s git scan certify
-    // a directory it never opened.
-    expect(verdict({ evidence: 'merged', branchStanding: null })).toBe('landed')
-    expect(verdict({ evidence: 'committed', branchStanding: null })).toBe('unmerged')
+  test('a branch that is gone is LANDED -- worktree-remove.sh refuses to leave that state unmerged', () => {
+    expect(verdict({ evidence: 'gone' })).toBe('landed')
   })
 
-  describe('the two refusals to guess', () => {
-    test('no commit ledger at all withholds NOTHING', () => {
-      // A broker with no `commits.db` would otherwise read every card in every
-      // run as unmerged -- and this gate holds dispatch, so that is every epic on
-      // the box frozen on a missing file.
-      expect(verdict({ ledgerReady: false })).toBe('unknown')
-      expect(verdict({ ledgerReady: false, evidence: 'merged' })).toBe('unknown')
-    })
-
-    test('a card whose branch the ledger never saw is UNKNOWN, not unmerged', () => {
-      // Question cards, decisions recorded on the board, cards the werk-planner
-      // closed as already-done: none of them ever had a branch, and freezing a
-      // run over work that was never meant to produce a commit is worse than the
-      // failure this gate exists to catch.
-      expect(verdict({ evidence: 'none' })).toBe('unknown')
-    })
+  test('an unscanned repo withholds NOTHING and claims nothing', () => {
+    // The scan gates DISPATCH. Reading a timeout as "everything is unmerged"
+    // would freeze every epic on the box; reading it as "everything landed"
+    // would silently delete the gate.
+    expect(verdict({ evidence: 'unscanned' })).toBe('unknown')
+    expect(verdict({ evidence: 'unscanned', target: 'shipped' })).toBe('unknown')
   })
 
   describe('target -- the knob the engine finally reads', () => {
-    test('pr accepts commits on the branch', () => {
+    test('pr is satisfied by anything the scan can say', () => {
       expect(verdict({ target: 'pr' })).toBe('landed')
-    })
-
-    test('pr does NOT demand the cleanup half', () => {
-      // `worktree-remove.sh` refuses while unmerged commits exist, which for a
-      // `pr` run is the normal state. Demanding removal would demand a refusal.
-      expect(verdict({ target: 'pr', branchStanding: true })).toBe('landed')
-    })
-
-    test('shipped is at least merged -- the engine cannot verify a deploy, so it verifies the subset', () => {
-      expect(verdict({ target: 'shipped' })).toBe('unmerged')
-      expect(verdict({ target: 'shipped', evidence: 'merged' })).toBe('landed')
+      expect(verdict({ target: 'pr', evidence: 'merged' })).toBe('landed')
     })
 
     test('pr and merged genuinely disagree on the same facts', () => {
       expect(verdict({ target: 'pr' })).not.toBe(verdict({ target: 'merged' }))
+    })
+
+    test('shipped is at least merged -- the engine cannot verify a deploy, so it verifies the subset', () => {
+      expect(verdict({ target: 'shipped' })).toBe('unmerged')
+      expect(verdict({ target: 'shipped', evidence: 'gone' })).toBe('landed')
+    })
+
+    test('pr still refuses to claim a check it never ran', () => {
+      // It has no remote to look at, so `unscanned` stays unknown rather than
+      // being rounded up to delivered.
+      expect(verdict({ target: 'pr', evidence: 'unscanned' })).toBe('unknown')
     })
   })
 })
@@ -102,7 +81,7 @@ const landing = (over: Partial<CardLanding> = {}): CardLanding => ({
   cardId: 'c1',
   branch: 'worktree-epic/e1/c1',
   verdict: 'unmerged',
-  evidence: 'committed',
+  evidence: 'ahead',
   ...over,
 })
 
@@ -123,7 +102,7 @@ describe('describeLanding', () => {
     expect(describeLanding(landing())).toContain('worktree-epic/e1/c1')
   })
 
-  test('the two verdicts read differently -- one needs a merge, one needs an rm', () => {
+  test('the two verdicts read differently -- one needs a merge, one needs a cleanup', () => {
     expect(describeLanding(landing({ verdict: 'unmerged' }))).toContain('NOT on main')
     expect(describeLanding(landing({ verdict: 'standing' }))).toContain('worktree-remove.sh')
   })

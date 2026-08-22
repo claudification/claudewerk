@@ -10,7 +10,7 @@
  */
 
 import { isSameProject } from '../shared/project-uri'
-import type { Conversation, ProfileUsageSnapshot } from '../shared/protocol'
+import type { Conversation, GitFabric, ProfileUsageSnapshot } from '../shared/protocol'
 import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
@@ -187,24 +187,45 @@ interface SweepStore {
 }
 
 /**
- * The dirt question, answered from the git-fabric snapshot the sentinel already
+ * THE GIT-FABRIC SNAPSHOT, REDUCED TO THE THREE SETS THE ENGINE ASKS ABOUT.
+ *
+ * EXPORTED AND PURE, deliberately, because two of the three sets are now
+ * LOAD-BEARING FOR A GATE THAT PARKS RUNS -- and a fold that decides that from
+ * inside a closure over an RPC is a fold nothing can assert on. `dryGens` spent
+ * a whole feature stuck at zero for exactly this shape: a value everything read
+ * and nothing tested the writing of.
+ *
+ * `merged` IS MEASURED AGAINST LOCAL MAIN (`aheadLocal`), which is also why it is
+ * not `integration === 'integrated'` -- that field is derived from `aheadOrigin`.
+ * In this repo local main is the source of truth and origin is a push-only mirror
+ * that routinely sits tens of commits behind, so the remote yardstick would call
+ * every delivered-but-unpushed card unmerged and park runs in bulk.
+ * `promise-git.ts` made the same call for the same reason and says so at length.
+ */
+export function toGitDirt(fabric: GitFabric): GitDirt {
+  return {
+    ok: true,
+    dirty: new Set(fabric.branches.filter(b => b.dirty).map(b => b.branch)),
+    known: new Set(fabric.branches.map(b => b.branch)),
+    merged: new Set(fabric.branches.filter(b => b.aheadLocal === 0).map(b => b.branch)),
+  }
+}
+
+/**
+ * The git question, answered from the git-fabric snapshot the sentinel already
  * knows how to produce.
  *
  * NO NEW SENTINEL OP, and that is the point: `git_fabric_request` already walks
- * every local branch and stamps `dirty` per worktree (`sentinel/git-fabric.ts`),
- * which is exactly and only what a dead seat's report needs. A second, narrower
- * "is this one branch dirty" RPC would be a second answer to a question the
- * system already answers, and the two would drift.
+ * every local branch, stamps `dirty` per worktree and counts each branch against
+ * local main (`sentinel/git-fabric.ts`) -- which is exactly what a dead seat's
+ * report and the landing gate both need. A second, narrower RPC would be a second
+ * answer to a question the system already answers, and the two would drift.
  */
 function buildGitDirt(store: SweepStore): (project: string) => Promise<GitDirt> {
   return async project => {
     const res = await gatherGitFabric(store as unknown as GitFabricTransport, project)
     if (!res.fabric) return { ok: false, error: res.error ?? 'the sentinel returned no git fabric' }
-    return {
-      ok: true,
-      dirty: new Set(res.fabric.branches.filter(b => b.dirty).map(b => b.branch)),
-      known: new Set(res.fabric.branches.map(b => b.branch)),
-    }
+    return toGitDirt(res.fabric)
   }
 }
 

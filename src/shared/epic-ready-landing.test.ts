@@ -36,7 +36,7 @@ const landing = (cardId: string, verdict: CardLanding['verdict']): CardLanding =
   cardId,
   branch: `worktree-epic/e1/${cardId}`,
   verdict,
-  evidence: verdict === 'unmerged' ? 'committed' : 'merged',
+  evidence: verdict === 'unmerged' ? 'ahead' : 'merged',
 })
 
 const plan = (cards: ProjectTaskMeta[], landings: CardLanding[] = []) =>

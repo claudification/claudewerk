@@ -1,26 +1,29 @@
 /**
- * THE ENGINE HALF of the landing gate: which card, which branch, and what git
- * actually says about it.
+ * THE ENGINE HALF of the landing gate: which card, which branch, and what the
+ * git-fabric scan says about it.
  *
  * `src/shared/epic-landing.ts` is the RULE -- pure, targetted, and the only place
- * `pr` vs `merged` decides anything. This file is the two lookups behind it, and
- * the cost model that decides whether the second one is worth buying.
+ * `pr` vs `merged` decides anything. This file turns one sentinel scan into one
+ * verdict per `done` card.
  *
- * TWO SOURCES, AND THEY ANSWER DIFFERENT HALVES:
+ * ONE SOURCE. `GitDirt` is the git-fabric snapshot the sentinel produces
+ * (`git-fabric.ts`): every local branch, whether a worktree holds it, and how far
+ * ahead of LOCAL main it is. Two facts come out of it and they are the two halves
+ * of "delivered":
  *
- *   THE COMMIT LEDGER (`commitsForBranch`) answers "is this branch's work on
- *   main". A local indexed read of `commits.db`, synchronous, effectively free --
- *   so it is taken for every terminal card on every beat, which is what makes
- *   merged-ness DERIVED rather than stored.
+ *   MERGED    `aheadLocal === 0` -- `rev-list --count main..<branch>`. True for a
+ *             fast-forward, a no-ff merge and a rebase-then-ff alike.
+ *   CLEANED   the branch is not in the scan at all, which is what
+ *             `worktree-remove.sh` leaves behind and what it REFUSES to leave
+ *             behind while anything is unmerged.
  *
- *   THE GIT FABRIC (`BeatDeps.gitDirt`) answers "is this still a local branch".
- *   `GitDirt.known` is every ref `for-each-ref refs/heads` returned, so a branch
- *   missing from it is one `worktree-remove.sh` removed -- worktree and ref
- *   together, after the fast-forward it does first and the refusal it raises when
- *   anything is unmerged. That refusal is the cleanup verifier; nothing here
- *   re-derives merged-ness to second-guess it. A sentinel round trip with a
- *   15-second ceiling, so it is bought only on the beats where the answer can
- *   change an outcome -- see `wantsFabric`.
+ * WHY NOT THE COMMIT LEDGER, which is right next door and free. It recognises a
+ * MERGE COMMIT by subject, and a fast-forward makes none -- so under the merge
+ * policy this repo and this engine's own werk-master prompt both use, every
+ * delivered card would read "not merged" forever and this gate would park healthy
+ * runs. See `LandingEvidence`. The ledger stays exactly where it was, writing
+ * `closes:` receipts (`epic-promise.ts`), where a missed fast-forward costs a
+ * weaker claim rather than a stopped run.
  *
  * NOTHING HERE MERGES ANYTHING, and that is the boundary rather than an omission:
  * the broker is a broker, the sentinel owns the filesystem and git, and the
@@ -29,11 +32,9 @@
  * lives in `epic-beat.ts`.
  */
 
-import { type CardLanding, type LandingEvidence, landingVerdict, unresolvedLandings } from '../shared/epic-landing'
+import { type CardLanding, type LandingEvidence, landingVerdict } from '../shared/epic-landing'
 import type { EpicRunTarget } from '../shared/epic-run-types'
 import type { ProjectTaskMeta } from '../shared/project-task-types'
-import type { BranchResolution } from './commit-ledger/branch'
-import { epicIo } from './epic-io'
 import { cardBranch } from './epic-spawn-plan'
 import type { GitDirt } from './epic-types'
 
@@ -52,36 +53,34 @@ const DELIVERING_LANES = new Set<ProjectTaskMeta['status']>(['done'])
 /**
  * The epic's children, off the whole board.
  *
- * The FILTER LIVES HERE rather than at the two call sites, because a caller that
- * forgot it would ask the commit ledger about `worktree-epic/<this epic>/<some
- * other epic's card>` -- a branch that has never existed, answered `none`,
- * verdict `unknown`, silently harmless and completely wasted. Parenthood is the
- * `epic:` key on the CHILD (epic-cards.ts); there is no parent-side list.
+ * The FILTER LIVES HERE rather than at the call sites, because a caller that
+ * forgot it would ask about `worktree-epic/<this epic>/<some other epic's card>`
+ * -- a branch that has never existed, absent from the scan, read as delivered,
+ * silently harmless and completely wasted work. Parenthood is the `epic:` key on
+ * the CHILD (epic-cards.ts); there is no parent-side list.
  */
 function childrenOf(cards: readonly ProjectTaskMeta[], epicId: string): ProjectTaskMeta[] {
   return cards.filter(c => c.epic === epicId)
 }
 
-/** The ledger's vocabulary, in the rule's. One place, so `via` and `evidence`
- *  cannot come to mean different things in two files. */
-function evidenceOf(via: BranchResolution | null): LandingEvidence {
-  if (via === 'merge') return 'merged'
-  return via === 'branch' ? 'committed' : 'none'
+/** One branch, in the rule's vocabulary. The whole mapping, in one place, so the
+ *  scan's shape and the rule's words cannot drift apart. */
+function evidenceOf(branch: string, fabric: GitDirt | null): LandingEvidence {
+  if (!fabric?.ok) return 'unscanned'
+  if (!fabric.known.has(branch)) return 'gone'
+  return fabric.merged.has(branch) ? 'merged' : 'ahead'
 }
 
 export interface LandingScope {
   epicId: string
-  /** Project URI -- the commit ledger matches it against `repo_uri`/`cwd_uri`. */
-  project: string
   /** The run's delivery rung. THE ENGINE READS IT HERE. */
   target: EpicRunTarget
   /**
-   * The git fabric's branch list, or `null` when this beat did not buy the round
-   * trip.
+   * The git-fabric snapshot, or `null` when this beat did not buy the round trip.
    *
-   * `null` IS "NOBODY LOOKED", and it travels all the way to `landingVerdict` as
-   * such. A beat that skipped the scan must not certify a repo it never looked
-   * at, and it must not invent a surviving branch either.
+   * `null` AND A FAILED SCAN ARE THE SAME ANSWER -- `unscanned`, which withholds
+   * nothing and unblocks nothing. A beat that could not look must not certify a
+   * repo it never read, and must not accuse one either.
    */
   fabric: GitDirt | null
 }
@@ -95,62 +94,35 @@ export interface LandingScope {
  * the whole answer rather than a subset of it.
  */
 export function resolveLandings(scope: LandingScope, cards: readonly ProjectTaskMeta[]): CardLanding[] {
-  const io = epicIo()
-  const ledgerReady = io.commitLedgerReady()
-  // A fabric that FAILED is the same answer as no fabric at all: unknown. The set
-  // is only ever consulted for membership, and an errored scan has no membership
-  // to offer -- reading it as "nothing is standing" is precisely how a beat would
-  // certify a directory it never opened.
-  const standing = scope.fabric?.ok === true ? scope.fabric.known : null
-
   const out: CardLanding[] = []
   for (const card of childrenOf(cards, scope.epicId)) {
     if (!DELIVERING_LANES.has(card.status)) continue
     const branch = cardBranch(scope.epicId, card.slug)
-    const evidence = evidenceOf(io.commitsForBranch(scope.project, branch)?.via ?? null)
-    out.push({
-      cardId: card.slug,
-      branch,
-      evidence,
-      verdict: landingVerdict({
-        ledgerReady,
-        evidence,
-        branchStanding: standing === null ? null : standing.has(branch),
-        target: scope.target,
-      }),
-    })
+    const evidence = evidenceOf(branch, scope.fabric)
+    out.push({ cardId: card.slug, branch, evidence, verdict: landingVerdict({ evidence, target: scope.target }) })
   }
   return out
 }
 
 /**
- * IS THE 15-SECOND GIT SCAN WORTH BUYING ON THIS BEAT?
+ * IS THE GIT SCAN WORTH BUYING ON THIS BEAT?
  *
- * The cheap half is taken first and answers most beats on its own. The fabric
- * only ever changes a verdict from `landed` to `standing`, which only matters
- * when a run is otherwise FINISHED -- so the trip is bought exactly when the
- * ledger has no complaint left and every child is terminal, which is the beat
- * that would otherwise flip the run to `complete`. A run that never gets there
- * never pays for it.
+ * The scan is a sentinel round trip with a 15-second ceiling, so it is not free
+ * and it is not taken on faith. The one thing that makes it unnecessary is having
+ * nothing to ask about: an epic with no `done` child has no delivery claim to
+ * check, which covers the whole early life of a run and every run of a board that
+ * is still being planned.
  *
- * On a healthy run mid-flight the cost is zero. On the beat where it matters it
- * buys the difference between "the board says done" and "the work is in main and
- * nothing is left standing" -- which is the whole claim `complete` makes.
- *
- * A run whose ledger ALREADY has a complaint skips it too, and deliberately:
- * an unmerged branch is escalated on this beat regardless, and the werk-master
- * that fixes it will remove the worktree in the same breath, so the scan would be
- * bought to refine a verdict that is about to be recomputed anyway.
+ * IT IS BOUGHT EVERY BEAT AFTER THAT, and that is a deliberate cost rather than
+ * an oversight. The cheap alternative -- prefilter on the commit ledger and only
+ * scan when it complains -- does not work: the ledger cannot see a fast-forward,
+ * so under this repo's merge policy it complains about every delivered card and
+ * the prefilter saves nothing while being wrong. One scan per epic per beat, at a
+ * 45-second cadence, bounded at 15s, is the honest price of a gate that parks
+ * runs. If it ever needs to be cheaper, the fabric is a per-PROJECT fact and
+ * belongs in the sweep's pre-pass beside `queue` and `headroom` -- computed once
+ * per tick and shared by every epic in the project.
  */
-export function wantsFabric(
-  cards: readonly ProjectTaskMeta[],
-  epicId: string,
-  landings: readonly CardLanding[],
-): boolean {
-  if (unresolvedLandings(landings).length > 0) return false
-  // `archived` is dropped from the denominator here exactly as it is in a rollup
-  // percentage: an epic whose remaining children were all abandoned is finished,
-  // and `childrenComplete` agrees.
-  const counted = childrenOf(cards, epicId).filter(c => c.status !== 'archived')
-  return counted.length > 0 && counted.every(c => DELIVERING_LANES.has(c.status))
+export function wantsFabric(cards: readonly ProjectTaskMeta[], epicId: string): boolean {
+  return childrenOf(cards, epicId).some(c => DELIVERING_LANES.has(c.status))
 }

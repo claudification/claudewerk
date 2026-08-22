@@ -59,17 +59,33 @@ export interface BeatDeps extends SentinelRpcDeps {
 }
 
 /**
- * The answer to "what is uncommitted in this project", or the reason there is no
- * answer.
+ * THE GIT-FABRIC SNAPSHOT, reduced to the sets the epic engine asks about -- or
+ * the reason there is no answer.
  *
- * TWO SETS, not one. `dirty` is the branches with uncommitted changes; `known` is
- * every branch the scan SAW. Without the second, a branch that was never scanned
- * -- because the worktree was removed, or the card's seat never made one -- is
- * indistinguishable from a branch that was scanned and found clean, and the
- * engine would report "clean" about a directory nothing has looked at.
+ * THREE SETS, not one, and each exists because conflating it with another was or
+ * would be a real defect:
+ *
+ *   `dirty`   branches with uncommitted changes. The dead-seat report's fact:
+ *             a corpse that left 392 lines of finished work unstaged (2026-08-21).
+ *   `known`   every branch the scan SAW. Without it, a branch that was never
+ *             scanned -- worktree removed, or the seat never made one -- is
+ *             indistinguishable from one scanned and found clean, and the engine
+ *             would report "clean" about a directory nothing has looked at. It is
+ *             also how the LANDING GATE reads cleanup: an absent ref is what
+ *             `worktree-remove.sh` leaves behind and what it refuses to leave
+ *             behind while anything is unmerged.
+ *   `merged`  branches local main already contains (`aheadLocal === 0`). The
+ *             landing gate's merged-ness, and it must come from HERE rather than
+ *             from the commit ledger, which recognises merge commits by subject
+ *             and is therefore blind to the fast-forward this repo merges with.
+ *
+ * THE NAME IS NARROWER THAN THE TYPE. It was `dirty` alone when the dead-seat
+ * report was its only consumer; the underlying RPC has always been the whole
+ * git-fabric ladder. Renamed nothing, because the alternative is churn through an
+ * unrelated consumer to relabel a field list that is documented right here.
  */
 export type GitDirt =
-  | { ok: true; dirty: ReadonlySet<string>; known: ReadonlySet<string> }
+  | { ok: true; dirty: ReadonlySet<string>; known: ReadonlySet<string>; merged: ReadonlySet<string> }
   | { ok: false; error: string }
 
 export interface BeatOutcome {

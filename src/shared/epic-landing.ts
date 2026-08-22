@@ -19,9 +19,9 @@
  * either redoes it or builds on sand. That is silently corrupted sequencing,
  * invisible because every card says `done`.
  *
- * THE RULE IS DERIVED, NEVER STORED. Everything here is a pure function of facts
- * the beat re-reads every time: the commit ledger's answer for the branch, and
- * whether a worktree still holds it. A second copy of merged-ness in `run.md`
+ * THE RULE IS DERIVED, NEVER STORED. Everything here is a pure function of one
+ * fact the beat re-reads every time: what git says about the card's branch
+ * (`LandingEvidence`). A second copy of merged-ness in `run.md`
  * would be a mirror of a fact that lives in git -- and this engine deleted
  * exactly such a mirror on 2026-08-22 after a stale generation mirror cost
  * `epic-the-wall-ii` hours of `stale wake: expected gen 12, epic is at gen 11`.
@@ -38,21 +38,39 @@
 import type { EpicRunTarget } from './epic-run-types'
 
 /**
- * WHAT THE COMMIT LEDGER FOUND for a card's branch, in the vocabulary of this
- * module rather than of `commit-ledger/branch.ts`.
+ * WHAT GIT SAYS ABOUT A CARD'S BRANCH, in the vocabulary of this module rather
+ * than of the git-fabric scan that produced it.
  *
- * Re-spelled rather than imported because that resolver lives in `src/broker` and
- * this file is `src/shared` -- the boundary is real (`bun run lint:boundary`) and
- * a type-only import across it would still be an import. The broker maps its
- * `BranchResolution` onto these three words in one place (`epic-landing.ts`).
+ * ONE SOURCE, AND IT IS ANCESTRY. The obvious cheaper source is the commit ledger
+ * (`commit-ledger/branch.ts`), which is what the promise ledger uses -- and it is
+ * WRONG FOR A GATE. It answers "is there a commit on the trunk whose subject
+ * names this branch", i.e. it recognises a MERGE COMMIT. A fast-forward makes no
+ * merge commit at all, and `git merge --ff-only` after a rebase is what the
+ * werk-master prompt instructs and what this repo does by policy -- so every
+ * correctly-delivered card would read "not merged" forever and the run would park
+ * on work that is sitting in main. That miss is survivable in the promise ledger,
+ * which only ever writes a weaker claim onto a card; it is fatal in a gate.
  *
- *   `merged`     a commit on the repo's own trunk whose subject names the branch.
- *                It IS on main by construction.
- *   `committed`  commits recorded ON the branch and nothing on the trunk. Real,
- *                attributed work that has not reached main.
- *   `none`       the ledger has never heard of the branch.
+ * So the question asked is `rev-list --count main..<branch> == 0` -- true for a
+ * fast-forward, a no-ff merge, and a rebase-then-ff alike.
+ *
+ *   `gone`       no local ref for the branch. `worktree-remove.sh` deletes the
+ *                worktree and the branch together, fast-forwards first, and
+ *                REFUSES while unmerged commits exist -- so an absent ref is
+ *                itself evidence the work landed and the cleanup was allowed to
+ *                run. That refusal is the verifier; nothing here re-derives
+ *                merged-ness to second-guess it.
+ *   `merged`     the branch is still a ref, and local main already contains
+ *                every commit on it.
+ *   `ahead`      the branch carries commits local main does not have.
+ *   `unscanned`  nobody looked, or the scan failed.
+ *
+ * LOCAL main, NOT `origin/main`, for `promise-git.ts`'s stated reason: in this
+ * repo local main is the source of truth and origin is a push-only mirror that
+ * routinely sits tens of commits behind. Judging against the remote would report
+ * every delivered-but-unpushed card as unmerged, in bulk.
  */
-export type LandingEvidence = 'merged' | 'committed' | 'none'
+export type LandingEvidence = 'gone' | 'merged' | 'ahead' | 'unscanned'
 
 /**
  * WHERE A `done` CARD'S WORK ACTUALLY IS.
@@ -60,14 +78,11 @@ export type LandingEvidence = 'merged' | 'committed' | 'none'
  *   `landed`    the run's `target` is satisfied and nothing is left standing.
  *   `unmerged`  the work exists on a branch and is NOT on main. THIS is the one
  *               that corrupts sequencing, so it is the one that holds dependents.
- *   `standing`  the commit is on main and THE BRANCH IS STILL THERE. A branch
+ *   `standing`  main contains the work and THE BRANCH IS STILL THERE. A branch
  *               merged but left behind is half a resolution: RESOLVED MEANS
  *               MERGED **AND** CLEANED UP -- the commit on main, the worktree
- *               removed, the branch gone. `worktree-remove.sh` does all three and
- *               REFUSES while unmerged commits exist, so "the branch is no longer
- *               a local ref" is itself evidence the removal ran and was allowed
- *               to. That refusal is the verifier for this half, and nothing here
- *               re-checks merged-ness to second-guess it.
+ *               removed, the branch gone. `worktree-remove.sh` does all three,
+ *               fast-forwards first, and REFUSES while unmerged commits exist.
  *   `unknown`   nobody could answer. NOT a synonym for either of the above, and
  *               that distinction is the whole safety property of this gate -- see
  *               {@link landingVerdict}.
@@ -85,81 +100,50 @@ export interface CardLanding {
   evidence: LandingEvidence
 }
 
-/** The facts one verdict is computed from. All of them are re-read every beat. */
+/** The facts one verdict is computed from. Both are re-read every beat. */
 export interface LandingFacts {
-  /**
-   * Could the commit ledger answer AT ALL this beat? `commits.db` may not be
-   * open (a broker with no ledger, a fresh install, a test).
-   *
-   * SEPARATE FROM `evidence: 'none'` ON PURPOSE. Folding "the ledger is not
-   * there" into "the ledger found nothing" would make every card in every run
-   * read `unmerged` the moment the database went away, and this gate holds
-   * dispatch -- so a missing ledger would freeze every epic on the box.
-   */
-  ledgerReady: boolean
   evidence: LandingEvidence
-  /**
-   * IS THIS BRANCH STILL A LOCAL REF? `null` MEANS NOBODY LOOKED.
-   *
-   * THE BRANCH AND NOT THE WORKTREE, because the branch is the thing the fabric
-   * scan actually enumerates (`for-each-ref refs/heads`, `git-fabric.ts`) and
-   * because it is the STRICTER of the two: `worktree-remove.sh` removes the
-   * worktree and deletes the branch together, so a surviving ref means the
-   * cleanup did not run or was refused. A branch with no worktree still fails
-   * this, which is right -- "the branch is gone" is half the definition of
-   * resolved.
-   *
-   * `null` follows `GitDirt.known`'s convention one layer down: the scan is a
-   * sentinel round trip with a 15s ceiling, and the beat only buys it when
-   * cleanliness can change an outcome. "We could not look" must never read as
-   * "there is nothing there".
-   *
-   * THE SCAN IS CAPPED (`MAX_BRANCHES`), so a repo with hundreds of branches can
-   * report a surviving branch as absent. That errs toward `landed` -- the run
-   * finishes rather than freezing on a truncated scan -- which is the only
-   * direction a capped read may safely fail in.
-   */
-  branchStanding: boolean | null
   /** The run's delivery rung. READ BY THE ENGINE, at last. */
   target: EpicRunTarget
 }
 
 /**
- * THE VERDICT. Two refusals to guess, then the target ladder.
+ * THE VERDICT -- a refusal to guess, then the target ladder.
  *
- * WHY `none` IS `unknown` AND NOT `unmerged`. A `done` card whose branch the
- * ledger has never seen is most often a card that never had a branch at all -- a
- * question card the werk-master answered, a decision recorded on the board, a
- * card closed as already-done by the werk-planner. Calling those unmerged would
- * freeze a run over work that was never supposed to produce a commit, and the
- * failure this gate exists to catch does not look like that: the 34 stranded
- * branches all had commits on them (`committed`), which is exactly what this
- * catches. So the gate is deliberately quiet where it cannot tell, and loud where
- * it can.
+ * WHY `unscanned` IS `unknown`. The scan is a sentinel round trip that can time
+ * out, and its result gates DISPATCH. Reading a failed scan as "everything is
+ * unmerged" would freeze every epic on the box the moment a sentinel hiccuped;
+ * reading it as "everything landed" would silently delete the gate. Neither. "We
+ * could not look" is its own answer and it withholds nothing.
  *
- * WHY `pr` ACCEPTS `committed`. The commit ledger is a post-commit hook: it
- * records commits, and it cannot see a push. `committed` is therefore the
- * strongest evidence this engine holds for a run whose rung is "there is a branch
- * to open a PR from", and pretending otherwise would make `target=pr` unusable.
- * Stated rather than quietly rounded off, because a reader will otherwise assume
- * the gate verified a remote.
+ * EVERY OTHER UNCERTAINTY ERRS TOWARD `landed`, on purpose and consistently with
+ * the rest of this engine's git reads. `rev-list --count` reports 0 on any
+ * failure; the branch walk is capped at `MAX_BRANCHES`, so a surviving branch in
+ * a huge repo can read absent; a card that never had a branch at all -- a
+ * question the werk-master answered, a card the werk-planner closed as already
+ * done -- has no ref and reads `gone`. All three finish the run rather than
+ * parking it on evidence nobody has. False open is noise; a false accusation
+ * parks a healthy run and is the end of the feature.
  *
- * WHY `pr` SKIPS THE CLEANUP HALF. `worktree-remove.sh` refuses to remove a
- * worktree while unmerged commits exist -- which for a `pr` run is the NORMAL
- * state, by definition of the rung. Requiring cleanup there would demand a
- * removal the verifier is built to refuse, and the branch has to survive anyway:
- * it is the thing the PR is opened from.
+ * The one thing it will NOT forgive is a branch that exists and is ahead of main.
+ * That is the 34-stranded-branch failure exactly, and it is unambiguous.
+ *
+ * WHY `pr` IS ALWAYS SATISFIED. The rung means "there is a branch to open a PR
+ * from", and this engine cannot see a remote at all -- the fabric answers about
+ * local refs and local main. Claiming to have verified a push would be the exact
+ * "could not verify folded into delivered" the promise ledger refuses, so `pr`
+ * withholds nothing and says so rather than pretending to a check it never ran.
+ * It also must not demand the cleanup half: `worktree-remove.sh` refuses while
+ * unmerged commits exist, which for a `pr` run is the normal state, and the
+ * branch has to survive anyway -- it is what the PR is opened from.
  *
  * `shipped` is treated as `merged`. The engine cannot verify a deploy; what it
- * can verify is the subset every shipped thing must first satisfy, and claiming
- * more than that would be the exact "could not verify folded into delivered" the
- * promise ledger refuses.
+ * can verify is the subset every shipped thing must first satisfy.
  */
 export function landingVerdict(facts: LandingFacts): LandingVerdict {
-  if (!facts.ledgerReady || facts.evidence === 'none') return 'unknown'
-  if (facts.target === 'pr') return 'landed'
-  if (facts.evidence === 'committed') return 'unmerged'
-  return facts.branchStanding === true ? 'standing' : 'landed'
+  if (facts.evidence === 'unscanned') return 'unknown'
+  if (facts.target === 'pr' || facts.evidence === 'gone') return 'landed'
+  return facts.evidence === 'merged' ? 'standing' : 'unmerged'
 }
 
 /**

@@ -56,7 +56,7 @@ const unlanded = (cardId: string, verdict: CardLanding['verdict'] = 'unmerged'):
   cardId,
   branch: `worktree-epic/e1/${cardId}`,
   verdict,
-  evidence: verdict === 'unmerged' ? 'committed' : 'merged',
+  evidence: verdict === 'unmerged' ? 'ahead' : 'merged',
 })
 
 function beat(plan: Partial<EpicPlan> = {}, run: Partial<EpicRunSnapshot> = {}, over: Partial<EpicBeatInput> = {}) {

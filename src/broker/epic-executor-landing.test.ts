@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import type { CommitRow } from '../shared/commit-ledger'
 import type { EpicLease } from '../shared/epic-lease'
 import { acknowledgedCardIds, dispatchCountsByCard } from '../shared/epic-log'
 import type { EpicLogEntry } from '../shared/epic-run-types'
@@ -71,7 +70,15 @@ function group(over: Partial<EpicGroup> = {}): EpicGroup {
 }
 
 const branchOf = (slug: string) => cardBranch('e1', slug)
-const commit = (hash: string): CommitRow => ({ hash }) as CommitRow
+
+/** The scan's answer this beat: which branches exist, and which of them local
+ *  main already contains. `ahead` is simply "known and not merged". */
+const scan = (known: string[], merged: string[] = []): GitDirt => ({
+  ok: true,
+  dirty: new Set(),
+  known: new Set(known),
+  merged: new Set(merged),
+})
 
 let baton: EpicLogEntry[]
 let ops: Array<{ op: string; patch?: Record<string, unknown> }>
@@ -79,7 +86,6 @@ let spawns: Array<{ name: string; prompt: string }>
 let cards: ProjectTaskMeta[]
 let run: EpicRunSnapshot
 let lease: EpicLease | null
-let ledger: Record<string, 'merge' | 'branch'>
 let patchOk: boolean
 /** How many times the beat bought the git-fabric round trip. */
 let dirtCalls: number
@@ -113,10 +119,9 @@ beforeEach(() => {
   cards = []
   run = { ...RUN }
   lease = { convId: '', gen: 3, at: '' }
-  ledger = {}
   patchOk = true
   dirtCalls = 0
-  dirt = { ok: true, dirty: new Set(), known: new Set() }
+  dirt = scan([])
   resetPromiseMemory()
 
   configureEpicIo({
@@ -164,11 +169,6 @@ beforeEach(() => {
       spawns.push({ name: req.name, prompt: req.prompt })
       return { ok: true, conversationId: `conv_${spawns.length}`, jobId: 'j' }
     }) as never,
-    commitLedgerReady: () => true,
-    commitsForBranch: (_project: string, branch: string) => {
-      const via = ledger[branch]
-      return via ? { via, commits: [commit('abc1234')] } : null
-    },
   })
 })
 
@@ -183,7 +183,7 @@ describe('a `done` card whose branch never reached main', () => {
       card('dep', 'done'),
       card('child', 'open', { dependsOn: ['dep'] }),
     ]
-    ledger[branchOf('dep')] = 'branch'
+    dirt = scan([branchOf('dep')])
   })
 
   test('its dependent is NOT dispatched, and the werk-master is woken instead', async () => {
@@ -208,7 +208,7 @@ describe('a `done` card whose branch never reached main', () => {
   })
 
   test('once merged, the very next beat dispatches the dependent with nothing un-set', async () => {
-    ledger[branchOf('dep')] = 'merge'
+    dirt = scan([branchOf('dep')], [branchOf('dep')])
     run = { ...run, unlandedWoken: 'dep@3' }
     await runEpicBeat(deps(), group())
     expect(spawns.map(s => s.name).join(' ')).toContain('child')
@@ -231,7 +231,7 @@ describe('DERIVED, so a run.md that cannot be written changes nothing', () => {
       card('dep', 'done'),
       card('child', 'open', { dependsOn: ['dep'] }),
     ]
-    ledger[branchOf('dep')] = 'branch'
+    dirt = scan([branchOf('dep')])
 
     patchOk = false
     const failed = await runEpicBeat(deps(), group())
@@ -249,36 +249,51 @@ describe('DERIVED, so a run.md that cannot be written changes nothing', () => {
   })
 })
 
-describe('the git-fabric round trip is bought only when it can change an answer', () => {
-  test('never on a beat with work still moving', async () => {
-    cards = [card('e1', 'open', { tags: ['epic'], epic: undefined }), card('a', 'done'), card('b', 'open')]
-    ledger[branchOf('a')] = 'merge'
+describe('the git scan is bought only when there is something to ask about', () => {
+  const board = (...extra: ProjectTaskMeta[]) => [card('e1', 'open', { tags: ['epic'], epic: undefined }), ...extra]
+
+  test('never while the epic has no delivery claim to check', async () => {
+    cards = board(card('a', 'open'))
     await runEpicBeat(deps(), group())
     expect(dirtCalls).toBe(0)
   })
 
-  test('bought on the beat that would otherwise complete the run', async () => {
-    cards = [card('e1', 'open', { tags: ['epic'], epic: undefined }), card('a', 'done')]
-    ledger[branchOf('a')] = 'merge'
+  test('once per beat, not once per card, as soon as one child is done', async () => {
+    cards = board(card('a', 'done'), card('b', 'done'), card('c', 'open'))
+    dirt = scan([])
     await runEpicBeat(deps(), group())
     expect(dirtCalls).toBe(1)
-    expect(patches().some(p => p.status === 'complete')).toBe(true)
   })
 
-  test('a branch left standing REFUSES the completion', async () => {
-    cards = [card('e1', 'open', { tags: ['epic'], epic: undefined }), card('a', 'done')]
-    ledger[branchOf('a')] = 'merge'
-    dirt = { ok: true, dirty: new Set(), known: new Set([branchOf('a')]) }
+  test('a branch main already contains, left standing, REFUSES the completion', async () => {
+    cards = board(card('a', 'done'))
+    dirt = scan([branchOf('a')], [branchOf('a')])
     await runEpicBeat(deps(), group())
     expect(patches().some(p => p.status === 'complete')).toBe(false)
     expect(prompts()).toContain('worktree-remove.sh')
   })
 
+  test('the same board with the branch cleaned up DOES complete', async () => {
+    cards = board(card('a', 'done'))
+    dirt = scan([])
+    await runEpicBeat(deps(), group())
+    expect(patches().some(p => p.status === 'complete')).toBe(true)
+  })
+
   test('a beat with no `gitDirt` wired completes as it always did', async () => {
-    cards = [card('e1', 'open', { tags: ['epic'], epic: undefined }), card('a', 'done')]
-    ledger[branchOf('a')] = 'merge'
+    // ABSENT MEANS NO GATE. A broker with no sentinel to ask must dispatch and
+    // complete exactly as it did before this feature existed.
+    cards = board(card('a', 'done'))
+    dirt = scan([branchOf('a')])
     await runEpicBeat(deps({ gitDirt: undefined }), group())
     expect(patches().some(p => p.status === 'complete')).toBe(true)
+  })
+
+  test('a scan that FAILS blocks nothing new and unblocks nothing', async () => {
+    cards = board(card('a', 'done'), card('b', 'open', { dependsOn: ['a'] }))
+    dirt = { ok: false, error: 'sentinel timed out' }
+    await runEpicBeat(deps(), group())
+    expect(spawns.map(s => s.name).join(' ')).toContain('b')
   })
 })
 
@@ -290,7 +305,7 @@ describe('the FRICTION entry reaches the baton', () => {
       card('b', 'done'),
       card('c', 'done'),
     ]
-    for (const slug of ['a', 'b', 'c']) ledger[branchOf(slug)] = 'branch'
+    dirt = scan(['a', 'b', 'c'].map(branchOf))
     await runEpicBeat(deps(), group())
     const friction = baton.find(e => e.kind === 'friction')
     expect(friction).toBeDefined()
