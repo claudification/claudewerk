@@ -30,27 +30,27 @@ import { clampCardModel } from '../../shared/card-model'
 import { EPIC_ORDERS } from '../../shared/epic-orders'
 import { type EpicPlan, planTagged } from '../../shared/epic-ready'
 import type { ProjectTaskMeta } from '../../shared/project-task-types'
+import { WORK_ORDER_BUCKETS, type WorkOrderBucket } from '../../shared/scanner-buckets'
+import { READY_TAG, SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import { type EpicSpawnCtx, type EpicSpawnPlan, planImplementerSpawn } from '../epic-spawn-plan'
 import { emptyGroup, groupEpicConversations, type ProducedOutput } from '../epic-sweep'
-import {
-  DISPATCH_FAILED_BUCKET,
-  type DispatchFailedBucket,
-  dispatchUnits,
-  type Refusal,
-  type Scanner,
-  type ScannerDeps,
-  type ScanOutcome,
-} from './scanner'
+import { dispatchUnits, type Refusal, type Scanner, type ScannerDeps, type ScanOutcome } from './scanner'
 
 /**
  * The tag this scanner selects on.
  *
- * The literal rather than an import because `board-system-tags.ts` is a REGISTRY
- * of `{tag, detail}` rows for a picker, not a constants module, and it belongs to
- * `scanner-contract`. `work-order-scanner.test.ts` asserts this string is still
- * in that registry, so the two cannot drift without a test going red.
+ * Its own constant rather than a lookup in `board-system-tags.ts`, which is a
+ * REGISTRY of `{tag, detail}` rows for a picker and not a constants module.
+ * `work-order-scanner.test.ts` asserts this string is still in that registry, so
+ * the two cannot drift without a test going red.
+ *
+ * DECLARED IN `src/shared/scanner-contracts.ts` because the opt-in panel names
+ * the tag on the checkbox and cannot import a broker module. Re-exported so
+ * callers are unchanged.
  */
-export const READY_TAG = 'ready'
+export { READY_TAG }
+
+const CONTRACT = SCANNER_CONTRACTS['work-order']
 
 /** Log prefix. Named here because `scanWorkOrders` hands it to the shared
  *  dispatch tail, and the `Scanner` record below quotes the same constant --
@@ -82,34 +82,12 @@ export const WORK_ORDER_EPIC_ID = 'work-order'
  * Every way this scanner can decline a `ready` card. Closed, so a reason it did
  * not declare is a compile error, and countable, so a pane can render the shape
  * of a backlog instead of a log nobody greps.
+ *
+ * DECLARED IN `src/shared/scanner-buckets.ts`, with the reason for each name
+ * beside it, because the per-project opt-in panel renders this vocabulary and
+ * cannot import a broker module. Re-exported here so callers are unchanged.
  */
-export type WorkOrderBucket =
-  | 'live-conversation'
-  | 'epic-owned'
-  | 'already-run'
-  | 'awaiting-verdict'
-  | 'needs-overseer'
-  | 'waiting-on-deps'
-  | 'held-back'
-  | 'unspawnable'
-  | 'not-actionable'
-  // Spelled by the shared surface, never restated here -- see
-  // `DISPATCH_FAILED_BUCKET`, which is the bucket the shared dispatch tail
-  // files into.
-  | DispatchFailedBucket
-
-const WORK_ORDER_BUCKETS: readonly WorkOrderBucket[] = [
-  'live-conversation',
-  'epic-owned',
-  'already-run',
-  'awaiting-verdict',
-  'needs-overseer',
-  'waiting-on-deps',
-  'held-back',
-  'unspawnable',
-  'not-actionable',
-  DISPATCH_FAILED_BUCKET,
-] as const
+export type { WorkOrderBucket }
 
 export interface WorkOrderDeps extends ScannerDeps {
   /** The board for the project being scanned. Async because the board lives
@@ -301,10 +279,13 @@ async function scanWorkOrders(deps: WorkOrderDeps): Promise<ScanOutcome<WorkOrde
 }
 
 export const workOrderScanner: Scanner<WorkOrderDeps, WorkOrderBucket> = {
-  id: 'work-order',
+  id: CONTRACT.id,
   tag: WORK_ORDER_TAG,
-  selects: `cards tagged \`${READY_TAG}\``,
-  does: 'dispatch',
+  // Quoted from the shared contract rather than restated -- the opt-in panel
+  // renders the same strings, and the two describing different selections is
+  // the one lie a default-deny opt-in cannot afford.
+  selects: CONTRACT.selects,
+  does: CONTRACT.does,
   buckets: WORK_ORDER_BUCKETS,
   scan: scanWorkOrders,
 }

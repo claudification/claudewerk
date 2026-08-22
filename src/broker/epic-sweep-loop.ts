@@ -11,6 +11,7 @@
 
 import { isSameProject } from '../shared/project-uri'
 import type { Conversation, ProfileUsageSnapshot } from '../shared/protocol'
+import { EPIC_SWEEP_INTERVAL_MS } from '../shared/scanner-contracts'
 import { scannerEnabled } from '../shared/scanner-opt-in'
 import type { SpawnCallerContext } from '../shared/spawn-permissions'
 import type { ConversationStore } from './conversation-store'
@@ -42,7 +43,10 @@ import {
 } from './werk-engine-boot'
 import { werkLiveness } from './werk-liveness'
 
-const SWEEP_MS = 45_000
+// The number itself lives in `scanner-contracts.ts`: the per-project opt-in
+// panel states this scanner's cadence, and a panel that invents its own number
+// is exactly the drift that makes a settings screen worth ignoring.
+const SWEEP_MS = EPIC_SWEEP_INTERVAL_MS
 
 // The restart quarantine is NOT this engine's -- it belongs to the one unattended
 // runner that nightshift and epic mode are two triggers of

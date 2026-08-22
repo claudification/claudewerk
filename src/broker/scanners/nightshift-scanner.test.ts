@@ -212,7 +212,10 @@ describe('the scanner declares itself', () => {
   test('id, tag, verb and the complete bucket vocabulary', () => {
     expect(nightshiftScanner.id).toBe('nightshift')
     expect(nightshiftScanner.does).toBe('dispatch')
-    expect(nightshiftScanner.selects).toBe(`#${NIGHTSHIFT_TAG}`)
+    // The phrase names the tag it actually filters on. It reads the same phrase
+    // the opt-in checkbox renders, so a scanner whose selection changed without
+    // the panel's description changing cannot ship.
+    expect(nightshiftScanner.selects).toContain(NIGHTSHIFT_TAG)
     expect([...nightshiftScanner.buckets].sort()).toEqual([
       'closed-lane',
       'live-conversation',

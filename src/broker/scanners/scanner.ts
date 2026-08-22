@@ -28,6 +28,7 @@
  */
 
 import type { Conversation } from '../../shared/protocol'
+import { DISPATCH_FAILED_BUCKET, type DispatchFailedBucket } from '../../shared/scanner-buckets'
 import type { ScannerId } from '../../shared/scanner-ids'
 import type { IsLive } from '../werk-liveness'
 
@@ -89,20 +90,16 @@ export interface ScanOutcome<Bucket extends string = string> {
 }
 
 /**
- * THE BUCKET FOR "THE DISPATCH ITSELF DID NOT HAPPEN", owned here and spelled
- * once.
+ * THE BUCKET FOR "THE DISPATCH ITSELF DID NOT HAPPEN" lives in
+ * `src/shared/scanner-buckets.ts` ({@link DISPATCH_FAILED_BUCKET}), alongside
+ * every other refusal name and the reason a human is shown for it.
  *
- * Every dispatching scanner needs it, and two of them had already written the
- * string out by hand. A third would have been free to spell it `dispatch_failed`
- * or `spawn-refused` and nothing would have noticed until a pane tried to count
- * the column. Scanners compose their own vocabulary from this type
- * ({@link DispatchFailedBucket}) rather than restating the literal, so the name
- * cannot drift.
+ * It used to be declared here, and moved when the per-project opt-in panel
+ * started rendering the vocabulary -- a browser bundle cannot import this file.
+ * No re-export: a second import path for one string is how a name that "cannot
+ * drift" drifts anyway. Scanners take their whole `Bucket` union from the shared
+ * tables, so nothing outside this file needs the literal.
  */
-export const DISPATCH_FAILED_BUCKET = 'dispatch-failed'
-
-/** The bucket name as a type, for a scanner's own `Bucket` union to include. */
-export type DispatchFailedBucket = typeof DISPATCH_FAILED_BUCKET
 
 /**
  * One thing to dispatch: what to call it in the accounting, and how to send it.

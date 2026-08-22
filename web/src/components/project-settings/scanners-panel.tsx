@@ -1,8 +1,11 @@
 import type { ProjectSettings } from '@shared/protocol'
+import { SCANNER_CONTRACTS } from '@shared/scanner-contracts'
 import { SCANNER_IDS, type ScannerId } from '@shared/scanner-ids'
 import { type ScannerToggles, scannerEnabled, scannerLastRun } from '@shared/scanner-opt-in'
 import { GroupHeader, SettingCheckbox, SettingRow } from '@/components/settings/settings-inputs'
+import { HoverCard } from '@/components/ui/hover-card'
 import { formatAgo } from '@/sheaf/format'
+import { ScannerContractCard } from './scanner-contract-card'
 
 /**
  * WHICH SCANNERS MAY SWEEP THIS PROJECT. Off by default, every one.
@@ -17,13 +20,25 @@ import { formatAgo } from '@/sheaf/format'
  * this panel until somebody notices.
  */
 
-/** What each box actually switches on, in the words the card used. */
-const ROWS: Record<ScannerId, { label: string; description: string }> = {
-  refine: { label: 'Refine', description: 'Drain #needs-refine -- turn rough cards into worked specs' },
-  nightshift: { label: 'Nightshift', description: 'Dispatch the nightly batch inside the configured night window' },
-  'work-order': { label: 'Work order', description: 'Dispatch an authorised card as a work order' },
-  epics: { label: 'Epics', description: 'The epic sweep -- beat every armed run and dispatch its ready cards' },
-  'morning-report': { label: 'Morning report', description: 'Publish the nightly reconciliation' },
+/**
+ * The `(i)`. Opens the scanner's whole contract -- see `ScannerContractCard`.
+ *
+ * `openOnTap` so this works on a phone, where hover does not exist, and so the
+ * panel does not vanish while somebody is reading ten refusal buckets.
+ */
+function ContractInfo({ id, lastRun }: { id: ScannerId; lastRun: number | undefined }) {
+  const contract = SCANNER_CONTRACTS[id]
+  return (
+    <HoverCard openOnTap panel={() => <ScannerContractCard contract={contract} lastRun={lastRun} />} width={360}>
+      <button
+        type="button"
+        aria-label={`What the ${contract.label} scanner does`}
+        className="h-4 w-4 rounded-full border border-border text-[9px] leading-none text-muted-foreground hover:text-foreground hover:border-foreground/50"
+      >
+        i
+      </button>
+    </HoverCard>
+  )
 }
 
 /**
@@ -72,12 +87,15 @@ export function ScannersPanel({
         // map, and a raw index would render that box unticked while the scanner
         // is in fact running -- the one lie a default-deny opt-in must not tell.
         const enabled = scannerEnabled({ scanners: toggles }, id)
+        const lastRun = scannerLastRun(settings, id)
+        const { label, description } = SCANNER_CONTRACTS[id]
         return (
-          <SettingRow key={id} label={ROWS[id].label} description={ROWS[id].description}>
+          <SettingRow key={id} label={label} description={description}>
             <div className="flex items-center gap-2">
-              <LastRun at={scannerLastRun(settings, id)} enabled={enabled} />
+              <LastRun at={lastRun} enabled={enabled} />
+              <ContractInfo id={id} lastRun={lastRun} />
               <SettingCheckbox
-                ariaLabel={`Enable the ${ROWS[id].label} scanner for this project`}
+                ariaLabel={`Enable the ${label} scanner for this project`}
                 checked={enabled}
                 onChange={next => onToggle(id, next)}
               />

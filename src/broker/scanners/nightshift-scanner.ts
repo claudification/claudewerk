@@ -28,8 +28,12 @@
 
 import { NIGHTSHIFT_TAG, type NightshiftQueueItem } from '../../shared/nightshift-types'
 import type { ProjectTask, ProjectTaskMeta } from '../../shared/project-task-types'
+import { NIGHTSHIFT_REFUSAL_BUCKETS, type NightshiftRefusalBucket } from '../../shared/scanner-buckets'
+import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import type { TaskStatus } from '../../shared/task-statuses'
 import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
+
+const CONTRACT = SCANNER_CONTRACTS.nightshift
 
 /**
  * Every way this scan can decline a card it selected.
@@ -38,15 +42,12 @@ import type { Refusal, Scanner, ScannerDeps, ScanOutcome } from './scanner'
  * engine did `queue.slice(0, caps.totalTasks)` and the remainder vanished
  * without a word. Under the contract a truncation has to name itself, so the
  * cards a cap pushed out of tonight's run are countable rather than invisible.
+ *
+ * DECLARED IN `src/shared/scanner-buckets.ts`, with the reason for each name
+ * beside it, because the per-project opt-in panel renders this vocabulary and
+ * cannot import a broker module. Re-exported here so callers are unchanged.
  */
-export type NightshiftRefusalBucket = 'closed-lane' | 'live-conversation' | 'unreadable' | 'over-cap'
-
-const NIGHTSHIFT_REFUSAL_BUCKETS: readonly NightshiftRefusalBucket[] = [
-  'closed-lane',
-  'live-conversation',
-  'unreadable',
-  'over-cap',
-] as const
+export type { NightshiftRefusalBucket }
 
 /**
  * Lanes a tagged card is NOT run from. Deliberately only the two closed ones:
@@ -173,10 +174,13 @@ function idleReason(selected: number, acted: number): string | undefined {
 }
 
 export const nightshiftScanner: Scanner<NightshiftScanDeps, NightshiftRefusalBucket> = {
-  id: 'nightshift',
+  id: CONTRACT.id,
   tag: '[nightshift-scan]',
-  selects: `#${NIGHTSHIFT_TAG}`,
-  does: 'dispatch',
+  // Quoted from the shared contract rather than restated -- the opt-in panel
+  // renders the same strings, and the two describing different selections is
+  // the one lie a default-deny opt-in cannot afford.
+  selects: CONTRACT.selects,
+  does: CONTRACT.does,
   buckets: NIGHTSHIFT_REFUSAL_BUCKETS,
   scan: scanNightshift,
 }

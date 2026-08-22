@@ -20,6 +20,8 @@
  * and this card is a no-behaviour-change extraction.
  */
 
+import { EPIC_REFUSAL_BUCKETS, type EpicRefusalBucket } from '../../shared/scanner-buckets'
+import { SCANNER_CONTRACTS } from '../../shared/scanner-contracts'
 import type { EpicRunView } from '../epic-broker-rpc'
 import { type BeatContext, runEpicBeat } from '../epic-executor'
 import { headroomVerdict } from '../epic-headroom'
@@ -29,15 +31,19 @@ import { type EpicGroup, epicsToWatch } from '../epic-sweep'
 import type { SweepDeps } from '../epic-sweep-loop'
 import type { Refusal, Scanner, ScanOutcome } from './scanner'
 
+const CONTRACT = SCANNER_CONTRACTS.epics
+
 /**
  * Every way the epic sweep can decline to move an epic. Two, and they are
  * genuinely different: a beat that RAN and found nothing to do is a healthy idle
  * run, while a beat that THREW is a broken sentinel or a broken epic and wants a
  * human. Folding them together is how a dead project looks like a quiet one.
+ *
+ * DECLARED IN `src/shared/scanner-buckets.ts`, with the reason for each name
+ * beside it, because the per-project opt-in panel renders this vocabulary and
+ * cannot import a broker module. Re-exported here so callers are unchanged.
  */
-export type EpicRefusalBucket = 'idle' | 'beat-crashed'
-
-const EPIC_REFUSAL_BUCKETS: readonly EpicRefusalBucket[] = ['idle', 'beat-crashed'] as const
+export type { EpicRefusalBucket }
 
 /** Every epic worth a beat this tick. The SAME set the activity feed reports --
  *  see `epicsToWatch`, which is shared precisely so the two cannot drift. */
@@ -181,10 +187,14 @@ function idleReason(selected: number, acted: number): string | undefined {
 }
 
 export const epicScanner: Scanner<SweepDeps, EpicRefusalBucket> = {
-  id: 'epics',
+  id: CONTRACT.id,
   tag: '[epic-sweep]',
-  selects: 'conversations carrying an epic launch tag, plus every armed run',
-  does: 'dispatch',
+  // Quoted from the shared contract, never restated: the opt-in panel renders
+  // the same two strings, and a scanner whose checkbox describes a different
+  // selection than the scan performs is the one lie a default-deny opt-in
+  // cannot afford.
+  selects: CONTRACT.selects,
+  does: CONTRACT.does,
   buckets: EPIC_REFUSAL_BUCKETS,
   scan: scanEpics,
 }
